@@ -1,0 +1,26 @@
+/*  app_notifier.cpp
+ *  - 割り込み側で立てられる EventGroup のビットを待つだけのラッパ
+ *  - EventGroup は hal_output.cpp が生成したものを共用
+ */
+#include "app_notifier.h"
+#include "hal_output.h" // hal_output_get_event_group()
+
+/*----------------------------------------------------------
+ * API
+ *---------------------------------------------------------*/
+void app_notifier_wait(EventBits_t flag, TickType_t timeout)
+{
+    /* 共有 EventGroup ハンドルを取得 */
+    EventGroupHandle_t group = hal_output_get_event_group();
+
+    /* まだ生成前、または待つビットが 0 のときは即 return */
+    if (flag == 0 || group == nullptr)
+        return;
+
+    /* フラグが立つまで待機（待機後は自動でクリア）*/
+    xEventGroupWaitBits(group,
+                        flag,
+                        pdTRUE, // clearOnExit
+                        pdTRUE, // waitForAllBits
+                        timeout);
+}
