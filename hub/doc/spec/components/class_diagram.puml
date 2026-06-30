@@ -1,0 +1,117 @@
+@startuml
+' Class diagram for ina-device-hub (simplified)
+skinparam classAttributeIconSize 0
+
+class Setting {
+  +get(key)
+  +set(key, value)
+  +get_work_dir()
+}
+
+class GeneralLog {
+  +get_rotate_file_logger(name, log_file)
+}
+
+class CameraDeviceRepository {
+  +get(key)
+  +add(device_id, info)
+  +get_all()
+}
+
+class CameraConnector {
+  +take_picture(device_id)
+  +stream_rtsp(device_id)
+  +stop_stream(device_id, process)
+  +generate_frames(device_id)
+}
+
+class HubMQTTClient {
+  +connect_mqtt()
+  +subscribe(topic)
+  +start()
+}
+
+class SensorDataQueue {
+  +put(data)
+  +get(timeout=None)
+}
+
+class SensorDeviceRepository {
+  +get(key)
+  +add(device_id, info)
+}
+
+class DataProcessor {
+  +start()
+  +process()
+  +process_sensor_data(...)
+  +process_sensor_image(...)
+}
+
+class InaDBConnector {
+  +upsert_latest_sensor_data(device_id, data)
+  +insert_sensor_image_data(device_id, yyyymmddhhmmss, image_path)
+}
+
+class SensorDataRepository {
+  +add(device_id, seqId, data)
+  +get_latest(device_id)
+}
+
+class SensorImageRepogitory {
+  +save(device_id, imageBytes)
+  +fetch_latest(device_id, limit)
+}
+
+class StorageConnector {
+  +save_to_cloud(file_key, fileBytes, content_type)
+  +fetch_from_cloud_as_bytes(file_full_key)
+}
+
+class TimelapseTask {
+  +start()
+  +stop()
+}
+
+class WebServer {
+  +flask_run()
+}
+
+class Utils {
+  +create_latest_aggregated_graph_as_html(device_id, data)
+}
+
+' relationships (uses / aggregation)
+Setting <.. GeneralLog : provides
+Setting <.. InaDBConnector : uses
+Setting <.. StorageConnector : uses
+
+CameraConnector --> CameraDeviceRepository : uses
+CameraConnector --> GeneralLog : logs
+CameraConnector ..> "FFmpeg (external)" : invokes
+
+HubMQTTClient --> SensorDataQueue : puts messages into
+HubMQTTClient --> Setting : reads
+
+DataProcessor --> SensorDataQueue : reads
+DataProcessor --> SensorDeviceRepository : updates
+DataProcessor --> SensorDataRepository : writes
+DataProcessor --> SensorImageRepogitory : saves images
+DataProcessor --> InaDBConnector : writes
+
+SensorImageRepogitory --> StorageConnector : uploads
+SensorImageRepogitory --> InaDBConnector : inserts metadata
+
+TimelapseTask --> CameraConnector : take_picture
+TimelapseTask --> StorageConnector : save_to_cloud
+
+WebServer --> CameraConnector : generate_frames
+WebServer --> SensorDeviceRepository : reads
+WebServer --> SensorDataRepository : reads
+WebServer --> SensorImageRepogitory : fetch_latest
+WebServer --> Utils : generate graphs
+
+InaDBConnector ..> "libsql (external)" : connects
+StorageConnector ..> "boto3/S3 (external)" : uses
+
+@enduml

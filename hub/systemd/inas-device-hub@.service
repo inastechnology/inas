@@ -1,0 +1,16 @@
+[Unit]
+Description=INAS Device Hub Service for %I
+Wants=network-online.target mosquitto.service
+After=network-online.target mosquitto.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi
+ExecStart=/home/pi/serve.sh %I
+Environment=PYTHONUNBUFFERED=1
+User=pi
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

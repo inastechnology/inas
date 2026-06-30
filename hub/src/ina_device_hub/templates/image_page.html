@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        text-align: center;
+      }
+      img {
+        max-width: 100%;
+        height: auto;
+        margin: 0 auto;
+      }
+      .image-container {
+        margin-bottom: 20px;
+        position: relative;
+      }
+      .timestamp {
+        text-align: center;
+        font-size: 14px;
+        color: #555;
+        margin-top: 5px;
+      }
+      select {
+        padding: 8px;
+        font-size: 16px;
+        margin-bottom: 20px;
+      }
+      .loader {
+        border: 6px solid #f3f3f3;
+        border-top: 6px solid #3498db;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        display: none;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Latest Image</h1>
+    <p>Device ID: {{ device_id }}</p>
+
+    <select id="imageSelect" onchange="displayImage()">
+      {% for image in sensor_images %}
+      <option
+        value="{{ image.image_path }}"
+        data-created-at="{{ image.created_at }}"
+      >
+        {{ image.created_at }}
+      </option>
+      {% endfor %}
+    </select>
+
+    <div class="image-container">
+      <div class="loader" id="loader"></div>
+      <img id="displayedImage" src="" alt="Sensor Image" />
+      <div class="timestamp" id="imageTimestamp"></div>
+    </div>
+
+    <script>
+      function displayImage() {
+        const selectElement = document.getElementById("imageSelect");
+        const imagePath = selectElement.value;
+        const createdAt =
+          selectElement.options[selectElement.selectedIndex].getAttribute(
+            "data-created-at"
+          );
+        const displayedImage = document.getElementById("displayedImage");
+        const timestamp = document.getElementById("imageTimestamp");
+        const loader = document.getElementById("loader");
+
+        console.log("imagePath:", imagePath); // コンソールで確認
+
+        loader.style.display = "block";
+        displayedImage.style.display = "none";
+        timestamp.textContent = "";
+
+        fetch(`/local/api/images/${encodeURIComponent(imagePath)}`)
+          .then((response) => response.blob())
+          .then((blob) => {
+            const url = URL.createObjectURL(blob);
+            displayedImage.src = url;
+            displayedImage.onload = () => {
+              loader.style.display = "none";
+              displayedImage.style.display = "block";
+              timestamp.textContent = createdAt;
+            };
+          })
+          .catch((error) => {
+            loader.style.display = "none";
+            console.error("Error fetching image:", error);
+          });
+      }
+
+      // 初期表示
+      document.addEventListener("DOMContentLoaded", displayImage);
+    </script>
+  </body>
+</html>

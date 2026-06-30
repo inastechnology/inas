@@ -1,0 +1,6 @@
+{
+  "chat.tools.terminal.autoApprove": {
+    "/home/polonity/.rye/shims/rye": true,
+    "/home/polonity/workspace/ina-technologies/ina-device-hub/.venv/bin/python": true
+}
+}

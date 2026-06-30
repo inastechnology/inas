@@ -1,0 +1,84 @@
+[project]
+name = "ina-device-hub"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Polonity", email = "hiken.pc@gmail.com" }
+]
+dependencies = [
+    "paho-mqtt>=2.1.0",
+    "dotenv>=0.9.9",
+    "libsql>=0.1.11",
+    "boto3>=1.37.11",
+    "flask>=3.1.0",
+    "ffmpeg-python>=0.2.0",
+    "apscheduler>=3.11.0",
+    "plotly>=6.0.0",
+]
+readme = "README.md"
+requires-python = ">= 3.8"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "ruff>=0.9.6",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ina_device_hub"]
+
+[tool.rye.scripts]
+lint = { chain = ["lint:ruff", "lint:ruff_format", "lint:mypy"] }
+"lint:ruff" = "ruff check ./ --diff"
+"lint:ruff_format" = "ruff format --check --diff"
+"lint:mypy" = "mypy ./ --explicit-package-bases"
+
+format = { chain = ["format:ruff", "format:ruff_check"] }
+"format:ruff" = "ruff format ./"
+"format:ruff_check" = "ruff check ./ --fix"
+
+serve = { cmd = "python ./src/ina_device_hub/serve.py", args = [
+    "--help",
+] }
+local-files = { cmd = "bash ./scripts/migrate_local_files.sh" }
+
+[tool.ruff]
+exclude = [".git", ".mypy_cache", ".ruff_cache", ".venv", "third_party"]
+line-length = 160
+target-version = "py311"
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+unfixable = []
+select = [
+    "A",  # flake8-builtin
+    "B",  # flake8-bugbear
+    "E",  # pycodestyle error
+    "F",  # Pyflakes
+    "I",  # isort
+    "N",  # pep8-naming
+    "W",  # pycodestyle warning
+    "PL", # Pylint
+    "UP", # pyupgrade
+]
+ignore = [
+    "B905",    # Zip-without-explicit-strict
+    "E501",    # Line too long
+    "F403",    # Unable to detect undefined names
+    "N812",    # Lowercase imported as non-lowercase
+    "N999",    # Invalid module name
+    "PLR0912", # Too many branches
+    "PLR0913", # Too many arguments in function definition
+    "PLR2004", # Magic value used in comparison
+]
+
+[tool.ruff.format]
+quote-style = "double"
+line-ending = "auto"

@@ -1,0 +1,31 @@
+@startuml
+' Periodic Task Flow (Timelapse) - Activity Diagram
+|Scheduler|
+start
+:Trigger TimelapseJob;
+|TimelapseTask|
+:timelapse_task.__routin();
+:camera_list = camera_device_repository.get_all();
+repeat
+  :for device in camera_list;
+  if (device.timelapse == true?) then (yes)
+    -> CameraConnector: take_picture(device_id)
+    |CameraConnector|
+    :img_bytes = take_picture(device_id);
+    if (img_bytes != None) then (ok)
+      -> StorageConnector: save_to_cloud(img_key, img_bytes)
+      |StorageConnector|
+      :put_object (S3);
+      -> TimelapseTask: return file_path
+      |TimelapseTask|
+      :(option) log success
+    else (ng)
+      |TimelapseTask|
+      :logger.error("Failed to take picture")
+    endif
+  else (skip)
+    :continue
+  endif
+repeat while (more devices?)
+stop
+@enduml

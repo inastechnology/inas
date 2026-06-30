@@ -1,0 +1,54 @@
+@startuml
+' Event Task Flow (MQTT -> DataProcessor) - Activity Diagram
+|MQTT Broker|
+start
+:publish(topic, payload);
+|HubMQTTClient|
+:on_message(msg);
+:parse topic -> device_id, kind, seqId;
+:subscribed_data_queue.put({device_id, kind, payload, seqId});
+|SensorDataQueue|
+:queue.put(message);
+|DataProcessor|
+:worker get() -> message;
+:determine message.kind;
+if (kind == "status") then (yes)
+  :sensor_device_repository.add(device_id, info);
+  :process_sensor_data(...);
+  -> InaDBConnector: upsert_latest_sensor_data(device_id, data)
+  |InaDBConnector|
+  :execute upsert SQL
+  |DataProcessor|
+  :done
+elseif (kind == "image") then (yes)
+  :process_sensor_image -> try parse payload as JSON
+  if (is meta JSON?) then (meta)
+    :allocate image_buffer[device_id][seqId] with size
+    :return (wait fragments)
+  else (fragment)
+    if (image_buffer lacks seqId) then (error)
+      :logger.error("image info not found")
+    else
+      :append fragment to buffer
+      if (buffer size >= expected size) then (complete)
+        -> SensorImageRepogitory: save(device_id, image_data)
+        |SensorImageRepogitory|
+        -> StorageConnector: save_to_cloud(file_key, image_bytes)
+        |StorageConnector|
+        :upload to S3
+        -> SensorImageRepogitory: return file_path
+        |SensorImageRepogitory|
+        -> InaDBConnector: insert_sensor_image_data(device_id, ts, file_path)
+        |InaDBConnector|
+        :execute insert SQL
+        |DataProcessor|
+      endif
+    endif
+  endif
+elseif (kind == "audio") then (yes)
+  :TODO: process_sensor_audio (not implemented)
+else
+  :log unknown kind
+endif
+stop
+@enduml

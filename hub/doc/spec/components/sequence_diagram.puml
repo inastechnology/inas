@@ -1,0 +1,39 @@
+@startuml
+' Sequence diagram: MQTT -> processing -> storage (image flow) and WebServer -> camera preview
+
+actor Broker as "MQTT Broker"
+participant HubMQTTClient
+participant SensorDataQueue
+participant DataProcessor
+participant SensorImageRepogitory
+participant StorageConnector
+participant InaDBConnector
+participant WebServer
+participant CameraConnector
+participant FFmpeg as "FFmpeg Process"
+
+== MQTT message (image) flow ==
+Broker -> HubMQTTClient : publish(topic, payload)
+HubMQTTClient -> HubMQTTClient : on_message(msg)
+HubMQTTClient -> SensorDataQueue : put(message)
+
+SensorDataQueue -> DataProcessor : (blocking) get()
+DataProcessor -> DataProcessor : process(message)
+alt message.kind == "image"
+  DataProcessor -> SensorImageRepogitory : save(device_id, imageBytes)
+  SensorImageRepogitory -> StorageConnector : save_to_cloud(file_key, bytes, content_type)
+  StorageConnector -> StorageConnector : put_object to S3
+  StorageConnector --> SensorImageRepogitory : file_path
+  SensorImageRepogitory -> InaDBConnector : insert_sensor_image_data(device_id, ts, file_path)
+  InaDBConnector -> InaDBConnector : execute SQL
+end
+
+== Camera preview (web) flow ==
+WebServer -> CameraConnector : generate_frames(device_id)
+CameraConnector -> CameraDeviceRepository : get(device_id)
+CameraConnector -> FFmpeg : run_async(rtsp -> mjpeg)
+FFmpeg --> CameraConnector : stdout (chunks)
+CameraConnector --> WebServer : yield multipart frame
+WebServer -> Browser : stream MJPEG
+
+@enduml
