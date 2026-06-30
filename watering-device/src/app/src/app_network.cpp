@@ -7,6 +7,7 @@
 
 #include "app_network.h"
 #include "app_config.h"
+#include "app_debug_log.h"
 #include "app_initial_setting.h"
 #include "app_task.h"
 #include "app_runtime_config.h"
@@ -28,14 +29,16 @@ static const char *kAppMsgKind[MAX_APP_MSG_TYPE] = {
     APP_MQTT_PUB_KIND,
     APP_MQTT_PUB_KIND,
     APP_MQTT_PUB_KIND,
-    APP_MQTT_PUB_KIND};
+    APP_MQTT_PUB_KIND,
+    APP_MQTT_DEBUG_LOG_KIND};
 
 static const char *kAppMsgMode[MAX_APP_MSG_TYPE] = {
     APP_MQTT_PUB_MODE,
     APP_MQTT_PUB_MODE,
     APP_MQTT_PUB_MODE,
     APP_MQTT_PUB_MODE,
-    APP_MQTT_PUB_MODE};
+    APP_MQTT_PUB_MODE,
+    APP_MQTT_DEBUG_LOG_MODE};
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -46,6 +49,15 @@ static bool app_network_subscribe_topics();
 // ================================================================
 // Private functions
 // ================================================================
+static int32_t app_network_context_id(const char *context)
+{
+    if (context != nullptr && strcmp(context, "reconnect") == 0)
+    {
+        return 2;
+    }
+    return 1;
+}
+
 static const char *app_network_wifi_status_name(wl_status_t status)
 {
     switch (status)
@@ -210,6 +222,11 @@ static bool app_network_connect_mqtt_with_retries(const char *context)
     {
         Serial.println("MQTT DNS resolution failed; cannot connect.");
         Serial.println("========================");
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_NETWORK,
+                            APP_DEBUG_LOG_ERROR,
+                            APP_DEBUG_EVENT_MQTT_DNS_FAILED,
+                            app_network_context_id(context),
+                            0);
         return false;
     }
 
@@ -228,6 +245,11 @@ static bool app_network_connect_mqtt_with_retries(const char *context)
         {
             Serial.println("connected");
             Serial.println("========================");
+            APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_NETWORK,
+                                APP_DEBUG_LOG_INFO,
+                                APP_DEBUG_EVENT_MQTT_CONNECTED,
+                                app_network_context_id(context),
+                                static_cast<int32_t>(appConfig.mqtt_port));
             return app_network_subscribe_topics();
         }
 
@@ -240,6 +262,11 @@ static bool app_network_connect_mqtt_with_retries(const char *context)
 
     Serial.println("MQTT Connection Failed; settings may be wrong or broker may be unreachable.");
     Serial.println("========================");
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_NETWORK,
+                        APP_DEBUG_LOG_ERROR,
+                        APP_DEBUG_EVENT_MQTT_FAILED,
+                        app_network_context_id(context),
+                        client.state());
     return false;
 }
 
@@ -355,6 +382,11 @@ bool app_network_start()
         Serial.printf("\nWiFi Connection Failed: status=%d (%s)\n",
                       static_cast<int>(status),
                       app_network_wifi_status_name(status));
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_NETWORK,
+                            APP_DEBUG_LOG_ERROR,
+                            APP_DEBUG_EVENT_WIFI_FAILED,
+                            static_cast<int32_t>(status),
+                            0);
         if (app_runtime_config_is_valid())
         {
             Serial.println("WiFi unavailable; continuing with saved runtime config.");
@@ -372,6 +404,11 @@ bool app_network_start()
     Serial.println("Gateway: " + WiFi.gatewayIP().toString());
     Serial.printf("RSSI: %d dBm\n", WiFi.RSSI());
     Serial.println("=============================");
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_NETWORK,
+                        WiFi.RSSI() < -85 ? APP_DEBUG_LOG_WARNING : APP_DEBUG_LOG_INFO,
+                        APP_DEBUG_EVENT_WIFI_CONNECTED,
+                        WiFi.RSSI(),
+                        0);
 
     // mDNS
     // if (MDNS.begin(appConfig.device_id))
@@ -404,6 +441,8 @@ bool app_network_is_connected()
 
 void app_network_stop()
 {
+    app_network_flush(APP_MQTT_DISCONNECT_DRAIN_MS);
+
     // MQTT
     client.disconnect();
 
@@ -420,6 +459,16 @@ void app_network_loop()
     {
         client.loop();
     }
+}
+
+void app_network_flush(uint32_t duration_ms)
+{
+    const uint32_t start_ms = millis();
+    do
+    {
+        app_network_loop();
+        delay(20);
+    } while (client.connected() && (millis() - start_ms) < duration_ms);
 }
 
 bool app_network_send(app_msg_type_t kind, const uint8_t *const data, uint16_t data_len, int seqId, bool retain)
@@ -542,12 +591,22 @@ bool app_network_reconnect()
         Serial.printf("\nWiFi Connection Failed during reconnect: status=%d (%s)\n",
                       static_cast<int>(status),
                       app_network_wifi_status_name(status));
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_NETWORK,
+                            APP_DEBUG_LOG_ERROR,
+                            APP_DEBUG_EVENT_WIFI_RECONNECT_FAILED,
+                            static_cast<int32_t>(status),
+                            0);
         return false;
     }
 
     WiFi.setTxPower(WIFI_POWER_19_5dBm);
     Serial.println("\n WiFi connected");
     Serial.println("IP Address: " + WiFi.localIP().toString());
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_NETWORK,
+                        WiFi.RSSI() < -85 ? APP_DEBUG_LOG_WARNING : APP_DEBUG_LOG_INFO,
+                        APP_DEBUG_EVENT_WIFI_RECONNECTED,
+                        WiFi.RSSI(),
+                        0);
 
     return app_network_connect_mqtt_with_retries("reconnect");
 }

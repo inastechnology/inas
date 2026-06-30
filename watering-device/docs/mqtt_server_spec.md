@@ -65,6 +65,7 @@ MQTTサーバは、topic内の`device_id`をデバイス識別子として扱っ
 | `config` | `reply` | Server -> Device | requestに対するruntime config応答 |
 | `config` | `push` | Server -> Device | サーバ起点のruntime config配信 |
 | `agri` | `immediate` | Device -> Server | status publish。`agri`/`immediate`は標準build設定 |
+| `debug` | `log` | Device -> Server | 起床サイクルのdebug log publish |
 
 `agri`と`immediate`はbuild flagで変更可能です。標準値は以下です。
 
@@ -88,6 +89,7 @@ APP_MQTT_PUB_MODE=immediate
 |---|---|
 | `/+/kinds/config/request` | runtime config要求処理 |
 | `/+/kinds/agri/immediate` | status受信 |
+| `/+/kinds/debug/log` | debug log受信 |
 
 複数デバイスを扱う場合、`+` wildcardで受信し、topicから`device_id`を取り出してください。
 
@@ -203,6 +205,8 @@ payloadはJSONです。
   "ntp_server": "pool.ntp.org",
   "timezone_offset_sec": 32400,
   "moisture_threshold": 40,
+  "force_watering": false,
+  "debug_log_on_wake": false,
   "schedules": [
     {
       "hour": 7,
@@ -214,7 +218,7 @@ payloadはJSONです。
       "hour": 18,
       "minute": 0,
       "duration_sec": 90,
-      "channel_mask": 3
+      "channel_mask": 1
     }
   ]
 }
@@ -227,6 +231,8 @@ payloadはJSONです。
 | `ntp_server` | No | string | default: MQTT broker address | NTP server hostname or IP |
 | `timezone_offset_sec` | No | integer | default: `0` | Local timezone offset from UTC in seconds. Japan: `32400` |
 | `moisture_threshold` | No | integer | `0..100`, default: previous value or `40` | Watering starts only when soil moisture is below this value |
+| `force_watering` | No | boolean | default: `false` | Water on due schedules even when soil moisture is high |
+| `debug_log_on_wake` | No | boolean | default: `false` | Publish a debug log at the end of each wake cycle |
 | `schedules` | Yes | array | 1 to 8 valid entries | Daily watering schedules |
 
 ### Schedule fields
@@ -236,7 +242,7 @@ payloadはJSONです。
 | `hour` | Yes | integer | `0..23` | Local hour |
 | `minute` | Yes | integer | `0..59` | Local minute |
 | `duration_sec` | Yes | integer | `1..65535` recommended | Watering duration in seconds |
-| `channel_mask` | Yes | integer | `1..4294967295` | Output channel bit mask |
+| `channel_mask` | Yes | integer | `1..4294967295` | Valve channel bit mask; pump is automatic |
 
 ### channel_mask
 
@@ -244,16 +250,15 @@ Current firmware mapping:
 
 | Bit | Value | Channel | Hardware |
 |---:|---:|---|---|
-| 0 | `1` | ch0 | `PUMP_PIN` |
-| 1 | `2` | ch1 | `VALVE_PIN` |
+| 0 | `1` | valve ch0 | `VALVE_PIN` |
 
 Examples:
 
 | `channel_mask` | Meaning |
 |---:|---|
-| `1` | ch0 only |
-| `2` | ch1 only |
-| `3` | ch0 and ch1 |
+| `1` | valve ch0; `PUMP_PIN` is enabled automatically |
+
+`PUMP_PIN` is not addressed directly by `channel_mask`. The firmware enables the pump automatically whenever at least one valid valve channel is selected.
 
 ## 9. Payload Validation Requirements
 
@@ -299,7 +304,9 @@ payload例:
   "schedule_epoch_utc": 1714529400,
   "next_sleep_sec": 37800,
   "last_soil_moisture": 32,
-  "threshold": 40
+  "threshold": 40,
+  "force_watering": true,
+  "debug_log_on_wake": true
 }
 ```
 
@@ -320,6 +327,66 @@ payload例:
 | `next_sleep_sec` | integer | Planned sleep duration until next wake-up |
 | `last_soil_moisture` | integer | Last measured soil moisture percent |
 | `threshold` | integer | Moisture threshold used for this cycle |
+| `force_watering` | boolean | Whether force watering was enabled in the active config |
+| `debug_log_on_wake` | boolean | Whether debug log publishing was enabled in the active config |
+
+## 11. Debug Log Publish
+
+runtime configで`debug_log_on_wake: true`を指定すると、デバイスは起床サイクルの最後にdebug logをpublishします。
+
+標準topic:
+
+```text
+/<device_id>/kinds/debug/log
+```
+
+payload is binary. Records are packed by priority: `ERROR`, then `WARNING`, then `INFO`, until the single MQTT payload reaches the firmware payload limit.
+
+Header:
+
+```text
+offset size type    description
+0      3    bytes   magic: "DLG"
+3      1    uint8   format version: 1
+4      4    uint32  seq, little-endian
+8      2    uint16  total records in memory, little-endian
+10     2    uint16  sent records in this payload, little-endian
+12     2    uint16  dropped/replaced records, little-endian
+14     1    uint8   record size: 13
+15     1    uint8   flags, reserved: 0
+```
+
+Record layout:
+
+```text
+offset size type   description
+0      1    uint8  file id
+1      2    uint16 line number, little-endian
+3      1    uint8  level: 1=INFO, 2=WARNING, 3=ERROR
+4      1    uint8  event code
+5      4    int32  arg0, little-endian
+9      4    int32  arg1, little-endian
+```
+
+Server-side decoding requirements:
+
+- Treat the MQTT payload as bytes, not UTF-8 text.
+- Validate `magic == "DLG"`, version `1`, and record size `13`.
+- Decode file id and event code using the firmware version's `app_debug_log.h` mapping.
+- Use file id + line number as the exact source location of the log call.
+- `dropped` means the firmware replaced or discarded lower-priority records before publish.
+- The payload does not include SSID, Wi-Fi password, MQTT password, or other secret strings.
+
+Current file id mapping:
+
+| file id | Source |
+|---:|---|
+| `1` | `src/app/src/app.cpp` |
+| `2` | `src/app/src/app_network.cpp` |
+| `3` | `src/app/src/app_runtime_config.cpp` |
+| `4` | `src/app/src/app_watering.cpp` |
+
+Canonical binary layout, event code table, argument semantics, and decoder example are documented in [debug_log_format.md](debug_log_format.md).
 
 ### Status interpretation
 
@@ -342,7 +409,7 @@ payload例:
 - `last_soil_moisture`が長期間しきい値未満
 - statusが想定時刻に届かない
 
-## 11. Recommended Server Behavior
+## 12. Recommended Server Behavior
 
 ### Per-device config storage
 
@@ -408,7 +475,7 @@ on_message(topic, payload):
 
 注意: 空の`schedules`はデバイス側で無効です。未登録デバイスで灌水させたくない場合でも、有効なscheduleを1件入れたうえで`moisture_threshold`を`0`にしてください。
 
-## 12. Error Handling
+## 13. Error Handling
 
 サーバは以下をログに残してください。
 
@@ -428,12 +495,12 @@ on_message(topic, payload):
 - 管理画面でdevice登録を促す
 - 登録前でもsafe default configを返し、デバイスが無限に失敗しないようにする
 
-## 13. Management Requirements
+## 14. Management Requirements
 
 この章は、MQTTサーバに付随する管理画面または管理APIの推奨仕様です。
 MQTT連携だけでなく、デバイス登録、設定配信、状態監視を運用できるようにしてください。
 
-### 13.1 Device lifecycle
+### 14.1 Device lifecycle
 
 デバイスは以下の状態で管理してください。
 
@@ -456,7 +523,7 @@ active/disabled --operator retires--> retired
 
 `retired`は物理的に廃棄・交換したdeviceの履歴保持用です。再利用する可能性がある場合は`disabled`にしてください。
 
-### 13.2 Device record
+### 14.2 Device record
 
 管理DBでは、deviceごとに以下の情報を保持してください。
 
@@ -481,7 +548,7 @@ active/disabled --operator retires--> retired
 
 `runtime_config`は最新値だけでなく、変更履歴も保持することを推奨します。
 
-### 13.3 Management UI
+### 14.3 Management UI
 
 管理画面は最低限以下の画面を提供してください。
 
@@ -509,7 +576,7 @@ Device listで表示する推奨項目:
 | Threshold | 最新statusの`threshold` |
 | Next wake | 最新statusの`next_sleep_sec`から推定した次回起床時刻 |
 
-### 13.4 Management API
+### 14.4 Management API
 
 管理画面以外から操作できるよう、以下のAPI相当の機能を用意することを推奨します。
 HTTP APIである必要はありませんが、同等の操作ができるようにしてください。
@@ -532,7 +599,7 @@ HTTP APIである必要はありませんが、同等の操作ができるよう
 
 `Push config`は任意機能です。通常は次回`config/request`への`config/reply`で十分です。
 
-### 13.5 Runtime config versioning
+### 14.5 Runtime config versioning
 
 runtime configはversion管理してください。
 
@@ -552,7 +619,7 @@ runtime configはversion管理してください。
 サーバ内部ではversionを持ち、deviceへ送るJSONには含めても含めなくても構いません。
 含める場合、現状ファームウェアは未使用フィールドとして無視します。
 
-### 13.6 Validation rules for management
+### 14.6 Validation rules for management
 
 管理画面/APIでは以下を防いでください。
 
@@ -567,7 +634,7 @@ runtime configはversion管理してください。
 
 UIではpayload sizeを表示し、512 bytesに近づいたら警告してください。
 
-### 13.7 Health monitoring
+### 14.7 Health monitoring
 
 サーバはdeviceごとのhealth状態を計算してください。
 
@@ -597,7 +664,7 @@ expected_next_seen_at = last_status_at + last_status.next_sleep_sec + grace_peri
 - `last_soil_moisture`が長時間しきい値未満
 - `next_sleep_sec`が極端に短い、または長い
 
-### 13.8 Audit log
+### 14.8 Audit log
 
 管理操作は監査ログに残してください。
 
@@ -623,7 +690,7 @@ expected_next_seen_at = last_status_at + last_status.next_sleep_sec + grace_peri
 | `after` | 変更後JSON |
 | `created_at` | 操作時刻 |
 
-### 13.9 Access control
+### 14.9 Access control
 
 管理機能には認証・認可を入れてください。
 
@@ -637,7 +704,7 @@ expected_next_seen_at = last_status_at + last_status.next_sleep_sec + grace_peri
 
 runtime config変更とdevice無効化は、少なくとも`operator`以上に制限してください。
 
-### 13.10 Registration UX
+### 14.10 Registration UX
 
 pending deviceを運用者が識別しやすいよう、管理画面では以下を表示してください。
 
@@ -657,7 +724,7 @@ pending deviceを運用者が識別しやすいよう、管理画面では以下
 そのため、設置場所やデバイス名は管理画面で運用者が入力してください。
 QRコードやラベルで`device_id`を現物に貼る運用を推奨します。
 
-## 14. mosquitto Examples
+## 15. mosquitto Examples
 
 config requestを監視:
 
@@ -687,7 +754,7 @@ mosquitto_pub -h <broker> -r \
   -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
 ```
 
-## 15. Compatibility Notes
+## 16. Compatibility Notes
 
 - デバイスは受信payloadが512 bytes以上の場合、破棄します。
 - デバイスは`/<device_id>/kinds/config/reply`と`/<device_id>/kinds/config/push`のみruntime configとして処理します。

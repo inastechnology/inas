@@ -79,7 +79,8 @@ MQTT認証を使わない場合は、MQTT UsernameとMQTT Passwordの両方を�
 6. 現在時刻に該当する灌水スケジュールがあるか確認します。
 7. 土壌水分がしきい値未満の場合、指定チャンネルを指定秒数だけ動作させます。
 8. ネットワーク接続中であれば、statusをMQTTへpublishします。
-9. 次回スケジュールまでdeep sleepします。
+9. `debug_log_on_wake`が有効な場合、debug logをMQTTへpublishします。
+10. 次回スケジュールまでdeep sleepします。
 
 Wi-FiまたはMQTTへ接続できない場合でも、保存済みruntime configがあり、Deep Sleep復帰時の時刻が有効であれば、保存済みスケジュールで灌水判定を続けます。電源断後の冷起動など、時刻を信頼できない場合は灌水判定を行わず、短い間隔でネットワーク復帰を再試行します。
 
@@ -121,6 +122,7 @@ Wi-FiまたはMQTTへ接続できない場合でも、保存済みruntime config
   "timezone_offset_sec": 32400,
   "moisture_threshold": 40,
   "force_watering": false,
+  "debug_log_on_wake": false,
   "schedules": [
     {
       "hour": 7,
@@ -132,7 +134,7 @@ Wi-FiまたはMQTTへ接続できない場合でも、保存済みruntime config
       "hour": 18,
       "minute": 0,
       "duration_sec": 90,
-      "channel_mask": 3
+      "channel_mask": 1
     }
   ]
 }
@@ -146,6 +148,7 @@ Wi-FiまたはMQTTへ接続できない場合でも、保存済みruntime config
 | `timezone_offset_sec` | 任意 | 整数 | UTCからの時差秒。日本時間は`32400` |
 | `moisture_threshold` | 任意 | `0`から`100` | 土壌水分しきい値。土壌水分がこの値未満の場合に灌水 |
 | `force_watering` | 任意 | `true` / `false` | `true`の場合、土壌水分センサ値に関係なくスケジュール時刻に灌水 |
+| `debug_log_on_wake` | 任意 | `true` / `false` | `true`の場合、起床サイクル末尾にdebug logをMQTTへpublish |
 | `schedules` | 必須 | 配列 | 灌水スケジュール。最低1件の有効なscheduleが必要 |
 
 schedule項目:
@@ -155,17 +158,15 @@ schedule項目:
 | `hour` | 必須 | `0`から`23` | ローカル時刻の時 |
 | `minute` | 必須 | `0`から`59` | ローカル時刻の分 |
 | `duration_sec` | 必須 | `1`以上 | 灌水時間、秒 |
-| `channel_mask` | 必須 | `1`以上 | 出力チャンネルのbit mask |
+| `channel_mask` | 必須 | `1`以上 | valve channelのbit mask。pumpは有効なvalve channelがある場合に自動でON |
 
 `channel_mask`の例:
 
 | 値 | 意味 |
 |---:|---|
-| `1` | ch0 |
-| `2` | ch1 |
-| `3` | ch0とch1 |
+| `1` | valve ch0 |
 
-現在のファームウェアでは、ch0は`PUMP_PIN`、ch1は`VALVE_PIN`に対応します。
+現在のファームウェアでは、valve ch0は`VALVE_PIN`に対応します。`PUMP_PIN`は、有効なvalve channelが選択されたときに自動で同時ONになります。
 
 制限:
 
@@ -209,7 +210,9 @@ payload例:
   "schedule_epoch_utc": 1714529400,
   "next_sleep_sec": 37800,
   "last_soil_moisture": 32,
-  "threshold": 40
+  "threshold": 40,
+  "force_watering": true,
+  "debug_log_on_wake": true
 }
 ```
 
@@ -225,8 +228,52 @@ payload例:
 | `watering_started` | 実際に灌水を開始したか。土壌水分が十分な場合は`false` |
 | `last_soil_moisture` | 最後に読み取った土壌水分 |
 | `threshold` | 使用した土壌水分しきい値 |
+| `force_watering` | 強制灌水設定が有効か |
+| `debug_log_on_wake` | debug log publish設定が有効か |
 
-## 7. 保存済み設定の変更
+## 7. debug log publish
+
+runtime configで`debug_log_on_wake: true`を指定すると、デバイスは起床サイクル末尾にdebug logをMQTTへpublishします。
+
+topic:
+
+```text
+/<device_id>/kinds/debug/log
+```
+
+payloadはバイナリです。重要度の高い順に、1回のMQTT publishに収まる分だけ格納されます。
+
+Header:
+
+```text
+offset size description
+0      3    magic "DLG"
+3      1    format version (=1)
+4      4    seq, little-endian uint32
+8      2    total records in memory, little-endian uint16
+10     2    sent records in this payload, little-endian uint16
+12     2    dropped/replaced records, little-endian uint16
+14     1    record size (=13)
+15     1    flags, reserved (=0)
+```
+
+Recordは13 bytesです。
+
+```text
+offset size description
+0      1    file id
+1      2    line number, little-endian uint16
+3      1    level: 1=INFO, 2=WARNING, 3=ERROR
+4      1    event code
+5      4    arg0, little-endian int32
+9      4    arg1, little-endian int32
+```
+
+file idとevent codeの対応はファームウェアの`app_debug_log.h`を参照してください。payloadにはSSID、password、MQTT passwordなどの文字列秘密情報は含めません。
+
+詳細なフォーマット、event code、argの意味、decoder例は[debug_log_format.md](debug_log_format.md)を参照してください。
+
+## 8. 保存済み設定の変更
 
 保存済みWi-Fi/MQTT設定を途中で変更したい場合、BOOTボタンで設定APを強制起動できます。通常の長押しでは既存の設定は消去されず、設定画面に現在値が入った状態で開きます。さらに長く押し続けると、device IDは維持したままWi-Fi/MQTT接続情報をクリアしてから設定APを起動します。
 
@@ -276,7 +323,7 @@ LED表示:
 - スマートフォンやPCが設定APに接続している間は、復帰タイムアウトは進みません。
 - Wi-Fi/MQTT設定が未保存の場合とBOOTボタンで強制起動した場合、設定APは自動終了しません。
 
-## 8. トラブルシュート
+## 9. トラブルシュート
 
 ### 設定APが見つからない
 
@@ -316,7 +363,7 @@ LED表示:
 - 押し始めが遅すぎると受付時間を過ぎます。標準では起動後3秒以内です。
 - RESETボタンだけでは設定APへ遷移できません。RESETで再起動した後、BOOTを受付時間内に押してください。
 
-## 9. 運用上の注意
+## 10. 運用上の注意
 
 - 設定APのパスワードは8文字以上にしてください。
 - MQTT brokerはデバイスから到達できるネットワーク上に置いてください。

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "app_config.h"
+#include "app_debug_log.h"
 #include "app_utils.h"
 
 #define TAG "app_runtime_config"
@@ -35,6 +36,31 @@ static time_t app_runtime_config_schedule_epoch_utc(const app_schedule_entry_t &
     return local_schedule_epoch - timezone_offset_sec;
 }
 
+static int32_t app_runtime_config_pack_flags(const app_runtime_config_t &config)
+{
+    return static_cast<int32_t>(config.moisture_threshold) |
+           (config.force_watering ? (1L << 8) : 0) |
+           (config.debug_log_on_wake ? (1L << 9) : 0) |
+           (static_cast<int32_t>(config.schedule_count) << 16);
+}
+
+static void app_runtime_config_print_schedules(const app_runtime_config_t &config)
+{
+    Serial.printf("Runtime schedules: count=%u debug_log_on_wake=%s\n",
+                  config.schedule_count,
+                  config.debug_log_on_wake ? "true" : "false");
+    for (uint8_t i = 0; i < config.schedule_count; i++)
+    {
+        const app_schedule_entry_t &schedule = config.schedules[i];
+        Serial.printf("  schedule[%u]: %02u:%02u duration=%u sec channel_mask=0x%lx\n",
+                      static_cast<unsigned int>(i),
+                      static_cast<unsigned int>(schedule.hour),
+                      static_cast<unsigned int>(schedule.minute),
+                      static_cast<unsigned int>(schedule.duration_sec),
+                      static_cast<unsigned long>(schedule.channel_mask));
+    }
+}
+
 void app_runtime_config_init()
 {
     memset(&s_runtime_config, 0, sizeof(s_runtime_config));
@@ -42,6 +68,7 @@ void app_runtime_config_init()
     s_runtime_config.timezone_offset_sec = 0;
     s_runtime_config.moisture_threshold = 40;
     s_runtime_config.force_watering = false;
+    s_runtime_config.debug_log_on_wake = false;
 
     if (app_runtime_config_load_saved())
     {
@@ -51,6 +78,7 @@ void app_runtime_config_init()
                       s_runtime_config.moisture_threshold,
                       s_runtime_config.force_watering ? "true" : "false",
                       s_runtime_config.schedule_count);
+        app_runtime_config_print_schedules(s_runtime_config);
     }
 }
 
@@ -94,6 +122,7 @@ bool app_runtime_config_apply_json(const uint8_t *payload, size_t length)
     threshold = constrain(threshold, 0, 100);
     next.moisture_threshold = static_cast<uint8_t>(threshold);
     next.force_watering = doc["force_watering"] | false;
+    next.debug_log_on_wake = doc["debug_log_on_wake"] | (doc["debug_log_enabled"] | false);
 
     const JsonArrayConst schedules = doc["schedules"].as<JsonArrayConst>();
     for (JsonObjectConst schedule_json : schedules)
@@ -139,6 +168,12 @@ bool app_runtime_config_apply_json(const uint8_t *payload, size_t length)
                   s_runtime_config.moisture_threshold,
                   s_runtime_config.force_watering ? "true" : "false",
                   s_runtime_config.schedule_count);
+    app_runtime_config_print_schedules(s_runtime_config);
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_RUNTIME_CONFIG,
+                        APP_DEBUG_LOG_INFO,
+                        APP_DEBUG_EVENT_RUNTIME_CONFIG_UPDATED,
+                        app_runtime_config_pack_flags(s_runtime_config),
+                        static_cast<int32_t>(s_runtime_config.timezone_offset_sec));
 
     return true;
 }

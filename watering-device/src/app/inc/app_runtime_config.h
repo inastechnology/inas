@@ -23,12 +23,19 @@ typedef struct
     uint8_t moisture_threshold;
     bool force_watering;
     uint8_t schedule_count;
+    bool debug_log_on_wake;
     app_schedule_entry_t schedules[APP_RUNTIME_MAX_SCHEDULES];
 } app_runtime_config_t;
 
 static_assert(offsetof(app_runtime_config_t, moisture_threshold) == 264,
               "Unexpected app_runtime_config_t layout; check packing pragmas");
 static_assert(offsetof(app_runtime_config_t, force_watering) == 265,
+              "Unexpected app_runtime_config_t layout; check packing pragmas");
+static_assert(offsetof(app_runtime_config_t, schedule_count) == 266,
+              "Unexpected app_runtime_config_t layout; check packing pragmas");
+static_assert(offsetof(app_runtime_config_t, debug_log_on_wake) == 267,
+              "Unexpected app_runtime_config_t layout; check packing pragmas");
+static_assert(offsetof(app_runtime_config_t, schedules) == 268,
               "Unexpected app_runtime_config_t layout; check packing pragmas");
 
 void app_runtime_config_init();

@@ -4,6 +4,7 @@
 #include "esp_system.h"
 #include "app_config.h"
 #include "app_camera.h"
+#include "app_debug_log.h"
 #include "app_audio.h"
 #include "app_initial_setting.h"
 #include "app_network.h"
@@ -27,6 +28,14 @@ RTC_DATA_ATTR static time_t s_last_executed_schedule_utc = 0;
 static bool s_network_started = false;
 
 void core0_loop(void *arg);
+
+static int32_t app_pack_runtime_flags(uint8_t threshold, bool force_watering, bool debug_log_on_wake, uint8_t schedule_count)
+{
+    return static_cast<int32_t>(threshold) |
+           (force_watering ? (1L << 8) : 0) |
+           (debug_log_on_wake ? (1L << 9) : 0) |
+           (static_cast<int32_t>(schedule_count) << 16);
+}
 
 static void app_print_boot_settings()
 {
@@ -71,13 +80,14 @@ static bool app_publish_status(uint32_t seq_id,
                                uint32_t next_sleep_sec,
                                uint8_t last_soil_moisture,
                                bool force_watering,
+                               bool debug_log_on_wake,
                                bool network_connected,
                                bool runtime_config_valid)
 {
-    char payload[512];
+    char payload[768];
     snprintf(payload,
              sizeof(payload),
-             "{\"seq\":%u,\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s}",
+             "{\"seq\":%u,\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s,\"debug_log_on_wake\":%s}",
              seq_id,
              network_connected ? "true" : "false",
              runtime_config_valid ? "true" : "false",
@@ -91,15 +101,30 @@ static bool app_publish_status(uint32_t seq_id,
              static_cast<unsigned long>(next_sleep_sec),
              last_soil_moisture,
              app_watering_get_threshold(),
-             force_watering ? "true" : "false");
+             force_watering ? "true" : "false",
+             debug_log_on_wake ? "true" : "false");
 
     Serial.printf("Sending status: %s\n", payload);
-    return app_network_send(APP_MSG_TYPE_STATUS, reinterpret_cast<const uint8_t *>(payload), strlen(payload), seq_id);
+    const bool sent = app_network_send(APP_MSG_TYPE_STATUS, reinterpret_cast<const uint8_t *>(payload), strlen(payload), seq_id);
+    if (sent)
+    {
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP, APP_DEBUG_LOG_INFO, APP_DEBUG_EVENT_STATUS_SENT, 0, 0);
+        Serial.printf("Status publish queued; draining MQTT for %u ms\n",
+                      static_cast<unsigned int>(APP_MQTT_STATUS_PUBLISH_DRAIN_MS));
+        app_network_flush(APP_MQTT_STATUS_PUBLISH_DRAIN_MS);
+    }
+    return sent;
 }
 
 int app_init()
 {
     Serial.begin(115200);
+    app_debug_log_reset();
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        APP_DEBUG_LOG_INFO,
+                        APP_DEBUG_EVENT_BOOT,
+                        static_cast<int32_t>(esp_reset_reason()),
+                        0);
     esp_log_level_set(TAG, ESP_LOG_DEBUG);
     ESP_LOGI(TAG, "Start");
     app_print_boot_settings();
@@ -114,22 +139,38 @@ int app_init()
     else
     {
         Serial.println("LittleFS mounted successfully");
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP, APP_DEBUG_LOG_INFO, APP_DEBUG_EVENT_LITTLEFS_MOUNTED, 0, 0);
     }
 
     // config
     Serial.println("Load Config...");
     appConfig.init();
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        APP_DEBUG_LOG_INFO,
+                        APP_DEBUG_EVENT_CONFIG_LOADED,
+                        appConfig.is_network_configured() ? 1 : 0,
+                        static_cast<int32_t>(appConfig.crc32));
 
     app_initial_setting_handle_setup_portal_request();
 
     app_task_init();
     app_runtime_config_init();
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        APP_DEBUG_LOG_INFO,
+                        APP_DEBUG_EVENT_RUNTIME_CONFIG_INIT,
+                        app_runtime_config_is_valid() ? 1 : 0,
+                        app_runtime_config_get().debug_log_on_wake ? 1 : 0);
 
     // sensor
     app_watering_init();
 
     // network
     s_network_started = app_network_start();
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        s_network_started ? APP_DEBUG_LOG_INFO : APP_DEBUG_LOG_ERROR,
+                        APP_DEBUG_EVENT_NETWORK_START,
+                        s_network_started ? 1 : 0,
+                        app_network_is_connected() ? 1 : 0);
     pinMode(APP_STATUS_LED_PIN, OUTPUT);
     digitalWrite(APP_STATUS_LED_PIN, APP_STATUS_LED_ACTIVE_LOW ? HIGH : LOW);
 
@@ -191,6 +232,7 @@ void app_loop()
     if (!network_connected)
     {
         Serial.println("Network is unavailable in this wake cycle.");
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP, APP_DEBUG_LOG_ERROR, APP_DEBUG_EVENT_NETWORK_UNAVAILABLE, 0, 0);
     }
     else
     {
@@ -200,6 +242,11 @@ void app_loop()
     app_runtime_config_mark_waiting();
     const bool config_requested = network_connected && app_network_request_runtime_config();
     const bool config_received = config_requested && app_network_wait_for_runtime_config(APP_CONFIG_FETCH_TIMEOUT_MS);
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        config_received ? APP_DEBUG_LOG_INFO : APP_DEBUG_LOG_WARNING,
+                        APP_DEBUG_EVENT_RUNTIME_CONFIG_REQUEST,
+                        config_requested ? 1 : 0,
+                        config_received ? 1 : 0);
     if (!config_received)
     {
         Serial.println("Runtime config was not received; using saved/default configuration");
@@ -207,9 +254,18 @@ void app_loop()
 
     const app_runtime_config_t &runtime_config = app_runtime_config_get();
     app_watering_set_threshold(runtime_config.moisture_threshold);
-    Serial.printf("Runtime config in app loop: threshold=%u force_watering=%s\n",
+    Serial.printf("Runtime config in app loop: threshold=%u force_watering=%s debug_log_on_wake=%s\n",
                   runtime_config.moisture_threshold,
-                  runtime_config.force_watering ? "true" : "false");
+                  runtime_config.force_watering ? "true" : "false",
+                  runtime_config.debug_log_on_wake ? "true" : "false");
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        APP_DEBUG_LOG_INFO,
+                        APP_DEBUG_EVENT_RUNTIME_CONFIG_ACTIVE,
+                        app_pack_runtime_flags(runtime_config.moisture_threshold,
+                                               runtime_config.force_watering,
+                                               runtime_config.debug_log_on_wake,
+                                               runtime_config.schedule_count),
+                        0);
 
     bool time_synced = false;
     if (network_connected)
@@ -220,17 +276,36 @@ void app_loop()
         if (!time_synced && woke_from_deep_sleep && app_time_is_synchronized())
         {
             Serial.println("NTP sync failed; using existing RTC time from deep sleep wake.");
+            APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                                APP_DEBUG_LOG_WARNING,
+                                APP_DEBUG_EVENT_TIME_SYNC_NTP_FAILED_RTC,
+                                1,
+                                0);
             time_synced = true;
         }
     }
     else if (woke_from_deep_sleep && app_time_is_synchronized())
     {
         Serial.println("Using existing RTC time from deep sleep wake for offline schedule evaluation.");
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP, APP_DEBUG_LOG_WARNING, APP_DEBUG_EVENT_TIME_SYNC_OFFLINE_RTC, 1, 0);
         time_synced = true;
     }
     else
     {
         Serial.println("Time is not synchronized or this is not a deep sleep wake; offline schedule evaluation is skipped.");
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                            APP_DEBUG_LOG_ERROR,
+                            APP_DEBUG_EVENT_TIME_SYNC_UNAVAILABLE,
+                            woke_from_deep_sleep ? 1 : 0,
+                            0);
+    }
+    if (time_synced)
+    {
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                            APP_DEBUG_LOG_INFO,
+                            APP_DEBUG_EVENT_TIME_SYNC_OK,
+                            static_cast<int32_t>(time(nullptr)),
+                            0);
     }
 
     time_t now_utc = time(nullptr);
@@ -241,6 +316,16 @@ void app_loop()
                                                                    s_last_executed_schedule_utc,
                                                                    &due_schedule,
                                                                    &due_schedule_epoch_utc);
+    Serial.printf("Schedule check: now=%ld last_executed=%ld due=%s runtime_valid=%s\n",
+                  static_cast<long>(now_utc),
+                  static_cast<long>(s_last_executed_schedule_utc),
+                  watering_due ? "true" : "false",
+                  app_runtime_config_is_valid() ? "true" : "false");
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        watering_due ? APP_DEBUG_LOG_INFO : APP_DEBUG_LOG_WARNING,
+                        APP_DEBUG_EVENT_SCHEDULE_CHECK,
+                        (watering_due ? 1 : 0) | (app_runtime_config_is_valid() ? (1 << 1) : 0),
+                        static_cast<int32_t>(s_last_executed_schedule_utc));
 
     bool watering_started = false;
     uint8_t last_soil_moisture = app_watering_get_last_soil_moisture();
@@ -259,6 +344,11 @@ void app_loop()
                                                     due_schedule.channel_mask,
                                                     runtime_config.force_watering);
         last_soil_moisture = app_watering_get_last_soil_moisture();
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                            watering_started ? APP_DEBUG_LOG_INFO : APP_DEBUG_LOG_WARNING,
+                            APP_DEBUG_EVENT_WATERING_DUE_RESULT,
+                            static_cast<int32_t>(due_schedule.duration_sec) | (watering_started ? (1L << 16) : 0),
+                            static_cast<int32_t>(due_schedule.channel_mask));
 
         while (app_watering_is_in_progress())
         {
@@ -278,27 +368,56 @@ void app_loop()
     {
         sleep_sec = APP_MIN_SLEEP_SEC;
     }
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        APP_DEBUG_LOG_INFO,
+                        APP_DEBUG_EVENT_SLEEP_PLANNED,
+                        static_cast<int32_t>(sleep_sec),
+                        0);
 
-    if (network_connected &&
-        !app_publish_status(seqId,
-                            config_received,
-                            time_synced,
-                            watering_due,
-                            watering_started,
-                            watering_due ? due_schedule.duration_sec : 0,
-                            watering_due ? due_schedule.channel_mask : 0,
-                            due_schedule_epoch_utc,
-                            sleep_sec,
-                            last_soil_moisture,
-                            runtime_config.force_watering,
-                            network_connected,
-                            app_runtime_config_is_valid()))
+    bool status_sent = false;
+    if (network_connected)
+    {
+        status_sent = app_publish_status(seqId,
+                                         config_received,
+                                         time_synced,
+                                         watering_due,
+                                         watering_started,
+                                         watering_due ? due_schedule.duration_sec : 0,
+                                         watering_due ? due_schedule.channel_mask : 0,
+                                         due_schedule_epoch_utc,
+                                         sleep_sec,
+                                         last_soil_moisture,
+                                         runtime_config.force_watering,
+                                         runtime_config.debug_log_on_wake,
+                                         network_connected,
+                                         app_runtime_config_is_valid());
+    }
+    if (network_connected && !status_sent)
     {
         Serial.println("Failed to send status");
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP, APP_DEBUG_LOG_ERROR, APP_DEBUG_EVENT_STATUS_FAILED, 0, 0);
     }
     else if (!network_connected)
     {
         Serial.println("Skip status publish because network is unavailable");
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP, APP_DEBUG_LOG_WARNING, APP_DEBUG_EVENT_STATUS_SKIPPED, 0, 0);
+    }
+
+    if (network_connected && app_runtime_config_is_valid() && runtime_config.debug_log_on_wake)
+    {
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                            APP_DEBUG_LOG_INFO,
+                            APP_DEBUG_EVENT_DEBUG_LOG_PUBLISH_ENABLED,
+                            status_sent ? 1 : 0,
+                            static_cast<int32_t>(sleep_sec));
+        if (app_debug_log_publish(seqId))
+        {
+            app_network_flush(APP_DEBUG_LOG_PUBLISH_DRAIN_MS);
+        }
+        else
+        {
+            Serial.println("Failed to send debug log");
+        }
     }
 
     app_network_stop();

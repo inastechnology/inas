@@ -45,6 +45,8 @@ User-facing setup and operation instructions are available in
 
 MQTT server integration requirements are available in
 [docs/mqtt_server_spec.md](docs/mqtt_server_spec.md).
+Compact debug log format details are available in
+[docs/debug_log_format.md](docs/debug_log_format.md).
 
 ## Initial setup AP
 
@@ -128,6 +130,7 @@ Payload example:
   "timezone_offset_sec": 32400,
   "moisture_threshold": 35,
   "force_watering": false,
+  "debug_log_on_wake": false,
   "schedules": [
     {
       "hour": 6,
@@ -139,7 +142,7 @@ Payload example:
       "hour": 18,
       "minute": 0,
       "duration_sec": 30,
-      "channel_mask": 3
+      "channel_mask": 1
     }
   ]
 }
@@ -148,10 +151,12 @@ Payload example:
 Notes:
 
 - `ntp_server` should point to the NTP server running on the same PC as MQTT.
-- `channel_mask` uses bit flags. `1` means ch0, `2` means ch1, `3` means ch0+ch1 at the same time.
-- Current firmware maps `ch0` to `PUMP_PIN` and `ch1` to `VALVE_PIN` in [`app_watering.cpp`](src/app/src/app_watering.cpp).
+- `channel_mask` uses valve-channel bit flags. `1` means valve ch0. The pump output is enabled automatically whenever at least one valve channel is selected.
+- Current firmware maps valve ch0 to `VALVE_PIN` and drives `PUMP_PIN` automatically in [`app_watering.cpp`](src/app/src/app_watering.cpp).
 - Up to 8 schedules are accepted.
 - Set `force_watering` to `true` to water on due schedules even when the soil sensor reports enough moisture.
+- Set `debug_log_on_wake` to `true` to publish one compact binary debug log payload for each wake cycle to `/DEVICE_ID/kinds/debug/log`.
+  See [docs/debug_log_format.md](docs/debug_log_format.md) for the binary format.
 
 ## License
 
