@@ -23,6 +23,7 @@
 - `timelapse_task.md` — 定期撮影タスク（apscheduler）
 - `utils.md` — ユーティリティ（Plotly でのグラフ作成など）
 - `web_server.md` — Flask ベースのローカル管理 UI / API
+- `../CLOUDFLARE_HOSTED_OPTION.md` — Cloudflare hosted option の実装方針
 
 ## 使い方
 
@@ -34,4 +35,3 @@
 1. CI に Markdown lint（例: `markdownlint`）を導入して目次とフォーマットを自動検査する。
 2. 重要モジュール（DB、ストレージ、ストリーミング）に使用例コードスニペットを追記する。
 3. ドキュメントの自動化: 将来的にコードコメントから API 抽出するツールを検討する。
-

@@ -99,6 +99,36 @@ Instagram 自動投稿では、この一時ストレージを公開 URL 配信�
 
 - `DISCORD_WEBHOOK_URL` (任意) — Discord に通知を送るための Webhook URL。取得方法: Discord チャンネルで Webhook を作成して URL をコピー。
 
+## Cloudflare hosted option（任意）
+
+Cloudflare hosted option を使う場合だけ設定します。値の source of truth は日本版の `hub/.env` です。
+
+- `CLOUDFLARE_ACCOUNT_ID` — 固定して使う Cloudflare account ID。
+- `CLOUDFLARE_ACCESS_API_TOKEN` — Access application / group / policy を作成・更新するための API token。Worker には渡しません。旧名 `CLOUDFLARE_API_TOKEN` も script は fallback として読みます。
+- `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME` — Access application と Tunnel の公開 hostname。例: `hub.example.com`。
+- `CLOUDFLARE_ACCESS_TEAM_DOMAIN` — Access JWT issuer。例: `https://<team-name>.cloudflareaccess.com`。`scripts/cloudflare_access_setup.py` が Zero Trust organization から補完できます。
+- `CLOUDFLARE_ACCESS_POLICY_AUD` — Access application の Audience tag。Worker の JWT 検証で使います。Access application 作成後に `scripts/cloudflare_access_setup.py` が出力します。
+- `CLOUDFLARE_ACCESS_GROUP_ID` — 許可 email を保持する Access group ID。script が出力します。
+- `CLOUDFLARE_ACCESS_APP_ID` — Access self-hosted application ID。script が出力します。
+- `CLOUDFLARE_ACCESS_POLICY_ID` — Access allow policy ID。script が出力します。
+- `CLOUDFLARE_ACCESS_APP_NAME` — Access application 名。既定: `inas-hub-hosted`。
+- `CLOUDFLARE_ACCESS_GROUP_NAME` — 許可 email group 名。既定: `inas-hub-allowed-users`。
+- `CLOUDFLARE_ACCESS_POLICY_NAME` — Access allow policy 名。既定: `inas-hub-allow-email-group`。
+- `CLOUDFLARE_ACCESS_SESSION_DURATION` — Access session duration。初期値は `4h` 程度を推奨します。
+- `CLOUDFLARE_ACCESS_ALLOWED_EMAILS` — 初期 provision 時に group へ入れる email のカンマ区切り一覧。以後は `scripts/cloudflare_access_setup.py add/remove/apply` で管理できます。
+- `CLOUDFLARE_TUNNEL_NAME` — Cloudflare Tunnel 名。既定: `inas-hub`。
+- `CLOUDFLARE_TUNNEL_ID` — 作成された Tunnel ID。`scripts/cloudflare_tunnel_setup.sh --write-env` が出力します。
+- `CLOUDFLARE_TUNNEL_HOSTNAME` — Tunnel の DNS route hostname。通常は `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME` と同じです。
+- `CLOUDFLARE_TUNNEL_ORIGIN_URL` — Tunnel が転送する local hub URL。既定: `http://localhost:5151`。
+- `CLOUDFLARE_TUNNEL_TOKEN_FILE` — `cloudflared tunnel run` 用 token file。`scripts/cloudflare_tunnel_setup.py --write-env provision` が `hub/.data/cloudflare/tunnel-token` に生成します。
+- `CLOUDFLARE_TUNNEL_DNS_RECORD_ID` — Tunnel 用 CNAME record ID。script が出力します。
+- `CLOUDFLARE_ZONE_ID` — DNS record を作る zone ID。未設定なら hostname から自動探索します。
+- `CLOUDFLARE_ZONE_NAME` — DNS record を作る zone name。未設定なら hostname から自動探索します。
+- `CLOUDFLARE_CLOUDFLARED_BIN` — `cloudflared` binary path。未設定なら PATH または `hub/.data/bin/cloudflared` を探します。
+- `CLOUDFLARE_HOSTED_HUB_STARTUP_WAIT_SECONDS` — `cloudflare_hosted_up.sh` が local hub の初期終了を検知する待ち時間。既定: `3`。
+
+API token はユーザー側で発行して `.env` または shell/CI secret に設定してください。Account API token でも利用できます。初期 provision まで行う場合は、対象 account に対して `Access: Apps and Policies Read/Write`、`Access: Organizations, Identity Providers, and Groups Read/Write`、`Cloudflare Tunnel Edit` を付与し、対象 zone に対して `Zone > DNS > Read` と `Zone > DNS > Edit` を付与してください。Cloudflare DNS record 作成 API の accepted permission は `DNS Write` です。
+
 ## 例 — よく設定する必須項目のサマリ
 
 - `TURSO_DATABASE_URL`=libsql://...

@@ -82,6 +82,34 @@ sudo ./scripts/hub_service.sh restart
 ./scripts/hub_service.sh logs
 ```
 
+Cloudflare hosted option を使う場合は、`.env` に固定したい Cloudflare account / hostname、許可 email、ユーザー側で発行した `CLOUDFLARE_ACCESS_API_TOKEN` を設定してから、次のスクリプトを実行します。
+
+AI Agent に環境構築や Cloudflare hosted option のセットアップを依頼する場合は、先に `doc/AI_AGENT_ENVIRONMENT_SETUP.md` を読ませてください。`.env` を正として扱うこと、secret を出力しないこと、Cloudflare resource を idempotent script で作成・再利用することを前提にしています。
+
+```bash
+# Access / Tunnel / DNS を構築し、必要なら cloudflared を hub/.data/bin に入れる
+bash scripts/cloudflare_hosted_setup.sh --install-cloudflared
+
+# local hub と tunnel をまとめて foreground 起動する
+bash scripts/cloudflare_hosted_up.sh --install-cloudflared
+```
+
+setup は再実行可能です。`.env` に保存済みの ID を優先して既存 resource を再利用し、同名 resource が複数ある場合や、同じ hostname に別用途の DNS record がある場合は自動上書きせず停止します。
+
+`cloudflare_hosted_up.sh` は通常の `rye run serve` と同じ local hub 起動条件を使います。`WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` が書き込み可能で、MQTT broker など `.env` の接続先へ到達できる必要があります。local hub が起動直後または実行中に終了した場合は、Cloudflare Tunnel も停止します。
+
+許可 email の追加・削除、tunnel 単体起動は次で行います。
+
+```bash
+python3 scripts/cloudflare_access_setup.py add user@example.com
+python3 scripts/cloudflare_access_setup.py remove user@example.com
+bash scripts/cloudflare_tunnel_start.sh
+bash scripts/cloudflare_tunnel_daemon.sh --install-cloudflared start
+bash scripts/cloudflare_tunnel_daemon.sh status
+```
+
+Cloudflare の Error 1033 が出る場合は、DNS / Access ではなく Tunnel connector が動いていない可能性が高いです。まず `bash scripts/cloudflare_tunnel_daemon.sh status` で `cloudflared` の常駐状態を確認してください。
+
 Git 管理外ローカルファイルの引っ越し
 
 `.env`、デバイス一覧 JSON、`data/`、`logs/` など Git 管理外のローカルファイルは、次のコマンドで zip に退避・復元できます。`.env` には secrets が含まれるため、zip は非公開の経路で共有してください。
@@ -139,6 +167,8 @@ rye run lint
 - `pyproject.toml` — 依存と rye スクリプト
 - `src/ina_device_hub/` — アプリ本体（`setting.py`, `hub_mqtt_client.py`, `camera_connector.py` など）
 - `data/instagram_caption_prompt.txt` — Instagram 投稿文生成プロンプトのテンプレート
+- `doc/AI_AGENT_ENVIRONMENT_SETUP.md` — AI Agent 向け環境構築・Cloudflare setup 手順
+- `doc/CLOUDFLARE_HOSTED_OPTION.md` — Cloudflare hosted option の実装方針
 - `systemd/inas-device-hub@.service` — systemd テンプレートユニット
 - `scripts/install_service.sh` — systemd インストールスクリプト
 
