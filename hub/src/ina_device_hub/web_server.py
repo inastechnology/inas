@@ -1,8 +1,8 @@
 import json
 import os
 import uuid
-from html import escape
 from datetime import UTC, datetime, timedelta
+from html import escape
 
 from flask import Flask, Response, jsonify, render_template, render_template_string, request
 
@@ -11,6 +11,7 @@ from ina_device_hub.device_config_repository import DeviceConfigValidationError,
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.device_event_log import list_device_events
 from ina_device_hub.location_repository import location_repository
+from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, ota_update_service
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
 from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
@@ -366,7 +367,11 @@ def mqtt_devices_page():
     selected_device_id = device_id or next(iter(devices), None)
     selected_device = devices.get(selected_device_id) if selected_device_id else None
     recent_events = list_device_events(limit=50, device_id=selected_device_id) if selected_device_id else list_device_events(limit=50)
-    connection_events = list_device_events(limit=50, device_id=selected_device_id, connection_events_only=True) if selected_device_id else list_device_events(limit=50, connection_events_only=True)
+    connection_events = (
+        list_device_events(limit=50, device_id=selected_device_id, connection_events_only=True)
+        if selected_device_id
+        else list_device_events(limit=50, connection_events_only=True)
+    )
     template = """
     <html>
       <head>
@@ -573,6 +578,47 @@ def list_mqtt_device_statuses(device_id):
     return jsonify(device_config_service().list_statuses(device_id, limit=limit))
 
 
+@app.route("/local/api/firmware-artifacts", methods=["GET"])
+def list_firmware_artifacts():
+    return jsonify(ota_update_service().get_artifacts())
+
+
+@app.route("/local/api/firmware-artifacts/<version>", methods=["PUT"])
+def upsert_firmware_artifact(version):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+
+    try:
+        artifact = ota_update_service().upsert_artifact(version, request_body)
+    except FirmwareArtifactValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(artifact)
+
+
+@app.route("/local/api/mqtt-devices/<device_id>/firmware-target", methods=["PUT"])
+def set_mqtt_device_firmware_target(device_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+
+    target = request_body.get("target_firmware_version", request_body.get("version"))
+    try:
+        record = ota_update_service().set_firmware_target(device_id, target)
+    except DeviceRecordValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(record)
+
+
+@app.route("/local/api/mqtt-devices/<device_id>/ota-statuses", methods=["GET"])
+def list_mqtt_device_ota_statuses(device_id):
+    try:
+        limit = int(request.args.get("limit", "100"))
+    except ValueError:
+        return jsonify({"error": "limit must be an integer"}), 400
+    return jsonify(ota_update_service().list_ota_statuses(device_id, limit=limit))
+
+
 @app.route("/local/api/images/<path:image_path>")
 def get_image(image_path):
     image_repo = sensor_image_repogitory()
@@ -622,4 +668,6 @@ def _render_event_table(events):
             f"<td><pre>{payload}</pre></td>"
             "</tr>"
         )
-    return "<table><thead><tr><th>time</th><th>event</th><th>direction</th><th>topic</th><th>payload</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    return (
+        "<table><thead><tr><th>time</th><th>event</th><th>direction</th><th>topic</th><th>payload</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>"
+    )

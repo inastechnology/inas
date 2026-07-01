@@ -11,6 +11,7 @@ typedef enum
     APP_MSG_TYPE_AUDIO,
     APP_MSG_TYPE_TASKREQ,
     APP_MSG_TYPE_DEBUG_LOG,
+    APP_MSG_TYPE_OTA_STATUS,
     MAX_APP_MSG_TYPE
 } app_msg_type_t;
 
@@ -24,3 +25,5 @@ bool app_network_send_large(app_msg_type_t kind, const uint8_t *const data, unsi
 bool app_network_reconnect();
 bool app_network_request_runtime_config();
 bool app_network_wait_for_runtime_config(uint32_t timeout_ms);
+bool app_network_request_ota_update(uint32_t seq_id);
+bool app_network_wait_for_ota_offer(uint32_t timeout_ms);

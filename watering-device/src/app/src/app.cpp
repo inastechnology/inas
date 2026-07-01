@@ -8,6 +8,7 @@
 #include "app_audio.h"
 #include "app_initial_setting.h"
 #include "app_network.h"
+#include "app_ota.h"
 #include "app_runtime_config.h"
 #include "app_sensor.h"
 #include "app_time_sync.h"
@@ -82,13 +83,17 @@ static bool app_publish_status(uint32_t seq_id,
                                bool force_watering,
                                bool debug_log_on_wake,
                                bool network_connected,
-                               bool runtime_config_valid)
+                               bool runtime_config_valid,
+                               bool ota_update_attempted)
 {
-    char payload[768];
+    char payload[1024];
     snprintf(payload,
              sizeof(payload),
-             "{\"seq\":%u,\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s,\"debug_log_on_wake\":%s}",
+             "{\"seq\":%u,\"device_kind\":\"%s\",\"firmware_version\":\"%s\",\"firmware_build_id\":\"%s\",\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s,\"debug_log_on_wake\":%s,\"ota_update_attempted\":%s}",
              seq_id,
+             APP_DEVICE_KIND,
+             APP_FIRMWARE_VERSION,
+             APP_FIRMWARE_BUILD_ID,
              network_connected ? "true" : "false",
              runtime_config_valid ? "true" : "false",
              config_received ? "true" : "false",
@@ -102,7 +107,8 @@ static bool app_publish_status(uint32_t seq_id,
              last_soil_moisture,
              app_watering_get_threshold(),
              force_watering ? "true" : "false",
-             debug_log_on_wake ? "true" : "false");
+             debug_log_on_wake ? "true" : "false",
+             ota_update_attempted ? "true" : "false");
 
     Serial.printf("Sending status: %s\n", payload);
     const bool sent = app_network_send(APP_MSG_TYPE_STATUS, reinterpret_cast<const uint8_t *>(payload), strlen(payload), seq_id);
@@ -155,6 +161,7 @@ int app_init()
 
     app_task_init();
     app_runtime_config_init();
+    app_ota_init();
     APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
                         APP_DEBUG_LOG_INFO,
                         APP_DEBUG_EVENT_RUNTIME_CONFIG_INIT,
@@ -237,6 +244,7 @@ void app_loop()
     else
     {
         app_network_loop();
+        app_ota_publish_pending_boot_status(seqId);
     }
 
     app_runtime_config_mark_waiting();
@@ -266,6 +274,26 @@ void app_loop()
                                                runtime_config.debug_log_on_wake,
                                                runtime_config.schedule_count),
                         0);
+
+    bool ota_update_attempted = false;
+    if (network_connected)
+    {
+        app_ota_mark_waiting();
+        const bool ota_requested = app_network_request_ota_update(seqId);
+        const bool ota_offer_received = ota_requested && app_network_wait_for_ota_offer(APP_OTA_OFFER_WAIT_MS);
+        if (ota_offer_received)
+        {
+            ota_update_attempted = app_ota_handle_offer(seqId);
+        }
+        else if (ota_requested)
+        {
+            Serial.println("OTA offer was not received; continuing normal wake cycle");
+        }
+        else
+        {
+            Serial.println("OTA update request was not sent; continuing normal wake cycle");
+        }
+    }
 
     bool time_synced = false;
     if (network_connected)
@@ -330,7 +358,11 @@ void app_loop()
     bool watering_started = false;
     uint8_t last_soil_moisture = app_watering_get_last_soil_moisture();
 
-    if (watering_due)
+    if (watering_due && ota_update_attempted)
+    {
+        Serial.println("Watering schedule is due but skipped because OTA update was attempted in this wake cycle.");
+    }
+    else if (watering_due)
     {
         Serial.printf("Watering schedule due at %ld, mask=0x%lx, duration=%u\n",
                       static_cast<long>(due_schedule_epoch_utc),
@@ -390,7 +422,8 @@ void app_loop()
                                          runtime_config.force_watering,
                                          runtime_config.debug_log_on_wake,
                                          network_connected,
-                                         app_runtime_config_is_valid());
+                                         app_runtime_config_is_valid(),
+                                         ota_update_attempted);
     }
     if (network_connected && !status_sent)
     {

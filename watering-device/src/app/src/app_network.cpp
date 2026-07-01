@@ -11,6 +11,7 @@
 #include "app_initial_setting.h"
 #include "app_task.h"
 #include "app_runtime_config.h"
+#include "app_ota.h"
 
 #define TAG __FILE__
 #define APP_MQTT_CONFIG_KIND "config"
@@ -30,7 +31,8 @@ static const char *kAppMsgKind[MAX_APP_MSG_TYPE] = {
     APP_MQTT_PUB_KIND,
     APP_MQTT_PUB_KIND,
     APP_MQTT_PUB_KIND,
-    APP_MQTT_DEBUG_LOG_KIND};
+    APP_MQTT_DEBUG_LOG_KIND,
+    APP_MQTT_OTA_KIND};
 
 static const char *kAppMsgMode[MAX_APP_MSG_TYPE] = {
     APP_MQTT_PUB_MODE,
@@ -38,7 +40,8 @@ static const char *kAppMsgMode[MAX_APP_MSG_TYPE] = {
     APP_MQTT_PUB_MODE,
     APP_MQTT_PUB_MODE,
     APP_MQTT_PUB_MODE,
-    APP_MQTT_DEBUG_LOG_MODE};
+    APP_MQTT_DEBUG_LOG_MODE,
+    APP_MQTT_OTA_STATUS_MODE};
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -317,6 +320,18 @@ void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
             if (app_runtime_config_apply_json(payload, length))
             {
                 Serial.println("Runtime config received via MQTT");
+            }
+        }
+        return;
+    }
+
+    if (strcmp(topicKind, APP_MQTT_OTA_KIND) == 0)
+    {
+        if (strcmp(topicMode, APP_MQTT_OTA_REPLY_MODE) == 0 || strcmp(topicMode, APP_MQTT_OTA_PUSH_MODE) == 0)
+        {
+            if (app_ota_apply_offer_json(payload, length))
+            {
+                Serial.println("OTA offer received via MQTT");
             }
         }
         return;
@@ -630,6 +645,30 @@ bool app_network_request_runtime_config()
     return client.publish(topic, reinterpret_cast<const uint8_t *>(payload), strlen(payload), false);
 }
 
+bool app_network_request_ota_update(uint32_t seq_id)
+{
+    char topic[128];
+    char payload[384];
+
+    if (!client.connected())
+    {
+        return false;
+    }
+
+    if (!app_ota_build_request_payload(payload, sizeof(payload), seq_id))
+    {
+        return false;
+    }
+
+    const int write_len = snprintf(topic, sizeof(topic), "/%s/kinds/%s/%s", appConfig.device_id, APP_MQTT_OTA_KIND, APP_MQTT_OTA_REQUEST_MODE);
+    if (write_len < 0 || static_cast<size_t>(write_len) >= sizeof(topic))
+    {
+        return false;
+    }
+
+    return client.publish(topic, reinterpret_cast<const uint8_t *>(payload), strlen(payload), false);
+}
+
 bool app_network_wait_for_runtime_config(uint32_t timeout_ms)
 {
     const uint32_t start_ms = millis();
@@ -644,4 +683,20 @@ bool app_network_wait_for_runtime_config(uint32_t timeout_ms)
     }
 
     return app_runtime_config_is_received();
+}
+
+bool app_network_wait_for_ota_offer(uint32_t timeout_ms)
+{
+    const uint32_t start_ms = millis();
+    while ((millis() - start_ms) < timeout_ms)
+    {
+        app_network_loop();
+        if (app_ota_is_offer_received())
+        {
+            return true;
+        }
+        delay(50);
+    }
+
+    return app_ota_is_offer_received();
 }

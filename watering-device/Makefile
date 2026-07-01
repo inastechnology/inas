@@ -56,7 +56,7 @@ merged-bin: build buildfs
 		0x8000 "$(BUILD_DIR)/partitions.bin" \
 		0xe000 "$(BOOT_APP0)" \
 		0x10000 "$(BUILD_DIR)/firmware.bin" \
-		0x110000 "$(FILESYSTEM_BIN)"
+		0x670000 "$(FILESYSTEM_BIN)"
 	@echo "Merged image created: $(MERGED_BIN)"
 
 # Flash the merged image in one step

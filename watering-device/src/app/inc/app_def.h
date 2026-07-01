@@ -157,3 +157,51 @@
 #ifndef APP_MQTT_DEBUG_LOG_MODE
 #define APP_MQTT_DEBUG_LOG_MODE "log"
 #endif
+
+#ifndef APP_FIRMWARE_VERSION
+#define APP_FIRMWARE_VERSION "0.0.0-dev"
+#endif
+
+#ifndef APP_FIRMWARE_BUILD_ID
+#define APP_FIRMWARE_BUILD_ID __DATE__ " " __TIME__
+#endif
+
+#ifndef APP_DEVICE_KIND
+#define APP_DEVICE_KIND "WTR"
+#endif
+
+#ifndef APP_MQTT_OTA_KIND
+#define APP_MQTT_OTA_KIND "ota"
+#endif
+
+#ifndef APP_MQTT_OTA_REQUEST_MODE
+#define APP_MQTT_OTA_REQUEST_MODE "request"
+#endif
+
+#ifndef APP_MQTT_OTA_REPLY_MODE
+#define APP_MQTT_OTA_REPLY_MODE "reply"
+#endif
+
+#ifndef APP_MQTT_OTA_PUSH_MODE
+#define APP_MQTT_OTA_PUSH_MODE "push"
+#endif
+
+#ifndef APP_MQTT_OTA_STATUS_MODE
+#define APP_MQTT_OTA_STATUS_MODE "status"
+#endif
+
+#ifndef APP_OTA_OFFER_WAIT_MS
+#define APP_OTA_OFFER_WAIT_MS 3000
+#endif
+
+#ifndef APP_OTA_HTTP_CONNECT_TIMEOUT_MS
+#define APP_OTA_HTTP_CONNECT_TIMEOUT_MS 10000
+#endif
+
+#ifndef APP_OTA_HTTP_READ_TIMEOUT_MS
+#define APP_OTA_HTTP_READ_TIMEOUT_MS 30000
+#endif
+
+#ifndef APP_OTA_TOTAL_TIMEOUT_MS
+#define APP_OTA_TOTAL_TIMEOUT_MS 180000
+#endif

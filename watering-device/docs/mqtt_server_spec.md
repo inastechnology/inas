@@ -64,6 +64,10 @@ MQTTサーバは、topic内の`device_id`をデバイス識別子として扱っ
 | `config` | `request` | Device -> Server | runtime config要求 |
 | `config` | `reply` | Server -> Device | requestに対するruntime config応答 |
 | `config` | `push` | Server -> Device | サーバ起点のruntime config配信 |
+| `ota` | `request` | Device -> Server | OTA更新確認要求 |
+| `ota` | `reply` | Server -> Device | OTA更新確認応答 |
+| `ota` | `push` | Server -> Device | サーバ起点のOTA更新offer |
+| `ota` | `status` | Device -> Server | OTA進捗・結果通知 |
 | `agri` | `immediate` | Device -> Server | status publish。`agri`/`immediate`は標準build設定 |
 | `debug` | `log` | Device -> Server | 起床サイクルのdebug log publish |
 
@@ -90,6 +94,8 @@ APP_MQTT_PUB_MODE=immediate
 | `/+/kinds/config/request` | runtime config要求処理 |
 | `/+/kinds/agri/immediate` | status受信 |
 | `/+/kinds/debug/log` | debug log受信 |
+| `/+/kinds/ota/request` | OTA更新確認要求処理 |
+| `/+/kinds/ota/status` | OTA進捗・結果受信 |
 
 複数デバイスを扱う場合、`+` wildcardで受信し、topicから`device_id`を取り出してください。
 
@@ -293,6 +299,9 @@ payload例:
 ```json
 {
   "seq": 123,
+  "device_kind": "WTR",
+  "firmware_version": "1.0.0",
+  "firmware_build_id": "2026-07-01T00:00:00Z+abcdef0",
   "network_connected": true,
   "runtime_config_valid": true,
   "config_received": true,
@@ -315,6 +324,9 @@ payload例:
 | Field | Type | Description |
 |---|---|---|
 | `seq` | integer | Random sequence ID for this status |
+| `device_kind` | string | Three-letter device kind. Watering device uses `WTR` |
+| `firmware_version` | string | Current firmware version |
+| `firmware_build_id` | string | Current firmware build identifier |
 | `network_connected` | boolean | Whether MQTT was connected when the device published this status |
 | `runtime_config_valid` | boolean | Whether the device has a valid runtime config in memory or saved storage |
 | `config_received` | boolean | Whether runtime config was received in this wake cycle |
@@ -409,7 +421,23 @@ Canonical binary layout, event code table, argument semantics, and decoder examp
 - `last_soil_moisture`が長期間しきい値未満
 - statusが想定時刻に届かない
 
-## 12. Recommended Server Behavior
+## 12. OTA Firmware Update
+
+OTA firmware updateは実装済みです。
+
+OTAの詳細仕様は[ota_update_spec.md](ota_update_spec.md)を参照してください。
+
+概要:
+
+- Firmware本体はMQTTでは送らず、Hubまたは管理サーバがHTTPで配信します。
+- MQTTは`ota/request`、`ota/reply`、`ota/push`、`ota/status`だけを扱います。
+- 更新有無はHubまたは管理サーバが判断します。デバイスは`device_kind`と現在の`firmware_version`を送信し、サーバはdeviceごとの`target_firmware_version`、同じ`device_kind`のartifact metadata、rollout状態を見て`action: "update"`または`action: "none"`を返します。
+- `device_kind`は3文字の大文字英字です。watering deviceは`WTR`です。Hubはrequestとartifactの`device_kind`が一致しない場合、更新offerを返してはいけません。
+- デバイスはruntime config取得後、灌水判定前にOTA offerを確認します。
+- OTA更新を開始した起床サイクルでは灌水しません。
+- OTAはOTA対応partition layoutを前提とします。
+
+## 13. Recommended Server Behavior
 
 ### Per-device config storage
 
@@ -475,7 +503,7 @@ on_message(topic, payload):
 
 注意: 空の`schedules`はデバイス側で無効です。未登録デバイスで灌水させたくない場合でも、有効なscheduleを1件入れたうえで`moisture_threshold`を`0`にしてください。
 
-## 13. Error Handling
+## 14. Error Handling
 
 サーバは以下をログに残してください。
 
@@ -495,12 +523,12 @@ on_message(topic, payload):
 - 管理画面でdevice登録を促す
 - 登録前でもsafe default configを返し、デバイスが無限に失敗しないようにする
 
-## 14. Management Requirements
+## 15. Management Requirements
 
 この章は、MQTTサーバに付随する管理画面または管理APIの推奨仕様です。
 MQTT連携だけでなく、デバイス登録、設定配信、状態監視を運用できるようにしてください。
 
-### 14.1 Device lifecycle
+### 15.1 Device lifecycle
 
 デバイスは以下の状態で管理してください。
 
@@ -523,7 +551,7 @@ active/disabled --operator retires--> retired
 
 `retired`は物理的に廃棄・交換したdeviceの履歴保持用です。再利用する可能性がある場合は`disabled`にしてください。
 
-### 14.2 Device record
+### 15.2 Device record
 
 管理DBでは、deviceごとに以下の情報を保持してください。
 
@@ -548,7 +576,7 @@ active/disabled --operator retires--> retired
 
 `runtime_config`は最新値だけでなく、変更履歴も保持することを推奨します。
 
-### 14.3 Management UI
+### 15.3 Management UI
 
 管理画面は最低限以下の画面を提供してください。
 
@@ -576,7 +604,7 @@ Device listで表示する推奨項目:
 | Threshold | 最新statusの`threshold` |
 | Next wake | 最新statusの`next_sleep_sec`から推定した次回起床時刻 |
 
-### 14.4 Management API
+### 15.4 Management API
 
 管理画面以外から操作できるよう、以下のAPI相当の機能を用意することを推奨します。
 HTTP APIである必要はありませんが、同等の操作ができるようにしてください。
@@ -599,7 +627,7 @@ HTTP APIである必要はありませんが、同等の操作ができるよう
 
 `Push config`は任意機能です。通常は次回`config/request`への`config/reply`で十分です。
 
-### 14.5 Runtime config versioning
+### 15.5 Runtime config versioning
 
 runtime configはversion管理してください。
 
@@ -619,7 +647,7 @@ runtime configはversion管理してください。
 サーバ内部ではversionを持ち、deviceへ送るJSONには含めても含めなくても構いません。
 含める場合、現状ファームウェアは未使用フィールドとして無視します。
 
-### 14.6 Validation rules for management
+### 15.6 Validation rules for management
 
 管理画面/APIでは以下を防いでください。
 
@@ -634,7 +662,7 @@ runtime configはversion管理してください。
 
 UIではpayload sizeを表示し、512 bytesに近づいたら警告してください。
 
-### 14.7 Health monitoring
+### 15.7 Health monitoring
 
 サーバはdeviceごとのhealth状態を計算してください。
 
@@ -664,7 +692,7 @@ expected_next_seen_at = last_status_at + last_status.next_sleep_sec + grace_peri
 - `last_soil_moisture`が長時間しきい値未満
 - `next_sleep_sec`が極端に短い、または長い
 
-### 14.8 Audit log
+### 15.8 Audit log
 
 管理操作は監査ログに残してください。
 
@@ -690,7 +718,7 @@ expected_next_seen_at = last_status_at + last_status.next_sleep_sec + grace_peri
 | `after` | 変更後JSON |
 | `created_at` | 操作時刻 |
 
-### 14.9 Access control
+### 15.9 Access control
 
 管理機能には認証・認可を入れてください。
 
@@ -704,7 +732,7 @@ expected_next_seen_at = last_status_at + last_status.next_sleep_sec + grace_peri
 
 runtime config変更とdevice無効化は、少なくとも`operator`以上に制限してください。
 
-### 14.10 Registration UX
+### 15.10 Registration UX
 
 pending deviceを運用者が識別しやすいよう、管理画面では以下を表示してください。
 
@@ -724,7 +752,7 @@ pending deviceを運用者が識別しやすいよう、管理画面では以下
 そのため、設置場所やデバイス名は管理画面で運用者が入力してください。
 QRコードやラベルで`device_id`を現物に貼る運用を推奨します。
 
-## 15. mosquitto Examples
+## 16. mosquitto Examples
 
 config requestを監視:
 
@@ -754,10 +782,11 @@ mosquitto_pub -h <broker> -r \
   -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
 ```
 
-## 16. Compatibility Notes
+## 17. Compatibility Notes
 
 - デバイスは受信payloadが512 bytes以上の場合、破棄します。
 - デバイスは`/<device_id>/kinds/config/reply`と`/<device_id>/kinds/config/push`のみruntime configとして処理します。
 - topic内の`device_id`が自分のIDと一致しないmessageは無視します。
 - `config/request`はデバイスからserverへの要求であり、デバイス側はrequest topicをruntime configとして処理しません。
 - 現状、デバイス側からconfig適用成功/失敗だけを直接ackする専用topicはありません。`status.config_received`で結果を判断してください。
+- OTA topicは`ota/request`、`ota/reply`、`ota/push`、`ota/status`を使用します。デバイスは自分の`device_id`宛ての`ota/reply`と`ota/push`だけをofferとして処理します。

@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import re
 from collections import deque
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -14,6 +15,8 @@ def _utc_now():
 
 DEVICE_STATES = {"pending", "active", "disabled", "retired"}
 MAX_STATUS_HISTORY = 100
+MAX_OTA_STATUS_HISTORY = 100
+DEVICE_KIND_RE = re.compile(r"^[A-Z]{3}$")
 
 
 class DeviceConfigValidationError(ValueError):
@@ -100,6 +103,8 @@ class DeviceConfigRepository:
         record["last_seen_at"] = now
         record["last_status_at"] = now
         record["last_status"] = copy.deepcopy(status)
+        _apply_firmware_metadata(record, status)
+        _apply_device_kind(record, status)
         status_history = deque(record.get("status_history", []), maxlen=MAX_STATUS_HISTORY)
         status_history.append({"received_at": now, "payload": copy.deepcopy(status)})
         record["status_history"] = list(status_history)
@@ -136,11 +141,70 @@ class DeviceConfigRepository:
         self.save()
         return copy.deepcopy(record)
 
+    def set_firmware_target(self, device_id: str, target_firmware_version: str | None):
+        if target_firmware_version is not None:
+            if not isinstance(target_firmware_version, str) or not target_firmware_version.strip():
+                raise DeviceRecordValidationError("target_firmware_version must be a non-empty string or null")
+            target_firmware_version = target_firmware_version.strip()
+
+        record = self._get_or_new_record(device_id)
+        record["target_firmware_version"] = target_firmware_version
+        record["updated_at"] = _utc_now()
+        self.device_configs[device_id] = record
+        self.save()
+        return copy.deepcopy(record)
+
+    def record_ota_request(self, device_id: str, request_payload: dict):
+        record = self._get_or_new_record(device_id)
+        now = _utc_now()
+        record["last_seen_at"] = now
+        record["last_ota_request_at"] = now
+        _apply_device_kind(record, request_payload)
+        _apply_firmware_metadata(record, request_payload)
+        record["updated_at"] = now
+        self.device_configs[device_id] = record
+        self.save()
+        return copy.deepcopy(record)
+
+    def record_ota_status(self, device_id: str, status: dict):
+        record = self._get_or_new_record(device_id)
+        now = _utc_now()
+        state = status.get("state")
+        record["last_seen_at"] = now
+        record["last_ota_status_at"] = now
+        record["ota_update_id"] = status.get("update_id") or record.get("ota_update_id")
+        record["ota_state"] = state or record.get("ota_state")
+        record["ota_error"] = status.get("error")
+        _apply_device_kind(record, status)
+        _apply_firmware_metadata(record, status)
+        if state == "started":
+            record["ota_attempt_count"] = int(record.get("ota_attempt_count") or 0) + 1
+            record["ota_last_attempt_at"] = now
+        if state == "confirmed":
+            record["ota_confirmed_at"] = now
+            to_version = status.get("to_version")
+            if isinstance(to_version, str) and to_version:
+                record["firmware_version"] = to_version
+        ota_status_history = deque(record.get("ota_status_history", []), maxlen=MAX_OTA_STATUS_HISTORY)
+        ota_status_history.append({"received_at": now, "payload": copy.deepcopy(status)})
+        record["ota_status_history"] = list(ota_status_history)
+        record["updated_at"] = now
+        self.device_configs[device_id] = record
+        self.save()
+        return copy.deepcopy(record)
+
     def list_statuses(self, device_id: str, limit: int = 100):
         record = self.get(device_id)
         if record is None:
             return []
         statuses = record.get("status_history", [])
+        return copy.deepcopy(statuses[-limit:])
+
+    def list_ota_statuses(self, device_id: str, limit: int = 100):
+        record = self.get(device_id)
+        if record is None:
+            return []
+        statuses = record.get("ota_status_history", [])
         return copy.deepcopy(statuses[-limit:])
 
     def _get_or_new_record(self, device_id: str):
@@ -243,6 +307,7 @@ def _new_device_record(device_id: str, now: str):
         "memo": None,
         "config": None,
         "runtime_config": None,
+        "device_kind": None,
         "first_seen_at": now,
         "last_seen_at": None,
         "last_config_request_at": None,
@@ -250,6 +315,18 @@ def _new_device_record(device_id: str, now: str):
         "last_status_at": None,
         "last_status": None,
         "status_history": [],
+        "firmware_version": None,
+        "firmware_build_id": None,
+        "target_firmware_version": None,
+        "ota_update_id": None,
+        "ota_state": None,
+        "ota_error": None,
+        "ota_attempt_count": 0,
+        "ota_last_attempt_at": None,
+        "ota_confirmed_at": None,
+        "last_ota_request_at": None,
+        "last_ota_status_at": None,
+        "ota_status_history": [],
         "created_at": now,
         "updated_at": now,
         "approved_at": None,
@@ -268,7 +345,24 @@ def _normalize_device_record(device_id: str, record: dict):
     normalized["config"] = config
     normalized["runtime_config"] = config
     normalized["status_history"] = list(normalized.get("status_history") or [])[-MAX_STATUS_HISTORY:]
+    normalized["ota_status_history"] = list(normalized.get("ota_status_history") or [])[-MAX_OTA_STATUS_HISTORY:]
     return normalized
+
+
+def _apply_firmware_metadata(record: dict, payload: dict):
+    firmware_version = payload.get("firmware_version")
+    if isinstance(firmware_version, str) and firmware_version:
+        record["firmware_version"] = firmware_version
+
+    firmware_build_id = payload.get("firmware_build_id")
+    if isinstance(firmware_build_id, str) and firmware_build_id:
+        record["firmware_build_id"] = firmware_build_id
+
+
+def _apply_device_kind(record: dict, payload: dict):
+    device_kind = payload.get("device_kind")
+    if isinstance(device_kind, str) and DEVICE_KIND_RE.match(device_kind) and record.get("device_kind") in (None, device_kind):
+        record["device_kind"] = device_kind
 
 
 @lru_cache(maxsize=1)

@@ -47,6 +47,10 @@ MQTT server integration requirements are available in
 [docs/mqtt_server_spec.md](docs/mqtt_server_spec.md).
 Compact debug log format details are available in
 [docs/debug_log_format.md](docs/debug_log_format.md).
+OTA firmware update requirements are available in
+[docs/ota_update_spec.md](docs/ota_update_spec.md).
+Implementation traceability is available in
+[docs/ota_implementation_traceability.md](docs/ota_implementation_traceability.md).
 
 ## Initial setup AP
 
