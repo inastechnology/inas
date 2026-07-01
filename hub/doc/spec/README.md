@@ -23,6 +23,7 @@
 - `timelapse_task.md` — 定期撮影タスク（apscheduler）
 - `utils.md` — ユーティリティ（Plotly でのグラフ作成など）
 - `web_server.md` — Flask ベースのローカル管理 UI / API
+- `../CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` — Cloudflare Workers cloud app の実装方針
 - `../CLOUDFLARE_HOSTED_OPTION.md` — Cloudflare hosted option の実装方針
 
 ## 使い方

@@ -82,7 +82,12 @@ sudo ./scripts/hub_service.sh restart
 ./scripts/hub_service.sh logs
 ```
 
-Cloudflare hosted option を使う場合は、`.env` に固定したい Cloudflare account / hostname、許可 email、ユーザー側で発行した `CLOUDFLARE_ACCESS_API_TOKEN` を設定してから、次のスクリプトを実行します。
+Cloudflare hosted option は 2 種類あります。
+
+- Tunnel 版: デバイス側で local hub を起動し、Cloudflare Access + Tunnel で公開します。
+- Cloud app 版: Cloudflare Workers + Hono + Turso で管理 API / UI を動かします。実装方針と現在の範囲は `doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` を参照してください。
+
+Tunnel 版を使う場合は、`.env` に固定したい Cloudflare account / hostname、許可 email、ユーザー側で発行した `CLOUDFLARE_ACCESS_API_TOKEN` を設定してから、次のスクリプトを実行します。
 
 AI Agent に環境構築や Cloudflare hosted option のセットアップを依頼する場合は、先に `doc/AI_AGENT_ENVIRONMENT_SETUP.md` を読ませてください。`.env` を正として扱うこと、secret を出力しないこと、Cloudflare resource を idempotent script で作成・再利用することを前提にしています。
 
@@ -96,7 +101,16 @@ bash scripts/cloudflare_hosted_up.sh --install-cloudflared
 
 setup は再実行可能です。`.env` に保存済みの ID を優先して既存 resource を再利用し、同名 resource が複数ある場合や、同じ hostname に別用途の DNS record がある場合は自動上書きせず停止します。
 
-`cloudflare_hosted_up.sh` は通常の `rye run serve` と同じ local hub 起動条件を使います。`WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` が書き込み可能で、MQTT broker など `.env` の接続先へ到達できる必要があります。local hub が起動直後または実行中に終了した場合は、Cloudflare Tunnel も停止します。
+`cloudflare_hosted_up.sh` は通常の `rye run serve` と同じ local hub 起動条件を使います。`WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` が書き込み可能で、MQTT broker など `.env` の接続先へ到達できる必要があります。local hub が起動直後または実行中に終了した場合は、Cloudflare Tunnel も停止します。Tunnel はデバイス側で起動するため、Worker cloud app の確認と混同しないでください。
+
+Cloud app 版の開発確認:
+
+```bash
+cd cloudflare
+npm install
+npm test
+npm run typecheck
+```
 
 許可 email の追加・削除、tunnel 単体起動は次で行います。
 
@@ -168,7 +182,9 @@ rye run lint
 - `src/ina_device_hub/` — アプリ本体（`setting.py`, `hub_mqtt_client.py`, `camera_connector.py` など）
 - `data/instagram_caption_prompt.txt` — Instagram 投稿文生成プロンプトのテンプレート
 - `doc/AI_AGENT_ENVIRONMENT_SETUP.md` — AI Agent 向け環境構築・Cloudflare setup 手順
+- `doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` — Cloudflare Workers cloud app の実装方針
 - `doc/CLOUDFLARE_HOSTED_OPTION.md` — Cloudflare hosted option の実装方針
+- `cloudflare/` — Cloudflare Workers + Hono + Turso の cloud app 実装
 - `systemd/inas-device-hub@.service` — systemd テンプレートユニット
 - `scripts/install_service.sh` — systemd インストールスクリプト
 

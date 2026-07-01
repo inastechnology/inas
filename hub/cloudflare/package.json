@@ -1,0 +1,23 @@
+{
+  "name": "ina-device-hub-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.15",
+    "hono": "^4.10.7",
+    "jose": "^6.1.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260617.0",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.38.0"
+  }
+}

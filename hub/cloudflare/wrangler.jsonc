@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ina-device-hub-cloud",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "",
+    "CLOUDFLARE_ACCESS_POLICY_AUD": "",
+    "TURSO_DATABASE_URL": ""
+  }
+}
