@@ -24,6 +24,7 @@
 #define APP_NTP_SYNC_TIMEOUT_MS 15000
 #define APP_MIN_SLEEP_SEC 5
 #define APP_NETWORK_RETRY_SLEEP_SEC 60
+#define APP_WATERING_DUE_GRACE_SEC (15 * 60)
 
 RTC_DATA_ATTR static time_t s_last_executed_schedule_utc = 0;
 static bool s_network_started = false;
@@ -339,11 +340,22 @@ void app_loop()
     time_t now_utc = time(nullptr);
     app_schedule_entry_t due_schedule = {};
     time_t due_schedule_epoch_utc = 0;
-    const bool watering_due = time_synced &&
-                              app_runtime_config_find_due_schedule(now_utc,
-                                                                   s_last_executed_schedule_utc,
-                                                                   &due_schedule,
-                                                                   &due_schedule_epoch_utc);
+    bool watering_due = time_synced &&
+                        app_runtime_config_find_due_schedule(now_utc,
+                                                             s_last_executed_schedule_utc,
+                                                             &due_schedule,
+                                                             &due_schedule_epoch_utc);
+    if (watering_due && now_utc - due_schedule_epoch_utc > APP_WATERING_DUE_GRACE_SEC)
+    {
+        Serial.printf("Watering schedule due at %ld is too old; skipped at now=%ld grace=%lu sec\n",
+                      static_cast<long>(due_schedule_epoch_utc),
+                      static_cast<long>(now_utc),
+                      static_cast<unsigned long>(APP_WATERING_DUE_GRACE_SEC));
+        s_last_executed_schedule_utc = due_schedule_epoch_utc;
+        watering_due = false;
+        due_schedule_epoch_utc = 0;
+        memset(&due_schedule, 0, sizeof(due_schedule));
+    }
     Serial.printf("Schedule check: now=%ld last_executed=%ld due=%s runtime_valid=%s\n",
                   static_cast<long>(now_utc),
                   static_cast<long>(s_last_executed_schedule_utc),
