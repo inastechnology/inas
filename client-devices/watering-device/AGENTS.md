@@ -2,7 +2,8 @@
 
 ## Project Structure & Module Organization
 - `src/main.cpp` is the firmware entry point (`setup()`/`loop()`).
-- Application logic lives in `src/app`: headers in `src/app/inc`, implementations in `src/app/src` (networking, watering, sensors, tasks).
+- Device-specific application logic lives in `src/app`: headers in `src/app/inc`, implementations in `src/app/src` (`WateringDevice : AppDevice`, watering, sensors, runtime config).
+- Shared client firmware code is linked from `lib/ina-client-common`, which points to `../common/lib/ina-client-common`.
 - Hardware abstraction layer lives in `src/hal`: headers in `src/hal/inc`, implementations in `src/hal/src` (audio, camera, output, soil/TDS/temperature).
 - `data/` contains LittleFS payload files flashed to the device filesystem.
 - `lib/` is for project-private reusable libraries; `include/` is for shared headers.

@@ -14,10 +14,26 @@ A simple sensor device that can be used to measure temperature, tds, and more. T
 
 ## Setup
 
-1. Clone this repository
-2. copy default.env.user.ini to .env.user.ini
-   And change `APP_INITIAL_SETTING_SSID` to match the setup AP name you want.
-3. And you can use Makefile to build and upload the firmware
+Build this firmware on Linux or WSL2. Native Windows builds are not supported
+because this project uses a symbolic link to the shared PlatformIO library:
+
+```text
+lib/ina-client-common -> ../../common/lib/ina-client-common
+```
+
+Windows users should clone and build the repository inside the WSL2 Linux
+filesystem, such as under `~/work`, not from `/mnt/c/...`.
+
+1. Clone this repository.
+2. Go to this device project.
+
+```bash
+cd client-devices/watering-device
+```
+
+3. Copy `default.env.user.ini` to `.env.user.ini`.
+   Change `APP_INITIAL_SETTING_SSID` to match the setup AP name you want.
+4. Use the Makefile to build and upload the firmware.
 
 ```bash
 make build
@@ -39,6 +55,18 @@ make flash-merged UPLOAD_PORT=/dev/ttyACM0
 ```
 
 See more details in the [Makefile](Makefile) or `make help` command. 
+
+## Source Layout
+
+Device-specific code remains in this project:
+
+- `src/app/src/app.cpp`: `WateringDevice : AppDevice`, implementing runtime config, watering cycle, and status payload hooks.
+- `src/app`: watering-device runtime config, sensor/watering/camera/audio behavior.
+- `src/hal`: watering-device HAL drivers and pin-dependent hardware behavior.
+- `platformio.ini`: board settings and the `APP_DEVICE_KIND="WTR"` build flag.
+
+Shared client framework code is provided by
+`../common/lib/ina-client-common` through the symlink in `lib/`.
 
 User-facing setup and operation instructions are available in
 [docs/user_manual.md](docs/user_manual.md).

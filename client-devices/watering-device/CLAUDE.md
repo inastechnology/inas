@@ -8,68 +8,35 @@ Firmware for a **Seeed XIAO ESP32-S3** smart watering device. The device wakes e
 
 ## Repository Layout
 
+```text
+client-devices/watering-device/
+  src/main.cpp           # Entry point: setup() -> app_init(), loop() -> app_loop()
+  src/app/               # WateringDevice : AppDevice, runtime config, watering, sensors
+  src/hal/               # Watering-device HAL drivers: output, soil/TDS/temp, camera, audio
+  lib/ina-client-common  # Symlink to ../common/lib/ina-client-common
+  data/                  # LittleFS filesystem payload
+  test/                  # PlatformIO unit/integration tests
+  partitions.csv         # OTA-capable partition table
+  platformio.ini         # Board config and APP_DEVICE_KIND="WTR"
+  default.env.user.ini   # Template for per-developer settings
+  Makefile               # Convenience wrappers around pio commands
+
+client-devices/common/lib/ina-client-common/
+  src/app/               # Shared AppDevice lifecycle, setup, config, MQTT, OTA, task, time sync, debug log, utilities
+  src/hal/               # Shared config persistence HAL
 ```
-src/
-  main.cpp               # Entry point: setup() → app_init(), loop() → app_loop()
-  app/
-    inc/                 # Application-layer headers
-      app.h              # app_init / app_deinit / app_loop
-      app_config.h       # AppConfig class (Wi-Fi / MQTT / device ID, stored in NVS)
-      app_def.h          # Build-flag-overridable defaults (SSID, MQTT broker, topics…)
-      app_network.h      # Network API + app_msg_type_t enum
-      app_pin.h          # GPIO pin assignments (A0 temp, A1 TDS, D2 valve, D3 pump)
-      app_task.h         # Task queue structs & task_id_t (pump, valve, sensor, camera, audio)
-      app_watering.h     # Watering API
-      app_sensor.h       # Sensor API
-      app_audio.h        # Audio API (currently commented out)
-      app_camera.h       # Camera API (currently commented out)
-      app_notifier.h     # Notifier API
-      app_utils.h        # CRC32 + UUID helpers
-      app_persistent_log.h
-    src/
-      app.cpp            # Main control loop: watering task + deep-sleep scheduling
-      app_network.cpp    # WiFi + MQTT (PubSubClient): connect, pub/sub, reconnect
-      app_watering.cpp   # Soil moisture gate + async pump drive
-      app_sensor.cpp
-      app_task.cpp       # Binary task-request parser for MQTT-driven scheduling
-      app_resource.cpp
-      app_audio.cpp      # (audio feature, currently disabled)
-      app_camera.cpp     # (camera feature, currently disabled)
-  hal/
-    inc/                 # Hardware-abstraction headers
-      hal_config.h       # NVS save/load declarations
-      hal_output.h       # MOSFET output (pump/valve): init, start_async, is_in_progress
-      hal_soil.h         # Soil moisture ADC: init (with dry/wet calibration), read_raw, read_percent
-      hal_temperature.h  # DS18B20 temperature
-      hal_tds.h          # TDS sensor
-      hal_audio.h
-      hal_camera.h
-    src/
-      hal_config.cpp     # NVS persistence for AppConfig
-      hal_output.cpp     # ESP32 hardware timer + ISR for timed MOSFET pulse
-      hal_soil.cpp       # ADC read with dry/wet linear calibration
-      hal_temperature.cpp
-      hal_tds.cpp
-      hal_audio.cpp
-      hal_camera.cpp
-data/                    # LittleFS filesystem payload (flashed separately)
-  config                 # Runtime config file
-  text.txt               # Sanity-check file ("hello, world!!!!!!!!!!")
-test/                    # PlatformIO unit/integration tests (currently empty)
-lib/                     # Project-private libraries (currently empty)
-include/                 # Shared headers (currently empty)
-partitions.csv           # Custom partition table: nvs(24KB) + factory(1MB) + storage(960KB LittleFS)
-platformio.ini           # PlatformIO build config
-default.env.user.ini     # Template for per-developer secrets (copy → .env.user.ini)
-Makefile                 # Convenience wrappers around pio commands
-AGENTS.md                # Agent/AI coding guidelines (mirrors this file's conventions)
-```
+
+Keep watering logic, pin mapping, runtime config schema, sensor behavior, and
+status payload shape in this project. Shared boot/wake lifecycle code belongs in
+`client-devices/common/lib/ina-client-common`.
 
 ---
 
 ## Build & Flash Workflow
 
 ### Prerequisites
+- Linux or WSL2. Native Windows builds are not supported because the project
+  uses a symlinked PlatformIO library.
 - PlatformIO installed (`platformio` in PATH or via `~/.platformio/penv/bin/`)
 - `.env.user.ini` populated from `default.env.user.ini`
 
@@ -100,26 +67,36 @@ AGENTS.md                # Agent/AI coding guidelines (mirrors this file's conve
 
 ## Configuration System
 
-Network credentials and MQTT settings flow at **build time** via `[user] network_flags` in `.env.user.ini`. These define preprocessor macros that `app_def.h` uses as defaults. At runtime, `AppConfig::init()` reads from NVS, falls back to defaults if uninitialized, then always calls `apply_network_defaults()` to overwrite the Wi-Fi/MQTT fields — so changing `.env.user.ini` and rebuilding is always enough.
+Network credentials and MQTT settings flow at **build time** via `[user] network_flags` in `.env.user.ini`. These define preprocessor macros that `app_def.h` uses as defaults. At runtime, `AppConfig::init()` reads from LittleFS, falls back to defaults if uninitialized, then stores the initial config.
 
-`AppConfig` is a packed struct stored in NVS with a CRC32 integrity check. Device ID is auto-generated as `INADS-{UUIDv4}` on first boot.
+`AppConfig` is a packed struct stored in LittleFS with a CRC32 integrity check. Device ID is auto-generated as `INADS-{UUIDv4}` on first boot.
 
 **Never hardcode secrets in `src/`.** `.env*` is gitignored.
 
 ---
 
-## Application Logic (`app_loop`)
+## Application Logic
 
-Each wake cycle (every `APP_WAKEUP_INTERVAL_SEC` = 36 000 s / 10 h):
+`app_init()` creates a `WateringDevice` concrete class and calls the common
+`AppDevice::initialize()` lifecycle. `app_loop()` delegates to
+`AppDevice::loop()`.
 
-1. Check/restore WiFi + MQTT connection; reboot on failure.
-2. Read soil moisture via `app_watering_get_last_soil_moisture()`.
-3. Run up to `APP_WATERING_MAX_LOOPS` (10) watering loops:
-   - Each loop: check moisture threshold (40%); if sufficient, skip and publish a `watering_skipped=true` status.
-   - If dry: call `app_watering_start_async(APP_WATERING_LOOP_DURATION_SEC=30)`, poll `app_watering_is_in_progress()`.
-   - After each loop, wait `APP_WATERING_SOAK_WAIT_SEC` (30 s) for soil infiltration.
-4. Publish JSON status over MQTT: `{seq, watering, watering_loops, watering_skipped, last_soil_moisture}`.
-5. Disconnect network, calculate remaining sleep time, call `esp_deep_sleep()`.
+Common lifecycle responsibilities:
+
+1. Mount LittleFS and load saved Wi-Fi/MQTT settings.
+2. Enter setup AP mode when enabled and settings are missing or connection setup fails.
+3. Start or reconnect Wi-Fi/MQTT.
+4. Request runtime config and OTA offer.
+5. Sync time and handle RTC fallback after deep sleep.
+6. Call `WateringDevice::run_device_cycle()`.
+7. Publish device status/debug log and enter deep sleep.
+
+Watering-device responsibilities:
+
+1. Parse and persist watering runtime config.
+2. Check due schedules and soil moisture.
+3. Run valve/pump output through `app_watering_start_async()`.
+4. Build the watering-specific status JSON payload.
 
 ---
 
@@ -144,7 +121,7 @@ Large payloads use `app_network_send_large()` which chunks data in 896-byte writ
 - **`hal_soil`** — ADC read with linear mapping from (`dry_raw=1895`, `wet_raw=1285`) to 0–100%. Calibration values match real sensor measurements for this hardware.
 - **`hal_temperature`** — DS18B20 via OneWire on pin `A0`.
 - **`hal_tds`** — TDS sensor on pin `A1`.
-- **`hal_config`** — NVS read/write for `AppConfig` struct.
+- **`hal_config`** — LittleFS read/write for `AppConfig` struct.
 
 ---
 

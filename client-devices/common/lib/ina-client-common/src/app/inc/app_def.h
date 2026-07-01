@@ -167,7 +167,7 @@
 #endif
 
 #ifndef APP_DEVICE_KIND
-#define APP_DEVICE_KIND "WTR"
+#define APP_DEVICE_KIND "DEV"
 #endif
 
 #ifndef APP_MQTT_OTA_KIND

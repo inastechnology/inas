@@ -59,7 +59,7 @@ Current reference build:
 
 | Artifact | Size |
 |---|---:|
-| `firmware.bin` | 892,704 bytes |
+| `firmware.bin` | 893,568 bytes |
 | Current `storage` image | 1,572,864 bytes |
 
 The current firmware has enough headroom for the OTA app slots. `APP_LITTLEFS_PARTITION_LABEL` must remain `storage`.
@@ -97,6 +97,8 @@ Required version rules:
 - `APP_FIRMWARE_VERSION` must be stable for a released binary.
 - `APP_FIRMWARE_BUILD_ID` should include build time or git commit.
 - `APP_DEVICE_KIND` must be stable for the firmware target hardware family.
+  Watering-device defines `APP_DEVICE_KIND="WTR"` in `platformio.ini`; the
+  common library only provides a generic fallback.
 - Server-side rollout decisions must use `firmware_version`, not only `device_id`.
 - Downgrade is rejected unless the offer explicitly sets `allow_downgrade: true`.
 
@@ -124,6 +126,8 @@ Rules:
 - Device OTA requests, normal status, OTA status, and firmware artifacts must include `device_kind`.
 - Hub must not offer an artifact whose `device_kind` differs from the requesting device.
 - Device firmware must reject an OTA offer whose `device_kind` differs from its built-in `APP_DEVICE_KIND`.
+- New device projects must assign their own three-letter code in their local
+  `platformio.ini`.
 
 ## 7. MQTT Topics
 
@@ -455,6 +459,7 @@ HTTP without TLS is acceptable only on a trusted local network and only with man
 Build firmware:
 
 ```bash
+cd client-devices/watering-device
 make build
 ```
 

@@ -1,0 +1,16 @@
+{
+  "name": "ina-client-common",
+  "version": "0.1.0",
+  "description": "Shared INAS client firmware framework code",
+  "frameworks": "arduino",
+  "platforms": "espressif32",
+  "build": {
+    "flags": [
+      "-I src/app/inc",
+      "-I src/hal/inc"
+    ],
+    "srcFilter": [
+      "+<*>"
+    ]
+  }
+}

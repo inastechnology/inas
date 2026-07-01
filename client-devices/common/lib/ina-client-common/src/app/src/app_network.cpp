@@ -8,9 +8,9 @@
 #include "app_network.h"
 #include "app_config.h"
 #include "app_debug_log.h"
+#include "app_device_adapter.h"
 #include "app_initial_setting.h"
 #include "app_task.h"
-#include "app_runtime_config.h"
 #include "app_ota.h"
 
 #define TAG __FILE__
@@ -45,6 +45,7 @@ static const char *kAppMsgMode[MAX_APP_MSG_TYPE] = {
 
 WiFiClient espClient;
 PubSubClient client(espClient);
+static bool s_setup_portal_enabled = true;
 
 void app_network_sub_callback(char *topic, byte *payload, unsigned int length);
 static bool app_network_subscribe_topics();
@@ -317,7 +318,7 @@ void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
     {
         if (strcmp(topicMode, APP_MQTT_CONFIG_PUSH_MODE) == 0 || strcmp(topicMode, APP_MQTT_CONFIG_REPLY_MODE) == 0)
         {
-            if (app_runtime_config_apply_json(payload, length))
+            if (app_device_adapter_apply_runtime_config_json(payload, length))
             {
                 Serial.println("Runtime config received via MQTT");
             }
@@ -366,13 +367,21 @@ bool app_network_start()
 {
     if (!appConfig.is_network_configured())
     {
-        Serial.println("Network configuration is missing; starting setup portal.");
+        Serial.println("Network configuration is missing.");
         Serial.printf("Missing fields: ssid=%s password=%s mqtt_broker=%s mqtt_port=%s\n",
                       strlen(appConfig.ssid) > 0 ? "set" : "empty",
                       strlen(appConfig.password) > 0 ? "set" : "empty",
                       strlen(appConfig.mqtt_broker) > 0 ? "set" : "empty",
                       appConfig.mqtt_port > 0 ? "set" : "empty");
-        app_initial_setting_start_portal(APP_INITIAL_SETTING_PORTAL_REASON_UNCONFIGURED);
+        if (s_setup_portal_enabled)
+        {
+            Serial.println("Starting setup portal.");
+            app_initial_setting_start_portal(APP_INITIAL_SETTING_PORTAL_REASON_UNCONFIGURED);
+        }
+        else
+        {
+            Serial.println("Setup portal is disabled; continuing without AP mode.");
+        }
         return false;
     }
 
@@ -402,15 +411,22 @@ bool app_network_start()
                             APP_DEBUG_EVENT_WIFI_FAILED,
                             static_cast<int32_t>(status),
                             0);
-        if (app_runtime_config_is_valid())
+        if (app_device_adapter_has_valid_runtime_config())
         {
             Serial.println("WiFi unavailable; continuing with saved runtime config.");
             return false;
         }
 
         Serial.println("No saved runtime config is available; starting setup portal for reconfiguration.");
-        app_initial_setting_start_portal(APP_INITIAL_SETTING_PORTAL_REASON_WIFI_FAILURE,
-                                         APP_SETUP_PORTAL_RECOVERY_TIMEOUT_MS);
+        if (s_setup_portal_enabled)
+        {
+            app_initial_setting_start_portal(APP_INITIAL_SETTING_PORTAL_REASON_WIFI_FAILURE,
+                                             APP_SETUP_PORTAL_RECOVERY_TIMEOUT_MS);
+        }
+        else
+        {
+            Serial.println("Setup portal is disabled; continuing without AP mode.");
+        }
         return false;
     }
     WiFi.setTxPower(WIFI_POWER_13dBm);
@@ -434,15 +450,22 @@ bool app_network_start()
 
     if (!app_network_connect_mqtt_with_retries("startup"))
     {
-        if (app_runtime_config_is_valid())
+        if (app_device_adapter_has_valid_runtime_config())
         {
             Serial.println("MQTT unavailable; continuing with saved runtime config.");
             return false;
         }
 
         Serial.println("No saved runtime config is available; starting setup portal for MQTT reconfiguration.");
-        app_initial_setting_start_portal(APP_INITIAL_SETTING_PORTAL_REASON_MQTT_FAILURE,
-                                         APP_SETUP_PORTAL_RECOVERY_TIMEOUT_MS);
+        if (s_setup_portal_enabled)
+        {
+            app_initial_setting_start_portal(APP_INITIAL_SETTING_PORTAL_REASON_MQTT_FAILURE,
+                                             APP_SETUP_PORTAL_RECOVERY_TIMEOUT_MS);
+        }
+        else
+        {
+            Serial.println("Setup portal is disabled; continuing without AP mode.");
+        }
         return false;
     }
 
@@ -675,14 +698,14 @@ bool app_network_wait_for_runtime_config(uint32_t timeout_ms)
     while ((millis() - start_ms) < timeout_ms)
     {
         app_network_loop();
-        if (app_runtime_config_is_received())
+        if (app_device_adapter_is_runtime_config_received())
         {
             return true;
         }
         delay(50);
     }
 
-    return app_runtime_config_is_received();
+    return app_device_adapter_is_runtime_config_received();
 }
 
 bool app_network_wait_for_ota_offer(uint32_t timeout_ms)
@@ -699,4 +722,14 @@ bool app_network_wait_for_ota_offer(uint32_t timeout_ms)
     }
 
     return app_ota_is_offer_received();
+}
+
+void app_network_set_setup_portal_enabled(bool enabled)
+{
+    s_setup_portal_enabled = enabled;
+}
+
+bool app_network_is_setup_portal_enabled()
+{
+    return s_setup_portal_enabled;
 }

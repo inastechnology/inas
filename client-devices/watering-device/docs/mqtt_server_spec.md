@@ -394,7 +394,7 @@ Current file id mapping:
 | file id | Source |
 |---:|---|
 | `1` | `src/app/src/app.cpp` |
-| `2` | `src/app/src/app_network.cpp` |
+| `2` | `../common/lib/ina-client-common/src/app/src/app_network.cpp` |
 | `3` | `src/app/src/app_runtime_config.cpp` |
 | `4` | `src/app/src/app_watering.cpp` |
 

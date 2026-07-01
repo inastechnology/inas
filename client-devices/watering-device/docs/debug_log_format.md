@@ -105,7 +105,7 @@ At publish time, records are packed until `APP_DEBUG_LOG_PAYLOAD_SIZE` would be 
 | Value | Symbol | Source |
 |---:|---|---|
 | `1` | `APP_DEBUG_FILE_APP` | `src/app/src/app.cpp` |
-| `2` | `APP_DEBUG_FILE_NETWORK` | `src/app/src/app_network.cpp` |
+| `2` | `APP_DEBUG_FILE_NETWORK` | `../common/lib/ina-client-common/src/app/src/app_network.cpp` |
 | `3` | `APP_DEBUG_FILE_RUNTIME_CONFIG` | `src/app/src/app_runtime_config.cpp` |
 | `4` | `APP_DEBUG_FILE_WATERING` | `src/app/src/app_watering.cpp` |
 
