@@ -14,6 +14,7 @@
 static AsyncWebServer s_server(80);
 static DNSServer s_dns_server;
 static bool s_restart_requested = false;
+static app_initial_setting_portal_reason_t s_portal_reason = APP_INITIAL_SETTING_PORTAL_REASON_UNCONFIGURED;
 
 static String app_initial_setting_escape_attr(const char *value);
 static uint8_t app_initial_setting_connected_station_count();
@@ -34,6 +35,25 @@ static const char *app_initial_setting_portal_reason_name(app_initial_setting_po
         return "mqtt_failure";
     default:
         return "unknown";
+    }
+}
+
+static const char *app_initial_setting_portal_reason_message(app_initial_setting_portal_reason_t reason)
+{
+    switch (reason)
+    {
+    case APP_INITIAL_SETTING_PORTAL_REASON_UNCONFIGURED:
+        return "Connection settings are not configured yet.";
+    case APP_INITIAL_SETTING_PORTAL_REASON_BUTTON:
+        return "Setup mode was requested with the BOOT button.";
+    case APP_INITIAL_SETTING_PORTAL_REASON_CONNECTION_RESET:
+        return "Connection settings were cleared with the BOOT button.";
+    case APP_INITIAL_SETTING_PORTAL_REASON_WIFI_FAILURE:
+        return "Wi-Fi connection failed before reaching the MQTT broker.";
+    case APP_INITIAL_SETTING_PORTAL_REASON_MQTT_FAILURE:
+        return "MQTT broker connection failed after Wi-Fi connected.";
+    default:
+        return "Setup mode was started for an unknown reason.";
     }
 }
 
@@ -100,7 +120,7 @@ static void app_initial_setting_copy_param(AsyncWebServerRequest *request,
 static String app_initial_setting_page()
 {
     String html;
-    html.reserve(4200);
+    html.reserve(4800);
     html += F("<!doctype html><html lang=\"ja\"><head><meta charset=\"utf-8\">");
     html += F("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
     html += F("<title>INA Water Controller Setup</title>");
@@ -113,11 +133,18 @@ static String app_initial_setting_page()
     html += F("input{box-sizing:border-box;width:100%;font:inherit;padding:10px 12px;border:1px solid #bcccdc;border-radius:6px;background:#fff}");
     html += F("input:focus{outline:2px solid #2f80ed33;border-color:#2f80ed}");
     html += F(".row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.hint{font-size:13px;color:#627d98;margin-top:6px}");
+    html += F(".reason{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px 14px;margin:14px 0 16px;color:#7c2d12}");
+    html += F(".reason strong{display:block;margin-bottom:4px}.reason code{font-size:12px;color:#9a3412}");
     html += F("button{width:100%;margin-top:20px;padding:12px 14px;border:0;border-radius:6px;background:#1f6feb;color:#fff;font-weight:700;font:inherit}");
     html += F("@media(max-width:520px){.row{grid-template-columns:1fr}}");
     html += F("</style></head><body><main>");
     html += F("<h1>INA Water Controller Setup</h1>");
     html += F("<p>Wi-Fi and MQTT settings are saved on the device. It will restart after saving.</p>");
+    html += F("<section class=\"reason\"><strong>AP mode reason</strong>");
+    html += app_initial_setting_portal_reason_message(s_portal_reason);
+    html += F("<br><code>");
+    html += app_initial_setting_portal_reason_name(s_portal_reason);
+    html += F("</code></section>");
     html += F("<form method=\"post\" action=\"/save\">");
     html += F("<label for=\"ssid\">Wi-Fi SSID</label>");
     html += F("<input id=\"ssid\" name=\"ssid\" required maxlength=\"255\" value=\"");
@@ -242,6 +269,7 @@ static void app_initial_setting_apply_form(AsyncWebServerRequest *request)
 
 void app_initial_setting_start_portal(app_initial_setting_portal_reason_t reason, uint32_t recovery_timeout_ms)
 {
+    s_portal_reason = reason;
     IPAddress ap_ip;
     ap_ip.fromString(APP_INITIAL_SETTING_AP_IP);
     const IPAddress subnet(255, 255, 255, 0);

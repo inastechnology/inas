@@ -54,6 +54,52 @@ machine:
 make flash-merged UPLOAD_PORT=/dev/ttyACM0
 ```
 
+To write the prebuilt merged image from Windows without rebuilding, copy
+`.pio/build/seeed_xiao_esp32s3/flash_merged.bin` and
+`../common/tools/xiao-esp32s3/flash.ps1` to the same folder on the
+Windows machine connected to the device. Then run PowerShell from that folder:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\flash.ps1 -Mode Merged -InstallEsptool
+```
+
+The merged image is written at offset `0x0`. It includes the bootloader,
+partition table, OTA boot metadata, application firmware, and LittleFS. Existing
+Wi-Fi/MQTT settings in `/.config` and saved runtime config are overwritten. When
+multiple COM ports are present, the script asks which port to use.
+
+The PowerShell flashing scripts are board-specific tools for the Seeed XIAO
+ESP32S3 OTA partition layout. They are managed under
+`client-devices/common/tools/xiao-esp32s3/` so other device projects can reuse
+them when they use the same board and flash layout.
+
+To write prebuilt `firmware.bin` from Windows without rebuilding and without
+writing LittleFS, copy `.pio/build/seeed_xiao_esp32s3/firmware.bin` and
+`../common/tools/xiao-esp32s3/flash.ps1` to the same folder on the Windows
+machine. Then run PowerShell from that folder:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\flash.ps1 -InstallEsptool
+```
+
+Use this after the OTA-capable merged image has already been written once. By
+default, `flash.ps1` writes `firmware.bin` to both OTA app slots (`app0` at
+`0x10000` and `app1` at `0x340000`) and does not write LittleFS. This preserves
+`/.config`. Pass `-Slot app0` or `-Slot app1` only when a single slot update is
+intentionally needed. When multiple COM ports are present, the script asks which
+port to use.
+
+For maintenance cases where `bootloader.bin`, `partitions.bin`, `boot_app0.bin`,
+and `firmware.bin` must be written together without writing LittleFS, copy those
+four binaries and `flash.ps1` to the same folder and use `-Mode WithBoot`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\flash.ps1 -Mode WithBoot -InstallEsptool
+```
+
+Do not use `-Mode WithBoot` for routine firmware-only updates unless partition
+or boot metadata refresh is also needed.
+
 See more details in the [Makefile](Makefile) or `make help` command. 
 
 ## Source Layout
@@ -96,7 +142,9 @@ URL:  http://192.168.4.1/
 ```
 
 The setup page accepts Wi-Fi SSID/password, MQTT broker/port, and optional MQTT
-username/password. Saving the form writes `/.config` and restarts the device.
+username/password. It also shows why setup AP mode was started, such as missing
+settings, BOOT button request, Wi-Fi failure, or MQTT failure. Saving the form
+writes `/.config` and restarts the device.
 When a saved runtime configuration is available, Wi-Fi or MQTT failure does not
 immediately force the setup AP. The device continues with the saved schedule and
 existing RTC time only when waking from deep sleep, then sleeps until the next
