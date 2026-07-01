@@ -123,6 +123,7 @@ Wi-FiまたはMQTTへ接続できない場合でも、保存済みruntime config
   "moisture_threshold": 40,
   "force_watering": false,
   "debug_log_on_wake": false,
+  "ota_check_interval_sec": 21600,
   "schedules": [
     {
       "hour": 7,
@@ -149,6 +150,7 @@ Wi-FiまたはMQTTへ接続できない場合でも、保存済みruntime config
 | `moisture_threshold` | 任意 | `0`から`100` | 土壌水分しきい値。土壌水分がこの値未満の場合に灌水 |
 | `force_watering` | 任意 | `true` / `false` | `true`の場合、土壌水分センサ値に関係なくスケジュール時刻に灌水 |
 | `debug_log_on_wake` | 任意 | `true` / `false` | `true`の場合、起床サイクル末尾にdebug logをMQTTへpublish |
+| `ota_check_interval_sec` | 任意 | `3600`から`86400` | OTA確認のための最大deep sleep時間。省略時は`21600`秒、つまり6時間 |
 | `schedules` | 必須 | 配列 | 灌水スケジュール。最低1件の有効なscheduleが必要 |
 
 schedule項目:
@@ -208,7 +210,8 @@ payload例:
   "watering_duration_sec": 60,
   "channel_mask": 1,
   "schedule_epoch_utc": 1714529400,
-  "next_sleep_sec": 37800,
+  "next_sleep_sec": 21600,
+  "ota_check_interval_sec": 21600,
   "last_soil_moisture": 32,
   "threshold": 40,
   "force_watering": true,
@@ -226,6 +229,7 @@ payload例:
 | `time_synced` | NTP時刻同期に成功したか |
 | `watering_due` | 実行対象スケジュールがあったか |
 | `watering_started` | 実際に灌水を開始したか。土壌水分が十分な場合は`false` |
+| `ota_check_interval_sec` | OTA確認のための最大deep sleep時間 |
 | `last_soil_moisture` | 最後に読み取った土壌水分 |
 | `threshold` | 使用した土壌水分しきい値 |
 | `force_watering` | 強制灌水設定が有効か |

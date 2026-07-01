@@ -32,6 +32,7 @@ struct WateringCycleState
     bool force_watering = false;
     bool debug_log_on_wake = false;
     bool runtime_config_valid = false;
+    uint32_t ota_check_interval_sec = APP_RUNTIME_DEFAULT_OTA_CHECK_INTERVAL_SEC;
 };
 
 class WateringDevice : public AppDevice
@@ -81,10 +82,11 @@ protected:
         (void)config_received;
         const app_runtime_config_t &runtime_config = app_runtime_config_get();
         app_watering_set_threshold(runtime_config.moisture_threshold);
-        Serial.printf("Runtime config in app loop: threshold=%u force_watering=%s debug_log_on_wake=%s\n",
+        Serial.printf("Runtime config in app loop: threshold=%u force_watering=%s debug_log_on_wake=%s ota_check_interval_sec=%lu\n",
                       runtime_config.moisture_threshold,
                       runtime_config.force_watering ? "true" : "false",
-                      runtime_config.debug_log_on_wake ? "true" : "false");
+                      runtime_config.debug_log_on_wake ? "true" : "false",
+                      static_cast<unsigned long>(runtime_config.ota_check_interval_sec));
         APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
                             APP_DEBUG_LOG_INFO,
                             APP_DEBUG_EVENT_RUNTIME_CONFIG_ACTIVE,
@@ -115,6 +117,7 @@ protected:
         m_cycle.force_watering = runtime_config.force_watering;
         m_cycle.debug_log_on_wake = runtime_config.debug_log_on_wake;
         m_cycle.runtime_config_valid = app_runtime_config_is_valid();
+        m_cycle.ota_check_interval_sec = runtime_config.ota_check_interval_sec;
 
         time_t now_utc = time(nullptr);
         app_schedule_entry_t due_schedule = {};
@@ -174,9 +177,17 @@ protected:
         }
 
         now_utc = time(nullptr);
-        result.next_sleep_sec = (context.time_synced && app_runtime_config_is_valid())
-                                    ? app_runtime_config_seconds_until_next_schedule(now_utc)
-                                    : context.network_retry_sleep_sec;
+        if (context.time_synced && app_runtime_config_is_valid())
+        {
+            const uint32_t schedule_sleep_sec = app_runtime_config_seconds_until_next_schedule(now_utc);
+            result.next_sleep_sec = schedule_sleep_sec < runtime_config.ota_check_interval_sec
+                                        ? schedule_sleep_sec
+                                        : runtime_config.ota_check_interval_sec;
+        }
+        else
+        {
+            result.next_sleep_sec = context.network_retry_sleep_sec;
+        }
         result.publish_debug_log = app_runtime_config_is_valid() && runtime_config.debug_log_on_wake;
         return result;
     }
@@ -187,7 +198,7 @@ protected:
         char payload[1024];
         snprintf(payload,
                  sizeof(payload),
-                 "{\"seq\":%u,\"device_kind\":\"%s\",\"firmware_version\":\"%s\",\"firmware_build_id\":\"%s\",\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s,\"debug_log_on_wake\":%s,\"ota_update_attempted\":%s}",
+                 "{\"seq\":%u,\"device_kind\":\"%s\",\"firmware_version\":\"%s\",\"firmware_build_id\":\"%s\",\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"ota_check_interval_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s,\"debug_log_on_wake\":%s,\"ota_update_attempted\":%s}",
                  context.seq_id,
                  APP_DEVICE_KIND,
                  APP_FIRMWARE_VERSION,
@@ -202,6 +213,7 @@ protected:
                  static_cast<unsigned long>(m_cycle.channel_mask),
                  static_cast<long>(m_cycle.schedule_epoch_utc),
                  static_cast<unsigned long>(cycle_result.next_sleep_sec),
+                 static_cast<unsigned long>(m_cycle.ota_check_interval_sec),
                  m_cycle.last_soil_moisture,
                  app_watering_get_threshold(),
                  m_cycle.force_watering ? "true" : "false",

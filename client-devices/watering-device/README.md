@@ -163,6 +163,7 @@ Payload example:
   "moisture_threshold": 35,
   "force_watering": false,
   "debug_log_on_wake": false,
+  "ota_check_interval_sec": 21600,
   "schedules": [
     {
       "hour": 6,
@@ -188,6 +189,7 @@ Notes:
 - Up to 8 schedules are accepted.
 - Set `force_watering` to `true` to water on due schedules even when the soil sensor reports enough moisture.
 - Set `debug_log_on_wake` to `true` to publish one compact binary debug log payload for each wake cycle to `/DEVICE_ID/kinds/debug/log`.
+- Set `ota_check_interval_sec` to control the maximum deep-sleep interval before the next OTA check. The default is 21,600 seconds (6 hours), and the firmware clamps accepted values to 1 to 24 hours.
   See [docs/debug_log_format.md](docs/debug_log_format.md) for the binary format.
 
 ## License

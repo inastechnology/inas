@@ -24,6 +24,7 @@
 | 2. Key Decisions | Firmware body is downloaded over HTTP; MQTT only carries request/offer/status | common `app_ota.cpp` uses `HTTPClient`; common `app_network.cpp` handles `ota/*` control topics only | `make build`; `make merged-bin` |
 | 2. Key Decisions | Hub decides update availability | `OTAUpdateService.decide_offer()` compares device state, `target_firmware_version`, current firmware, artifact, and rollout state | `hub/tests/test_ota_update_service.py` |
 | 2. Key Decisions | OTA runs after runtime config and before watering | `app.cpp` requests runtime config first, then calls `app_network_request_ota_update()` before NTP/schedule watering decision | `make build` |
+| 2. Key Decisions | Deep sleep duration is capped for periodic OTA checks | `app_runtime_config_t.ota_check_interval_sec`; `WateringDevice::run_device_cycle()` uses the earlier of next watering schedule and OTA check interval | `make build` |
 | 2. Key Decisions | Common transport does not depend on device runtime config headers | common `app_network.cpp` calls `AppDeviceAdapter`; `AppDevice::initialize()` registers watering-device `WateringDevice` | `make build` |
 | 2. Key Decisions | Watering is skipped when OTA starts | `app_ota_handle_offer()` returns attempted state; `app.cpp` skips watering when `ota_update_attempted` is true | `make build` |
 | 2. Key Decisions | SHA-256 is mandatory | `app_ota_download_and_install()` computes SHA-256 while downloading and rejects mismatches | `make build` |
@@ -46,7 +47,7 @@
 
 | Command | Result |
 |---|---|
-| `make build` in `client-devices/watering-device/` | Passed. Program used: 893,133 bytes; `firmware.bin`: 893,568 bytes; app slot: 3,342,336 bytes. |
+| `make build` in `client-devices/watering-device/` | Passed. Program used: 894,789 bytes; `firmware.bin`: 895,216 bytes; app slot: 3,342,336 bytes. |
 | `make buildfs` in `client-devices/watering-device/` | Passed. LittleFS image: 1,572,864 bytes. |
 | `make merged-bin` in `client-devices/watering-device/` | Passed. `littlefs.bin` merged at `0x670000`. |
 | `PYTHONPATH=src python -m unittest discover -s tests` in `hub/` | Passed. 28 tests. |

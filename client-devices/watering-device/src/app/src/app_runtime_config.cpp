@@ -11,9 +11,23 @@
 #define TAG "app_runtime_config"
 #define APP_RUNTIME_CONFIG_FILE "/.runtime_config"
 #define APP_RUNTIME_CONFIG_STORE_MAGIC 0x52544346UL
-#define APP_RUNTIME_CONFIG_STORE_VERSION 1
+#define APP_RUNTIME_CONFIG_STORE_VERSION 2
+#define APP_RUNTIME_CONFIG_STORE_VERSION_V1 1
 
 static app_runtime_config_t s_runtime_config;
+
+typedef struct
+{
+    bool valid;
+    bool received_from_mqtt;
+    char ntp_server[256];
+    int32_t timezone_offset_sec;
+    uint8_t moisture_threshold;
+    bool force_watering;
+    uint8_t schedule_count;
+    bool debug_log_on_wake;
+    app_schedule_entry_t schedules[APP_RUNTIME_MAX_SCHEDULES];
+} app_runtime_config_v1_t;
 
 typedef struct
 {
@@ -23,6 +37,57 @@ typedef struct
     app_runtime_config_t config;
     uint32_t crc32;
 } app_runtime_config_store_t;
+
+typedef struct
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t config_size;
+    app_runtime_config_v1_t config;
+    uint32_t crc32;
+} app_runtime_config_store_v1_t;
+
+static_assert(offsetof(app_runtime_config_v1_t, schedules) == 268,
+              "Unexpected app_runtime_config_v1_t layout; check migration");
+
+static uint32_t app_runtime_config_sanitize_ota_check_interval(uint32_t interval_sec)
+{
+    if (interval_sec < APP_RUNTIME_MIN_OTA_CHECK_INTERVAL_SEC)
+    {
+        return APP_RUNTIME_MIN_OTA_CHECK_INTERVAL_SEC;
+    }
+    if (interval_sec > APP_RUNTIME_MAX_OTA_CHECK_INTERVAL_SEC)
+    {
+        return APP_RUNTIME_MAX_OTA_CHECK_INTERVAL_SEC;
+    }
+    return interval_sec;
+}
+
+static bool app_runtime_config_content_is_valid(const app_runtime_config_t &config)
+{
+    return config.valid &&
+           config.schedule_count > 0 &&
+           config.schedule_count <= APP_RUNTIME_MAX_SCHEDULES &&
+           config.ota_check_interval_sec >= APP_RUNTIME_MIN_OTA_CHECK_INTERVAL_SEC &&
+           config.ota_check_interval_sec <= APP_RUNTIME_MAX_OTA_CHECK_INTERVAL_SEC;
+}
+
+static app_runtime_config_t app_runtime_config_from_v1(const app_runtime_config_v1_t &legacy)
+{
+    app_runtime_config_t current = {};
+    current.valid = legacy.valid;
+    current.received_from_mqtt = legacy.received_from_mqtt;
+    strncpy(current.ntp_server, legacy.ntp_server, sizeof(current.ntp_server) - 1);
+    current.ntp_server[sizeof(current.ntp_server) - 1] = '\0';
+    current.timezone_offset_sec = legacy.timezone_offset_sec;
+    current.moisture_threshold = legacy.moisture_threshold;
+    current.force_watering = legacy.force_watering;
+    current.schedule_count = legacy.schedule_count;
+    current.debug_log_on_wake = legacy.debug_log_on_wake;
+    current.ota_check_interval_sec = APP_RUNTIME_DEFAULT_OTA_CHECK_INTERVAL_SEC;
+    memcpy(current.schedules, legacy.schedules, sizeof(current.schedules));
+    return current;
+}
 
 static time_t app_runtime_config_local_day_start(time_t now_utc, int32_t timezone_offset_sec)
 {
@@ -46,9 +111,10 @@ static int32_t app_runtime_config_pack_flags(const app_runtime_config_t &config)
 
 static void app_runtime_config_print_schedules(const app_runtime_config_t &config)
 {
-    Serial.printf("Runtime schedules: count=%u debug_log_on_wake=%s\n",
+    Serial.printf("Runtime schedules: count=%u debug_log_on_wake=%s ota_check_interval_sec=%lu\n",
                   config.schedule_count,
-                  config.debug_log_on_wake ? "true" : "false");
+                  config.debug_log_on_wake ? "true" : "false",
+                  static_cast<unsigned long>(config.ota_check_interval_sec));
     for (uint8_t i = 0; i < config.schedule_count; i++)
     {
         const app_schedule_entry_t &schedule = config.schedules[i];
@@ -69,14 +135,16 @@ void app_runtime_config_init()
     s_runtime_config.moisture_threshold = 40;
     s_runtime_config.force_watering = false;
     s_runtime_config.debug_log_on_wake = false;
+    s_runtime_config.ota_check_interval_sec = APP_RUNTIME_DEFAULT_OTA_CHECK_INTERVAL_SEC;
 
     if (app_runtime_config_load_saved())
     {
-        Serial.printf("Loaded saved runtime config: ntp=%s tz=%ld threshold=%u force_watering=%s schedules=%u\n",
+        Serial.printf("Loaded saved runtime config: ntp=%s tz=%ld threshold=%u force_watering=%s ota_check_interval_sec=%lu schedules=%u\n",
                       s_runtime_config.ntp_server,
                       static_cast<long>(s_runtime_config.timezone_offset_sec),
                       s_runtime_config.moisture_threshold,
                       s_runtime_config.force_watering ? "true" : "false",
+                      static_cast<unsigned long>(s_runtime_config.ota_check_interval_sec),
                       s_runtime_config.schedule_count);
         app_runtime_config_print_schedules(s_runtime_config);
     }
@@ -123,6 +191,12 @@ bool app_runtime_config_apply_json(const uint8_t *payload, size_t length)
     next.moisture_threshold = static_cast<uint8_t>(threshold);
     next.force_watering = doc["force_watering"] | false;
     next.debug_log_on_wake = doc["debug_log_on_wake"] | (doc["debug_log_enabled"] | false);
+    long ota_check_interval_sec = doc["ota_check_interval_sec"] | static_cast<long>(next.ota_check_interval_sec);
+    if (ota_check_interval_sec < 0)
+    {
+        ota_check_interval_sec = 0;
+    }
+    next.ota_check_interval_sec = app_runtime_config_sanitize_ota_check_interval(static_cast<uint32_t>(ota_check_interval_sec));
 
     const JsonArrayConst schedules = doc["schedules"].as<JsonArrayConst>();
     for (JsonObjectConst schedule_json : schedules)
@@ -162,11 +236,12 @@ bool app_runtime_config_apply_json(const uint8_t *payload, size_t length)
 
     app_runtime_config_save_current();
 
-    Serial.printf("Runtime config updated: ntp=%s tz=%ld threshold=%u force_watering=%s schedules=%u\n",
+    Serial.printf("Runtime config updated: ntp=%s tz=%ld threshold=%u force_watering=%s ota_check_interval_sec=%lu schedules=%u\n",
                   s_runtime_config.ntp_server,
                   static_cast<long>(s_runtime_config.timezone_offset_sec),
                   s_runtime_config.moisture_threshold,
                   s_runtime_config.force_watering ? "true" : "false",
+                  static_cast<unsigned long>(s_runtime_config.ota_check_interval_sec),
                   s_runtime_config.schedule_count);
     app_runtime_config_print_schedules(s_runtime_config);
     APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_RUNTIME_CONFIG,
@@ -193,7 +268,76 @@ bool app_runtime_config_load_saved()
         return false;
     }
 
+    struct
+    {
+        uint32_t magic;
+        uint16_t version;
+        uint16_t config_size;
+    } header = {};
+    const size_t header_read_size = file.read(reinterpret_cast<uint8_t *>(&header), sizeof(header));
+    if (header_read_size != sizeof(header))
+    {
+        Serial.println("Saved runtime config header read failed");
+        file.close();
+        return false;
+    }
+
+    if (header.magic != APP_RUNTIME_CONFIG_STORE_MAGIC)
+    {
+        Serial.println("Saved runtime config header is invalid");
+        file.close();
+        return false;
+    }
+
+    if (header.version == APP_RUNTIME_CONFIG_STORE_VERSION_V1 &&
+        header.config_size == sizeof(app_runtime_config_v1_t))
+    {
+        app_runtime_config_store_v1_t store = {};
+        file.seek(0);
+        const size_t read_size = file.read(reinterpret_cast<uint8_t *>(&store), sizeof(store));
+        file.close();
+
+        if (read_size != sizeof(store))
+        {
+            Serial.printf("Saved runtime config v1 size mismatch: %u/%u\n",
+                          static_cast<unsigned int>(read_size),
+                          static_cast<unsigned int>(sizeof(store)));
+            return false;
+        }
+
+        const uint32_t expected_crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
+                                                       sizeof(store) - sizeof(store.crc32));
+        if (store.crc32 != expected_crc32)
+        {
+            Serial.printf("Saved runtime config v1 CRC mismatch actual=0x%08X expected=0x%08X\n",
+                          store.crc32,
+                          expected_crc32);
+            return false;
+        }
+
+        app_runtime_config_t migrated = app_runtime_config_from_v1(store.config);
+        migrated.received_from_mqtt = false;
+        if (!app_runtime_config_content_is_valid(migrated))
+        {
+            Serial.println("Saved runtime config v1 content is invalid");
+            return false;
+        }
+
+        s_runtime_config = migrated;
+        app_runtime_config_save_current();
+        return true;
+    }
+
+    if (header.version != APP_RUNTIME_CONFIG_STORE_VERSION ||
+        header.config_size != sizeof(app_runtime_config_t))
+    {
+        Serial.println("Saved runtime config header is unsupported");
+        file.close();
+        return false;
+    }
+
     app_runtime_config_store_t store = {};
+    file.seek(0);
     const size_t read_size = file.read(reinterpret_cast<uint8_t *>(&store), sizeof(store));
     file.close();
 
@@ -202,14 +346,6 @@ bool app_runtime_config_load_saved()
         Serial.printf("Saved runtime config size mismatch: %u/%u\n",
                       static_cast<unsigned int>(read_size),
                       static_cast<unsigned int>(sizeof(store)));
-        return false;
-    }
-
-    if (store.magic != APP_RUNTIME_CONFIG_STORE_MAGIC ||
-        store.version != APP_RUNTIME_CONFIG_STORE_VERSION ||
-        store.config_size != sizeof(app_runtime_config_t))
-    {
-        Serial.println("Saved runtime config header is invalid");
         return false;
     }
 
@@ -223,7 +359,7 @@ bool app_runtime_config_load_saved()
         return false;
     }
 
-    if (!store.config.valid || store.config.schedule_count == 0 || store.config.schedule_count > APP_RUNTIME_MAX_SCHEDULES)
+    if (!app_runtime_config_content_is_valid(store.config))
     {
         Serial.println("Saved runtime config content is invalid");
         return false;
@@ -236,7 +372,7 @@ bool app_runtime_config_load_saved()
 
 bool app_runtime_config_save_current()
 {
-    if (!s_runtime_config.valid || s_runtime_config.schedule_count == 0)
+    if (!app_runtime_config_content_is_valid(s_runtime_config))
     {
         Serial.println("Skip saving invalid runtime config");
         return false;

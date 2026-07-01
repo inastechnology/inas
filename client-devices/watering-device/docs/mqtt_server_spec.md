@@ -213,6 +213,7 @@ payloadはJSONです。
   "moisture_threshold": 40,
   "force_watering": false,
   "debug_log_on_wake": false,
+  "ota_check_interval_sec": 21600,
   "schedules": [
     {
       "hour": 7,
@@ -239,6 +240,7 @@ payloadはJSONです。
 | `moisture_threshold` | No | integer | `0..100`, default: previous value or `40` | Watering starts only when soil moisture is below this value |
 | `force_watering` | No | boolean | default: `false` | Water on due schedules even when soil moisture is high |
 | `debug_log_on_wake` | No | boolean | default: `false` | Publish a debug log at the end of each wake cycle |
+| `ota_check_interval_sec` | No | integer | `3600..86400`, default: `21600` | Maximum deep-sleep interval before the next OTA check. Device wakes earlier when a watering schedule is due |
 | `schedules` | Yes | array | 1 to 8 valid entries | Daily watering schedules |
 
 ### Schedule fields
@@ -311,7 +313,8 @@ payload例:
   "watering_duration_sec": 60,
   "channel_mask": 1,
   "schedule_epoch_utc": 1714529400,
-  "next_sleep_sec": 37800,
+  "next_sleep_sec": 21600,
+  "ota_check_interval_sec": 21600,
   "last_soil_moisture": 32,
   "threshold": 40,
   "force_watering": true,
@@ -336,7 +339,8 @@ payload例:
 | `watering_duration_sec` | integer | Scheduled watering duration. `0` when no schedule was due |
 | `channel_mask` | integer | Scheduled output channel mask. `0` when no schedule was due |
 | `schedule_epoch_utc` | integer | Due schedule time as UTC epoch. `0` when no schedule was due |
-| `next_sleep_sec` | integer | Planned sleep duration until next wake-up |
+| `next_sleep_sec` | integer | Planned sleep duration until next wake-up. This is capped by `ota_check_interval_sec` when runtime config is valid |
+| `ota_check_interval_sec` | integer | Active maximum deep-sleep interval for OTA checks |
 | `last_soil_moisture` | integer | Last measured soil moisture percent |
 | `threshold` | integer | Moisture threshold used for this cycle |
 | `force_watering` | boolean | Whether force watering was enabled in the active config |
@@ -490,6 +494,7 @@ on_message(topic, payload):
   "ntp_server": "pool.ntp.org",
   "timezone_offset_sec": 32400,
   "moisture_threshold": 0,
+  "ota_check_interval_sec": 21600,
   "schedules": [
     {
       "hour": 7,
@@ -771,7 +776,7 @@ config replyを送信:
 ```bash
 mosquitto_pub -h <broker> \
   -t '/INADS-xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx/kinds/config/reply' \
-  -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
+  -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"ota_check_interval_sec":21600,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
 ```
 
 retained config pushを送信:
@@ -779,7 +784,7 @@ retained config pushを送信:
 ```bash
 mosquitto_pub -h <broker> -r \
   -t '/INADS-xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx/kinds/config/push' \
-  -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
+  -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"ota_check_interval_sec":21600,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
 ```
 
 ## 17. Compatibility Notes

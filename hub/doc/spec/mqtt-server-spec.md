@@ -203,6 +203,7 @@ payloadはJSONです。
   "ntp_server": "pool.ntp.org",
   "timezone_offset_sec": 32400,
   "moisture_threshold": 40,
+  "ota_check_interval_sec": 21600,
   "schedules": [
     {
       "hour": 7,
@@ -227,6 +228,7 @@ payloadはJSONです。
 | `ntp_server` | No | string | default: MQTT broker address | NTP server hostname or IP |
 | `timezone_offset_sec` | No | integer | default: `0` | Local timezone offset from UTC in seconds. Japan: `32400` |
 | `moisture_threshold` | No | integer | `0..100`, default: previous value or `40` | Watering starts only when soil moisture is below this value |
+| `ota_check_interval_sec` | No | integer | `3600..86400`, default: `21600` | Maximum deep-sleep interval before the next OTA check. Device wakes earlier when a watering schedule is due |
 | `schedules` | Yes | array | 1 to 8 valid entries | Daily watering schedules |
 
 ### Schedule fields
@@ -295,7 +297,8 @@ payload例:
   "watering_duration_sec": 60,
   "channel_mask": 1,
   "schedule_epoch_utc": 1714529400,
-  "next_sleep_sec": 37800,
+  "next_sleep_sec": 21600,
+  "ota_check_interval_sec": 21600,
   "last_soil_moisture": 32,
   "threshold": 40
 }
@@ -313,7 +316,8 @@ payload例:
 | `watering_duration_sec` | integer | Scheduled watering duration. `0` when no schedule was due |
 | `channel_mask` | integer | Scheduled output channel mask. `0` when no schedule was due |
 | `schedule_epoch_utc` | integer | Due schedule time as UTC epoch. `0` when no schedule was due |
-| `next_sleep_sec` | integer | Planned sleep duration until next wake-up |
+| `next_sleep_sec` | integer | Planned sleep duration until next wake-up. This is capped by `ota_check_interval_sec` when runtime config is valid |
+| `ota_check_interval_sec` | integer | Active maximum deep-sleep interval for OTA checks |
 | `last_soil_moisture` | integer | Last measured soil moisture percent |
 | `threshold` | integer | Moisture threshold used for this cycle |
 
@@ -668,7 +672,7 @@ config replyを送信:
 ```bash
 mosquitto_pub -h <broker> \
   -t '/INADS-xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx/kinds/config/reply' \
-  -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
+  -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"ota_check_interval_sec":21600,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
 ```
 
 retained config pushを送信:
@@ -676,7 +680,7 @@ retained config pushを送信:
 ```bash
 mosquitto_pub -h <broker> -r \
   -t '/INADS-xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx/kinds/config/push' \
-  -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
+  -m '{"ntp_server":"pool.ntp.org","timezone_offset_sec":32400,"moisture_threshold":40,"ota_check_interval_sec":21600,"schedules":[{"hour":7,"minute":30,"duration_sec":60,"channel_mask":1}]}'
 ```
 
 ## 15. Compatibility Notes
@@ -686,4 +690,3 @@ mosquitto_pub -h <broker> -r \
 - topic内の`device_id`が自分のIDと一致しないmessageは無視します。
 - `config/request`はデバイスからserverへの要求であり、デバイス側はrequest topicをruntime configとして処理しません。
 - 現状、デバイス側からconfig適用成功/失敗だけを直接ackする専用topicはありません。`status.config_received`で結果を判断してください。
-

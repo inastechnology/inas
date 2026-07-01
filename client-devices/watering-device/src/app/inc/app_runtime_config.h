@@ -5,6 +5,9 @@
 #include <stddef.h>
 
 constexpr uint8_t APP_RUNTIME_MAX_SCHEDULES = 8;
+constexpr uint32_t APP_RUNTIME_DEFAULT_OTA_CHECK_INTERVAL_SEC = 6UL * 60UL * 60UL;
+constexpr uint32_t APP_RUNTIME_MIN_OTA_CHECK_INTERVAL_SEC = 60UL * 60UL;
+constexpr uint32_t APP_RUNTIME_MAX_OTA_CHECK_INTERVAL_SEC = 24UL * 60UL * 60UL;
 
 typedef struct
 {
@@ -24,6 +27,7 @@ typedef struct
     bool force_watering;
     uint8_t schedule_count;
     bool debug_log_on_wake;
+    uint32_t ota_check_interval_sec;
     app_schedule_entry_t schedules[APP_RUNTIME_MAX_SCHEDULES];
 } app_runtime_config_t;
 
@@ -35,7 +39,9 @@ static_assert(offsetof(app_runtime_config_t, schedule_count) == 266,
               "Unexpected app_runtime_config_t layout; check packing pragmas");
 static_assert(offsetof(app_runtime_config_t, debug_log_on_wake) == 267,
               "Unexpected app_runtime_config_t layout; check packing pragmas");
-static_assert(offsetof(app_runtime_config_t, schedules) == 268,
+static_assert(offsetof(app_runtime_config_t, ota_check_interval_sec) == 268,
+              "Unexpected app_runtime_config_t layout; check packing pragmas");
+static_assert(offsetof(app_runtime_config_t, schedules) == 272,
               "Unexpected app_runtime_config_t layout; check packing pragmas");
 
 void app_runtime_config_init();

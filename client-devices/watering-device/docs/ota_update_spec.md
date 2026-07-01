@@ -30,6 +30,7 @@ LittleFSには`/.config`と`/.runtime_config`が保存されます。filesystem 
 - OTAはruntime config取得後、灌水判定前に実行する。
 - OTA更新を開始した起床サイクルでは灌水しない。更新成功後に再起動し、次回起床サイクルから通常動作する。
 - Firmware binaryは必ずSHA-256で検証する。
+- deep sleepは次回灌水予定時刻までを基本とするが、OTA確認遅延に上限を持たせるため、runtime configの`ota_check_interval_sec`で最大sleep時間をcapする。defaultは`21600`秒、つまり6時間。
 
 ## 3. Required Partition Layout
 
@@ -59,7 +60,7 @@ Current reference build:
 
 | Artifact | Size |
 |---|---:|
-| `firmware.bin` | 893,568 bytes |
+| `firmware.bin` | 895,216 bytes |
 | Current `storage` image | 1,572,864 bytes |
 
 The current firmware has enough headroom for the OTA app slots. `APP_LITTLEFS_PARTITION_LABEL` must remain `storage`.
@@ -300,6 +301,7 @@ Recommended wake-cycle order:
 11. If verification fails, abort update, publish `state: "failed"`, and continue normal flow unless `force` requires retry-only behavior.
 12. If verification succeeds, set the next boot partition, persist pending OTA metadata, publish `state: "rebooting"`, flush MQTT, and restart.
 13. On next boot, publish normal status with the new firmware version and an OTA result status.
+14. When normal flow continues to deep sleep, set the sleep duration to the earlier of the next watering schedule and `ota_check_interval_sec`.
 
 Timeout defaults:
 
@@ -309,6 +311,7 @@ Timeout defaults:
 | HTTP connect timeout | 10 seconds |
 | HTTP read timeout | 30 seconds |
 | Whole OTA operation timeout | 180 seconds |
+| OTA check interval cap | 21,600 seconds |
 
 If OTA starts, watering is skipped in that cycle. This avoids running actuators while flash is being rewritten or immediately before a reboot.
 
