@@ -9,7 +9,7 @@ set -euo pipefail
 # Usage:
 #   sudo ./scripts/setup_config_server.sh \
 #     --target-dir /opt/ina-device-hub \
-#     --user pi \
+#     --user inas \
 #     --ntp-server-name my_device.local \
 #     --allow-cidr 192.168.0.0/24
 
@@ -111,7 +111,9 @@ fi
 if [[ -z "$TARGET_DIR" ]]; then
   TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6 || true)"
   if [[ -z "$TARGET_HOME" ]]; then
-    TARGET_HOME="/home/$TARGET_USER"
+    echo "Target user does not exist or has no home directory: $TARGET_USER" >&2
+    echo "Create the user first, or pass --user with an existing account." >&2
+    exit 4
   fi
   TARGET_DIR="$TARGET_HOME/ina-device-hub"
 fi
@@ -229,8 +231,8 @@ show_summary() {
   echo "  timedatectl status"
   echo "  chronyc tracking || chronyc sources"
   echo "  systemctl status chrony.service || systemctl status chronyd.service"
-  echo "  journalctl -u inas-device-hub@frontend -n 100 --no-pager"
-  echo "  journalctl -u inas-device-hub@backend -n 100 --no-pager"
+  echo "  journalctl -u inas-device-hub@main -n 100 --no-pager"
+  echo "  journalctl -u inas-cloudflare-tunnel -n 100 --no-pager"
 }
 
 install_app_service

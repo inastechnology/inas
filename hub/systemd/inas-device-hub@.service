@@ -5,10 +5,10 @@ After=network-online.target mosquitto.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/pi
-ExecStart=/home/pi/serve.sh %I
+WorkingDirectory=@@INAS_HUB_DIR@@
+ExecStart=@@INAS_HUB_DIR@@/serve.sh %I
 Environment=PYTHONUNBUFFERED=1
-User=pi
+User=@@INAS_HUB_USER@@
 Restart=on-failure
 RestartSec=10
 

@@ -84,4 +84,7 @@ if [[ "$START_TUNNEL" == "true" ]]; then
 fi
 
 echo "Cloudflare hosted setup complete."
-echo "Start the tunnel with: bash scripts/cloudflare_tunnel_start.sh"
+echo "For systemd-managed tunnel startup, install services with:"
+echo "  sudo scripts/install_service.sh --target-dir \"$REPO_ROOT\" --enable-cloudflare-tunnel"
+echo "For foreground tunnel startup, run:"
+echo "  bash scripts/cloudflare_tunnel_start.sh"

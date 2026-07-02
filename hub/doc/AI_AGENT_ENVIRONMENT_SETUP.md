@@ -151,6 +151,45 @@ python3 scripts/cloudflare_tunnel_setup.py --dry-run provision
 
 ## Cloudflare 起動手順
 
+現場デバイスでは systemd 管理を標準にする。`cloudflare_tunnel_daemon.sh` は手動切り分け用で、常駐運用には使わない。
+
+Cloudflare hosted setup 後、hub と tunnel の systemd unit を配置して有効化する。
+
+```bash
+cd hub
+sudo scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
+```
+
+この script は以下を行う。
+
+- `systemd/inas-device-hub@.service` を `/etc/systemd/system/inas-device-hub@.service` に配置する。
+- `systemd/inas-cloudflare-tunnel.service` を `/etc/systemd/system/inas-cloudflare-tunnel.service` に配置する。
+- unit template 内の `@@INAS_HUB_DIR@@` / `@@INAS_HUB_USER@@` を対象デバイスの install path と実行 user に置換する。
+- `inas-device-hub@main.service` を enable/start する。
+- `inas-cloudflare-tunnel.service` を enable/start する。
+
+systemd unit では `WorkingDirectory` に shell のような環境変数展開を期待しない。install path は `.env` ではなく、`scripts/install_service.sh --target-dir ...` で unit 生成時に埋め込む。
+
+Cloudflare Tunnel service は `scripts/cloudflare_tunnel_setup.py --env-file .env start` を systemd の `Restart=always` で起動する。事前に `scripts/cloudflare_hosted_setup.sh --install-cloudflared` または `scripts/cloudflare_tunnel_setup.py --write-env provision` を実行し、`.env` と `hub/.data/cloudflare/tunnel-token` を作成しておく。
+
+systemd 状態確認:
+
+```bash
+systemctl status inas-device-hub@main.service --no-pager
+systemctl status inas-cloudflare-tunnel.service --no-pager
+journalctl -u inas-cloudflare-tunnel.service -f
+```
+
+Cloudflare Tunnel の origin port を変更した場合は、`.env` の `HUB_HTTP_PORT` と `CLOUDFLARE_TUNNEL_ORIGIN_URL` を合わせ、hub service を再起動し、Cloudflare remote config を再 provision する。
+
+```bash
+sudo systemctl restart inas-device-hub@main.service
+python3 scripts/cloudflare_tunnel_setup.py --env-file .env --write-env provision
+sudo systemctl restart inas-cloudflare-tunnel.service
+```
+
+local hub と tunnel を systemd ではなく一時的に foreground 起動する場合だけ、次の手順を使う。
+
 local hub と tunnel をまとめて foreground 起動する。
 
 ```bash
@@ -171,7 +210,7 @@ tunnel だけ起動する場合:
 bash scripts/cloudflare_tunnel_start.sh
 ```
 
-foreground を占有せず tunnel だけ常駐させる場合:
+foreground を占有せず tunnel だけ手動常駐させる場合:
 
 ```bash
 bash scripts/cloudflare_tunnel_daemon.sh --install-cloudflared start
@@ -179,6 +218,8 @@ bash scripts/cloudflare_tunnel_daemon.sh status
 bash scripts/cloudflare_tunnel_daemon.sh logs
 bash scripts/cloudflare_tunnel_daemon.sh stop
 ```
+
+AI Agent の sandbox 内では PID namespace の違いで `cloudflare_tunnel_daemon.sh status` が stale pid と誤判定することがある。運用確認は systemd の `systemctl status` / `journalctl` を優先する。
 
 公開 hostname が Cloudflare Access で保護されているか確認する。
 

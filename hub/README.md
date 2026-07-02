@@ -53,7 +53,8 @@ systemd による自動起動（推奨）
 - インストール実行者（`sudo` で実行した場合は元のユーザー）をサービス実行ユーザーに設定
 - `.default.env` を `.env` にコピー（無ければ簡易テンプレートを作成）
 - `systemd/inas-device-hub@.service` を `/etc/systemd/system/` に配置し、
-	テンプレート内の `/home/pi` と `User=pi` をターゲットのパス・ユーザーに置換
+  テンプレート内の `@@INAS_HUB_DIR@@` と `@@INAS_HUB_USER@@` をターゲットのパス・ユーザーに置換
+- Cloudflare Tunnel 設定がある場合は `systemd/inas-cloudflare-tunnel.service` も配置・有効化
 - `inas-device-hub@main` を有効化・起動
 
 インストール例（sudo）
@@ -61,8 +62,11 @@ systemd による自動起動（推奨）
 ```bash
 sudo ./scripts/install_service.sh
 
-# --user と --target-dir で上書き可能
+# --user と --target-dir で上書き可能。--user は既存ユーザーを指定してください。
 sudo ./scripts/install_service.sh --user mysvcuser --target-dir /opt/ina-device-hub
+
+# Cloudflare Tunnel も systemd 管理にする場合
+sudo ./scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
 ```
 
 サービス確認
@@ -147,10 +151,10 @@ rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --include-wor
 
 ```bash
 rye run local-files move-device \
-  --source-dir /mnt/old-device/home/claw-agri/ina-device-hub \
-  --target-dir /home/claw-agri/ina-device-hub \
-  --source-work-dir /mnt/old-device/home/claw-agri/.ina-device-hub \
-  --target-work-dir /home/claw-agri/.ina-device-hub \
+  --source-dir /mnt/old-device/path/to/ina-device-hub \
+  --target-dir /path/to/ina-device-hub \
+  --source-work-dir /mnt/old-device/path/to/.ina-device-hub \
+  --target-work-dir /path/to/.ina-device-hub \
   --overwrite
 ```
 
@@ -159,7 +163,7 @@ rye run local-files move-device \
 手動でテンプレートを配置する場合
 
 ```bash
-sudo cp ./systemd/inas-device-hub@.service /etc/systemd/system/
+sudo ./scripts/install_service.sh --target-dir "$PWD"
 sudo systemctl daemon-reload
 sudo systemctl enable --now inas-device-hub@main
 ```

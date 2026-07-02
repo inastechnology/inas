@@ -46,7 +46,7 @@ cp .default.env .env
 sudo ./scripts/install_service.sh
 ```
 
-オプションで `--user` / `--target-dir` を指定できます。スクリプトは `systemd/inas-device-hub@.service` をインストールし、`frontend` と `backend` インスタンスを有効化・起動します。
+オプションで `--user` / `--target-dir` を指定できます。`--user` は既存ユーザーを指定してください。スクリプトは unit template の `@@INAS_HUB_DIR@@` / `@@INAS_HUB_USER@@` を対象環境の値に置換して `/etc/systemd/system/` に配置し、`inas-device-hub@main` を有効化・起動します。Cloudflare Tunnel を systemd 管理にする場合は `--enable-cloudflare-tunnel` を付けます。
 
 systemd 管理
 
@@ -54,16 +54,16 @@ systemd 管理
 
 ```bash
 # ステータス確認
-systemctl status inas-device-hub@frontend
-systemctl status inas-device-hub@backend
+systemctl status inas-device-hub@main
+systemctl status inas-cloudflare-tunnel
 
 # ログ確認（フォロー）
-journalctl -u inas-device-hub@frontend -f
-journalctl -u inas-device-hub@backend -f
+journalctl -u inas-device-hub@main -f
+journalctl -u inas-cloudflare-tunnel -f
 
 # 再起動 / 再読み込み
-sudo systemctl restart inas-device-hub@frontend
-sudo systemctl restart inas-device-hub@backend
+sudo systemctl restart inas-device-hub@main
+sudo systemctl restart inas-cloudflare-tunnel
 sudo systemctl daemon-reload
 ```
 
@@ -71,7 +71,7 @@ sudo systemctl daemon-reload
 
 1. `/etc/systemd/system/inas-device-hub@.service` を編集
 2. `sudo systemctl daemon-reload`
-3. `sudo systemctl restart inas-device-hub@frontend`（必要に応じて backend も）
+3. `sudo systemctl restart inas-device-hub@main`
 
 環境変数とシークレット管理
 
@@ -97,13 +97,13 @@ DB とストレージのバックアップ
 
 ```bash
 # stop service
-sudo systemctl stop inas-device-hub@frontend inas-device-hub@backend
+sudo systemctl stop inas-device-hub@main
 
 # copy database
 cp ~/.ina-device-hub/ina.db /var/backups/ina-device-hub/ina.db.$(date +%F-%T)
 
 # restart
-sudo systemctl start inas-device-hub@frontend inas-device-hub@backend
+sudo systemctl start inas-device-hub@main
 ```
 
 ※ Turso（リモート）を利用している場合は Turso の CLI/エクスポート機能を使用してください。
@@ -130,7 +130,7 @@ find /path/to/storage -type f -mtime +30 -delete
 トラブルシュート（よくある原因と対処）
 
 - サービスが起動しない
-  - `journalctl -u inas-device-hub@frontend -b` を確認。多くは `.env` の未設定やパーミッション、`serve.sh` の実行権限不足。
+  - `journalctl -u inas-device-hub@main -b` を確認。多くは `.env` の未設定やパーミッション、`serve.sh` の実行権限不足。
   - `sudo chmod +x /path/to/ina-device-hub/serve.sh` を確認。
 
 - MQTT 接続できない
@@ -151,7 +151,7 @@ find /path/to/storage -type f -mtime +30 -delete
 
 ```bash
 cd /path/to/ina-device-hub
-git pull origin master
+git pull origin main
 # or from central server: rsync -a ...
 ```
 
@@ -170,7 +170,8 @@ sudo ./scripts/install_service.sh --target-dir /path/to/ina-device-hub
 4. サービス再起動
 
 ```bash
-sudo systemctl restart inas-device-hub@frontend inas-device-hub@backend
+sudo systemctl restart inas-device-hub@main
+sudo systemctl restart inas-cloudflare-tunnel
 ```
 
 ロールバック

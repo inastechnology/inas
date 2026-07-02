@@ -1,0 +1,16 @@
+[Unit]
+Description=INAS Cloudflare Tunnel
+Wants=network-online.target inas-device-hub@main.service
+After=network-online.target inas-device-hub@main.service
+
+[Service]
+Type=simple
+WorkingDirectory=@@INAS_HUB_DIR@@
+ExecStart=/usr/bin/env python3 @@INAS_HUB_DIR@@/scripts/cloudflare_tunnel_setup.py --env-file @@INAS_HUB_DIR@@/.env start
+Environment=PYTHONUNBUFFERED=1
+User=@@INAS_HUB_USER@@
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
