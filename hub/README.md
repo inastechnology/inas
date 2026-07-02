@@ -87,6 +87,8 @@ Cloudflare hosted option は 2 種類あります。
 - Tunnel 版: デバイス側で local hub を起動し、Cloudflare Access + Tunnel で公開します。
 - Cloud app 版: Cloudflare Workers + Hono + Turso で管理 API / UI を動かします。実装方針と現在の範囲は `doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` を参照してください。
 
+Tunnel 版のネットワーク構成図は `doc/NETWORK_ARCHITECTURE.md` を参照してください。
+
 Tunnel 版を使う場合は、`.env` に固定したい Cloudflare account / hostname、許可 email、ユーザー側で発行した `CLOUDFLARE_ACCESS_API_TOKEN` を設定してから、次のスクリプトを実行します。
 
 AI Agent に環境構築や Cloudflare hosted option のセットアップを依頼する場合は、先に `doc/AI_AGENT_ENVIRONMENT_SETUP.md` を読ませてください。`.env` を正として扱うこと、secret を出力しないこと、Cloudflare resource を idempotent script で作成・再利用することを前提にしています。

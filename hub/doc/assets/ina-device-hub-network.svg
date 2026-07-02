@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="980" viewBox="0 0 1500 980" role="img" aria-labelledby="title desc">
+  <title id="title">INA Device Hub Network Architecture</title>
+  <desc id="desc">Network architecture for INA Device Hub using Cloudflare Access, Cloudflare Tunnel, local hub HTTP server, MQTT broker, and OTA firmware delivery.</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2f5597"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2f855a"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#7b3f98"/>
+    </marker>
+    <marker id="arrow-yellow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#a66a00"/>
+    </marker>
+    <style>
+      text { font-family: "Noto Sans JP", "Yu Gothic", "Meiryo", Arial, sans-serif; fill: #1f2933; }
+      .title { font-size: 25px; font-weight: 700; }
+      .section { font-size: 15px; font-weight: 700; }
+      .box-title { font-size: 13px; font-weight: 700; }
+      .body { font-size: 12px; }
+      .small { font-size: 11px; }
+      .label { font-size: 11px; font-weight: 700; }
+      .container { rx: 12; ry: 12; stroke-width: 2; }
+      .box { rx: 10; ry: 10; stroke-width: 2; }
+      .doc { stroke-width: 2; }
+      .edge-blue { fill: none; stroke: #2f5597; stroke-width: 3; marker-end: url(#arrow-blue); }
+      .edge-green { fill: none; stroke: #2f855a; stroke-width: 3; marker-end: url(#arrow-green); }
+      .edge-purple { fill: none; stroke: #7b3f98; stroke-width: 3; stroke-dasharray: 8 6; marker-end: url(#arrow-purple); }
+      .edge-yellow { fill: none; stroke: #a66a00; stroke-width: 3; marker-end: url(#arrow-yellow); }
+      .edge-muted { fill: none; stroke: #8795a1; stroke-width: 2; marker-end: url(#arrow-blue); opacity: .45; }
+    </style>
+  </defs>
+
+  <rect width="1500" height="980" fill="#ffffff"/>
+  <text x="40" y="50" class="title">INA Device Hub ネットワーク構成</text>
+  <rect x="575" y="20" width="885" height="58" class="box" fill="#fff8e1" stroke="#d6b656"/>
+  <text x="595" y="44" class="box-title">設計メモ</text>
+  <text x="595" y="64" class="body">Workers で UI はホストしない。Cloudflare Access + Tunnel が入口になり、実体の UI/API はデバイス側 hub の HTTP server。</text>
+
+  <rect x="40" y="100" width="290" height="210" class="container" fill="#f5f5f5" stroke="#66788a"/>
+  <text x="62" y="128" class="section">手元 PC / Internet</text>
+  <rect x="90" y="165" width="150" height="66" class="box" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text x="165" y="191" text-anchor="middle" class="box-title">ブラウザ</text>
+  <text x="165" y="213" text-anchor="middle" class="body">手元 PC</text>
+  <path d="M85 255 L245 255 L265 275 L265 300 L85 300 Z" class="doc" fill="#ffffff" stroke="#999999"/>
+  <path d="M245 255 L245 275 L265 275" class="doc" fill="none" stroke="#999999"/>
+  <text x="175" y="279" text-anchor="middle" class="box-title">公開 URL</text>
+  <text x="175" y="296" text-anchor="middle" class="small">https://hub.inas-technologies.com</text>
+
+  <rect x="360" y="100" width="395" height="210" class="container" fill="#fff0e6" stroke="#d79b00"/>
+  <text x="382" y="128" class="section">Cloudflare</text>
+  <rect x="395" y="160" width="155" height="82" class="box" fill="#ffe6cc" stroke="#d79b00"/>
+  <text x="473" y="186" text-anchor="middle" class="box-title">Access</text>
+  <text x="473" y="207" text-anchor="middle" class="body">許可 email policy</text>
+  <text x="473" y="225" text-anchor="middle" class="small">allowed emails</text>
+  <rect x="585" y="160" width="135" height="82" class="box" fill="#fff2cc" stroke="#d6b656"/>
+  <text x="653" y="186" text-anchor="middle" class="box-title">Tunnel route</text>
+  <text x="653" y="207" text-anchor="middle" class="body">DNS hostname</text>
+  <text x="653" y="225" text-anchor="middle" class="small">Access protected</text>
+
+  <rect x="790" y="100" width="430" height="530" class="container" fill="#e8f5e9" stroke="#82b366"/>
+  <text x="812" y="128" class="section">デバイス側サイト / local network</text>
+  <rect x="825" y="160" width="145" height="82" class="box" fill="#d5e8d4" stroke="#82b366"/>
+  <text x="898" y="186" text-anchor="middle" class="box-title">cloudflared</text>
+  <text x="898" y="207" text-anchor="middle" class="body">デバイス側で起動</text>
+  <text x="898" y="225" text-anchor="middle" class="small">この PC では起動しない</text>
+  <rect x="1010" y="155" width="170" height="92" class="box" fill="#d5e8d4" stroke="#82b366"/>
+  <text x="1095" y="181" text-anchor="middle" class="box-title">ina-device-hub</text>
+  <text x="1095" y="202" text-anchor="middle" class="body">HTTP UI/API</text>
+  <text x="1095" y="220" text-anchor="middle" class="small">0.0.0.0:39151</text>
+  <rect x="1010" y="300" width="170" height="76" class="box" fill="#ffffff" stroke="#82b366"/>
+  <text x="1095" y="326" text-anchor="middle" class="box-title">管理 UI / API</text>
+  <text x="1095" y="347" text-anchor="middle" class="body">/mqtt-devices</text>
+  <text x="1095" y="364" text-anchor="middle" class="small">/local/api/*</text>
+  <rect x="825" y="300" width="145" height="76" class="box" fill="#e1d5e7" stroke="#9673a6"/>
+  <text x="898" y="326" text-anchor="middle" class="box-title">MQTT broker</text>
+  <text x="898" y="347" text-anchor="middle" class="body">制御のみ</text>
+  <text x="898" y="364" text-anchor="middle" class="small">request / reply / status</text>
+  <path d="M1010 450 C1010 427 1180 427 1180 450 L1180 520 C1180 543 1010 543 1010 520 Z" fill="#d5e8d4" stroke="#82b366" stroke-width="2"/>
+  <path d="M1010 450 C1010 473 1180 473 1180 450" fill="none" stroke="#82b366" stroke-width="2"/>
+  <text x="1095" y="475" text-anchor="middle" class="box-title">firmware storage</text>
+  <text x="1095" y="497" text-anchor="middle" class="small">WORK_DIR/firmware/</text>
+  <text x="1095" y="513" text-anchor="middle" class="small">WTR/1.1.0/firmware.bin</text>
+  <rect x="825" y="465" width="150" height="88" class="box" fill="#fff2cc" stroke="#d6b656"/>
+  <text x="900" y="490" text-anchor="middle" class="box-title">OTA URL 生成</text>
+  <text x="900" y="511" text-anchor="middle" class="small">FIRMWARE_HOSTNAME</text>
+  <text x="900" y="527" text-anchor="middle" class="small">または HOSTNAME</text>
+  <text x="900" y="543" text-anchor="middle" class="small">FIRMWARE_BASE_URL は任意</text>
+  <path d="M1010 575 L1180 575 L1200 595 L1200 615 L1010 615 Z" class="doc" fill="#ffffff" stroke="#82b366"/>
+  <path d="M1180 575 L1180 595 L1200 595" class="doc" fill="none" stroke="#82b366"/>
+  <text x="1105" y="598" text-anchor="middle" class="box-title">Tunnel origin</text>
+  <text x="1105" y="613" text-anchor="middle" class="small">http://localhost:39151</text>
+
+  <rect x="40" y="350" width="715" height="280" class="container" fill="#e8f4f8" stroke="#6c8ebf"/>
+  <text x="62" y="378" class="section">watering devices</text>
+  <rect x="95" y="445" width="150" height="74" class="box" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text x="170" y="473" text-anchor="middle" class="box-title">watering device</text>
+  <text x="170" y="496" text-anchor="middle" class="body">WTR</text>
+  <rect x="300" y="445" width="150" height="74" class="box" fill="#dae8fc" stroke="#6c8ebf"/>
+  <text x="375" y="473" text-anchor="middle" class="box-title">watering device</text>
+  <text x="375" y="496" text-anchor="middle" class="body">WTR ...</text>
+  <rect x="535" y="435" width="170" height="94" class="box" fill="#fff2cc" stroke="#d6b656"/>
+  <text x="620" y="462" text-anchor="middle" class="box-title">OTA client</text>
+  <text x="620" y="483" text-anchor="middle" class="body">firmware.bin を HTTP download</text>
+  <text x="620" y="502" text-anchor="middle" class="small">現状は http:// のみ</text>
+  <text x="620" y="518" text-anchor="middle" class="small">HTTPS は証明書検証実装後</text>
+  <rect x="220" y="565" width="330" height="44" class="box" fill="#ffffff" stroke="#6c8ebf"/>
+  <text x="385" y="592" text-anchor="middle" class="body">device_kind=WTR / firmware_version を status と OTA request で送信</text>
+
+  <rect x="1260" y="100" width="200" height="530" class="container" fill="#f3e8ff" stroke="#9673a6"/>
+  <text x="1282" y="128" class="section">外部サービス</text>
+  <path d="M1298 170 C1298 150 1428 150 1428 170 L1428 232 C1428 252 1298 252 1298 232 Z" fill="#e1d5e7" stroke="#9673a6" stroke-width="2"/>
+  <path d="M1298 170 C1298 190 1428 190 1428 170" fill="none" stroke="#9673a6" stroke-width="2"/>
+  <text x="1363" y="196" text-anchor="middle" class="box-title">Turso</text>
+  <text x="1363" y="217" text-anchor="middle" class="small">device/config data</text>
+  <path d="M1298 320 C1298 300 1428 300 1428 320 L1428 382 C1428 402 1298 402 1298 382 Z" fill="#e1d5e7" stroke="#9673a6" stroke-width="2"/>
+  <path d="M1298 320 C1298 340 1428 340 1428 320" fill="none" stroke="#9673a6" stroke-width="2"/>
+  <text x="1363" y="342" text-anchor="middle" class="box-title">R2 / S3</text>
+  <text x="1363" y="363" text-anchor="middle" class="small">画像・一時配信</text>
+  <text x="1363" y="379" text-anchor="middle" class="small">OTA 本体ではない</text>
+  <rect x="1298" y="470" width="130" height="82" class="box" fill="#e1d5e7" stroke="#9673a6"/>
+  <text x="1363" y="496" text-anchor="middle" class="box-title">Instagram</text>
+  <text x="1363" y="517" text-anchor="middle" class="small">外部 API</text>
+  <text x="1363" y="533" text-anchor="middle" class="small">任意機能</text>
+
+  <rect x="40" y="685" width="1420" height="190" class="container" fill="#ffffff" stroke="#999999"/>
+  <text x="62" y="713" class="section">凡例 / 接続の意味</text>
+  <rect x="85" y="745" width="310" height="48" class="box" fill="#e6f0ff" stroke="#6c8ebf"/>
+  <text x="240" y="775" text-anchor="middle" class="body">青: UI 管理画面。HTTPS + Access + Tunnel</text>
+  <rect x="425" y="745" width="310" height="48" class="box" fill="#f3e8ff" stroke="#9673a6"/>
+  <text x="580" y="775" text-anchor="middle" class="body">紫: MQTT。OTA request / reply / status の制御のみ</text>
+  <rect x="765" y="745" width="310" height="48" class="box" fill="#e8f5e9" stroke="#82b366"/>
+  <text x="920" y="775" text-anchor="middle" class="body">緑: OTA binary。hub HTTP server から download</text>
+  <rect x="1105" y="745" width="310" height="48" class="box" fill="#fff2cc" stroke="#d6b656"/>
+  <text x="1260" y="775" text-anchor="middle" class="body">黄: OTA offer URL 生成。Cloudflare Access hostname とは分離</text>
+  <rect x="85" y="815" width="1330" height="38" class="box" fill="#fff8e1" stroke="#d6b656"/>
+  <text x="750" y="840" text-anchor="middle" class="body">Cloudflare Workers は現仕様では UI 配信に使わない。Cloudflare は Access + Tunnel の入口として利用する。</text>
+
+  <path d="M165 231 V255" class="edge-blue"/>
+  <text x="178" y="247" class="label" fill="#2f5597">アクセス</text>
+  <path d="M265 278 H395" class="edge-blue"/>
+  <text x="313" y="268" class="label" fill="#2f5597">HTTPS</text>
+  <path d="M550 201 H585" class="edge-blue"/>
+  <text x="558" y="190" class="label" fill="#2f5597">認証後</text>
+  <path d="M720 201 H825" class="edge-blue"/>
+  <text x="748" y="190" class="label" fill="#2f5597">outbound tunnel</text>
+  <path d="M970 201 H1010" class="edge-blue"/>
+  <text x="978" y="190" class="label" fill="#2f5597">origin</text>
+  <path d="M1095 247 V300" class="edge-blue"/>
+  <text x="1108" y="279" class="label" fill="#2f5597">serves</text>
+  <path d="M1200 595 H1235 V201 H1180" class="edge-blue"/>
+  <text x="1210" y="390" class="label" fill="#2f5597">http://localhost:39151</text>
+
+  <path d="M245 482 H500 V400 H825" class="edge-purple"/>
+  <text x="470" y="390" class="label" fill="#7b3f98">MQTT status / OTA request</text>
+  <path d="M825 345 H735 V560 H620 V529" class="edge-purple"/>
+  <text x="740" y="410" class="label" fill="#7b3f98">OTA reply</text>
+  <path d="M970 338 H1010" class="edge-purple"/>
+  <text x="978" y="326" class="label" fill="#7b3f98">hub handles</text>
+
+  <path d="M1095 376 V450" class="edge-green"/>
+  <text x="1108" y="421" class="label" fill="#2f855a">保存・配信</text>
+  <path d="M1010 496 H975" class="edge-yellow"/>
+  <text x="970" y="486" text-anchor="end" class="label" fill="#a66a00">URL生成</text>
+  <path d="M825 509 H755 V585 H620 V529" class="edge-yellow"/>
+  <text x="715" y="575" class="label" fill="#a66a00">offer URL in MQTT reply</text>
+  <path d="M620 529 V650 H1095 V543" class="edge-green"/>
+  <text x="760" y="642" class="label" fill="#2f855a">HTTP firmware download :39151</text>
+
+  <path d="M1180 201 H1298" class="edge-purple"/>
+  <text x="1210" y="190" class="label" fill="#7b3f98">sync / read write</text>
+  <path d="M1180 496 H1235 V351 H1298" class="edge-purple"/>
+  <text x="1210" y="341" class="label" fill="#7b3f98">画像・一時配信</text>
+  <path d="M1180 225 H1235 V511 H1298" class="edge-purple"/>
+  <text x="1210" y="527" class="label" fill="#7b3f98">任意</text>
+</svg>

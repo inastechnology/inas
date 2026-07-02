@@ -58,6 +58,10 @@
 
 ## 5. Target Architecture
 
+現行の Tunnel 版運用構成は次のとおり。Cloudflare Workers で UI はホストせず、Cloudflare Access + Tunnel を入口にして、デバイス側の local hub HTTP server へ転送する。
+
+![INA Device Hub network architecture](assets/ina-device-hub-network.png)
+
 ```text
 Browser/Admin CLI
   -> Cloudflare Access
