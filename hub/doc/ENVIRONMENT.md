@@ -52,9 +52,13 @@ Instagram 自動投稿では、この一時ストレージを公開 URL 配信�
 
 ## OTA firmware 配信
 
-- `FIRMWARE_BASE_URL` (OTA を使う場合は必須) — hub が `firmware.bin` を HTTP 配信する base URL。例: `http://<hubのドメイン名またはIPアドレス>:39151`。
+- `FIRMWARE_HOSTNAME` (推奨) — OTA 対象デバイスから HTTP で到達できる hub の hostname または IP address。未設定なら OS 環境変数 `HOSTNAME`、さらに未設定なら OS hostname を使います。
+- `FIRMWARE_PORT` (任意) — OTA firmware 配信 port。未設定なら `HUB_HTTP_PORT`、既定は `39151`。
+- `FIRMWARE_BASE_URL` (任意) — URL を完全に固定したい場合の明示 override。例: `http://<hubのドメイン名またはIPアドレス>:39151`。
 
 firmware binary は `WORK_DIR/firmware/<device_kind>/<version>/firmware.bin` に保存され、hub は `GET /firmware/<device_kind>/<version>/firmware.bin` で配信します。現状のデバイス実装は `http://` のみを受け付けるため、hub も OTA offer では `http://` URL だけを許可します。HTTPS はデバイス側に証明書検証を入れてから有効化します。
+
+artifact URL は `FIRMWARE_BASE_URL` があればその値を使い、未設定なら `http://<FIRMWARE_HOSTNAME または HOSTNAME>:<FIRMWARE_PORT または HUB_HTTP_PORT>` から生成します。Cloudflare Access/Tunnel の public hostname は HTTPS/認証付きの UI 入口なので、現状の OTA download URL には使いません。
 
 upload/register API:
 
@@ -64,7 +68,7 @@ curl -X POST \
   --data-binary @firmware.bin
 ```
 
-この API は size と sha256 を自動計算し、artifact URL を `${FIRMWARE_BASE_URL}/firmware/WTR/1.1.0/firmware.bin` として登録します。MQTT は OTA request/reply/status の制御だけに使い、firmware 本体は hub の HTTP server から配信します。
+この API は size と sha256 を自動計算し、artifact URL を `${resolved_firmware_base_url}/firmware/WTR/1.1.0/firmware.bin` として登録します。MQTT は OTA request/reply/status の制御だけに使い、firmware 本体は hub の HTTP server から配信します。
 
 ## Instagram 関連（任意）
 

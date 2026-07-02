@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("FIRMWARE_BASE_URL", "http://127.0.0.1:39151")
@@ -21,6 +22,7 @@ os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
 from ina_device_hub.device_config_repository import DeviceConfigRepository  # noqa: E402
 from ina_device_hub.ota_update_service import FirmwareArtifactRepository, OTAUpdateService  # noqa: E402
+from ina_device_hub.setting import setting  # noqa: E402
 
 
 class _Result:
@@ -193,6 +195,31 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.assertEqual(artifact["url"], "http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin")
         self.assertEqual(artifact["size"], len(firmware))
         self.assertEqual(artifact["sha256"], hashlib.sha256(firmware).hexdigest())
+
+    def test_firmware_base_url_can_be_generated_from_hostname(self):
+        original_firmware_settings = dict(setting().settings.get("firmware") or {})
+        setting().settings["firmware"] = {
+            "base_url": "",
+            "hostname": "",
+            "port": "",
+            "root_dir": os.path.join(self.tmp_dir.name, "firmware"),
+        }
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "FIRMWARE_BASE_URL": "",
+                    "FIRMWARE_HOSTNAME": "",
+                    "HOSTNAME": "hub-device.local",
+                    "HUB_HTTP_PORT": "39151",
+                },
+            ):
+                self.assertEqual(
+                    self.artifact_repository.public_firmware_url("WTR", "1.1.0"),
+                    "http://hub-device.local:39151/firmware/WTR/1.1.0/firmware.bin",
+                )
+        finally:
+            setting().settings["firmware"] = original_firmware_settings
 
     def test_https_firmware_artifact_url_is_rejected_until_device_supports_tls(self):
         artifact = _artifact()

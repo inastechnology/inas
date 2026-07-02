@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 import uuid
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -365,10 +366,37 @@ def _firmware_base_url():
         base_url = str(firmware_settings.get("base_url") or "").strip()
     base_url = base_url or os.environ.get("FIRMWARE_BASE_URL", "").strip()
     if not base_url:
-        raise FirmwareArtifactValidationError("FIRMWARE_BASE_URL must be set before uploading firmware")
+        base_url = _build_firmware_base_url_from_hostname(firmware_settings)
     if not base_url.startswith("http://"):
         raise FirmwareArtifactValidationError("FIRMWARE_BASE_URL must start with http://")
     return base_url.rstrip("/")
+
+
+def _build_firmware_base_url_from_hostname(firmware_settings):
+    hostname = ""
+    port = ""
+    if isinstance(firmware_settings, dict):
+        hostname = str(firmware_settings.get("hostname") or "").strip()
+        port = str(firmware_settings.get("port") or "").strip()
+    hostname = hostname or os.environ.get("FIRMWARE_HOSTNAME", "").strip() or os.environ.get("HOSTNAME", "").strip() or socket.gethostname().strip()
+    port = port or os.environ.get("FIRMWARE_PORT", "").strip() or os.environ.get("HUB_HTTP_PORT", "39151").strip()
+
+    if not hostname:
+        raise FirmwareArtifactValidationError("FIRMWARE_HOSTNAME or HOSTNAME must be set before uploading firmware")
+    if "://" in hostname or any(separator in hostname for separator in "/?#"):
+        raise FirmwareArtifactValidationError("FIRMWARE_HOSTNAME must be a hostname, not a URL")
+    if ":" in hostname and not (hostname.startswith("[") and hostname.endswith("]")):
+        raise FirmwareArtifactValidationError("FIRMWARE_HOSTNAME must not include a port; use FIRMWARE_PORT")
+
+    try:
+        port_number = int(port)
+    except (TypeError, ValueError) as exc:
+        raise FirmwareArtifactValidationError("FIRMWARE_PORT must be an integer") from exc
+    if port_number < 1 or port_number > 65535:
+        raise FirmwareArtifactValidationError("FIRMWARE_PORT must be between 1 and 65535")
+    if port_number == 80:
+        return f"http://{hostname}"
+    return f"http://{hostname}:{port_number}"
 
 
 def _decode_json_payload(payload):

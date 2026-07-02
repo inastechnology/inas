@@ -169,6 +169,8 @@ Cloudflare Access API token は local script / CI 用の secret として扱う�
 
 - `CLOUDFLARE_ACCESS_API_TOKEN`
 
+OTA firmware download URL は Cloudflare Access/Tunnel の public hostname ではなく、デバイスから HTTP で到達できる `FIRMWARE_HOSTNAME` または OS hostname から生成する。現状のデバイス実装は `http://` のみ受け付けるため、Cloudflare Access の HTTPS/認証付き hostname は hub UI 用として扱う。
+
 Worker deploy 時は、`hub/.env` から Worker vars / secrets を登録する。Turso token や S3 secret は `wrangler secret put` で登録し、非 secret の URL / bucket 名 / Access audience は `wrangler.jsonc` vars または CI の環境変数から設定する。
 
 ## 8. 認証認可設計

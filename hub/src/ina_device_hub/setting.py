@@ -8,6 +8,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _int_env(name: str, default: int) -> int:
+    value = os.environ.get(name, "").strip()
+    return int(value) if value else default
+
+
 # device name
 try:
     DEVICE_NAME = os.environ["HOSTNAME"]
@@ -15,7 +21,7 @@ except KeyError:
     DEVICE_NAME = "ina-device-hub"
 
 HUB_HTTP_HOST = os.environ.get("HUB_HTTP_HOST", "0.0.0.0").strip() or "0.0.0.0"
-HUB_HTTP_PORT = int(os.environ.get("HUB_HTTP_PORT", "39151"))
+HUB_HTTP_PORT = _int_env("HUB_HTTP_PORT", 39151)
 
 # work directory
 try:
@@ -61,6 +67,8 @@ S3_TMP_BASE_URL = os.environ.get("S3_TMP_BASE_URL", "").strip()
 
 # OTA firmware download settings
 FIRMWARE_BASE_URL = os.environ.get("FIRMWARE_BASE_URL", "").strip()
+FIRMWARE_HOSTNAME = os.environ.get("FIRMWARE_HOSTNAME", "").strip()
+FIRMWARE_PORT = _int_env("FIRMWARE_PORT", HUB_HTTP_PORT)
 
 # MQTT settings
 try:
@@ -170,6 +178,8 @@ DEFAULT_SETTINGS = {
     },
     "firmware": {
         "base_url": FIRMWARE_BASE_URL,
+        "hostname": FIRMWARE_HOSTNAME,
+        "port": FIRMWARE_PORT,
         "root_dir": os.path.join(os.path.expanduser(WORK_DIR), "firmware"),
     },
     "local_storage_base_dir": LOCAL_STORAGE_BASE_DIR,

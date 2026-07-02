@@ -387,7 +387,8 @@ The Hub or management server must provide:
 - Per-device firmware target version storage
 - Firmware artifact storage under `WORK_DIR/firmware/<device_kind>/<version>/firmware.bin`
 - HTTP endpoint `GET /firmware/<device_kind>/<version>/firmware.bin`
-- `FIRMWARE_BASE_URL` configuration used to generate OTA offer URLs, for example `http://<hubのドメイン名またはIPアドレス>:39151`
+- OTA offer URL generation from `FIRMWARE_HOSTNAME` or OS hostname and `FIRMWARE_PORT`, for example `http://<hubのドメイン名またはIPアドレス>:39151`
+- Optional `FIRMWARE_BASE_URL` override when the full base URL must be fixed explicitly
 - SHA-256 digest generation and validation before publishing an offer
 - OTA request handling and reply publishing
 - OTA status storage and monitoring
@@ -487,7 +488,7 @@ Release checklist:
 2. Run `make build`.
 3. Confirm `firmware.bin` size is smaller than the OTA app slot.
 4. Upload `firmware.bin` with the Hub upload/register API so size and SHA-256 are calculated by the Hub.
-5. Confirm the registered artifact URL is `http://<hubのドメイン名またはIPアドレス>:39151/firmware/WTR/1.1.0/firmware.bin` or the equivalent `FIRMWARE_BASE_URL` value.
+5. Confirm the registered artifact URL is `http://<hubのドメイン名またはIPアドレス>:39151/firmware/WTR/1.1.0/firmware.bin` or the equivalent resolved firmware base URL.
 6. Confirm artifact metadata includes `device_kind: "WTR"`.
 7. Assign `target_firmware_version` to selected active devices.
 8. Monitor `ota/status` and normal status after reboot.
