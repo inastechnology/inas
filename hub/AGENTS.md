@@ -8,7 +8,7 @@ This is a Python IoT hub using a `src` layout. Application modules live in `src/
 
 - `rye sync`: install and sync project dependencies into the managed environment.
 - `cp .default.env .env`: create local configuration, then edit secrets and endpoints for the target environment.
-- `rye run serve`: run the local hub service; the README notes the default web endpoint as `http://localhost:5151`.
+- `rye run serve`: run the local hub service; the README notes the default web endpoint as `http://localhost:39151`.
 - `rye run format`: apply Ruff formatting and autofixable lint changes.
 - `rye run lint`: run Ruff checks, Ruff format verification, and mypy with explicit package bases.
 - `sudo ./scripts/install_service.sh`: install and enable the systemd template services for deployment targets.

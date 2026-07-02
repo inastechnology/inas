@@ -18,6 +18,8 @@ chmod 600 .env
 - `LANGUAGE` (任意) — ロケール/言語指定。例: `en`。
 - `WORK_DIR` (任意) — アプリの作業ディレクトリ。例: `~/.ina-device-hub`。
 - `LOCAL_STORAGE_BASE_DIR` (任意) — 画像などを保存するローカルディレクトリ。例: `/mnt/storage/ina`。
+- `HUB_HTTP_HOST` (任意) — local hub HTTP server の bind address。既定: `0.0.0.0`。
+- `HUB_HTTP_PORT` (任意) — local hub HTTP server の port。既定: `39151`。
 
 ## Turso (ローカル/リモート DB)
 
@@ -47,6 +49,22 @@ chmod 600 .env
 用途によりメインと分けることで、本番バケットへの不要な負荷を避けられます。
 
 Instagram 自動投稿では、この一時ストレージを公開 URL 配信用に使います。`S3_TMP_BASE_URL` は CDN や公開配信ドメインを設定してください。Meta の Graph API に渡す動画 URL と画像 URL は外部から取得可能である必要があります。
+
+## OTA firmware 配信
+
+- `FIRMWARE_BASE_URL` (OTA を使う場合は必須) — hub が `firmware.bin` を HTTP 配信する base URL。例: `http://<hubのドメイン名またはIPアドレス>:39151`。
+
+firmware binary は `WORK_DIR/firmware/<device_kind>/<version>/firmware.bin` に保存され、hub は `GET /firmware/<device_kind>/<version>/firmware.bin` で配信します。現状のデバイス実装は `http://` のみを受け付けるため、hub も OTA offer では `http://` URL だけを許可します。HTTPS はデバイス側に証明書検証を入れてから有効化します。
+
+upload/register API:
+
+```bash
+curl -X POST \
+  "http://<hubのドメイン名またはIPアドレス>:39151/local/api/firmware-artifacts/WTR/1.1.0/upload?build_id=2026-07-01T03:00:00Z%2Babcdef0" \
+  --data-binary @firmware.bin
+```
+
+この API は size と sha256 を自動計算し、artifact URL を `${FIRMWARE_BASE_URL}/firmware/WTR/1.1.0/firmware.bin` として登録します。MQTT は OTA request/reply/status の制御だけに使い、firmware 本体は hub の HTTP server から配信します。
 
 ## Instagram 関連（任意）
 
@@ -119,7 +137,7 @@ Cloudflare hosted option を使う場合だけ設定します。値の source of
 - `CLOUDFLARE_TUNNEL_NAME` — Cloudflare Tunnel 名。既定: `inas-hub`。
 - `CLOUDFLARE_TUNNEL_ID` — 作成された Tunnel ID。`scripts/cloudflare_tunnel_setup.sh --write-env` が出力します。
 - `CLOUDFLARE_TUNNEL_HOSTNAME` — Tunnel の DNS route hostname。通常は `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME` と同じです。
-- `CLOUDFLARE_TUNNEL_ORIGIN_URL` — Tunnel が転送する local hub URL。既定: `http://localhost:5151`。
+- `CLOUDFLARE_TUNNEL_ORIGIN_URL` — Tunnel が転送する local hub URL。既定: `http://localhost:39151`。
 - `CLOUDFLARE_TUNNEL_TOKEN_FILE` — `cloudflared tunnel run` 用 token file。`scripts/cloudflare_tunnel_setup.py --write-env provision` が `hub/.data/cloudflare/tunnel-token` に生成します。
 - `CLOUDFLARE_TUNNEL_DNS_RECORD_ID` — Tunnel 用 CNAME record ID。script が出力します。
 - `CLOUDFLARE_ZONE_ID` — DNS record を作る zone ID。未設定なら hostname から自動探索します。

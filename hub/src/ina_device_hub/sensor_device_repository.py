@@ -17,7 +17,7 @@ class SensorDeviceRepository:
             with open(self.device_repo_path, "w") as f:
                 f.write("{}")
         try:
-            with open(self.device_repo_path, "r") as f:
+            with open(self.device_repo_path) as f:
                 self.device_dict = json.load(f)
         except FileNotFoundError:
             pass
@@ -30,10 +30,10 @@ class SensorDeviceRepository:
         return self.device_dict.get(key)
 
     def add(self, device_id, info: dict):
-        if device_id not in self.device_dict:
-            info["id"] = device_id
-            self.device_dict[device_id] = info
-            self.save()
+        existing = self.device_dict.get(device_id, {})
+        updated = {**existing, **info, "id": device_id}
+        self.device_dict[device_id] = updated
+        self.save()
 
     def remove(self, device_id):
         if device_id in self.device_dict:

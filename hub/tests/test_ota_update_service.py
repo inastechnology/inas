@@ -1,9 +1,11 @@
+import hashlib
 import json
 import os
 import tempfile
 import unittest
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
+os.environ.setdefault("FIRMWARE_BASE_URL", "http://127.0.0.1:39151")
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
 os.environ.setdefault("TURSO_AUTH_TOKEN", "x")
 os.environ.setdefault("S3_ENDPOINT_URL", "x")
@@ -172,11 +174,38 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.assertEqual(record["device_kind"], "WTR")
         self.assertEqual(self.service.list_ota_statuses(device_id)[0]["payload"]["state"], "started")
 
+    def test_uploaded_firmware_binary_is_saved_and_registered(self):
+        firmware = b"test-firmware-binary"
+        self.artifact_repository.firmware_root = os.path.join(self.tmp_dir.name, "firmware")
+
+        artifact = self.service.upsert_firmware_binary(
+            "WTR",
+            "1.1.0",
+            firmware,
+            metadata={"build_id": "2026-07-01T00:00:00Z+abcdef0"},
+        )
+
+        firmware_path = os.path.join(self.tmp_dir.name, "firmware", "WTR", "1.1.0", "firmware.bin")
+        with open(firmware_path, "rb") as file:
+            self.assertEqual(file.read(), firmware)
+        self.assertEqual(artifact["device_kind"], "WTR")
+        self.assertEqual(artifact["version"], "1.1.0")
+        self.assertEqual(artifact["url"], "http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin")
+        self.assertEqual(artifact["size"], len(firmware))
+        self.assertEqual(artifact["sha256"], hashlib.sha256(firmware).hexdigest())
+
+    def test_https_firmware_artifact_url_is_rejected_until_device_supports_tls(self):
+        artifact = _artifact()
+        artifact["url"] = "https://example.test/firmware/WTR/1.1.0/firmware.bin"
+
+        with self.assertRaisesRegex(ValueError, "HTTP URL"):
+            self.artifact_repository.upsert("1.1.0", artifact)
+
 
 def _artifact():
     return {
         "device_kind": "WTR",
-        "url": "http://hub.local/firmware/watering-device/1.1.0/firmware.bin",
+        "url": "http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin",
         "size": 892704,
         "sha256": "a" * 64,
         "build_id": "2026-07-01T00:00:00Z+abcdef0",

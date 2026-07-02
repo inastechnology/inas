@@ -14,6 +14,9 @@ try:
 except KeyError:
     DEVICE_NAME = "ina-device-hub"
 
+HUB_HTTP_HOST = os.environ.get("HUB_HTTP_HOST", "0.0.0.0").strip() or "0.0.0.0"
+HUB_HTTP_PORT = int(os.environ.get("HUB_HTTP_PORT", "39151"))
+
 # work directory
 try:
     WORK_DIR = os.environ["WORK_DIR"]
@@ -55,6 +58,9 @@ S3_TMP_BUCKET_REGION = os.environ.get("S3_TMP_BUCKET_REGION", "").strip()
 S3_TMP_ACCESS_KEY = os.environ.get("S3_TMP_ACCESS_KEY", "").strip()
 S3_TMP_SECRET_KEY = os.environ.get("S3_TMP_SECRET_KEY", "").strip()
 S3_TMP_BASE_URL = os.environ.get("S3_TMP_BASE_URL", "").strip()
+
+# OTA firmware download settings
+FIRMWARE_BASE_URL = os.environ.get("FIRMWARE_BASE_URL", "").strip()
 
 # MQTT settings
 try:
@@ -138,6 +144,10 @@ DEFAULT_SETTINGS = {
     "tenant_id": "00000000-0000-0000-0000-000000000000",
     "device_id": get_device_id(),
     "device_name": DEVICE_NAME,
+    "http": {
+        "host": HUB_HTTP_HOST,
+        "port": HUB_HTTP_PORT,
+    },
     "turso": {
         "database_url": TURSO_DATABASE_URL,
         "auth_token": TURSO_AUTH_TOKEN,
@@ -157,6 +167,10 @@ DEFAULT_SETTINGS = {
         "access_key": S3_TMP_ACCESS_KEY,
         "secret_key": S3_TMP_SECRET_KEY,
         "base_url": S3_TMP_BASE_URL,
+    },
+    "firmware": {
+        "base_url": FIRMWARE_BASE_URL,
+        "root_dir": os.path.join(os.path.expanduser(WORK_DIR), "firmware"),
     },
     "local_storage_base_dir": LOCAL_STORAGE_BASE_DIR,
     "timelapse_interval": TIMELAPSE_INTERVAL,

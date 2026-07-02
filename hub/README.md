@@ -41,7 +41,7 @@ rye run db:create
 
 ```bash
 rye run serve
-# デフォルト: http://localhost:5151
+# デフォルト: http://localhost:39151
 ```
 
 systemd による自動起動（推奨）

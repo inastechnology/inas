@@ -1,9 +1,12 @@
 import copy
+import hashlib
 import json
 import os
 import re
+import uuid
 from datetime import UTC, datetime
 from functools import lru_cache
+from urllib.parse import quote
 
 from ina_device_hub.device_config_repository import device_config_repository
 from ina_device_hub.device_event_log import append_device_event
@@ -26,6 +29,7 @@ def _utc_now():
 
 class FirmwareArtifactRepository:
     artifact_path = os.path.join(setting().get_work_dir(), ".firmware_artifacts.json")
+    firmware_root = os.path.join(setting().get_work_dir(), "firmware")
 
     def __init__(self):
         self.artifacts = {}
@@ -63,6 +67,53 @@ class FirmwareArtifactRepository:
         self.save()
         return copy.deepcopy(normalized)
 
+    def firmware_path(self, device_kind: str, version: str):
+        device_kind = _normalize_device_kind(device_kind)
+        version = _normalize_version(version)
+        return os.path.join(self.firmware_root, device_kind, version, "firmware.bin")
+
+    def public_firmware_url(self, device_kind: str, version: str):
+        device_kind = _normalize_device_kind(device_kind)
+        version = _normalize_version(version)
+        base_url = _firmware_base_url()
+        return f"{base_url}/firmware/{quote(device_kind, safe='')}/{quote(version, safe='._:+-')}/firmware.bin"
+
+    def upsert_binary(self, device_kind: str, version: str, content: bytes, metadata: dict | None = None):
+        metadata = metadata or {}
+        device_kind = _normalize_device_kind(device_kind)
+        version = _normalize_version(version)
+        if not isinstance(content, bytes | bytearray) or len(content) == 0:
+            raise FirmwareArtifactValidationError("firmware binary must not be empty")
+
+        binary = bytes(content)
+        sha256 = hashlib.sha256(binary).hexdigest()
+        path = self.firmware_path(device_kind, version)
+        artifact = {
+            "device_kind": device_kind,
+            "version": version,
+            "update_id": metadata.get("update_id"),
+            "build_id": metadata.get("build_id"),
+            "url": self.public_firmware_url(device_kind, version),
+            "size": len(binary),
+            "sha256": sha256,
+            "rollout_state": metadata.get("rollout_state", "active"),
+            "force": metadata.get("force", False),
+            "allow_downgrade": metadata.get("allow_downgrade", False),
+        }
+        validate_firmware_artifact(version, artifact)
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp_path = f"{path}.tmp-{uuid.uuid4()}"
+        try:
+            with open(tmp_path, "wb") as file:
+                file.write(binary)
+            os.replace(tmp_path, path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+        return self.upsert(version, artifact)
+
 
 class OTAUpdateService:
     def __init__(self, repository=None, artifact_repository=None):
@@ -78,6 +129,12 @@ class OTAUpdateService:
 
     def upsert_artifact(self, version: str, artifact: dict):
         return self.artifact_repository.upsert(version, artifact)
+
+    def upsert_firmware_binary(self, device_kind: str, version: str, content: bytes, metadata: dict | None = None):
+        return self.artifact_repository.upsert_binary(device_kind, version, content, metadata=metadata)
+
+    def get_firmware_path(self, device_kind: str, version: str):
+        return self.artifact_repository.firmware_path(device_kind, version)
 
     def set_firmware_target(self, device_id: str, target_firmware_version: str | None):
         return self.repository.set_firmware_target(device_id, target_firmware_version)
@@ -211,25 +268,17 @@ class OTAUpdateService:
 
 
 def validate_firmware_artifact(version: str, artifact: dict):
-    if not isinstance(version, str) or not version.strip():
-        raise FirmwareArtifactValidationError("version must be a non-empty string")
     if not isinstance(artifact, dict):
         raise FirmwareArtifactValidationError("artifact must be an object")
 
-    version = version.strip()
-    if SAFE_TOKEN_RE.match(version) is None:
-        raise FirmwareArtifactValidationError("version contains unsupported characters")
-    if len(version) >= 32:
-        raise FirmwareArtifactValidationError("version must be shorter than 32 characters")
+    version = _normalize_version(version)
 
     url = artifact.get("url")
     size = artifact.get("size")
     sha256 = artifact.get("sha256")
-    device_kind = artifact.get("device_kind")
-    if not _is_device_kind(device_kind):
-        raise FirmwareArtifactValidationError("device_kind must be exactly three uppercase letters")
-    if not isinstance(url, str) or not (url.startswith("http://") or url.startswith("https://")):
-        raise FirmwareArtifactValidationError("url must be an HTTP or HTTPS URL")
+    device_kind = _normalize_device_kind(artifact.get("device_kind"))
+    if not isinstance(url, str) or not url.startswith("http://"):
+        raise FirmwareArtifactValidationError("url must be an HTTP URL")
     if len(url) >= 256:
         raise FirmwareArtifactValidationError("url must be shorter than 256 characters")
     if not isinstance(size, int) or size <= 0:
@@ -290,6 +339,36 @@ def _artifact_key(device_kind: str, version: str):
 
 def _is_device_kind(value):
     return isinstance(value, str) and DEVICE_KIND_RE.match(value) is not None
+
+
+def _normalize_device_kind(value):
+    if not _is_device_kind(value):
+        raise FirmwareArtifactValidationError("device_kind must be exactly three uppercase letters")
+    return value
+
+
+def _normalize_version(version: str):
+    if not isinstance(version, str) or not version.strip():
+        raise FirmwareArtifactValidationError("version must be a non-empty string")
+    version = version.strip()
+    if SAFE_TOKEN_RE.match(version) is None:
+        raise FirmwareArtifactValidationError("version contains unsupported characters")
+    if len(version) >= 32:
+        raise FirmwareArtifactValidationError("version must be shorter than 32 characters")
+    return version
+
+
+def _firmware_base_url():
+    firmware_settings = setting().get("firmware")
+    base_url = ""
+    if isinstance(firmware_settings, dict):
+        base_url = str(firmware_settings.get("base_url") or "").strip()
+    base_url = base_url or os.environ.get("FIRMWARE_BASE_URL", "").strip()
+    if not base_url:
+        raise FirmwareArtifactValidationError("FIRMWARE_BASE_URL must be set before uploading firmware")
+    if not base_url.startswith("http://"):
+        raise FirmwareArtifactValidationError("FIRMWARE_BASE_URL must start with http://")
+    return base_url.rstrip("/")
 
 
 def _decode_json_payload(payload):

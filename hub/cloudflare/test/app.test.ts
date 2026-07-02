@@ -11,6 +11,23 @@ const baseEnv: Env = {
 };
 
 describe("cloud hub app", () => {
+  it("exposes health with the default app before Turso is configured", async () => {
+    const app = createApp();
+
+    const response = await app.request("/api/health", {}, {});
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, tursoConfigured: false, accessConfigured: false });
+  });
+
+  it("rejects unauthenticated API requests before Turso is configured", async () => {
+    const app = createApp();
+
+    const response = await app.request("/api/me", {}, {});
+
+    expect(response.status).toBe(401);
+  });
+
   it("exposes health without Access JWT", async () => {
     const app = createApp({ servicesFactory: () => fakeServices({}) });
 

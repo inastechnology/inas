@@ -206,7 +206,7 @@ Update offer:
   "update_id": "watering-device-1.1.0-abcdef0",
   "version": "1.1.0",
   "build_id": "2026-07-01T03:00:00Z+abcdef0",
-  "url": "http://hub.local/firmware/watering-device/1.1.0/firmware.bin",
+  "url": "http://<hubのドメイン名またはIPアドレス>:39151/firmware/WTR/1.1.0/firmware.bin",
   "size": 892704,
   "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "min_version": "1.0.0",
@@ -224,7 +224,7 @@ Required fields for `action: "update"`:
 | `device_kind` | Yes | string | Must match the requesting device kind |
 | `update_id` | Yes | string | Unique release/update identifier |
 | `version` | Yes | string | Target firmware version |
-| `url` | Yes | string | HTTP URL for `firmware.bin`. HTTPS requires adding certificate trust handling before enabling on-device. |
+| `url` | Yes | string | HTTP URL for `firmware.bin`. Current device firmware accepts `http://` only. HTTPS requires adding certificate validation before enabling on-device. |
 | `size` | Yes | integer | Exact binary size in bytes |
 | `sha256` | Yes | string | Lowercase 64-character hex SHA-256 digest |
 | `min_version` | No | string | Minimum current version allowed for this update |
@@ -385,8 +385,9 @@ Recommended error codes:
 The Hub or management server must provide:
 
 - Per-device firmware target version storage
-- Firmware artifact storage
-- HTTP endpoint for `firmware.bin`
+- Firmware artifact storage under `WORK_DIR/firmware/<device_kind>/<version>/firmware.bin`
+- HTTP endpoint `GET /firmware/<device_kind>/<version>/firmware.bin`
+- `FIRMWARE_BASE_URL` configuration used to generate OTA offer URLs, for example `http://<hubのドメイン名またはIPアドレス>:39151`
 - SHA-256 digest generation and validation before publishing an offer
 - OTA request handling and reply publishing
 - OTA status storage and monitoring
@@ -485,9 +486,9 @@ Release checklist:
 1. Set `APP_DEVICE_KIND`, `APP_FIRMWARE_VERSION`, and `APP_FIRMWARE_BUILD_ID`.
 2. Run `make build`.
 3. Confirm `firmware.bin` size is smaller than the OTA app slot.
-4. Compute SHA-256.
-5. Upload `firmware.bin` to the Hub firmware path.
-6. Register artifact metadata including `device_kind: "WTR"` in the management server.
+4. Upload `firmware.bin` with the Hub upload/register API so size and SHA-256 are calculated by the Hub.
+5. Confirm the registered artifact URL is `http://<hubのドメイン名またはIPアドレス>:39151/firmware/WTR/1.1.0/firmware.bin` or the equivalent `FIRMWARE_BASE_URL` value.
+6. Confirm artifact metadata includes `device_kind: "WTR"`.
 7. Assign `target_firmware_version` to selected active devices.
 8. Monitor `ota/status` and normal status after reboot.
 9. Expand rollout.

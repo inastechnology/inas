@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from html import escape
 
-from flask import Flask, Response, jsonify, render_template, render_template_string, request
+from flask import Flask, Response, jsonify, redirect, render_template, render_template_string, request, send_file
 
 from ina_device_hub.camera_connector import camera_connector
 from ina_device_hub.device_config_repository import DeviceConfigValidationError, DeviceRecordValidationError
@@ -15,6 +15,7 @@ from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, o
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
 from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
+from ina_device_hub.setting import setting
 from ina_device_hub.storage_connector import storage_connector
 from ina_device_hub.utils import Utils
 
@@ -96,8 +97,9 @@ def index():
           </li>
           {% endfor %}
         </ul>
-        <h2>locations</h2>
-        <botton onclick="location.href='/locations'">Add</botton>
+        <h2>Locations</h2>
+        <button type="button" onclick="location.href='/locations'">List</button>
+        <button type="button" onclick="location.href='/locations/add'">Add</button>
         <ul>
           {% for location, info in locations.items() %}
           <li>
@@ -180,8 +182,8 @@ def get_device_info(device_id):
           {{ agg_sensor_graph | safe }}
         </div>
         <br>
-        <botton onclick="location.href='/devices/{{ device_id }}/latest_image'">Latest Image</botton>
-        <botton onclick="location.href='/devices/{{ device_id }}/edit'">Edit</botton>
+        <button type="button" onclick="location.href='/devices/{{ device_id }}/latest_image'">Latest Image</button>
+        <button type="button" onclick="location.href='/devices/{{ device_id }}/edit'">Edit</button>
       </body>
     </html>
     """
@@ -205,27 +207,36 @@ def edit_device_info(device_id):
         return jsonify({"error": "device not found"}), 404
 
     if request.method == "POST":
-        new_info = request.form.get("info")
-        sensor_device_repository().add(device_id, new_info)
-        return jsonify({"message": "updated"})
+        sensor_device_repository().add(
+            device_id,
+            {
+                "name": request.form.get("name", "").strip(),
+                "location": request.form.get("location", "").strip(),
+                "info": request.form.get("info", "").strip(),
+            },
+        )
+        return redirect(f"/devices/{device_id}")
 
     device_name = device_info.get("name", "")
     device_location = device_info.get("location", "")
+    device_info_text = device_info.get("info", "")
     template = """
     <html>
       <body>
         <h1>INA Device Hub</h1>
         <h2>Edit Device Info</h2>
         <form method="post">
-          <label for="info">Info</label>
+          <label for="name">Name</label>
           <input type="text" id="name" name="name" value="{{ device_name }}">
-            <label for="location">Location</label>
-            <input type="text" id="location" name="location" value="{{ device_location }}">
-            <br>
-            <br>
-            <a href="/devices/{{ device_id }}">Back</a>
-            <br>
-            <br>
+          <label for="location">Location</label>
+          <input type="text" id="location" name="location" value="{{ device_location }}">
+          <label for="info">Info</label>
+          <textarea id="info" name="info">{{ device_info_text }}</textarea>
+          <br>
+          <br>
+          <a href="/devices/{{ device_id }}">Back</a>
+          <br>
+          <br>
           <button type="submit">Submit</button>
         </form>
       </body>
@@ -236,6 +247,7 @@ def edit_device_info(device_id):
         template,
         device_name=device_name,
         device_location=device_location,
+        device_info_text=device_info_text,
         device_id=device_id,
     )
 
@@ -278,7 +290,7 @@ def get_location_list():
           </li>
           {% endfor %}
         </ul>
-        <botton onclick="location.href='/locations/add'">Add</botton>
+        <button type="button" onclick="location.href='/locations/add'">Add</button>
       </body>
     </html>
     """
@@ -311,7 +323,7 @@ def add_location():
       <body>
         <h1>INA Device Hub</h1>
         <h2>Add Location</h2>
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
           <label for="location_name">Location Name</label>
           <input type="text" id="location_name" name="location_name">
           <label for="location_description">Location Description</label>
@@ -366,6 +378,9 @@ def mqtt_devices_page():
     devices = device_config_service().get_all_records()
     selected_device_id = device_id or next(iter(devices), None)
     selected_device = devices.get(selected_device_id) if selected_device_id else None
+    selected_statuses = device_config_service().list_statuses(selected_device_id, limit=20) if selected_device_id else []
+    selected_ota_statuses = ota_update_service().list_ota_statuses(selected_device_id, limit=20) if selected_device_id else []
+    firmware_artifacts = ota_update_service().get_artifacts()
     recent_events = list_device_events(limit=50, device_id=selected_device_id) if selected_device_id else list_device_events(limit=50)
     connection_events = (
         list_device_events(limit=50, device_id=selected_device_id, connection_events_only=True)
@@ -380,29 +395,59 @@ def mqtt_devices_page():
         <title>MQTT Devices</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 20px; color: #1f2933; }
+          a { color: #1652a8; }
           table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
           th, td { border: 1px solid #d9e2ec; padding: 6px 8px; vertical-align: top; font-size: 14px; }
           th { background: #f0f4f8; text-align: left; }
           pre { white-space: pre-wrap; word-break: break-word; background: #f7f9fb; border: 1px solid #d9e2ec; padding: 10px; }
+          textarea { box-sizing: border-box; width: 100%; min-height: 220px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+          input, select, button { font-size: 14px; padding: 6px 8px; margin: 3px 4px 8px 0; }
+          label { display: block; font-weight: 600; margin-top: 8px; }
+          section { border-top: 1px solid #d9e2ec; padding-top: 16px; margin-top: 20px; }
+          .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0 14px; }
+          .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; align-items: start; }
+          .muted { color: #52606d; font-size: 13px; }
           .nav a { margin-right: 12px; }
+          .result { border: 1px solid #d9e2ec; background: #f7f9fb; padding: 10px; min-height: 20px; }
+          .error { border-color: #d64545; background: #fff5f5; color: #8a1f1f; }
+          .ok { border-color: #2f855a; background: #f0fff4; color: #22543d; }
         </style>
       </head>
       <body>
         <h1>MQTT Devices</h1>
-        <p class="nav"><a href="/">Home</a><a href="/local/api/mqtt-devices">Devices API</a><a href="/local/api/mqtt-events">Events API</a><a href="/local/api/mqtt-connections">Connections API</a></p>
+        <p class="nav">
+          <a href="/">Home</a>
+          <a href="/local/api/mqtt-devices">Devices API</a>
+          <a href="/local/api/mqtt-events">Events API</a>
+          <a href="/local/api/mqtt-connections">Connections API</a>
+          <a href="/local/api/firmware-artifacts">Firmware API</a>
+        </p>
+        <div id="action-result" class="result muted"></div>
         <h2>Registered Devices</h2>
         <table>
           <thead>
-            <tr><th>device_id</th><th>state</th><th>last config request</th><th>last status</th><th>current config</th></tr>
+            <tr>
+              <th>device_id</th>
+              <th>state</th>
+              <th>kind</th>
+              <th>firmware</th>
+              <th>target</th>
+              <th>OTA state</th>
+              <th>last config request</th>
+              <th>last status</th>
+            </tr>
           </thead>
           <tbody>
             {% for id, record in devices.items() %}
             <tr>
               <td><a href="/mqtt-devices?device_id={{ id }}">{{ id }}</a></td>
               <td>{{ record.state }}</td>
+              <td>{{ record.device_kind }}</td>
+              <td>{{ record.firmware_version }}</td>
+              <td>{{ record.target_firmware_version }}</td>
+              <td>{{ record.ota_state }}</td>
               <td>{{ record.last_config_request_at }}</td>
               <td>{{ record.last_status_at }}</td>
-              <td><pre>{{ format_json(record.config) }}</pre></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -410,13 +455,311 @@ def mqtt_devices_page():
         {% if selected_device %}
         <h2>Selected Device</h2>
         <p><strong>{{ selected_device_id }}</strong></p>
-        <h3>Current Runtime Config</h3>
-        <pre>{{ format_json(selected_device.config) }}</pre>
-        <h3>Connection History</h3>
-        {{ render_events(connection_events) | safe }}
-        <h3>MQTT Event History</h3>
-        {{ render_events(recent_events) | safe }}
+        <div class="grid">
+          <section>
+            <h3>Device State</h3>
+            <p>state: <strong>{{ selected_device.state }}</strong></p>
+            <label for="approved-by">approved_by</label>
+            <input id="approved-by" type="text" value="operator">
+            <div class="actions">
+              <button type="button" data-state-action="approve">Approve</button>
+              <button type="button" data-state-action="disable">Disable</button>
+              <button type="button" data-state-action="retire">Retire</button>
+            </div>
+          </section>
+          <section>
+            <h3>Metadata</h3>
+            <form id="metadata-form">
+              <label for="metadata-name">name</label>
+              <input id="metadata-name" name="name" type="text" value="{{ selected_device.name or '' }}">
+              <label for="metadata-location">location</label>
+              <input id="metadata-location" name="location" type="text" value="{{ selected_device.location or '' }}">
+              <label for="metadata-memo">memo</label>
+              <input id="metadata-memo" name="memo" type="text" value="{{ selected_device.memo or '' }}">
+              <div class="actions"><button type="submit">Save metadata</button></div>
+            </form>
+          </section>
+        </div>
+
+        <section>
+          <h3>Runtime Config</h3>
+          <textarea id="runtime-config-json">{{ format_json(selected_device.config) }}</textarea>
+          <div class="actions">
+            <button type="button" id="save-runtime-config">Save config</button>
+            <button type="button" id="save-push-runtime-config">Save and push</button>
+            <button type="button" id="push-runtime-config">Push current config</button>
+          </div>
+        </section>
+
+        <section>
+          <h3>OTA Target</h3>
+          <form id="firmware-target-form">
+            <label for="target-firmware-version">target_firmware_version</label>
+            <input id="target-firmware-version" type="text" value="{{ selected_device.target_firmware_version or '' }}">
+            <div class="actions">
+              <button type="submit">Set target</button>
+              <button type="button" id="clear-firmware-target">Clear target</button>
+            </div>
+          </form>
+        </section>
+
+        <section>
+          <h3>Status History</h3>
+          <table>
+            <thead><tr><th>received_at</th><th>payload</th></tr></thead>
+            <tbody>
+              {% for status in selected_statuses | reverse %}
+              <tr><td>{{ status.received_at }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <h3>OTA Status History</h3>
+          <table>
+            <thead><tr><th>received_at</th><th>payload</th></tr></thead>
+            <tbody>
+              {% for status in selected_ota_statuses | reverse %}
+              <tr><td>{{ status.received_at }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+
+        <section>
+          <h3>Connection History</h3>
+          {{ render_events(connection_events) | safe }}
+        </section>
+        <section>
+          <h3>MQTT Event History</h3>
+          {{ render_events(recent_events) | safe }}
+        </section>
         {% endif %}
+
+        <section>
+          <h2>Firmware Artifacts</h2>
+          <form id="firmware-upload-form" enctype="multipart/form-data">
+            <div class="grid">
+              <div>
+                <label for="firmware-device-kind">device_kind</label>
+                <input id="firmware-device-kind" name="device_kind" type="text" value="{{ selected_device.device_kind if selected_device and selected_device.device_kind else 'WTR' }}" maxlength="3">
+              </div>
+              <div>
+                <label for="firmware-version">version</label>
+                <input id="firmware-version" name="version" type="text" value="{{ selected_device.target_firmware_version if selected_device and selected_device.target_firmware_version else '' }}">
+              </div>
+              <div>
+                <label for="firmware-build-id">build_id</label>
+                <input id="firmware-build-id" name="build_id" type="text">
+              </div>
+              <div>
+                <label for="firmware-rollout-state">rollout_state</label>
+                <select id="firmware-rollout-state" name="rollout_state">
+                  <option value="active">active</option>
+                  <option value="paused">paused</option>
+                  <option value="revoked">revoked</option>
+                </select>
+              </div>
+            </div>
+            <label for="firmware-file">firmware.bin</label>
+            <input id="firmware-file" name="firmware" type="file" required>
+            <div class="actions">
+              <label><input id="firmware-force" name="force" type="checkbox">force</label>
+              <label><input id="firmware-allow-downgrade" name="allow_downgrade" type="checkbox">allow_downgrade</label>
+              <button type="submit">Upload and register</button>
+            </div>
+          </form>
+          <table>
+            <thead><tr><th>key</th><th>version</th><th>kind</th><th>state</th><th>size</th><th>sha256</th><th>url</th><th>updated</th></tr></thead>
+            <tbody>
+              {% for key, artifact in firmware_artifacts.items() %}
+              <tr>
+                <td>{{ key }}</td>
+                <td>{{ artifact.version }}</td>
+                <td>{{ artifact.device_kind }}</td>
+                <td>{{ artifact.rollout_state }}</td>
+                <td>{{ artifact.size }}</td>
+                <td>{{ artifact.sha256 }}</td>
+                <td><a href="{{ artifact.url }}">{{ artifact.url }}</a></td>
+                <td>{{ artifact.updated_at }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+
+        <script>
+          const selectedDeviceId = {{ selected_device_id | tojson }};
+
+          function resultBox() {
+            return document.getElementById("action-result");
+          }
+
+          function showResult(message, ok) {
+            const box = resultBox();
+            box.className = "result " + (ok ? "ok" : "error");
+            box.textContent = message;
+          }
+
+          async function requestJson(url, options) {
+            const response = await fetch(url, options || {});
+            const text = await response.text();
+            let body = {};
+            if (text) {
+              try {
+                body = JSON.parse(text);
+              } catch (error) {
+                body = { error: text };
+              }
+            }
+            if (!response.ok) {
+              throw new Error(body.error || ("HTTP " + response.status));
+            }
+            return body;
+          }
+
+          function reloadSoon() {
+            window.setTimeout(() => window.location.reload(), 500);
+          }
+
+          document.querySelectorAll("[data-state-action]").forEach((button) => {
+            button.addEventListener("click", async () => {
+              if (!selectedDeviceId) return;
+              const action = button.getAttribute("data-state-action");
+              const body = action === "approve" ? { approved_by: document.getElementById("approved-by").value || null } : {};
+              try {
+                await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(selectedDeviceId) + "/" + action, {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+                showResult("Device state updated", true);
+                reloadSoon();
+              } catch (error) {
+                showResult(error.message, false);
+              }
+            });
+          });
+
+          const metadataForm = document.getElementById("metadata-form");
+          if (metadataForm) {
+            metadataForm.addEventListener("submit", async (event) => {
+              event.preventDefault();
+              const body = {
+                name: document.getElementById("metadata-name").value || null,
+                location: document.getElementById("metadata-location").value || null,
+                memo: document.getElementById("metadata-memo").value || null,
+              };
+              try {
+                await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(selectedDeviceId), {
+                  method: "PATCH",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+                showResult("Metadata saved", true);
+                reloadSoon();
+              } catch (error) {
+                showResult(error.message, false);
+              }
+            });
+          }
+
+          async function saveRuntimeConfig(push) {
+            const textarea = document.getElementById("runtime-config-json");
+            let config;
+            try {
+              config = JSON.parse(textarea.value);
+            } catch (error) {
+              showResult("Runtime config JSON is invalid", false);
+              return;
+            }
+            try {
+              await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(selectedDeviceId) + "/runtime-config?push=" + String(Boolean(push)), {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(config),
+              });
+              showResult(push ? "Runtime config saved and pushed" : "Runtime config saved", true);
+              reloadSoon();
+            } catch (error) {
+              showResult(error.message, false);
+            }
+          }
+
+          const saveConfigButton = document.getElementById("save-runtime-config");
+          if (saveConfigButton) saveConfigButton.addEventListener("click", () => saveRuntimeConfig(false));
+          const savePushConfigButton = document.getElementById("save-push-runtime-config");
+          if (savePushConfigButton) savePushConfigButton.addEventListener("click", () => saveRuntimeConfig(true));
+          const pushConfigButton = document.getElementById("push-runtime-config");
+          if (pushConfigButton) {
+            pushConfigButton.addEventListener("click", async () => {
+              try {
+                await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(selectedDeviceId) + "/runtime-config/push", { method: "POST" });
+                showResult("Runtime config pushed", true);
+              } catch (error) {
+                showResult(error.message, false);
+              }
+            });
+          }
+
+          const firmwareTargetForm = document.getElementById("firmware-target-form");
+          if (firmwareTargetForm) {
+            firmwareTargetForm.addEventListener("submit", async (event) => {
+              event.preventDefault();
+              await setFirmwareTarget(document.getElementById("target-firmware-version").value || null);
+            });
+          }
+          const clearTargetButton = document.getElementById("clear-firmware-target");
+          if (clearTargetButton) clearTargetButton.addEventListener("click", () => setFirmwareTarget(null));
+
+          async function setFirmwareTarget(version) {
+            try {
+              await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(selectedDeviceId) + "/firmware-target", {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ target_firmware_version: version }),
+              });
+              showResult("Firmware target updated", true);
+              reloadSoon();
+            } catch (error) {
+              showResult(error.message, false);
+            }
+          }
+
+          const firmwareUploadForm = document.getElementById("firmware-upload-form");
+          firmwareUploadForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const deviceKind = document.getElementById("firmware-device-kind").value.trim();
+            const version = document.getElementById("firmware-version").value.trim();
+            if (!deviceKind || !version) {
+              showResult("device_kind and version are required", false);
+              return;
+            }
+            const formData = new FormData();
+            const file = document.getElementById("firmware-file").files[0];
+            if (!file) {
+              showResult("firmware.bin is required", false);
+              return;
+            }
+            formData.append("firmware", file);
+            const buildId = document.getElementById("firmware-build-id").value;
+            if (buildId) formData.append("build_id", buildId);
+            formData.append("rollout_state", document.getElementById("firmware-rollout-state").value);
+            formData.append("force", document.getElementById("firmware-force").checked ? "true" : "false");
+            formData.append("allow_downgrade", document.getElementById("firmware-allow-downgrade").checked ? "true" : "false");
+            try {
+              await requestJson(
+                "/local/api/firmware-artifacts/" + encodeURIComponent(deviceKind) + "/" + encodeURIComponent(version) + "/upload",
+                { method: "POST", body: formData },
+              );
+              showResult("Firmware uploaded and registered", true);
+              reloadSoon();
+            } catch (error) {
+              showResult(error.message, false);
+            }
+          });
+        </script>
       </body>
     </html>
     """
@@ -426,6 +769,9 @@ def mqtt_devices_page():
         devices=devices,
         selected_device_id=selected_device_id,
         selected_device=selected_device,
+        selected_statuses=selected_statuses,
+        selected_ota_statuses=selected_ota_statuses,
+        firmware_artifacts=firmware_artifacts,
         connection_events=connection_events,
         recent_events=recent_events,
         format_json=_format_json,
@@ -596,6 +942,32 @@ def upsert_firmware_artifact(version):
     return jsonify(artifact)
 
 
+@app.route("/local/api/firmware-artifacts/<device_kind>/<version>/upload", methods=["POST", "PUT"])
+def upload_firmware_artifact(device_kind, version):
+    uploaded_file = request.files.get("firmware") or request.files.get("file")
+    firmware_binary = uploaded_file.read() if uploaded_file is not None else request.get_data()
+    if not firmware_binary:
+        return jsonify({"error": "firmware binary must not be empty"}), 400
+
+    try:
+        metadata = _firmware_upload_metadata()
+        artifact = ota_update_service().upsert_firmware_binary(device_kind, version, firmware_binary, metadata=metadata)
+    except FirmwareArtifactValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(artifact), 201
+
+
+@app.route("/firmware/<device_kind>/<version>/firmware.bin", methods=["GET"])
+def download_firmware_binary(device_kind, version):
+    try:
+        firmware_path = ota_update_service().get_firmware_path(device_kind, version)
+    except FirmwareArtifactValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not os.path.isfile(firmware_path):
+        return jsonify({"error": "firmware binary not found"}), 404
+    return send_file(firmware_path, mimetype="application/octet-stream", as_attachment=False, download_name="firmware.bin")
+
+
 @app.route("/local/api/mqtt-devices/<device_id>/firmware-target", methods=["PUT"])
 def set_mqtt_device_firmware_target(device_id):
     request_body = request.get_json(silent=True)
@@ -619,6 +991,30 @@ def list_mqtt_device_ota_statuses(device_id):
     return jsonify(ota_update_service().list_ota_statuses(device_id, limit=limit))
 
 
+def _firmware_upload_metadata():
+    metadata = {}
+    for key in ("update_id", "build_id", "rollout_state"):
+        value = request.form.get(key, request.args.get(key))
+        if value is not None and value != "":
+            metadata[key] = value
+    for key in ("force", "allow_downgrade"):
+        value = request.form.get(key, request.args.get(key))
+        if value is not None and value != "":
+            metadata[key] = _parse_bool(value, key)
+    return metadata
+
+
+def _parse_bool(value, key):
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise FirmwareArtifactValidationError(f"{key} must be a boolean")
+
+
 @app.route("/local/api/images/<path:image_path>")
 def get_image(image_path):
     image_repo = sensor_image_repogitory()
@@ -638,7 +1034,8 @@ def video_feed(device_id):
 
 
 def flask_run():
-    app.run(host="0.0.0.0", port=5151)
+    http_settings = setting().get("http") or {}
+    app.run(host=http_settings.get("host", "0.0.0.0"), port=int(http_settings.get("port", 39151)))
 
 
 def _request_limit(default: int = 100, maximum: int = 1000):

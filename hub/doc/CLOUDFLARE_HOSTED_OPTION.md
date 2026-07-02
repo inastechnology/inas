@@ -158,7 +158,7 @@ Cloudflare hosted option 用に追加するキーは、既存 `.env` に追記�
 - `CLOUDFLARE_TUNNEL_NAME`: Tunnel 名。既定: `inas-hub`
 - `CLOUDFLARE_TUNNEL_ID`: 作成済み Tunnel ID
 - `CLOUDFLARE_TUNNEL_HOSTNAME`: Tunnel DNS route hostname
-- `CLOUDFLARE_TUNNEL_ORIGIN_URL`: Tunnel の転送先 local URL。既定: `http://localhost:5151`
+- `CLOUDFLARE_TUNNEL_ORIGIN_URL`: Tunnel の転送先 local URL。既定: `http://localhost:39151`
 - `CLOUDFLARE_TUNNEL_TOKEN_FILE`: Tunnel token file path。既定: `hub/.data/cloudflare/tunnel-token`
 - `CLOUDFLARE_TUNNEL_DNS_RECORD_ID`: Tunnel 用 DNS CNAME record ID
 - `CLOUDFLARE_ZONE_ID`: DNS record を作る zone ID

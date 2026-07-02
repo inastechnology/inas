@@ -24,7 +24,7 @@ from cloudflare_access_setup import ScriptError, merged_env, quote_env_value, re
 
 API_BASE_URL = "https://api.cloudflare.com/client/v4"
 DEFAULT_TUNNEL_NAME = "inas-hub"
-DEFAULT_ORIGIN_URL = "http://localhost:5151"
+DEFAULT_ORIGIN_URL = "http://localhost:39151"
 MANAGED_DNS_COMMENT = "Managed by ina-device-hub Cloudflare hosted setup"
 
 

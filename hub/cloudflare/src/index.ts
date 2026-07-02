@@ -15,15 +15,20 @@ export function createApp(options: { servicesFactory?: (env: Env) => AppServices
   const servicesFactory = options.servicesFactory ?? createServices;
   const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-  app.use("*", async (c, next) => {
-    c.set("services", servicesFactory(c.env));
-    await next();
-  });
-
   app.get("/", (c) => c.redirect("/api/health"));
   app.route("/api/health", healthRoutes());
 
-  app.use("/api/*", accessAuth({ services: (c) => c.get("services"), verify: options.verifyAccessJwt }));
+  app.use(
+    "/api/*",
+    accessAuth({
+      services: (c) => {
+        const services = servicesFactory(c.env);
+        c.set("services", services);
+        return services;
+      },
+      verify: options.verifyAccessJwt,
+    }),
+  );
   app.get("/api/me", (c) => c.json({ user: c.get("user") }));
   app.route("/api/events", eventsRoutes());
 
