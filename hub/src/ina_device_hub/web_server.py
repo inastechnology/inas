@@ -1254,6 +1254,17 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             background: #fff;
             padding: 7px 10px;
           }
+          .quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+          .quick-actions a {
+            display: inline-flex;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--text);
+            padding: 7px 10px;
+            font-size: 14px;
+          }
+          .quick-actions a.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
           .nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
           .nav a, button {
             border: 1px solid var(--line);
@@ -1420,6 +1431,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           {% if is_detail_page %}
           <div id="action-result" class="result">{{ "デモモードです。操作しても保存されません。" if demo_mode else "操作結果がここに表示されます。" }}</div>
           <div class="back-link"><a href="{{ list_path }}">水やり機一覧へ戻る</a></div>
+          <div class="quick-actions" aria-label="詳細ページ内の操作">
+            <a href="#ota-target" class="primary">OTA 更新対象</a>
+            <a href="#firmware-maintenance">ファームウェア保守</a>
+          </div>
           {% endif %}
 
           {% if not is_detail_page %}
@@ -1679,7 +1694,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </div>
             </details>
 
-            <details>
+            <details id="ota-target" open>
               <summary>OTA 更新対象</summary>
               <div class="detail-body">
                 <form id="firmware-target-form">
@@ -1721,9 +1736,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </div>
             </details>
           </section>
-          <section class="panel">
+          <section id="firmware-maintenance" class="panel">
             <h2>ファームウェア保守</h2>
-            <details>
+            <details open>
               <summary>firmware.bin を登録する</summary>
               <div class="detail-body">
                 <form id="firmware-upload-form" enctype="multipart/form-data">
