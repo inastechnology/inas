@@ -592,6 +592,29 @@ bool app_ota_publish_pending_boot_status(uint32_t seq_id)
     return true;
 }
 
+bool app_ota_publish_request_failed_status(uint32_t seq_id)
+{
+    const bool sent = app_ota_publish_status(seq_id, "failed", "none", APP_FIRMWARE_VERSION, 0, "request_publish_failed");
+    if (sent)
+    {
+        app_network_flush(APP_MQTT_STATUS_PUBLISH_DRAIN_MS);
+    }
+    return sent;
+}
+
+bool app_ota_publish_offer_timeout_status(uint32_t seq_id, uint32_t wait_ms)
+{
+    char error[48];
+    const int write_len = snprintf(error, sizeof(error), "offer_timeout_%lums", static_cast<unsigned long>(wait_ms));
+    const char *safe_error = write_len >= 0 && static_cast<size_t>(write_len) < sizeof(error) ? error : "offer_timeout";
+    const bool sent = app_ota_publish_status(seq_id, "failed", "none", APP_FIRMWARE_VERSION, 0, safe_error);
+    if (sent)
+    {
+        app_network_flush(APP_MQTT_STATUS_PUBLISH_DRAIN_MS);
+    }
+    return sent;
+}
+
 bool app_ota_handle_offer(uint32_t seq_id)
 {
     if (!s_offer.received)

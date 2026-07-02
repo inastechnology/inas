@@ -3,7 +3,7 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("FIRMWARE_BASE_URL", "http://127.0.0.1:39151")
@@ -21,7 +21,7 @@ os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
 from ina_device_hub.device_config_repository import DeviceConfigRepository  # noqa: E402
-from ina_device_hub.ota_update_service import FirmwareArtifactRepository, OTAUpdateService  # noqa: E402
+from ina_device_hub.ota_update_service import FirmwareArtifactRepository, OTA_UPDATE_REPLY_RETRY_DELAYS_SEC, OTAUpdateService  # noqa: E402
 from ina_device_hub.setting import setting  # noqa: E402
 
 
@@ -62,9 +62,12 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.repository.set_firmware_target(device_id, "1.1.0")
         self.artifact_repository.upsert("1.1.0", _artifact())
 
-        handled = self.service.handle_mqtt_message(None, _ota_request_message(device_id, firmware_version="1.0.0"))
+        with patch("ina_device_hub.ota_update_service.time.sleep") as sleep_mock:
+            handled = self.service.handle_mqtt_message(None, _ota_request_message(device_id, firmware_version="1.0.0"))
 
         self.assertTrue(handled)
+        self.assertEqual(len(self.mqtt_client.published), 1 + len(OTA_UPDATE_REPLY_RETRY_DELAYS_SEC))
+        sleep_mock.assert_has_calls([call(delay) for delay in OTA_UPDATE_REPLY_RETRY_DELAYS_SEC])
         self.assertEqual(self.mqtt_client.published[0]["topic"], f"/{device_id}/kinds/ota/reply")
         self.assertEqual(self.mqtt_client.published[0]["qos"], 0)
         self.assertFalse(self.mqtt_client.published[0]["retain"])
@@ -87,6 +90,7 @@ class OTAUpdateServiceTest(unittest.TestCase):
 
         self.service.handle_mqtt_message(None, _ota_request_message(device_id, firmware_version="1.1.0"))
 
+        self.assertEqual(len(self.mqtt_client.published), 1)
         payload = json.loads(self.mqtt_client.published[0]["payload"])
         self.assertEqual(payload, {"schema_version": 1, "action": "none", "reason": "already_target"})
 

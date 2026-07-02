@@ -13,6 +13,7 @@
 - NTP同期失敗
 - schedule判定結果
 - 灌水開始、スキップ、出力開始失敗
+- OTA request publish、offer受信、offer timeout
 - status publish成否
 - 次回sleep秒数
 
@@ -166,6 +167,16 @@ Used by `APP_DEBUG_EVENT_WATERING_DECISION`.
 | 17 | `APP_DEBUG_EVENT_STATUS_FAILED` | ERROR | `0` | `0` |
 | 18 | `APP_DEBUG_EVENT_STATUS_SKIPPED` | WARNING | `0` | `0` |
 | 19 | `APP_DEBUG_EVENT_DEBUG_LOG_PUBLISH_ENABLED` | INFO | status sent: `1/0` | sleep seconds |
+
+### OTA events
+
+| Code | Symbol | Typical level | arg0 | arg1 |
+|---:|---|---|---|---|
+| 80 | `APP_DEBUG_EVENT_OTA_REQUEST_SENT` | INFO | request published: `1` | offer wait timeout ms |
+| 81 | `APP_DEBUG_EVENT_OTA_REQUEST_FAILED` | ERROR | request published: `0` | offer wait timeout ms |
+| 82 | `APP_DEBUG_EVENT_OTA_OFFER_TIMEOUT` | WARNING | offer wait timeout ms | `0` |
+| 83 | `APP_DEBUG_EVENT_OTA_OFFER_RECEIVED` | INFO | offer received: `1` | offer wait timeout ms |
+| 84 | `APP_DEBUG_EVENT_OTA_HANDLE_RESULT` | INFO or WARNING | update attempted: `1/0` | `0` |
 
 ### Network events
 

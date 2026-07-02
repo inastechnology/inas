@@ -149,6 +149,12 @@ OTA topics:
 
 The device already subscribes to wildcard topics. OTA implementation must extend the subscribe callback to process only `ota/reply` and `ota/push` messages addressed to its own `device_id`.
 
+The Hub replies immediately to each OTA request. When the reply is an
+`action: "update"` offer, the Hub also republishes the same reply with short
+backoff delays in the same wake window. This mitigates transient MQTT timing
+races without increasing the device wake frequency or adding another
+device-side retry cycle.
+
 ## 8. OTA Request Payload
 
 The device publishes this after runtime config handling and before watering evaluation.
@@ -361,10 +367,16 @@ Allowed states:
 | `confirmed` | New firmware passed startup self-check |
 | `failed` | OTA update failed and old firmware continues |
 
+The device must publish a `failed` OTA status before deep sleep when the OTA
+control exchange itself fails. This makes the difference between “no offer
+arrived” and “download/write failed” visible in remote logs.
+
 Recommended error codes:
 
 | Error | Meaning |
 |---|---|
+| `request_publish_failed` | Device could not publish `ota/request` |
+| `offer_timeout_<wait_ms>ms` | Device published `ota/request` but did not receive `ota/reply` or `ota/push` before the wait deadline |
 | `invalid_payload` | JSON or required fields invalid |
 | `unsupported_schema` | `schema_version` not supported |
 | `device_kind_mismatch` | Offer device kind did not match this firmware |

@@ -290,19 +290,42 @@ bool AppDevice::check_ota_update(uint32_t seq_id) const
 {
     app_ota_mark_waiting();
     const bool ota_requested = app_network_request_ota_update(seq_id);
-    const bool ota_offer_received = ota_requested && app_network_wait_for_ota_offer(APP_OTA_OFFER_WAIT_MS);
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        ota_requested ? APP_DEBUG_LOG_INFO : APP_DEBUG_LOG_ERROR,
+                        ota_requested ? APP_DEBUG_EVENT_OTA_REQUEST_SENT : APP_DEBUG_EVENT_OTA_REQUEST_FAILED,
+                        ota_requested ? 1 : 0,
+                        APP_OTA_OFFER_WAIT_MS);
+    if (!ota_requested)
+    {
+        Serial.println("OTA update request was not sent; reporting failure before normal wake cycle continues");
+        app_ota_publish_request_failed_status(seq_id);
+        return false;
+    }
+
+    const bool ota_offer_received = app_network_wait_for_ota_offer(APP_OTA_OFFER_WAIT_MS);
     if (ota_offer_received)
     {
-        return app_ota_handle_offer(seq_id);
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                            APP_DEBUG_LOG_INFO,
+                            APP_DEBUG_EVENT_OTA_OFFER_RECEIVED,
+                            1,
+                            APP_OTA_OFFER_WAIT_MS);
+        const bool ota_attempted = app_ota_handle_offer(seq_id);
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                            ota_attempted ? APP_DEBUG_LOG_INFO : APP_DEBUG_LOG_WARNING,
+                            APP_DEBUG_EVENT_OTA_HANDLE_RESULT,
+                            ota_attempted ? 1 : 0,
+                            0);
+        return ota_attempted;
     }
-    if (ota_requested)
-    {
-        Serial.println("OTA offer was not received; continuing normal wake cycle");
-    }
-    else
-    {
-        Serial.println("OTA update request was not sent; continuing normal wake cycle");
-    }
+
+    Serial.println("OTA offer was not received; reporting timeout before normal wake cycle continues");
+    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                        APP_DEBUG_LOG_WARNING,
+                        APP_DEBUG_EVENT_OTA_OFFER_TIMEOUT,
+                        APP_OTA_OFFER_WAIT_MS,
+                        0);
+    app_ota_publish_offer_timeout_status(seq_id, APP_OTA_OFFER_WAIT_MS);
     return false;
 }
 

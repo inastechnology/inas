@@ -4,6 +4,7 @@ import json
 import os
 import re
 import socket
+import time
 import uuid
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -19,6 +20,7 @@ SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 DEVICE_KIND_RE = re.compile(r"^[A-Z]{3}$")
 SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:+-]+$")
 IPV4_HOST_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+OTA_UPDATE_REPLY_RETRY_DELAYS_SEC = (0.25, 0.6, 1.2)
 
 
 class FirmwareArtifactValidationError(ValueError):
@@ -163,6 +165,7 @@ class OTAUpdateService:
             record = self.repository.get(device_id)
             offer = self.decide_offer(device_id, request_payload, record=record)
             published = self.publish_reply(device_id, offer, notify=False, log_event=False)
+            retry_results = self._retry_update_offer(device_id, offer)
 
             append_device_event(
                 "ota_request",
@@ -173,8 +176,16 @@ class OTAUpdateService:
                 action="request",
                 payload=request_payload,
             )
+            self._record_decision(device_id, request_payload, record, offer, retry_results)
             self.repository.record_ota_request(device_id, request_payload)
-            self._record_offer_publish(device_id, published["topic"], offer, published["mqtt_rc"], retain=False)
+            self._record_offer_publish(
+                device_id,
+                published["topic"],
+                offer,
+                published["mqtt_rc"],
+                retain=False,
+                retry_results=retry_results,
+            )
             return True
 
         if action == "status":
@@ -265,7 +276,10 @@ class OTAUpdateService:
             logger.error("Failed to publish OTA offer for device_id=%s topic=%s rc=%s", device_id, topic, result.rc)
         return {"topic": topic, "payload": offer, "mqtt_rc": result.rc}
 
-    def _record_offer_publish(self, device_id: str, topic: str, offer: dict, mqtt_rc: int, *, retain: bool):
+    def _record_offer_publish(self, device_id: str, topic: str, offer: dict, mqtt_rc: int, *, retain: bool, retry_results: list[dict] | None = None):
+        payload = dict(offer)
+        if retry_results is not None:
+            payload["reply_retry_results"] = retry_results
         append_device_event(
             "ota_offer_publish",
             "outbound",
@@ -273,9 +287,76 @@ class OTAUpdateService:
             topic=topic,
             category="ota",
             action="reply",
-            payload=offer,
+            payload=payload,
             mqtt_rc=mqtt_rc,
             retain=retain,
+        )
+
+    def _retry_update_offer(self, device_id: str, offer: dict):
+        if offer.get("action") != "update":
+            return []
+
+        results = []
+        for attempt, delay_sec in enumerate(OTA_UPDATE_REPLY_RETRY_DELAYS_SEC, start=1):
+            time.sleep(delay_sec)
+            published = self.publish_reply(device_id, offer, notify=False, log_event=False)
+            results.append(
+                {
+                    "attempt": attempt,
+                    "delay_ms": int(delay_sec * 1000),
+                    "mqtt_rc": published["mqtt_rc"],
+                }
+            )
+            if published["mqtt_rc"] != 0:
+                logger.error(
+                    "Failed to publish OTA offer retry for device_id=%s attempt=%s rc=%s",
+                    device_id,
+                    attempt,
+                    published["mqtt_rc"],
+                )
+        return results
+
+    def _record_decision(self, device_id: str, request_payload: dict, record: dict | None, offer: dict, retry_results: list[dict]):
+        target = record.get("target_firmware_version") if isinstance(record, dict) else None
+        request_device_kind = request_payload.get("device_kind")
+        artifact = self.artifact_repository.get(target, request_device_kind) if target and _is_device_kind(request_device_kind) else None
+        append_device_event(
+            "ota_decision",
+            "internal",
+            device_id,
+            category="ota",
+            action=offer.get("action"),
+            payload={
+                "request": {
+                    "seq": request_payload.get("seq"),
+                    "device_kind": request_payload.get("device_kind"),
+                    "firmware_version": request_payload.get("firmware_version"),
+                    "firmware_build_id": request_payload.get("firmware_build_id"),
+                    "running_partition": request_payload.get("running_partition"),
+                    "free_heap": request_payload.get("free_heap"),
+                },
+                "device_record": {
+                    "state": record.get("state") if isinstance(record, dict) else None,
+                    "device_kind": record.get("device_kind") if isinstance(record, dict) else None,
+                    "target_firmware_version": target,
+                    "last_firmware_version": record.get("firmware_version") if isinstance(record, dict) else None,
+                    "last_firmware_build_id": record.get("firmware_build_id") if isinstance(record, dict) else None,
+                },
+                "artifact": _decision_artifact_summary(artifact),
+                "decision": {
+                    "action": offer.get("action"),
+                    "reason": offer.get("reason"),
+                    "update_id": offer.get("update_id"),
+                    "version": offer.get("version"),
+                    "build_id": offer.get("build_id"),
+                    "size": offer.get("size"),
+                    "sha256": offer.get("sha256"),
+                    "url": offer.get("url"),
+                    "force": offer.get("force"),
+                    "allow_downgrade": offer.get("allow_downgrade"),
+                    "retry_count": len(retry_results),
+                },
+            },
         )
 
 
@@ -342,6 +423,23 @@ def _none_offer(reason: str):
         "schema_version": 1,
         "action": "none",
         "reason": reason,
+    }
+
+
+def _decision_artifact_summary(artifact: dict | None):
+    if artifact is None:
+        return None
+    return {
+        "device_kind": artifact.get("device_kind"),
+        "version": artifact.get("version"),
+        "update_id": artifact.get("update_id"),
+        "build_id": artifact.get("build_id"),
+        "url": artifact.get("url"),
+        "size": artifact.get("size"),
+        "sha256": artifact.get("sha256"),
+        "rollout_state": artifact.get("rollout_state"),
+        "force": artifact.get("force"),
+        "allow_downgrade": artifact.get("allow_downgrade"),
     }
 
 
