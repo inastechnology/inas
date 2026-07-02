@@ -115,7 +115,7 @@ protected:
         const app_runtime_config_t &runtime_config = app_runtime_config_get();
 
         m_cycle = {};
-        m_cycle.last_soil_moisture = app_watering_get_last_soil_moisture();
+        m_cycle.last_soil_moisture = app_watering_read_soil_moisture();
         m_cycle.force_watering = runtime_config.force_watering;
         m_cycle.debug_log_on_wake = runtime_config.debug_log_on_wake;
         m_cycle.runtime_config_valid = app_runtime_config_is_valid();

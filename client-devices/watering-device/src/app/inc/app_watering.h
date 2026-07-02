@@ -11,6 +11,7 @@ extern "C"
     void app_watering_loop();
     void app_watering_set_threshold(uint8_t threshold_percent);
     uint8_t app_watering_get_threshold();
+    uint8_t app_watering_read_soil_moisture();
     bool app_watering_start(int duration_sec = 10, uint32_t channel_mask = 0x1, bool force_watering = false);
     bool app_watering_start_async(int duration_sec = 10, uint32_t channel_mask = 0x1, bool force_watering = false);
     bool app_watering_is_in_progress();

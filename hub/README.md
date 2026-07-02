@@ -93,6 +93,16 @@ Cloudflare hosted option は 2 種類あります。
 
 Tunnel 版のネットワーク構成図は `doc/NETWORK_ARCHITECTURE.md` を参照してください。
 
+hub の管理 UI は、営農者が水やり状況・土壌水分・起動履歴を先に確認できる admin panel 風の構成にしています。UI 改善方針は `doc/HUB_ADMIN_UX_IMPLEMENTATION.md` を参照してください。
+
+実データがない開発環境では、サンプルの WTR デバイスと履歴を使って UI/UX を確認できます。次のコマンドは Flask の web UI だけを起動し、MQTT やデバイス接続は開始しません。
+
+```bash
+python scripts/run_admin_demo_server.py
+```
+
+起動後に `http://127.0.0.1:39251/demo/mqtt-devices` を開きます。一覧カードで灌水・土壌水分・次回起床のサマリを確認し、カードを選ぶと水やり機詳細へ遷移します。詳細では Plotly で灌水推移と土壌水分推移を確認でき、表示期間は直近3日、2週間、1か月、全期間、カスタムから選べます。デモページ上の操作は保存されません。実データの管理画面は通常通り `/mqtt-devices` です。
+
 Tunnel 版を使う場合は、`.env` に固定したい Cloudflare account / hostname、許可 email、ユーザー側で発行した `CLOUDFLARE_ACCESS_API_TOKEN` を設定してから、次のスクリプトを実行します。
 
 AI Agent に環境構築や Cloudflare hosted option のセットアップを依頼する場合は、先に `doc/AI_AGENT_ENVIRONMENT_SETUP.md` を読ませてください。`.env` を正として扱うこと、secret を出力しないこと、Cloudflare resource を idempotent script で作成・再利用することを前提にしています。

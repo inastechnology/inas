@@ -15,6 +15,7 @@ static constexpr uint32_t kPumpOutputMask = (1UL << kPumpOutputIndex);
 static constexpr uint32_t kValveChannelMask = kPumpOutputMask - 1;
 
 static uint8_t _last_moisture = 0;
+static bool s_last_moisture_valid = false;
 static uint8_t s_watering_threshold = 40;
 
 static void on_watering_complete(void *arg)
@@ -67,6 +68,14 @@ uint8_t app_watering_get_threshold()
     return s_watering_threshold;
 }
 
+uint8_t app_watering_read_soil_moisture()
+{
+    _last_moisture = hal_soil_read_percent();
+    s_last_moisture_valid = true;
+    Serial.printf("Soil moisture measured: %u%%\n", _last_moisture);
+    return _last_moisture;
+}
+
 bool app_watering_start(int duration_sec, uint32_t channel_mask, bool force_watering)
 {
     if (!app_watering_start_async(duration_sec, channel_mask, force_watering))
@@ -101,8 +110,7 @@ bool app_watering_start_async(int duration_sec, uint32_t channel_mask, bool forc
     }
     const uint32_t output_mask = valve_mask | kPumpOutputMask;
 
-    uint8_t moisture = hal_soil_read_percent();
-    _last_moisture = moisture;
+    uint8_t moisture = s_last_moisture_valid ? _last_moisture : app_watering_read_soil_moisture();
     Serial.printf("Current soil moisture: %u%% threshold=%u%% force_watering=%s requested_mask=0x%lx output_mask=0x%lx\n",
                   moisture,
                   s_watering_threshold,

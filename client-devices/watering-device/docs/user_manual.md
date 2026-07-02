@@ -78,13 +78,15 @@ MQTT認証を使わない場合は、MQTT UsernameとMQTT Passwordの両方を�
 3. MQTT brokerへ接続します。
 4. MQTTでruntime configを要求します。
 5. NTPで時刻同期します。
-6. 現在時刻に該当する灌水スケジュールがあるか確認します。
-7. 土壌水分がしきい値未満の場合、指定チャンネルを指定秒数だけ動作させます。
-8. ネットワーク接続中であれば、statusをMQTTへpublishします。
-9. `debug_log_on_wake`が有効な場合、debug logをMQTTへpublishします。
-10. 次回スケジュールまでdeep sleepします。
+6. 土壌水分を測定します。
+7. 現在時刻に該当する灌水スケジュールがあるか確認します。
+8. 灌水スケジュールがあり、土壌水分がしきい値未満の場合、指定チャンネルを指定秒数だけ動作させます。
+9. ネットワーク接続中であれば、statusをMQTTへpublishします。
+10. `debug_log_on_wake`が有効な場合、debug logをMQTTへpublishします。
+11. 次回スケジュールまでdeep sleepします。
 
 Wi-FiまたはMQTTへ接続できない場合でも、保存済みruntime configがあり、Deep Sleep復帰時の時刻が有効であれば、保存済みスケジュールで灌水判定を続けます。電源断後の冷起動など、時刻を信頼できない場合は灌水判定を行わず、短い間隔でネットワーク復帰を再試行します。
+灌水スケジュールがない起床でも、土壌水分の測定値はstatusの`last_soil_moisture`として送信されます。
 
 ## 5. MQTT runtime config
 
@@ -233,7 +235,7 @@ payload例:
 | `watering_due` | 実行対象スケジュールがあったか |
 | `watering_started` | 実際に灌水を開始したか。土壌水分が十分な場合は`false` |
 | `ota_check_interval_sec` | OTA確認のための最大deep sleep時間 |
-| `last_soil_moisture` | 最後に読み取った土壌水分 |
+| `last_soil_moisture` | この起床サイクルで測定した土壌水分。灌水スケジュールがない起床でも送信 |
 | `threshold` | 使用した土壌水分しきい値 |
 | `force_watering` | 強制灌水設定が有効か |
 | `debug_log_on_wake` | debug log publish設定が有効か |

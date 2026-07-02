@@ -14,7 +14,7 @@ def _utc_now():
 
 
 DEVICE_STATES = {"pending", "active", "disabled", "retired"}
-MAX_STATUS_HISTORY = 100
+MAX_STATUS_HISTORY = 2000
 MAX_OTA_STATUS_HISTORY = 100
 DEVICE_KIND_RE = re.compile(r"^[A-Z]{3}$")
 

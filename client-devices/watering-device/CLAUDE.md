@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Firmware for a **Seeed XIAO ESP32-S3** smart watering device. The device wakes every 10 hours, reads soil moisture, runs a capped watering cycle (up to 10 × 30-second loops with 30-second soak waits between loops), publishes a status JSON payload over MQTT, then enters deep sleep. Built with the Arduino framework via PlatformIO.
+Firmware for a **Seeed XIAO ESP32-S3** smart watering device. The device wakes on its configured schedule or OTA check interval, reads soil moisture on every wake cycle, runs watering only when a due schedule needs it, publishes a status JSON payload over MQTT, then enters deep sleep. Built with the Arduino framework via PlatformIO.
 
 ---
 
@@ -94,9 +94,10 @@ Common lifecycle responsibilities:
 Watering-device responsibilities:
 
 1. Parse and persist watering runtime config.
-2. Check due schedules and soil moisture.
-3. Run valve/pump output through `app_watering_start_async()`.
-4. Build the watering-specific status JSON payload.
+2. Read soil moisture once per wake cycle.
+3. Check due schedules against the measured soil moisture.
+4. Run valve/pump output through `app_watering_start_async()`.
+5. Build the watering-specific status JSON payload, including `last_soil_moisture` even when no watering schedule is due.
 
 ---
 
