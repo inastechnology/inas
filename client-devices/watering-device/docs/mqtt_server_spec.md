@@ -289,6 +289,7 @@ Examples:
 ## 10. Status Publish
 
 デバイスは各起床サイクルの最後にstatusをpublishします。
+WTR firmwareは、灌水スケジュールの有無に関係なく、起床サイクルごとに土壌水分を1回測定します。測定値は`last_soil_moisture`としてstatusへ含まれます。灌水スケジュールが到来している場合は、この起床時測定値を灌水要否判定にも使います。
 
 標準topic:
 
@@ -341,7 +342,7 @@ payload例:
 | `schedule_epoch_utc` | integer | Due schedule time as UTC epoch. `0` when no schedule was due |
 | `next_sleep_sec` | integer | Planned sleep duration until next wake-up. This is capped by `ota_check_interval_sec` when runtime config is valid |
 | `ota_check_interval_sec` | integer | Active maximum deep-sleep interval for OTA checks |
-| `last_soil_moisture` | integer | Last measured soil moisture percent |
+| `last_soil_moisture` | integer | Soil moisture percent measured during this wake cycle. Present even when `watering_due=false` |
 | `threshold` | integer | Moisture threshold used for this cycle |
 | `force_watering` | boolean | Whether force watering was enabled in the active config |
 | `debug_log_on_wake` | boolean | Whether debug log publishing was enabled in the active config |
@@ -414,6 +415,8 @@ Canonical binary layout, event code table, argument semantics, and decoder examp
 | `time_synced=false` | NTP同期に失敗。schedule実行判定は行われない |
 | `watering_due=true`, `watering_started=false` | scheduleは到来したが、土壌水分がしきい値以上、または出力開始に失敗 |
 | `watering_due=false` | 現在時刻で実行対象scheduleなし |
+
+`watering_due=false`の場合でも、`last_soil_moisture`はその起床サイクルで測定された最新値です。サーバはこの値を灌水履歴とは別に土壌水分時系列として保存・表示できます。
 
 デバイスは有効なruntime configを受信するとLittleFSへ保存します。Wi-FiまたはMQTTが利用できない起床cycleでも、保存済みruntime configがあり、Deep Sleep復帰時のRTC時刻が有効な場合は、そのスケジュールで灌水判定を継続します。電源断後の冷起動ではRTC時刻を信頼しないため、ネットワーク復帰までスケジュール灌水は行いません。
 

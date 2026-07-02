@@ -179,10 +179,13 @@ Soon...
 
 The firmware now requests runtime configuration from MQTT after each wake-up,
 syncs time with the configured NTP server, saves valid runtime configuration to
-LittleFS, runs watering only for due schedules, and then goes back to deep sleep
-until the next schedule. If Wi-Fi or MQTT is unavailable on a later wake cycle,
-the saved runtime configuration is used only when the device woke from deep
-sleep and the RTC time is still synchronized.
+LittleFS, reads soil moisture once per wake cycle, runs watering only for due
+schedules, and then goes back to deep sleep until the next schedule. The
+measured moisture is published as `last_soil_moisture` even when no watering
+schedule is due, so the hub can display soil moisture history independently of
+watering events. If Wi-Fi or MQTT is unavailable on a later wake cycle, the
+saved runtime configuration is used only when the device woke from deep sleep
+and the RTC time is still synchronized.
 
 Request topic:
 

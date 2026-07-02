@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
+os.environ.setdefault("LOCAL_STORAGE_BASE_DIR", tempfile.mkdtemp())
 os.environ.setdefault("FIRMWARE_BASE_URL", "http://127.0.0.1:39151")
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
 os.environ.setdefault("TURSO_AUTH_TOKEN", "x")
@@ -89,7 +90,35 @@ class WebServerOTATest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("force must be a boolean", response.get_json()["error"])
 
-    def test_mqtt_devices_page_exposes_existing_device_and_ota_operations(self):
+    def test_mqtt_devices_list_links_to_device_detail(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000201"
+        self.device_service.set_state(device_id, "active", approved_by="operator")
+        self.device_repository.record_status(
+            device_id,
+            {
+                "seq": 1,
+                "device_kind": "WTR",
+                "firmware_version": "1.0.0",
+                "watering_due": True,
+                "watering_started": True,
+                "last_soil_moisture": 42,
+                "threshold": 40,
+                "next_sleep_sec": 120,
+            },
+        )
+
+        response = self.client.get("/mqtt-devices")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("水やり機一覧", html)
+        self.assertIn("灌水中", html)
+        self.assertIn("42%", html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}"', html)
+        self.assertNotIn("灌水推移", html)
+        self.assertNotIn('id="metadata-form"', html)
+
+    def test_mqtt_devices_detail_exposes_existing_device_and_ota_operations(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000201"
         self.device_service.update_config(
             device_id,
@@ -102,7 +131,23 @@ class WebServerOTATest(unittest.TestCase):
             },
         )
         self.device_service.set_state(device_id, "active", approved_by="operator")
-        self.device_repository.record_status(device_id, {"seq": 1, "device_kind": "WTR", "firmware_version": "1.0.0"})
+        self.device_repository.record_status(
+            device_id,
+            {
+                "seq": 1,
+                "device_kind": "WTR",
+                "firmware_version": "1.0.0",
+                "config_received": True,
+                "time_synced": True,
+                "watering_due": True,
+                "watering_started": True,
+                "watering_duration_sec": 45,
+                "channel_mask": 1,
+                "last_soil_moisture": 42,
+                "threshold": 40,
+                "next_sleep_sec": 120,
+            },
+        )
         self.device_repository.record_ota_status(
             device_id,
             {
@@ -125,10 +170,29 @@ class WebServerOTATest(unittest.TestCase):
             },
         )
 
-        response = self.client.get(f"/mqtt-devices?device_id={device_id}")
+        response = self.client.get(f"/mqtt-devices/{device_id}")
 
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
+        self.assertIn("Hub 管理パネル", html)
+        self.assertIn("水やり機一覧へ戻る", html)
+        self.assertIn("水やり機", html)
+        self.assertIn("灌水推移", html)
+        self.assertIn("土壌水分推移", html)
+        self.assertIn("Plotly.newPlot", html)
+        self.assertIn("直近3日", html)
+        self.assertIn("2週間", html)
+        self.assertIn("1か月", html)
+        self.assertIn("全期間", html)
+        self.assertIn("カスタム", html)
+        self.assertIn("灌水中", html)
+        self.assertIn("45秒", html)
+        self.assertIn("系統1", html)
+        self.assertIn("土壌水分", html)
+        self.assertIn("42%", html)
+        self.assertIn("次回起床", html)
+        self.assertIn("起動・通信履歴", html)
+        self.assertIn("水やり設定", html)
         self.assertIn('data-state-action="approve"', html)
         self.assertIn('id="metadata-form"', html)
         self.assertIn('id="runtime-config-json"', html)
@@ -139,6 +203,53 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("OTA Status History", html)
         self.assertIn("watering-device-1.1.0-aaaaaaaa", html)
         self.assertIn("http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin", html)
+
+    def test_mqtt_devices_query_device_id_redirects_to_detail_path(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000201"
+
+        response = self.client.get(f"/mqtt-devices?device_id={device_id}")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], f"/mqtt-devices/{device_id}")
+
+    def test_mqtt_devices_demo_list_renders_fixture_cards_without_detail(self):
+        response = self.client.get("/demo/mqtt-devices")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("デモデータ表示中", html)
+        self.assertIn("操作は保存されません", html)
+        self.assertIn("北ハウス 1号", html)
+        self.assertIn("南ハウス 2号", html)
+        self.assertIn("西ハウス 予備機", html)
+        self.assertIn("灌水中", html)
+        self.assertIn('href="/demo/mqtt-devices/INADS-DEMO-WTR-002"', html)
+        self.assertNotIn("灌水推移", html)
+        self.assertNotIn("demo-hub.local:39151/firmware/WTR/1.1.0/firmware.bin", html)
+        self.assertIn("const demoMode = true;", html)
+
+    def test_mqtt_devices_demo_detail_renders_fixture_history(self):
+        response = self.client.get("/demo/mqtt-devices/INADS-DEMO-WTR-001")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("デモデータ表示中", html)
+        self.assertIn("操作は保存されません", html)
+        self.assertIn("水やり機一覧へ戻る", html)
+        self.assertIn("北ハウス 1号", html)
+        self.assertIn("灌水推移", html)
+        self.assertIn("土壌水分推移", html)
+        self.assertIn("Plotly.newPlot", html)
+        self.assertIn("直近3日", html)
+        self.assertIn("2週間", html)
+        self.assertIn("1か月", html)
+        self.assertIn("全期間", html)
+        self.assertIn("カスタム", html)
+        self.assertIn("灌水中", html)
+        self.assertIn("1分", html)
+        self.assertIn("系統1・系統2", html)
+        self.assertIn("demo-hub.local:39151/firmware/WTR/1.1.0/firmware.bin", html)
+        self.assertIn("const demoMode = true;", html)
 
 
 if __name__ == "__main__":
