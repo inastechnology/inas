@@ -20,6 +20,7 @@ def run():
     hub_mqtt_client.subscribe("sensor/+/#")
     hub_mqtt_client.subscribe("/+/kinds/config/request")
     hub_mqtt_client.subscribe("/+/kinds/agri/immediate")
+    hub_mqtt_client.subscribe("/+/kinds/debug/log")
     hub_mqtt_client.subscribe("/+/kinds/ota/request")
     hub_mqtt_client.subscribe("/+/kinds/ota/status")
     hub_mqtt_client.subscribe("$SYS/broker/log/#")

@@ -28,6 +28,8 @@ class DeviceConfigService:
             "timezone_offset_sec": device_config_defaults["timezone_offset_sec"],
             "moisture_threshold": device_config_defaults["moisture_threshold"],
             "force_watering": True,
+            "debug_log_on_wake": False,
+            "ota_check_interval_sec": 21600,
             "schedules": [
                 {
                     "hour": 6,

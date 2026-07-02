@@ -46,13 +46,14 @@ class HubMQTTClient:
     def add_message_handler(self, handler):
         self.message_handlers.append(handler)
 
-    def publish(self, topic: str, msg: str, qos: int = 1, retain: bool = False):
+    def publish(self, topic: str, msg: str, qos: int = 1, retain: bool = False, notify: bool = True):
         result = self.client.publish(topic, msg, qos=qos, retain=retain)
         if result.rc == 0:
             print(f"Send `{msg}` to topic `{topic}`")
         else:
             print(f"Failed to send message to topic {topic}")
-        self.discord_notification_service.notify_mqtt_activity("publish", topic, payload=msg, mqtt_rc=result.rc)
+        if notify:
+            self.discord_notification_service.notify_mqtt_activity("publish", topic, payload=msg, mqtt_rc=result.rc)
         return result
 
     def _parse_message(self, topic: str, payload):
@@ -103,8 +104,6 @@ class HubMQTTClient:
             omitted_payload = f"{msg.payload[0:100]}..." if len(msg.payload) > 100 else msg.payload
             print(f"Received `{omitted_payload}` from `{msg.topic}` topic")
             parsed_message = self._parse_message(msg.topic, msg.payload)
-            append_mqtt_message_event(parsed_message)
-            self.discord_notification_service.notify_mqtt_activity("received", msg.topic, payload=msg.payload, parsed_message=parsed_message)
 
             for handler in self.message_handlers:
                 try:
@@ -114,6 +113,9 @@ class HubMQTTClient:
                     handled = False
                 if handled:
                     return
+
+            append_mqtt_message_event(parsed_message)
+            self.discord_notification_service.notify_mqtt_activity("received", msg.topic, payload=msg.payload, parsed_message=parsed_message)
 
             if parsed_message["message_type"] == "sensor_data":
                 self.subscribed_data_queue.put(parsed_message)

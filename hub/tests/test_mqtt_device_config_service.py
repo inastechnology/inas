@@ -77,11 +77,15 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertEqual(record["config"]["schedules"][0]["hour"], 6)
         self.assertEqual(record["config"]["schedules"][0]["minute"], 30)
         self.assertTrue(record["config"]["force_watering"])
+        self.assertFalse(record["config"]["debug_log_on_wake"])
+        self.assertEqual(record["config"]["ota_check_interval_sec"], 21600)
         self.assertIsNotNone(record["last_config_request_at"])
         self.assertIsNotNone(record["last_config_reply_at"])
         self.assertEqual(self.mqtt_client.published[0]["topic"], "/INADS-00000000-0000-4000-8000-000000000001/kinds/config/reply")
         self.assertIn('"moisture_threshold":35', self.mqtt_client.published[0]["payload"])
         self.assertIn('"force_watering":true', self.mqtt_client.published[0]["payload"])
+        self.assertIn('"debug_log_on_wake":false', self.mqtt_client.published[0]["payload"])
+        self.assertIn('"ota_check_interval_sec":21600', self.mqtt_client.published[0]["payload"])
         self.assertFalse(self.mqtt_client.published[0]["retain"])
         self.assertEqual(self.mqtt_client.published[0]["qos"], 0)
         self.assertEqual(len(self.notification_service.new_devices), 1)
@@ -122,6 +126,8 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
             "timezone_offset_sec": 32400,
             "moisture_threshold": 45,
             "force_watering": True,
+            "debug_log_on_wake": True,
+            "ota_check_interval_sec": 3600,
             "schedules": [{"hour": 8, "minute": 15, "duration_sec": 30, "channel_mask": 3}],
         }
         self.service.update_config(device_id, config)
@@ -140,6 +146,8 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
 
         self.assertIn('"moisture_threshold":45', self.mqtt_client.published[0]["payload"])
         self.assertIn('"force_watering":true', self.mqtt_client.published[0]["payload"])
+        self.assertIn('"debug_log_on_wake":true', self.mqtt_client.published[0]["payload"])
+        self.assertIn('"ota_check_interval_sec":3600', self.mqtt_client.published[0]["payload"])
         event = _read_last_device_event()
         self.assertEqual(event["event_type"], "device_config_publish")
         self.assertEqual(event["direction"], "outbound")
@@ -214,6 +222,44 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                     "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
                 }
             )
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "debug_log_on_wake": "true",
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "ota_check_interval_sec": 3599,
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
+    def test_config_validation_keeps_debug_and_ota_fields(self):
+        config = validate_device_config(
+            {
+                "ntp_server": "pool.ntp.org",
+                "timezone_offset_sec": 32400,
+                "moisture_threshold": 40,
+                "force_watering": False,
+                "debug_log_on_wake": True,
+                "ota_check_interval_sec": 43200,
+                "schedules": [{"hour": 7, "minute": 0, "duration_sec": 60, "channel_mask": 1}],
+            }
+        )
+
+        self.assertTrue(config["debug_log_on_wake"])
+        self.assertEqual(config["ota_check_interval_sec"], 43200)
 
         with self.assertRaises(DeviceConfigValidationError):
             validate_device_config(

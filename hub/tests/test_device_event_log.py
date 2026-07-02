@@ -46,6 +46,24 @@ class DeviceEventLogTest(unittest.TestCase):
         self.assertEqual(event["event_type"], "mqtt_message_received")
         self.assertEqual(event["payload"]["seq"], 225)
 
+    def test_mqtt_message_event_preserves_binary_debug_log_payload(self):
+        event = append_mqtt_message_event(
+            {
+                "message_type": "device_config",
+                "topic": "/INADS-00000000-0000-4000-8000-000000000001/kinds/debug/log",
+                "device_id": "INADS-00000000-0000-4000-8000-000000000001",
+                "category": "debug",
+                "action": "log",
+                "payload": b"DLG\x01\x00\xff\x80",
+            }
+        )
+
+        self.assertEqual(event["event_type"], "mqtt_message_received")
+        self.assertEqual(event["category"], "debug")
+        self.assertEqual(event["action"], "log")
+        self.assertEqual(event["payload"]["encoding"], "base64")
+        self.assertEqual(event["payload"]["original_length"], 7)
+
     def test_list_connection_events_filters_non_connection_events(self):
         append_mqtt_message_event(
             {

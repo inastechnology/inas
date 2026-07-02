@@ -749,10 +749,12 @@ def _ota_state_class(state):
 
 def _format_config_summary(config):
     if not isinstance(config, dict) or not config:
-        return {"threshold": "未設定", "force": "未設定", "schedule_count": "0件"}
+        return {"threshold": "未設定", "force": "未設定", "debug_log": "未設定", "ota_interval": "未設定", "schedule_count": "0件"}
     return {
         "threshold": _format_percent(config.get("moisture_threshold")),
         "force": _format_bool(config.get("force_watering")),
+        "debug_log": _format_bool(config.get("debug_log_on_wake")),
+        "ota_interval": _format_duration(config.get("ota_check_interval_sec")),
         "schedule_count": f"{len(config.get('schedules') or [])}件",
     }
 
@@ -1597,6 +1599,16 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <span class="value"><span id="schedule-count-display">{{ selected.config_summary.schedule_count }}</span></span>
                   <div class="hint">最大 8 件まで登録できます</div>
                 </div>
+                <div class="metric">
+                  <span class="label">デバッグログ</span>
+                  <span class="value"><span id="debug-log-display">{{ selected.config_summary.debug_log }}</span></span>
+                  <div class="hint">次回起床時にMQTTへ転送します</div>
+                </div>
+                <div class="metric">
+                  <span class="label">OTA確認間隔</span>
+                  <span class="value"><span id="ota-interval-display">{{ selected.config_summary.ota_interval }}</span></span>
+                  <div class="hint">最大sleep時間の上限です</div>
+                </div>
               </div>
 
               <div class="config-toolbar">
@@ -1622,6 +1634,20 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <input id="force-watering" type="checkbox">
                   強制灌水
                 </label>
+                <label class="switch-row" for="debug-log-on-wake">
+                  <input id="debug-log-on-wake" type="checkbox">
+                  デバッグログ転送
+                </label>
+                <div class="config-field">
+                  <label for="ota-check-interval">OTA確認間隔</label>
+                  <select id="ota-check-interval">
+                    <option value="3600">1時間</option>
+                    <option value="10800">3時間</option>
+                    <option value="21600">6時間</option>
+                    <option value="43200">12時間</option>
+                    <option value="86400">24時間</option>
+                  </select>
+                </div>
               </div>
 
               <div>
@@ -2170,6 +2196,14 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             return padNumber(schedule.hour || 0) + ":" + padNumber(schedule.minute || 0);
           }
 
+          function formatDurationSeconds(seconds) {
+            seconds = Number(seconds);
+            if (!Number.isFinite(seconds) || seconds <= 0) return "未設定";
+            if (seconds % 3600 === 0) return String(seconds / 3600) + "時間";
+            if (seconds % 60 === 0) return String(seconds / 60) + "分";
+            return String(seconds) + "秒";
+          }
+
           function createScheduleRow(schedule) {
             const row = document.createElement("div");
             row.className = "schedule-row";
@@ -2208,6 +2242,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (timezoneOffset) timezoneOffset.value = String(Number.isInteger(config.timezone_offset_sec) ? config.timezone_offset_sec : 32400);
             const forceWatering = document.getElementById("force-watering");
             if (forceWatering) forceWatering.checked = Boolean(config.force_watering);
+            const debugLogOnWake = document.getElementById("debug-log-on-wake");
+            if (debugLogOnWake) debugLogOnWake.checked = Boolean(config.debug_log_on_wake);
+            const otaCheckInterval = document.getElementById("ota-check-interval");
+            if (otaCheckInterval) otaCheckInterval.value = String(Number.isInteger(config.ota_check_interval_sec) ? config.ota_check_interval_sec : 21600);
 
             const editor = document.getElementById("schedule-editor");
             if (editor) {
@@ -2221,6 +2259,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           function collectRuntimeConfigFromForm() {
             const threshold = Number(document.getElementById("moisture-threshold-number").value);
             const timezoneOffset = Number(document.getElementById("timezone-offset").value);
+            const otaCheckInterval = Number(document.getElementById("ota-check-interval").value);
             const schedules = Array.from(document.querySelectorAll("#schedule-editor .schedule-row")).map((row) => {
               const time = row.querySelector("[data-schedule-time]").value || "00:00";
               const parts = time.split(":");
@@ -2237,6 +2276,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               timezone_offset_sec: timezoneOffset,
               moisture_threshold: threshold,
               force_watering: document.getElementById("force-watering").checked,
+              debug_log_on_wake: document.getElementById("debug-log-on-wake").checked,
+              ota_check_interval_sec: otaCheckInterval,
               schedules,
             };
           }
@@ -2256,6 +2297,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (forceDisplay) forceDisplay.textContent = config.force_watering ? "はい" : "いいえ";
             const scheduleCountDisplay = document.getElementById("schedule-count-display");
             if (scheduleCountDisplay) scheduleCountDisplay.textContent = config.schedules.length + "件";
+            const debugLogDisplay = document.getElementById("debug-log-display");
+            if (debugLogDisplay) debugLogDisplay.textContent = config.debug_log_on_wake ? "はい" : "いいえ";
+            const otaIntervalDisplay = document.getElementById("ota-interval-display");
+            if (otaIntervalDisplay) otaIntervalDisplay.textContent = formatDurationSeconds(config.ota_check_interval_sec);
           }
 
           async function saveRuntimeConfig(push, source) {

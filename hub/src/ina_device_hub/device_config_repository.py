@@ -245,6 +245,14 @@ def validate_device_config(config: dict):
     if not isinstance(force_watering, bool):
         raise DeviceConfigValidationError("force_watering must be a boolean")
 
+    debug_log_on_wake = config.get("debug_log_on_wake", False)
+    if not isinstance(debug_log_on_wake, bool):
+        raise DeviceConfigValidationError("debug_log_on_wake must be a boolean")
+
+    ota_check_interval_sec = config.get("ota_check_interval_sec", 21600)
+    if not isinstance(ota_check_interval_sec, int) or not 3600 <= ota_check_interval_sec <= 86400:
+        raise DeviceConfigValidationError("ota_check_interval_sec must be between 3600 and 86400")
+
     schedules = config["schedules"]
     if not isinstance(schedules, list):
         raise DeviceConfigValidationError("schedules must be an array")
@@ -290,6 +298,8 @@ def validate_device_config(config: dict):
         "timezone_offset_sec": timezone_offset_sec,
         "moisture_threshold": moisture_threshold,
         "force_watering": force_watering,
+        "debug_log_on_wake": debug_log_on_wake,
+        "ota_check_interval_sec": ota_check_interval_sec,
         "schedules": normalized_schedules,
     }
     payload = json.dumps(normalized, ensure_ascii=True, separators=(",", ":"))

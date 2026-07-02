@@ -160,6 +160,10 @@ class OTAUpdateService:
                 logger.exception("OTA request payload parse failure for device_id=%s", device_id)
                 request_payload = {}
 
+            record = self.repository.get(device_id)
+            offer = self.decide_offer(device_id, request_payload, record=record)
+            published = self.publish_reply(device_id, offer, notify=False, log_event=False)
+
             append_device_event(
                 "ota_request",
                 "inbound",
@@ -169,9 +173,8 @@ class OTAUpdateService:
                 action="request",
                 payload=request_payload,
             )
-            record = self.repository.record_ota_request(device_id, request_payload)
-            offer = self.decide_offer(device_id, request_payload, record=record)
-            self.publish_reply(device_id, offer)
+            self.repository.record_ota_request(device_id, request_payload)
+            self._record_offer_publish(device_id, published["topic"], offer, published["mqtt_rc"], retain=False)
             return True
 
         if action == "status":
@@ -246,13 +249,23 @@ class OTAUpdateService:
             "allow_downgrade": artifact.get("allow_downgrade", False),
         }
 
-    def publish_reply(self, device_id: str, offer: dict):
+    def publish_reply(self, device_id: str, offer: dict, *, notify: bool = True, log_event: bool = True):
         if self.mqtt_client is None:
             raise RuntimeError("mqtt client is not attached")
 
         topic = f"/{device_id}/kinds/ota/reply"
         payload = json.dumps(offer, ensure_ascii=True, separators=(",", ":"))
-        result = self.mqtt_client.publish(topic, payload, qos=0, retain=False)
+        try:
+            result = self.mqtt_client.publish(topic, payload, qos=0, retain=False, notify=notify)
+        except TypeError:
+            result = self.mqtt_client.publish(topic, payload, qos=0, retain=False)
+        if log_event:
+            self._record_offer_publish(device_id, topic, offer, result.rc, retain=False)
+        if result.rc != 0:
+            logger.error("Failed to publish OTA offer for device_id=%s topic=%s rc=%s", device_id, topic, result.rc)
+        return {"topic": topic, "payload": offer, "mqtt_rc": result.rc}
+
+    def _record_offer_publish(self, device_id: str, topic: str, offer: dict, mqtt_rc: int, *, retain: bool):
         append_device_event(
             "ota_offer_publish",
             "outbound",
@@ -261,12 +274,9 @@ class OTAUpdateService:
             category="ota",
             action="reply",
             payload=offer,
-            mqtt_rc=result.rc,
-            retain=False,
+            mqtt_rc=mqtt_rc,
+            retain=retain,
         )
-        if result.rc != 0:
-            logger.error("Failed to publish OTA offer for device_id=%s topic=%s rc=%s", device_id, topic, result.rc)
-        return {"topic": topic, "payload": offer, "mqtt_rc": result.rc}
 
 
 def validate_firmware_artifact(version: str, artifact: dict):

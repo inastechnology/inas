@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -251,7 +252,15 @@ def _utc_now():
 
 def _normalize_payload(payload):
     if isinstance(payload, bytes):
-        payload = payload.decode("utf-8", errors="replace")
+        try:
+            payload = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return {
+                "encoding": "base64",
+                "content_type": "application/octet-stream",
+                "data": base64.b64encode(payload).decode("ascii"),
+                "original_length": len(payload),
+            }
 
     if isinstance(payload, str):
         try:
