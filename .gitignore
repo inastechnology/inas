@@ -32,6 +32,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.venv-platformio/
+.platformio-core/
 venv/
 
 # Node / Cloudflare Workers tooling
