@@ -180,6 +180,7 @@ schedule項目:
 - 有効なscheduleが1件もない場合、runtime configは適用されません。
 - 有効なruntime configはデバイス内に保存され、次回以降の通信障害時にも利用されます。
 - runtime configの応答待ちは起床後5秒です。
+- schedule時刻から15分を超えて遅れた場合、そのscheduleは古いものとして灌水せずに処理済みにします。
 - センサ異常時などに強制灌水したい場合は、サーバ側で`force_watering: true`を返してください。
 
 ## 6. status publish

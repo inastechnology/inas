@@ -11,6 +11,8 @@
 #include "app_runtime_config.h"
 #include "app_watering.h"
 
+#define APP_WATERING_DUE_GRACE_SEC (15 * 60)
+
 RTC_DATA_ATTR static time_t s_last_executed_schedule_utc = 0;
 
 static int32_t app_pack_runtime_flags(uint8_t threshold, bool force_watering, bool debug_log_on_wake, uint8_t schedule_count)
@@ -127,6 +129,17 @@ protected:
                                                                     s_last_executed_schedule_utc,
                                                                     &due_schedule,
                                                                     &due_schedule_epoch_utc);
+        if (m_cycle.watering_due && now_utc - due_schedule_epoch_utc > APP_WATERING_DUE_GRACE_SEC)
+        {
+            Serial.printf("Watering schedule due at %ld is too old; skipped at now=%ld grace=%lu sec\n",
+                          static_cast<long>(due_schedule_epoch_utc),
+                          static_cast<long>(now_utc),
+                          static_cast<unsigned long>(APP_WATERING_DUE_GRACE_SEC));
+            s_last_executed_schedule_utc = due_schedule_epoch_utc;
+            m_cycle.watering_due = false;
+            due_schedule_epoch_utc = 0;
+            memset(&due_schedule, 0, sizeof(due_schedule));
+        }
         Serial.printf("Schedule check: now=%ld last_executed=%ld due=%s runtime_valid=%s\n",
                       static_cast<long>(now_utc),
                       static_cast<long>(s_last_executed_schedule_utc),

@@ -26,6 +26,14 @@ class DiscordNotificationService:
         worker_thread = threading.Thread(target=self._post, args=(content,), daemon=True)
         worker_thread.start()
 
+    def notify_new_device(self, device_id: str, record: dict, source: str, payload: dict | None = None):
+        if not self.enabled():
+            return
+
+        content = format_new_device(device_id, record, source, payload=payload)
+        worker_thread = threading.Thread(target=self._post, args=(content,), daemon=True)
+        worker_thread.start()
+
     def _post(self, content: str):
         body = json.dumps({"content": content}, ensure_ascii=False).encode("utf-8")
         req = request.Request(
@@ -67,6 +75,42 @@ def format_mqtt_activity(direction: str, topic: str, payload=None, parsed_messag
         if payload_preview:
             lines.append("詳細:")
             lines.append(f"```json\n{payload_preview}\n```")
+
+    content = "\n".join(lines)
+    if len(content) > DISCORD_CONTENT_LIMIT:
+        content = content[: DISCORD_CONTENT_LIMIT - 20] + "\n...[省略]"
+    return content
+
+
+def format_new_device(device_id: str, record: dict, source: str, payload: dict | None = None):
+    lines = [
+        "[INA Device Hub] 【新規デバイス検出】未登録デバイスが接続しました",
+        f"時刻: {_local_time()}",
+        f"デバイス: {device_id}",
+        f"状態: {record.get('state') or 'pending'}",
+        f"検出元: {source}",
+    ]
+
+    if record.get("first_seen_at"):
+        lines.append(f"初回検出: {record['first_seen_at']}")
+
+    device_kind = record.get("device_kind") or (payload or {}).get("device_kind")
+    if device_kind:
+        lines.append(f"種別: {device_kind}")
+
+    firmware_version = record.get("firmware_version") or (payload or {}).get("firmware_version")
+    if firmware_version:
+        lines.append(f"FW: {firmware_version}")
+
+    firmware_build_id = record.get("firmware_build_id") or (payload or {}).get("firmware_build_id")
+    if firmware_build_id:
+        lines.append(f"Build: {firmware_build_id}")
+
+    if isinstance(payload, dict):
+        status_lines = _payload_summary("received", {"category": "agri", "action": "immediate"}, payload)
+        if status_lines:
+            lines.append("状態概要:")
+            lines.extend(status_lines[:8])
 
     content = "\n".join(lines)
     if len(content) > DISCORD_CONTENT_LIMIT:

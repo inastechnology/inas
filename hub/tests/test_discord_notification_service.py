@@ -16,7 +16,7 @@ os.environ.setdefault("MQTT_BROKER_USERNAME", "")
 os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
-from ina_device_hub.discord_notification_service import DISCORD_CONTENT_LIMIT, format_mqtt_activity  # noqa: E402
+from ina_device_hub.discord_notification_service import DISCORD_CONTENT_LIMIT, format_mqtt_activity, format_new_device  # noqa: E402
 
 
 class DiscordNotificationServiceTest(unittest.TestCase):
@@ -73,6 +73,28 @@ class DiscordNotificationServiceTest(unittest.TestCase):
 
         self.assertLessEqual(len(content), DISCORD_CONTENT_LIMIT)
         self.assertIn("省略", content)
+
+    def test_format_new_device_shows_device_metadata(self):
+        content = format_new_device(
+            "INADS-00000000-0000-4000-8000-000000000005",
+            {
+                "state": "pending",
+                "first_seen_at": "2026-07-01T09:01:40+00:00",
+                "device_kind": "WTR",
+                "firmware_version": "0.0.0-dev",
+                "firmware_build_id": "Jul  1 2026 13:29:43",
+            },
+            "status",
+            payload={"seq": 366, "time_synced": True, "last_soil_moisture": 100, "next_sleep_sec": 60},
+        )
+
+        self.assertIn("【新規デバイス検出】未登録デバイスが接続しました", content)
+        self.assertIn("デバイス: INADS-00000000-0000-4000-8000-000000000005", content)
+        self.assertIn("状態: pending", content)
+        self.assertIn("検出元: status", content)
+        self.assertIn("種別: WTR", content)
+        self.assertIn("FW: 0.0.0-dev", content)
+        self.assertIn("土壌水分: 100%", content)
 
 
 if __name__ == "__main__":

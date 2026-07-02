@@ -18,8 +18,8 @@ os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
 from ina_device_hub.device_config_repository import DeviceConfigRepository, DeviceConfigValidationError, validate_device_config  # noqa: E402
-from ina_device_hub.device_event_log import _event_log_path  # noqa: E402
 from ina_device_hub.device_config_service import DeviceConfigService  # noqa: E402
+from ina_device_hub.device_event_log import _event_log_path  # noqa: E402
 
 
 class _Result:
@@ -35,6 +35,14 @@ class _MqttClient:
         return _Result()
 
 
+class _NotificationService:
+    def __init__(self):
+        self.new_devices = []
+
+    def notify_new_device(self, device_id, record, source, payload=None):
+        self.new_devices.append({"device_id": device_id, "record": record, "source": source, "payload": payload})
+
+
 class MqttDeviceConfigServiceTest(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
@@ -42,7 +50,8 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.repository.device_config_path = os.path.join(self.tmp_dir.name, ".device_configs.json")
         self.repository.device_configs = {}
         self.repository.save()
-        self.service = DeviceConfigService(repository=self.repository)
+        self.notification_service = _NotificationService()
+        self.service = DeviceConfigService(repository=self.repository, notification_service=self.notification_service)
         self.mqtt_client = _MqttClient()
         self.service.attach_mqtt_client(self.mqtt_client)
 
@@ -75,6 +84,36 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertIn('"force_watering":true', self.mqtt_client.published[0]["payload"])
         self.assertFalse(self.mqtt_client.published[0]["retain"])
         self.assertEqual(self.mqtt_client.published[0]["qos"], 0)
+        self.assertEqual(len(self.notification_service.new_devices), 1)
+        self.assertEqual(self.notification_service.new_devices[0]["device_id"], "INADS-00000000-0000-4000-8000-000000000001")
+        self.assertEqual(self.notification_service.new_devices[0]["source"], "config_request")
+
+    def test_existing_device_config_request_does_not_notify_new_device(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000001"
+        self.service.handle_mqtt_message(
+            None,
+            {
+                "message_type": "device_config",
+                "device_id": device_id,
+                "category": "config",
+                "action": "request",
+                "payload": b'{"request":"runtime_config"}',
+            },
+        )
+        self.notification_service.new_devices = []
+
+        self.service.handle_mqtt_message(
+            None,
+            {
+                "message_type": "device_config",
+                "device_id": device_id,
+                "category": "config",
+                "action": "request",
+                "payload": b'{"request":"runtime_config"}',
+            },
+        )
+
+        self.assertEqual(self.notification_service.new_devices, [])
 
     def test_active_device_replies_saved_runtime_config(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000002"
@@ -150,6 +189,10 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertEqual(event["payload"]["seq"], 123)
         self.assertEqual(event["next_sleep_sec"], 60)
         self.assertIn("next_wake_at", event)
+        self.assertEqual(len(self.notification_service.new_devices), 1)
+        self.assertEqual(self.notification_service.new_devices[0]["device_id"], device_id)
+        self.assertEqual(self.notification_service.new_devices[0]["source"], "status")
+        self.assertEqual(self.notification_service.new_devices[0]["payload"]["seq"], 123)
 
     def test_config_validation_requires_schedule_and_payload_under_512_bytes(self):
         with self.assertRaises(DeviceConfigValidationError):

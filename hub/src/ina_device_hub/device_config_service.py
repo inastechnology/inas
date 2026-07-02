@@ -7,13 +7,15 @@ from ina_device_hub.device_config_repository import (
     validate_device_config,
 )
 from ina_device_hub.device_event_log import append_device_event
+from ina_device_hub.discord_notification_service import discord_notification_service
 from ina_device_hub.general_log import logger
 from ina_device_hub.setting import setting
 
 
 class DeviceConfigService:
-    def __init__(self, repository=None):
+    def __init__(self, repository=None, notification_service=None):
         self.repository = repository or device_config_repository()
+        self.notification_service = notification_service or discord_notification_service()
         self.mqtt_client = None
 
     def attach_mqtt_client(self, mqtt_client):
@@ -49,10 +51,17 @@ class DeviceConfigService:
         return self.repository.upsert(device_id, config)
 
     def record_config_request(self, device_id: str):
-        return self.repository.record_config_request(device_id, self.default_config())
+        is_new_device = self.repository.get(device_id) is None
+        record = self.repository.record_config_request(device_id, self.default_config())
+        if is_new_device:
+            self._notify_new_device(device_id, record, "config_request")
+        return record
 
     def record_status(self, device_id: str, status: dict):
+        is_new_device = self.repository.get(device_id) is None
         record = self.repository.record_status(device_id, status)
+        if is_new_device:
+            self._notify_new_device(device_id, record, "status", payload=status)
         _log_device_status(device_id, record["last_status_at"], status)
         append_device_event(
             "device_status",
@@ -138,7 +147,11 @@ class DeviceConfigService:
                 )
                 if request_payload is not None and request_payload.get("request") != "runtime_config":
                     logger.warning("Unexpected config request payload for device_id=%s payload=%s", device_id, request_payload)
+                is_new_device = self.repository.get(device_id) is None
                 self.publish_reply(device_id)
+                if is_new_device:
+                    record = self.repository.get(device_id)
+                    self._notify_new_device(device_id, record, "config_request", payload=request_payload)
             except Exception:
                 logger.exception("Config reply failed for device_id=%s", device_id)
                 raise
@@ -160,6 +173,14 @@ class DeviceConfigService:
         if push:
             published = self.publish_push(device_id)
         return {"record": record, "published": published}
+
+    def _notify_new_device(self, device_id: str, record: dict | None, source: str, payload: dict | None = None):
+        if record is None:
+            return
+        try:
+            self.notification_service.notify_new_device(device_id, record, source, payload=payload)
+        except Exception:
+            logger.exception("New device Discord notification failed for device_id=%s", device_id)
 
 
 def _decode_json_payload(payload):
