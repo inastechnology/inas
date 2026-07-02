@@ -1245,6 +1245,32 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             padding: 10px 12px;
             margin: 0 0 18px;
           }
+          .progress-banner {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            display: none;
+            align-items: center;
+            gap: 9px;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            background: #eff6ff;
+            color: #1e3a8a;
+            padding: 9px 12px;
+            margin: 0 0 14px;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, .08);
+          }
+          .progress-banner.active { display: flex; }
+          .progress-dot {
+            width: 14px;
+            height: 14px;
+            border: 2px solid #93c5fd;
+            border-top-color: var(--blue);
+            border-radius: 999px;
+            animation: spin .8s linear infinite;
+            flex: 0 0 auto;
+          }
+          @keyframes spin { to { transform: rotate(360deg); } }
           .back-link { margin: 0 0 14px; }
           .back-link a {
             display: inline-flex;
@@ -1275,6 +1301,19 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             cursor: pointer;
           }
           button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
+          button:disabled { opacity: .65; cursor: wait; }
+          button[aria-busy="true"]::after {
+            content: "";
+            width: 12px;
+            height: 12px;
+            margin-left: 7px;
+            border: 2px solid currentColor;
+            border-top-color: transparent;
+            border-radius: 999px;
+            display: inline-block;
+            vertical-align: -2px;
+            animation: spin .8s linear infinite;
+          }
           .result { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 10px 12px; margin: 0 0 18px; min-height: 40px; color: var(--muted); }
           .error { border-color: #fecdd3; background: var(--red-bg); color: var(--red); }
           .ok { border-color: #bbf7d0; background: var(--green-bg); color: var(--green); }
@@ -1439,6 +1478,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
       </head>
       <body>
         <div class="page">
+          <div id="global-progress" class="progress-banner" role="status" aria-live="polite">
+            <span class="progress-dot" aria-hidden="true"></span>
+            <span id="global-progress-message">処理中...</span>
+          </div>
           <div class="topbar">
             <div>
               <h1>Hub 管理パネル</h1>
@@ -1856,6 +1899,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const chartEndpoint = selectedDeviceId ? ((demoMode ? "/demo/local/api/mqtt-devices/" : "/local/api/mqtt-devices/") + encodeURIComponent(selectedDeviceId) + "/charts") : null;
           const initialRuntimeConfig = {{ (selected_device.config if selected_device else {}) | tojson }};
           let plotlyLoadPromise = null;
+          let pendingWorkCount = 0;
+          let lastActionButton = null;
+
+          document.addEventListener("click", (event) => {
+            const button = event.target.closest("button");
+            if (button) lastActionButton = button;
+          }, true);
 
           function resultBox() {
             return document.getElementById("action-result");
@@ -1867,31 +1917,73 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             box.textContent = message;
           }
 
-          async function requestJson(url, options) {
+          function showProgress(message) {
+            pendingWorkCount += 1;
+            const banner = document.getElementById("global-progress");
+            const text = document.getElementById("global-progress-message");
+            if (text) text.textContent = message || "処理中...";
+            if (banner) banner.classList.add("active");
+          }
+
+          function hideProgress() {
+            pendingWorkCount = Math.max(0, pendingWorkCount - 1);
+            if (pendingWorkCount > 0) return;
+            const banner = document.getElementById("global-progress");
+            if (banner) banner.classList.remove("active");
+          }
+
+          function setButtonBusy(button, busy, message) {
+            if (!button) return;
+            if (busy) {
+              if (!button.dataset.idleText) button.dataset.idleText = button.textContent;
+              button.textContent = message || "処理中";
+              button.disabled = true;
+              button.setAttribute("aria-busy", "true");
+              return;
+            }
+            button.disabled = false;
+            button.removeAttribute("aria-busy");
+            if (button.dataset.idleText) {
+              button.textContent = button.dataset.idleText;
+              delete button.dataset.idleText;
+            }
+          }
+
+          async function requestJson(url, options, progressMessage) {
             const method = ((options || {}).method || "GET").toUpperCase();
             if (demoMode && method !== "GET") {
               return { demo: true };
             }
-            const response = await fetch(url, options || {});
-            const text = await response.text();
-            let body = {};
-            if (text) {
-              try {
-                body = JSON.parse(text);
-              } catch (error) {
-                body = { error: text };
+            const button = method === "GET" ? null : lastActionButton;
+            lastActionButton = null;
+            showProgress(progressMessage || (method === "GET" ? "読み込み中..." : "処理中..."));
+            setButtonBusy(button, true, "処理中");
+            try {
+              const response = await fetch(url, options || {});
+              const text = await response.text();
+              let body = {};
+              if (text) {
+                try {
+                  body = JSON.parse(text);
+                } catch (error) {
+                  body = { error: text };
+                }
               }
+              if (!response.ok) {
+                throw new Error(body.error || ("HTTP " + response.status));
+              }
+              return body;
+            } finally {
+              setButtonBusy(button, false);
+              hideProgress();
             }
-            if (!response.ok) {
-              throw new Error(body.error || ("HTTP " + response.status));
-            }
-            return body;
           }
 
           function reloadSoon() {
             if (demoMode) {
               return;
             }
+            showProgress("反映内容を読み込んでいます...");
             window.setTimeout(() => window.location.reload(), 500);
           }
 
@@ -2008,7 +2100,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const cards = Array.from(document.querySelectorAll(".chart-card[data-chart-kind]"));
             if (!cards.length) return;
             try {
-              const [charts] = await Promise.all([requestJson(chartEndpoint), ensurePlotlyLoaded()]);
+              const [charts] = await Promise.all([requestJson(chartEndpoint, null, "推移グラフを読み込んでいます..."), ensurePlotlyLoaded()]);
               cards.forEach((card) => {
                 const body = card.querySelector(".chart-body");
                 const kind = card.getAttribute("data-chart-kind");
@@ -2038,7 +2130,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   method: "POST",
                   headers: { "content-type": "application/json" },
                   body: JSON.stringify(body),
-                });
+                }, "デバイス状態を更新しています...");
                 showResult("デバイス状態を更新しました", true);
                 reloadSoon();
               } catch (error) {
@@ -2061,7 +2153,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   method: "PATCH",
                   headers: { "content-type": "application/json" },
                   body: JSON.stringify(body),
-                });
+                }, "表示情報を保存しています...");
                 showResult("表示情報を保存しました", true);
                 reloadSoon();
               } catch (error) {
@@ -2192,7 +2284,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 method: "PUT",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify(config),
-              });
+              }, push ? "水やり設定を保存して device に送信しています..." : "水やり設定を保存しています...");
               showResult(push ? "水やり設定を保存して device に送信しました" : "水やり設定を保存しました", true);
               reloadSoon();
             } catch (error) {
@@ -2255,7 +2347,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           if (pushConfigButton) {
             pushConfigButton.addEventListener("click", async () => {
               try {
-                await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(selectedDeviceId) + "/runtime-config/push", { method: "POST" });
+                await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(selectedDeviceId) + "/runtime-config/push", { method: "POST" }, "保存済み設定を device に送信しています...");
                 showResult("保存済み設定を device に送信しました", true);
               } catch (error) {
                 showResult(error.message, false);
@@ -2279,7 +2371,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 method: "PUT",
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify({ target_firmware_version: version }),
-              });
+              }, "OTA 更新対象を更新しています...");
               showResult("更新対象バージョンを更新しました", true);
               reloadSoon();
             } catch (error) {
@@ -2313,6 +2405,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 await requestJson(
                   "/local/api/firmware-artifacts/" + encodeURIComponent(deviceKind) + "/" + encodeURIComponent(version) + "/upload",
                   { method: "POST", body: formData },
+                  "firmware.bin をアップロードしています...",
                 );
                 showResult("firmware.bin を登録しました", true);
                 reloadSoon();
