@@ -221,6 +221,56 @@ class OTAUpdateServiceTest(unittest.TestCase):
         finally:
             setting().settings["firmware"] = original_firmware_settings
 
+    def test_generated_firmware_base_url_uses_mdns_for_single_label_hostname(self):
+        original_firmware_settings = dict(setting().settings.get("firmware") or {})
+        setting().settings["firmware"] = {
+            "base_url": "",
+            "hostname": "",
+            "port": "",
+            "root_dir": os.path.join(self.tmp_dir.name, "firmware"),
+        }
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "FIRMWARE_BASE_URL": "",
+                    "FIRMWARE_HOSTNAME": "",
+                    "HOSTNAME": "hub-device",
+                    "HUB_HTTP_PORT": "39151",
+                },
+            ):
+                self.assertEqual(
+                    self.artifact_repository.public_firmware_url("WTR", "1.1.0"),
+                    "http://hub-device.local:39151/firmware/WTR/1.1.0/firmware.bin",
+                )
+        finally:
+            setting().settings["firmware"] = original_firmware_settings
+
+    def test_generated_firmware_base_url_keeps_ip_address(self):
+        original_firmware_settings = dict(setting().settings.get("firmware") or {})
+        setting().settings["firmware"] = {
+            "base_url": "",
+            "hostname": "",
+            "port": "",
+            "root_dir": os.path.join(self.tmp_dir.name, "firmware"),
+        }
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "FIRMWARE_BASE_URL": "",
+                    "FIRMWARE_HOSTNAME": "192.168.1.140",
+                    "HOSTNAME": "",
+                    "HUB_HTTP_PORT": "39151",
+                },
+            ):
+                self.assertEqual(
+                    self.artifact_repository.public_firmware_url("WTR", "1.1.0"),
+                    "http://192.168.1.140:39151/firmware/WTR/1.1.0/firmware.bin",
+                )
+        finally:
+            setting().settings["firmware"] = original_firmware_settings
+
     def test_https_firmware_artifact_url_is_rejected_until_device_supports_tls(self):
         artifact = _artifact()
         artifact["url"] = "https://example.test/firmware/WTR/1.1.0/firmware.bin"

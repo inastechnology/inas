@@ -18,6 +18,7 @@ ARTIFACT_ROLLOUT_STATES = {"active", "paused", "revoked"}
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 DEVICE_KIND_RE = re.compile(r"^[A-Z]{3}$")
 SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:+-]+$")
+IPV4_HOST_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
 
 
 class FirmwareArtifactValidationError(ValueError):
@@ -387,6 +388,7 @@ def _build_firmware_base_url_from_hostname(firmware_settings):
         raise FirmwareArtifactValidationError("FIRMWARE_HOSTNAME must be a hostname, not a URL")
     if ":" in hostname and not (hostname.startswith("[") and hostname.endswith("]")):
         raise FirmwareArtifactValidationError("FIRMWARE_HOSTNAME must not include a port; use FIRMWARE_PORT")
+    hostname = _normalize_firmware_hostname(hostname)
 
     try:
         port_number = int(port)
@@ -397,6 +399,14 @@ def _build_firmware_base_url_from_hostname(firmware_settings):
     if port_number == 80:
         return f"http://{hostname}"
     return f"http://{hostname}:{port_number}"
+
+
+def _normalize_firmware_hostname(hostname: str):
+    if hostname.startswith("[") and hostname.endswith("]"):
+        return hostname
+    if hostname == "localhost" or "." in hostname or IPV4_HOST_RE.match(hostname):
+        return hostname
+    return f"{hostname}.local"
 
 
 def _decode_json_payload(payload):
