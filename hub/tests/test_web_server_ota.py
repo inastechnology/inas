@@ -179,7 +179,9 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("水やり機", html)
         self.assertIn("灌水推移", html)
         self.assertIn("土壌水分推移", html)
-        self.assertIn("Plotly.newPlot", html)
+        self.assertNotIn("Plotly.newPlot", html)
+        self.assertIn("灌水推移を読み込み中", html)
+        self.assertIn(f'"/local/api/mqtt-devices/"', html)
         self.assertIn("直近3日", html)
         self.assertIn("2週間", html)
         self.assertIn("1か月", html)
@@ -203,6 +205,12 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("OTA Status History", html)
         self.assertIn("watering-device-1.1.0-aaaaaaaa", html)
         self.assertIn("http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin", html)
+
+        charts_response = self.client.get(f"/local/api/mqtt-devices/{device_id}/charts")
+        self.assertEqual(charts_response.status_code, 200)
+        charts = charts_response.get_json()
+        self.assertIn("Plotly.newPlot", charts["watering"])
+        self.assertIn("Plotly.newPlot", charts["soil_moisture"])
 
     def test_mqtt_devices_query_device_id_redirects_to_detail_path(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000201"
@@ -239,7 +247,9 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("北ハウス 1号", html)
         self.assertIn("灌水推移", html)
         self.assertIn("土壌水分推移", html)
-        self.assertIn("Plotly.newPlot", html)
+        self.assertNotIn("Plotly.newPlot", html)
+        self.assertIn("灌水推移を読み込み中", html)
+        self.assertIn("/demo/local/api/mqtt-devices/", html)
         self.assertIn("直近3日", html)
         self.assertIn("2週間", html)
         self.assertIn("1か月", html)
@@ -250,6 +260,12 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("系統1・系統2", html)
         self.assertIn("demo-hub.local:39151/firmware/WTR/1.1.0/firmware.bin", html)
         self.assertIn("const demoMode = true;", html)
+
+        charts_response = self.client.get("/demo/local/api/mqtt-devices/INADS-DEMO-WTR-001/charts")
+        self.assertEqual(charts_response.status_code, 200)
+        charts = charts_response.get_json()
+        self.assertIn("Plotly.newPlot", charts["watering"])
+        self.assertIn("Plotly.newPlot", charts["soil_moisture"])
 
 
 if __name__ == "__main__":

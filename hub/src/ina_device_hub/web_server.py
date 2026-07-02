@@ -1,10 +1,13 @@
 import json
 import os
+from pathlib import Path
 import uuid
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from html import escape
 
 from flask import Flask, Response, jsonify, redirect, render_template, render_template_string, request, send_file
+import plotly
 from plotly import graph_objs as go
 from plotly.io import to_html
 
@@ -418,8 +421,6 @@ def _build_device_summary(device_id, record, now):
 def _build_selected_device_view(device_id, record, statuses, ota_statuses, now):
     payload = _latest_status_payload(record)
     config = record.get("config") or {}
-    watering_chart = _build_watering_trend_chart(statuses, include_plotlyjs=True)
-    soil_moisture_chart = _build_soil_moisture_chart(statuses, include_plotlyjs=watering_chart is None)
     return {
         "id": device_id,
         "title": record.get("name") or device_id,
@@ -442,8 +443,6 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now):
         "ota_error": record.get("ota_error") or "",
         "schedules": _format_schedules_for_ui(config.get("schedules") or []),
         "config_summary": _format_config_summary(config),
-        "watering_chart": watering_chart,
-        "soil_moisture_chart": soil_moisture_chart,
         "watering_history": _build_watering_history(statuses),
         "wake_history": _build_wake_history(statuses),
         "ota_history": _build_ota_history(ota_statuses),
@@ -1368,6 +1367,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .range-controls button.active { border-color: var(--blue); color: var(--blue); font-weight: 700; }
           .range-controls input { width: auto; min-width: 150px; }
           .chart-body { min-height: 360px; }
+          .chart-loading { min-height: 360px; display: grid; place-items: center; color: var(--muted); background: #f8fafc; border: 1px dashed var(--line); border-radius: 8px; }
           .empty { color: var(--muted); background: #f8fafc; border: 1px dashed var(--line); border-radius: 8px; padding: 14px; }
           details {
             border: 1px solid var(--line);
@@ -1510,8 +1510,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           <div class="section-grid">
             <section class="panel">
               <h2>灌水推移</h2>
-              {% if selected.watering_chart %}
-              <div class="chart-card" data-chart-id="watering-trend-chart">
+              <div class="chart-card" data-chart-id="watering-trend-chart" data-chart-kind="watering">
                 <div class="range-controls" aria-label="灌水推移の表示期間">
                   <button type="button" data-range-days="3" class="active">直近3日</button>
                   <button type="button" data-range-days="14">2週間</button>
@@ -1522,18 +1521,14 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <button type="button" data-range-custom="true">カスタム</button>
                 </div>
                 <div class="chart-body">
-                  {{ selected.watering_chart | safe }}
+                  <div class="chart-loading">灌水推移を読み込み中...</div>
                 </div>
               </div>
-              {% else %}
-              <div class="empty">灌水に関する時系列データはまだありません。</div>
-              {% endif %}
             </section>
 
             <section class="panel">
               <h2>土壌水分推移</h2>
-              {% if selected.soil_moisture_chart %}
-              <div class="chart-card" data-chart-id="soil-moisture-chart">
+              <div class="chart-card" data-chart-id="soil-moisture-chart" data-chart-kind="soil_moisture">
                 <div class="range-controls" aria-label="土壌水分推移の表示期間">
                   <button type="button" data-range-days="3" class="active">直近3日</button>
                   <button type="button" data-range-days="14">2週間</button>
@@ -1544,12 +1539,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <button type="button" data-range-custom="true">カスタム</button>
                 </div>
                 <div class="chart-body">
-                  {{ selected.soil_moisture_chart | safe }}
+                  <div class="chart-loading">土壌水分推移を読み込み中...</div>
                 </div>
               </div>
-              {% else %}
-              <div class="empty">土壌水分の時系列データはまだありません。</div>
-              {% endif %}
             </section>
           </div>
 
@@ -1803,6 +1795,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         <script>
           const selectedDeviceId = {{ selected_device_id | tojson }};
           const demoMode = {{ demo_mode | tojson }};
+          const chartEndpoint = selectedDeviceId ? ((demoMode ? "/demo/local/api/mqtt-devices/" : "/local/api/mqtt-devices/") + encodeURIComponent(selectedDeviceId) + "/charts") : null;
+          let plotlyLoadPromise = null;
 
           function resultBox() {
             return document.getElementById("action-result");
@@ -1815,7 +1809,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           }
 
           async function requestJson(url, options) {
-            if (demoMode) {
+            const method = ((options || {}).method || "GET").toUpperCase();
+            if (demoMode && method !== "GET") {
               return { demo: true };
             }
             const response = await fetch(url, options || {});
@@ -1873,7 +1868,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             window.Plotly.relayout(chartId, { "xaxis.autorange": true });
           }
 
-          document.querySelectorAll(".chart-card[data-chart-id]").forEach((card) => {
+          function attachChartRangeControls(card) {
             const chartId = card.getAttribute("data-chart-id");
             const dates = graphDates(chartId);
             if (!dates.length) return;
@@ -1919,7 +1914,60 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 activateRangeButton(card, button);
               });
             });
-          });
+          }
+
+          function setHtmlAndRunScripts(container, html) {
+            container.innerHTML = html;
+            container.querySelectorAll("script").forEach((oldScript) => {
+              const script = document.createElement("script");
+              Array.from(oldScript.attributes).forEach((attr) => script.setAttribute(attr.name, attr.value));
+              script.text = oldScript.textContent;
+              oldScript.replaceWith(script);
+            });
+          }
+
+          function showChartEmpty(card, message) {
+            const body = card.querySelector(".chart-body");
+            if (body) body.innerHTML = '<div class="empty">' + message + "</div>";
+          }
+
+          function ensurePlotlyLoaded() {
+            if (window.Plotly) return Promise.resolve();
+            if (plotlyLoadPromise) return plotlyLoadPromise;
+            plotlyLoadPromise = new Promise((resolve, reject) => {
+              const script = document.createElement("script");
+              script.src = "/local/assets/plotly.min.js";
+              script.onload = resolve;
+              script.onerror = () => reject(new Error("Plotly を読み込めませんでした"));
+              document.head.appendChild(script);
+            });
+            return plotlyLoadPromise;
+          }
+
+          async function loadCharts() {
+            if (!chartEndpoint) return;
+            const cards = Array.from(document.querySelectorAll(".chart-card[data-chart-kind]"));
+            if (!cards.length) return;
+            try {
+              const [charts] = await Promise.all([requestJson(chartEndpoint), ensurePlotlyLoaded()]);
+              cards.forEach((card) => {
+                const body = card.querySelector(".chart-body");
+                const kind = card.getAttribute("data-chart-kind");
+                const html = charts[kind];
+                if (!body) return;
+                if (!html) {
+                  showChartEmpty(card, kind === "watering" ? "灌水に関する時系列データはまだありません。" : "土壌水分の時系列データはまだありません。");
+                  return;
+                }
+                setHtmlAndRunScripts(body, html);
+                window.setTimeout(() => attachChartRangeControls(card), 0);
+              });
+            } catch (error) {
+              cards.forEach((card) => showChartEmpty(card, "推移グラフを読み込めませんでした: " + error.message));
+            }
+          }
+
+          loadCharts();
 
           document.querySelectorAll("[data-state-action]").forEach((button) => {
             button.addEventListener("click", async () => {
@@ -2227,6 +2275,43 @@ def list_mqtt_device_statuses(device_id):
     except ValueError:
         return jsonify({"error": "limit must be an integer"}), 400
     return jsonify(device_config_service().list_statuses(device_id, limit=limit))
+
+
+@app.route("/local/api/mqtt-devices/<device_id>/charts", methods=["GET"])
+def get_mqtt_device_charts(device_id):
+    if device_config_service().get_record(device_id) is None:
+        return jsonify({"error": "device not found"}), 404
+    statuses = device_config_service().list_statuses(device_id, limit=MQTT_ADMIN_STATUS_HISTORY_LIMIT)
+    return jsonify(_build_mqtt_device_chart_payload(statuses))
+
+
+@app.route("/demo/local/api/mqtt-devices/<device_id>/charts", methods=["GET"])
+def get_demo_mqtt_device_charts(device_id):
+    demo_data = _demo_mqtt_admin_page_data(device_id)
+    if demo_data["selected_device_id"] != device_id:
+        return jsonify({"error": "device not found"}), 404
+    return jsonify(_build_mqtt_device_chart_payload(demo_data["selected_statuses"]))
+
+
+def _build_mqtt_device_chart_payload(statuses):
+    watering_chart = _build_watering_trend_chart(statuses, include_plotlyjs=False)
+    return {
+        "watering": watering_chart,
+        "soil_moisture": _build_soil_moisture_chart(statuses, include_plotlyjs=False),
+    }
+
+
+@app.route("/local/assets/plotly.min.js", methods=["GET"])
+def plotly_asset():
+    response = Response(_plotly_javascript(), mimetype="application/javascript")
+    response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
+
+
+@lru_cache(maxsize=1)
+def _plotly_javascript():
+    plotly_js_path = Path(plotly.__file__).parent / "package_data" / "plotly.min.js"
+    return plotly_js_path.read_text(encoding="utf-8")
 
 
 @app.route("/local/api/firmware-artifacts", methods=["GET"])
