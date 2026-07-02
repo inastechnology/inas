@@ -1356,6 +1356,33 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             background: #fff;
           }
           .schedule strong { display: block; font-size: 20px; }
+          .config-form { display: grid; gap: 14px; }
+          .config-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+          .config-field { min-width: 180px; flex: 1; }
+          .threshold-control { display: grid; grid-template-columns: 1fr 86px; gap: 8px; align-items: center; }
+          .switch-row {
+            display: inline-flex;
+            gap: 8px;
+            align-items: center;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 8px 10px;
+            background: #fff;
+            font-weight: 700;
+          }
+          .switch-row input { width: auto; }
+          .schedule-editor { display: grid; gap: 10px; }
+          .schedule-row {
+            display: grid;
+            grid-template-columns: minmax(120px, .8fr) minmax(130px, .8fr) minmax(130px, .8fr) auto;
+            gap: 10px;
+            align-items: end;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 12px;
+            background: #fff;
+          }
+          .icon-button { min-width: 38px; }
           .chart-card { display: grid; gap: 10px; }
           .range-controls {
             display: flex;
@@ -1406,6 +1433,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .section-grid { grid-template-columns: 1fr; }
             .tile-metrics { grid-template-columns: 1fr; }
             .list-row { grid-template-columns: 1fr; }
+            .schedule-row { grid-template-columns: 1fr; }
           }
         </style>
       </head>
@@ -1507,6 +1535,68 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             </div>
           </section>
 
+          <section class="panel">
+            <h2>水やり設定</h2>
+            <form id="runtime-config-form" class="config-form">
+              <div class="metrics">
+                <div class="metric">
+                  <span class="label">灌水しきい値</span>
+                  <span class="value"><span id="threshold-display">{{ selected.config_summary.threshold }}</span></span>
+                  <div class="hint">この値以下を灌水判定に使います</div>
+                </div>
+                <div class="metric">
+                  <span class="label">強制灌水</span>
+                  <span class="value"><span id="force-display">{{ selected.config_summary.force }}</span></span>
+                  <div class="hint">ON の場合、条件に関わらず予約時刻に灌水します</div>
+                </div>
+                <div class="metric">
+                  <span class="label">予約数</span>
+                  <span class="value"><span id="schedule-count-display">{{ selected.config_summary.schedule_count }}</span></span>
+                  <div class="hint">最大 8 件まで登録できます</div>
+                </div>
+              </div>
+
+              <div class="config-toolbar">
+                <div class="config-field">
+                  <label for="moisture-threshold">灌水しきい値</label>
+                  <div class="threshold-control">
+                    <input id="moisture-threshold" type="range" min="0" max="100" step="1">
+                    <input id="moisture-threshold-number" type="number" min="0" max="100" step="1">
+                  </div>
+                </div>
+                <div class="config-field">
+                  <label for="timezone-offset">時刻基準</label>
+                  <select id="timezone-offset">
+                    <option value="32400">JST UTC+09:00</option>
+                    <option value="0">UTC</option>
+                  </select>
+                </div>
+                <div class="config-field">
+                  <label for="ntp-server">NTP サーバー</label>
+                  <input id="ntp-server" type="text" autocomplete="off">
+                </div>
+                <label class="switch-row" for="force-watering">
+                  <input id="force-watering" type="checkbox">
+                  強制灌水
+                </label>
+              </div>
+
+              <div>
+                <h3>灌水予約</h3>
+                <div id="schedule-editor" class="schedule-editor"></div>
+                <div class="actions">
+                  <button type="button" id="add-schedule">＋ 予約を追加</button>
+                </div>
+              </div>
+
+              <div class="actions">
+                <button type="submit">設定を保存</button>
+                <button type="button" id="save-push-runtime-config" class="primary">保存して device に送信</button>
+                <button type="button" id="push-runtime-config">保存済み設定を送信</button>
+              </div>
+            </form>
+          </section>
+
           <div class="section-grid">
             <section class="panel">
               <h2>灌水推移</h2>
@@ -1544,38 +1634,6 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </div>
             </section>
           </div>
-
-          <section class="panel">
-            <h2>水やり設定</h2>
-            <div class="metrics">
-              <div class="metric">
-                <span class="label">灌水しきい値</span>
-                <span class="value">{{ selected.config_summary.threshold }}</span>
-              </div>
-              <div class="metric">
-                <span class="label">強制灌水</span>
-                <span class="value">{{ selected.config_summary.force }}</span>
-              </div>
-              <div class="metric">
-                <span class="label">予約数</span>
-                <span class="value">{{ selected.config_summary.schedule_count }}</span>
-              </div>
-            </div>
-            <h3>予約されている水やり</h3>
-            {% if selected.schedules %}
-            <div class="schedule-grid">
-              {% for schedule in selected.schedules %}
-              <div class="schedule">
-                <strong>{{ schedule.time }}</strong>
-                <div>{{ schedule.duration }}</div>
-                <div class="muted">{{ schedule.channel }}</div>
-              </div>
-              {% endfor %}
-            </div>
-            {% else %}
-            <div class="empty">水やり予約はありません。</div>
-            {% endif %}
-          </section>
 
           {% if selected.watering_history %}
           <details>
@@ -1675,13 +1733,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             </details>
 
             <details>
-              <summary>水やり設定 JSON と即時反映</summary>
+              <summary>水やり設定 JSON</summary>
               <div class="detail-body">
                 <textarea id="runtime-config-json">{{ format_json(selected_device.config) }}</textarea>
                 <div class="actions">
-                  <button type="button" id="save-runtime-config">設定を保存</button>
-                  <button type="button" id="save-push-runtime-config" class="primary">保存して device に送信</button>
-                  <button type="button" id="push-runtime-config">保存済み設定を送信</button>
+                  <button type="button" id="apply-runtime-json">JSON をフォームに反映</button>
+                  <button type="button" id="save-runtime-json">JSON で保存</button>
+                  <button type="button" id="save-push-runtime-json" class="primary">JSON で保存して device に送信</button>
                 </div>
               </div>
             </details>
@@ -1796,6 +1854,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const selectedDeviceId = {{ selected_device_id | tojson }};
           const demoMode = {{ demo_mode | tojson }};
           const chartEndpoint = selectedDeviceId ? ((demoMode ? "/demo/local/api/mqtt-devices/" : "/local/api/mqtt-devices/") + encodeURIComponent(selectedDeviceId) + "/charts") : null;
+          const initialRuntimeConfig = {{ (selected_device.config if selected_device else {}) | tojson }};
           let plotlyLoadPromise = null;
 
           function resultBox() {
@@ -2011,15 +2070,123 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             });
           }
 
-          async function saveRuntimeConfig(push) {
-            const textarea = document.getElementById("runtime-config-json");
+          function padNumber(value) {
+            return String(value).padStart(2, "0");
+          }
+
+          function scheduleToTime(schedule) {
+            return padNumber(schedule.hour || 0) + ":" + padNumber(schedule.minute || 0);
+          }
+
+          function createScheduleRow(schedule) {
+            const row = document.createElement("div");
+            row.className = "schedule-row";
+            row.innerHTML = [
+              '<div><label>時刻</label><input data-schedule-time type="time" required></div>',
+              '<div><label>灌水時間（秒）</label><input data-schedule-duration type="number" min="1" max="3600" step="1" required></div>',
+              '<div><label>系統</label><select data-schedule-channel><option value="1">系統1</option><option value="2">系統2</option><option value="3">系統1・系統2</option></select></div>',
+              '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－</button>',
+            ].join("");
+            row.querySelector("[data-schedule-time]").value = scheduleToTime(schedule || {});
+            row.querySelector("[data-schedule-duration]").value = String((schedule || {}).duration_sec || 1);
+            row.querySelector("[data-schedule-channel]").value = String((schedule || {}).channel_mask || 1);
+            row.querySelector("[data-remove-schedule]").addEventListener("click", () => {
+              if (document.querySelectorAll("#schedule-editor .schedule-row").length <= 1) {
+                showResult("灌水予約は最低 1 件必要です", false);
+                return;
+              }
+              row.remove();
+              refreshRuntimeConfigPreview();
+            });
+            row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", refreshRuntimeConfigPreview));
+            return row;
+          }
+
+          function renderRuntimeConfigForm(config) {
+            config = config || {};
+            const threshold = Number.isInteger(config.moisture_threshold) ? config.moisture_threshold : 35;
+            const thresholdRange = document.getElementById("moisture-threshold");
+            const thresholdNumber = document.getElementById("moisture-threshold-number");
+            if (thresholdRange) thresholdRange.value = String(threshold);
+            if (thresholdNumber) thresholdNumber.value = String(threshold);
+
+            const ntpServer = document.getElementById("ntp-server");
+            if (ntpServer) ntpServer.value = config.ntp_server || "pool.ntp.org";
+            const timezoneOffset = document.getElementById("timezone-offset");
+            if (timezoneOffset) timezoneOffset.value = String(Number.isInteger(config.timezone_offset_sec) ? config.timezone_offset_sec : 32400);
+            const forceWatering = document.getElementById("force-watering");
+            if (forceWatering) forceWatering.checked = Boolean(config.force_watering);
+
+            const editor = document.getElementById("schedule-editor");
+            if (editor) {
+              editor.innerHTML = "";
+              const schedules = Array.isArray(config.schedules) && config.schedules.length ? config.schedules : [{ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1 }];
+              schedules.slice(0, 8).forEach((schedule) => editor.appendChild(createScheduleRow(schedule)));
+            }
+            refreshRuntimeConfigPreview();
+          }
+
+          function collectRuntimeConfigFromForm() {
+            const threshold = Number(document.getElementById("moisture-threshold-number").value);
+            const timezoneOffset = Number(document.getElementById("timezone-offset").value);
+            const schedules = Array.from(document.querySelectorAll("#schedule-editor .schedule-row")).map((row) => {
+              const time = row.querySelector("[data-schedule-time]").value || "00:00";
+              const parts = time.split(":");
+              return {
+                hour: Number(parts[0]),
+                minute: Number(parts[1]),
+                duration_sec: Number(row.querySelector("[data-schedule-duration]").value),
+                channel_mask: Number(row.querySelector("[data-schedule-channel]").value),
+              };
+            });
+            if (schedules.length < 1 || schedules.length > 8) throw new Error("灌水予約は 1〜8 件にしてください");
+            return {
+              ntp_server: document.getElementById("ntp-server").value.trim() || "pool.ntp.org",
+              timezone_offset_sec: timezoneOffset,
+              moisture_threshold: threshold,
+              force_watering: document.getElementById("force-watering").checked,
+              schedules,
+            };
+          }
+
+          function refreshRuntimeConfigPreview() {
             let config;
             try {
-              config = JSON.parse(textarea.value);
+              config = collectRuntimeConfigFromForm();
             } catch (error) {
-              showResult("水やり設定 JSON が正しくありません", false);
               return;
             }
+            const textarea = document.getElementById("runtime-config-json");
+            if (textarea) textarea.value = JSON.stringify(config, null, 2);
+            const thresholdDisplay = document.getElementById("threshold-display");
+            if (thresholdDisplay) thresholdDisplay.textContent = config.moisture_threshold + "%";
+            const forceDisplay = document.getElementById("force-display");
+            if (forceDisplay) forceDisplay.textContent = config.force_watering ? "はい" : "いいえ";
+            const scheduleCountDisplay = document.getElementById("schedule-count-display");
+            if (scheduleCountDisplay) scheduleCountDisplay.textContent = config.schedules.length + "件";
+          }
+
+          async function saveRuntimeConfig(push, source) {
+            let config;
+            if (source === "json") {
+              const textarea = document.getElementById("runtime-config-json");
+              try {
+                config = JSON.parse(textarea.value);
+              } catch (error) {
+                showResult("水やり設定 JSON が正しくありません", false);
+                return;
+              }
+            } else {
+              try {
+                config = collectRuntimeConfigFromForm();
+              } catch (error) {
+                showResult(error.message, false);
+                return;
+              }
+            }
+            renderRuntimeConfigForm(config);
+            const textarea = document.getElementById("runtime-config-json");
+            if (textarea) textarea.value = JSON.stringify(config, null, 2);
             try {
               await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(selectedDeviceId) + "/runtime-config?push=" + String(Boolean(push)), {
                 method: "PUT",
@@ -2033,8 +2200,55 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             }
           }
 
-          const saveConfigButton = document.getElementById("save-runtime-config");
-          if (saveConfigButton) saveConfigButton.addEventListener("click", () => saveRuntimeConfig(false));
+          const runtimeConfigForm = document.getElementById("runtime-config-form");
+          if (runtimeConfigForm) {
+            renderRuntimeConfigForm(initialRuntimeConfig);
+            runtimeConfigForm.addEventListener("submit", async (event) => {
+              event.preventDefault();
+              await saveRuntimeConfig(false);
+            });
+            runtimeConfigForm.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", refreshRuntimeConfigPreview));
+          }
+          const thresholdRange = document.getElementById("moisture-threshold");
+          const thresholdNumber = document.getElementById("moisture-threshold-number");
+          if (thresholdRange && thresholdNumber) {
+            thresholdRange.addEventListener("input", () => {
+              thresholdNumber.value = thresholdRange.value;
+              refreshRuntimeConfigPreview();
+            });
+            thresholdNumber.addEventListener("input", () => {
+              thresholdRange.value = thresholdNumber.value;
+              refreshRuntimeConfigPreview();
+            });
+          }
+          const addScheduleButton = document.getElementById("add-schedule");
+          if (addScheduleButton) {
+            addScheduleButton.addEventListener("click", () => {
+              const editor = document.getElementById("schedule-editor");
+              if (!editor) return;
+              if (editor.querySelectorAll(".schedule-row").length >= 8) {
+                showResult("灌水予約は最大 8 件です", false);
+                return;
+              }
+              editor.appendChild(createScheduleRow({ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1 }));
+              refreshRuntimeConfigPreview();
+            });
+          }
+          const applyRuntimeJsonButton = document.getElementById("apply-runtime-json");
+          if (applyRuntimeJsonButton) {
+            applyRuntimeJsonButton.addEventListener("click", () => {
+              try {
+                renderRuntimeConfigForm(JSON.parse(document.getElementById("runtime-config-json").value));
+                showResult("JSON をフォームに反映しました", true);
+              } catch (error) {
+                showResult("水やり設定 JSON が正しくありません", false);
+              }
+            });
+          }
+          const saveRuntimeJsonButton = document.getElementById("save-runtime-json");
+          if (saveRuntimeJsonButton) saveRuntimeJsonButton.addEventListener("click", () => saveRuntimeConfig(false, "json"));
+          const savePushRuntimeJsonButton = document.getElementById("save-push-runtime-json");
+          if (savePushRuntimeJsonButton) savePushRuntimeJsonButton.addEventListener("click", () => saveRuntimeConfig(true, "json"));
           const savePushConfigButton = document.getElementById("save-push-runtime-config");
           if (savePushConfigButton) savePushConfigButton.addEventListener("click", () => saveRuntimeConfig(true));
           const pushConfigButton = document.getElementById("push-runtime-config");
