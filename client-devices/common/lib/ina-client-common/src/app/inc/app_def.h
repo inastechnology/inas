@@ -162,6 +162,18 @@
 #define APP_FIRMWARE_BUILD_ID __DATE__ " " __TIME__
 #endif
 
+#ifndef APP_FIRMWARE_PROJECT
+#define APP_FIRMWARE_PROJECT "ina-device"
+#endif
+
+#ifndef APP_FIRMWARE_TARGET
+#define APP_FIRMWARE_TARGET "esp32"
+#endif
+
+#ifndef APP_FIRMWARE_FRAMEWORK
+#define APP_FIRMWARE_FRAMEWORK "arduino"
+#endif
+
 #ifndef APP_DEVICE_KIND
 #define APP_DEVICE_KIND "DEV"
 #endif

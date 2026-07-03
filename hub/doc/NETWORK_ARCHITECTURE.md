@@ -7,7 +7,7 @@
 ## 接続の読み方
 
 - 青: 手元 PC から Cloudflare Access / Tunnel を通って、デバイス側 hub UI/API に到達する管理画面経路。
-- 紫: MQTT broker を使う制御経路。OTA request / reply / status を扱い、firmware binary 本体は MQTT で送らない。
+- 紫: MQTT broker を使う制御経路。Hub からデバイスへの retained OTA offer と、デバイスから Hub への OTA status を扱い、firmware binary 本体は MQTT で送らない。OTA request / reply は旧 firmware 互換用途のみ。
 - 緑: OTA firmware binary の HTTP download 経路。デバイスは hub HTTP server の `/firmware/<device_kind>/<version>/firmware.bin` から取得する。
 - 黄: OTA offer URL の生成経路。`FIRMWARE_BASE_URL` があれば優先し、未設定なら `FIRMWARE_HOSTNAME`、OS `HOSTNAME`、OS hostname と `FIRMWARE_PORT` / `HUB_HTTP_PORT` から `http://...:39151` を組み立てる。
 

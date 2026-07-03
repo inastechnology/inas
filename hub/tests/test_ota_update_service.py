@@ -261,7 +261,7 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.assertEqual(self.service.list_ota_statuses(device_id)[0]["payload"]["state"], "started")
 
     def test_uploaded_firmware_binary_is_saved_and_registered(self):
-        firmware = b"test-firmware-binary"
+        firmware = _firmware_binary(device_kind="WTR", version="1.1.0", build_id="2026-07-01T00:00:00Z+abcdef0")
         self.artifact_repository.firmware_root = os.path.join(self.tmp_dir.name, "firmware")
 
         artifact = self.service.upsert_firmware_binary(
@@ -279,6 +279,36 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.assertEqual(artifact["url"], "http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin")
         self.assertEqual(artifact["size"], len(firmware))
         self.assertEqual(artifact["sha256"], hashlib.sha256(firmware).hexdigest())
+        self.assertEqual(artifact["build_id"], "2026-07-01T00:00:00Z+abcdef0")
+        self.assertEqual(artifact["firmware_metadata"]["project"], "watering-device")
+        self.assertEqual(artifact["firmware_metadata"]["target"], "seeed_xiao_esp32s3")
+
+    def test_uploaded_firmware_binary_requires_embedded_manifest(self):
+        with self.assertRaisesRegex(ValueError, "manifest marker"):
+            self.service.upsert_firmware_binary("WTR", "1.1.0", b"test-firmware-binary")
+
+    def test_uploaded_firmware_binary_rejects_device_kind_mismatch(self):
+        firmware = _firmware_binary(device_kind="CAM", version="1.1.0")
+
+        with self.assertRaisesRegex(ValueError, "device_kind mismatch"):
+            self.service.upsert_firmware_binary("WTR", "1.1.0", firmware)
+
+    def test_uploaded_firmware_binary_rejects_version_mismatch(self):
+        firmware = _firmware_binary(device_kind="WTR", version="1.2.0")
+
+        with self.assertRaisesRegex(ValueError, "version mismatch"):
+            self.service.upsert_firmware_binary("WTR", "1.1.0", firmware)
+
+    def test_uploaded_firmware_binary_rejects_build_id_mismatch(self):
+        firmware = _firmware_binary(device_kind="WTR", version="1.1.0", build_id="2026-07-01T00:00:00Z+abcdef0")
+
+        with self.assertRaisesRegex(ValueError, "build_id mismatch"):
+            self.service.upsert_firmware_binary(
+                "WTR",
+                "1.1.0",
+                firmware,
+                metadata={"build_id": "2026-07-01T00:00:00Z+different"},
+            )
 
     def test_firmware_base_url_can_be_generated_from_hostname(self):
         original_firmware_settings = dict(setting().settings.get("firmware") or {})
@@ -371,6 +401,29 @@ def _artifact():
         "sha256": "a" * 64,
         "build_id": "2026-07-01T00:00:00Z+abcdef0",
     }
+
+
+def _firmware_binary(
+    *,
+    device_kind: str,
+    version: str,
+    build_id: str = "2026-07-01T00:00:00Z+abcdef0",
+    project: str = "watering-device",
+    target: str = "seeed_xiao_esp32s3",
+    framework: str = "arduino",
+):
+    manifest = (
+        "INAS_FW_MANIFEST_V1_BEGIN\n"
+        "schema=1\n"
+        f"project={project}\n"
+        f"device_kind={device_kind}\n"
+        f"version={version}\n"
+        f"build_id={build_id}\n"
+        f"target={target}\n"
+        f"framework={framework}\n"
+        "INAS_FW_MANIFEST_V1_END\n"
+    ).encode("ascii")
+    return b"\xe9ESP32BIN" + manifest + b"\x00firmware-body"
 
 
 def _ota_request_message(device_id: str, firmware_version: str, device_kind: str = "WTR"):

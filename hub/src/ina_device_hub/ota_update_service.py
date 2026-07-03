@@ -21,6 +21,9 @@ DEVICE_KIND_RE = re.compile(r"^[A-Z]{3}$")
 SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:+-]+$")
 IPV4_HOST_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
 OTA_UPDATE_REPLY_RETRY_DELAYS_SEC = (0.25, 0.6, 1.2)
+FIRMWARE_MANIFEST_BEGIN = b"INAS_FW_MANIFEST_V1_BEGIN\n"
+FIRMWARE_MANIFEST_END = b"INAS_FW_MANIFEST_V1_END"
+FIRMWARE_MANIFEST_REQUIRED_KEYS = {"schema", "project", "device_kind", "version", "build_id", "target", "framework"}
 
 
 class FirmwareArtifactValidationError(ValueError):
@@ -90,19 +93,34 @@ class FirmwareArtifactRepository:
             raise FirmwareArtifactValidationError("firmware binary must not be empty")
 
         binary = bytes(content)
+        embedded_metadata = extract_firmware_manifest(binary)
+        if embedded_metadata["device_kind"] != device_kind:
+            raise FirmwareArtifactValidationError(
+                f"firmware device_kind mismatch: path={device_kind} embedded={embedded_metadata['device_kind']}"
+            )
+        if embedded_metadata["version"] != version:
+            raise FirmwareArtifactValidationError(
+                f"firmware version mismatch: path={version} embedded={embedded_metadata['version']}"
+            )
+        if metadata.get("build_id") and metadata["build_id"] != embedded_metadata["build_id"]:
+            raise FirmwareArtifactValidationError(
+                f"firmware build_id mismatch: request={metadata['build_id']} embedded={embedded_metadata['build_id']}"
+            )
+
         sha256 = hashlib.sha256(binary).hexdigest()
         path = self.firmware_path(device_kind, version)
         artifact = {
             "device_kind": device_kind,
             "version": version,
             "update_id": metadata.get("update_id"),
-            "build_id": metadata.get("build_id"),
+            "build_id": embedded_metadata["build_id"],
             "url": self.public_firmware_url(device_kind, version),
             "size": len(binary),
             "sha256": sha256,
             "rollout_state": metadata.get("rollout_state", "active"),
             "force": metadata.get("force", False),
             "allow_downgrade": metadata.get("allow_downgrade", False),
+            "firmware_metadata": embedded_metadata,
         }
         validate_firmware_artifact(version, artifact)
 
@@ -495,6 +513,16 @@ def validate_firmware_artifact(version: str, artifact: dict):
     if build_id is not None and len(build_id) >= 64:
         raise FirmwareArtifactValidationError("build_id must be shorter than 64 characters")
 
+    firmware_metadata = artifact.get("firmware_metadata")
+    if firmware_metadata is not None:
+        firmware_metadata = validate_firmware_manifest(firmware_metadata)
+        if firmware_metadata["device_kind"] != device_kind:
+            raise FirmwareArtifactValidationError("firmware_metadata.device_kind must match artifact device_kind")
+        if firmware_metadata["version"] != version:
+            raise FirmwareArtifactValidationError("firmware_metadata.version must match artifact version")
+        if build_id is not None and firmware_metadata["build_id"] != build_id:
+            raise FirmwareArtifactValidationError("firmware_metadata.build_id must match artifact build_id")
+
     return {
         "device_kind": device_kind,
         "version": version,
@@ -506,6 +534,7 @@ def validate_firmware_artifact(version: str, artifact: dict):
         "rollout_state": rollout_state,
         "force": bool(artifact.get("force", False)),
         "allow_downgrade": bool(artifact.get("allow_downgrade", False)),
+        "firmware_metadata": firmware_metadata,
     }
 
 
@@ -538,7 +567,77 @@ def _decision_artifact_summary(artifact: dict | None):
         "rollout_state": artifact.get("rollout_state"),
         "force": artifact.get("force"),
         "allow_downgrade": artifact.get("allow_downgrade"),
+        "firmware_metadata": artifact.get("firmware_metadata"),
     }
+
+
+def extract_firmware_manifest(binary: bytes):
+    if not isinstance(binary, bytes | bytearray) or not binary:
+        raise FirmwareArtifactValidationError("firmware binary must not be empty")
+
+    start = bytes(binary).find(FIRMWARE_MANIFEST_BEGIN)
+    if start < 0:
+        raise FirmwareArtifactValidationError("firmware manifest marker not found")
+    manifest_start = start + len(FIRMWARE_MANIFEST_BEGIN)
+    end = bytes(binary).find(FIRMWARE_MANIFEST_END, manifest_start)
+    if end < 0:
+        raise FirmwareArtifactValidationError("firmware manifest end marker not found")
+    if end - manifest_start > 1024:
+        raise FirmwareArtifactValidationError("firmware manifest is too large")
+
+    try:
+        manifest_text = bytes(binary)[manifest_start:end].decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise FirmwareArtifactValidationError("firmware manifest must be ASCII") from exc
+
+    metadata = {}
+    for line in manifest_text.splitlines():
+        if not line.strip():
+            continue
+        if "=" not in line:
+            raise FirmwareArtifactValidationError("firmware manifest contains malformed line")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or key in metadata:
+            raise FirmwareArtifactValidationError("firmware manifest contains duplicate or empty key")
+        metadata[key] = value
+
+    return validate_firmware_manifest(metadata)
+
+
+def validate_firmware_manifest(metadata: dict):
+    if not isinstance(metadata, dict):
+        raise FirmwareArtifactValidationError("firmware manifest must be an object")
+
+    missing = sorted(FIRMWARE_MANIFEST_REQUIRED_KEYS - set(metadata))
+    if missing:
+        raise FirmwareArtifactValidationError(f"firmware manifest missing keys: {', '.join(missing)}")
+
+    schema = metadata.get("schema")
+    if schema != "1":
+        raise FirmwareArtifactValidationError("firmware manifest schema must be 1")
+
+    normalized = {
+        "schema": schema,
+        "project": _normalize_manifest_token("project", metadata.get("project"), max_len=64),
+        "device_kind": _normalize_device_kind(metadata.get("device_kind")),
+        "version": _normalize_version(metadata.get("version")),
+        "build_id": _normalize_manifest_token("build_id", metadata.get("build_id"), max_len=64),
+        "target": _normalize_manifest_token("target", metadata.get("target"), max_len=64),
+        "framework": _normalize_manifest_token("framework", metadata.get("framework"), max_len=32),
+    }
+    return normalized
+
+
+def _normalize_manifest_token(name: str, value, *, max_len: int):
+    if not isinstance(value, str) or not value:
+        raise FirmwareArtifactValidationError(f"firmware manifest {name} must be a non-empty string")
+    if SAFE_TOKEN_RE.match(value) is None:
+        raise FirmwareArtifactValidationError(f"firmware manifest {name} contains unsupported characters")
+    if len(value) >= max_len:
+        raise FirmwareArtifactValidationError(f"firmware manifest {name} must be shorter than {max_len} characters")
+    return value
 
 
 def _artifact_key(device_kind: str, version: str):

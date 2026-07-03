@@ -130,7 +130,7 @@
   <rect x="85" y="745" width="310" height="48" class="box" fill="#e6f0ff" stroke="#6c8ebf"/>
   <text x="240" y="775" text-anchor="middle" class="body">青: UI 管理画面。HTTPS + Access + Tunnel</text>
   <rect x="425" y="745" width="310" height="48" class="box" fill="#f3e8ff" stroke="#9673a6"/>
-  <text x="580" y="775" text-anchor="middle" class="body">紫: MQTT。OTA request / reply / status の制御のみ</text>
+  <text x="580" y="775" text-anchor="middle" class="body">紫: MQTT。retained OTA offer / OTA status</text>
   <rect x="765" y="745" width="310" height="48" class="box" fill="#e8f5e9" stroke="#82b366"/>
   <text x="920" y="775" text-anchor="middle" class="body">緑: OTA binary。hub HTTP server から download</text>
   <rect x="1105" y="745" width="310" height="48" class="box" fill="#fff2cc" stroke="#d6b656"/>

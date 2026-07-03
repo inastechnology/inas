@@ -64,11 +64,11 @@ upload/register API:
 
 ```bash
 curl -X POST \
-  "http://<hubのドメイン名またはIPアドレス>:39151/local/api/firmware-artifacts/WTR/1.1.0/upload?build_id=2026-07-01T03:00:00Z%2Babcdef0" \
+  "http://<hubのドメイン名またはIPアドレス>:39151/local/api/firmware-artifacts/WTR/1.1.0/upload" \
   --data-binary @firmware.bin
 ```
 
-この API は size と sha256 を自動計算し、artifact URL を `${resolved_firmware_base_url}/firmware/WTR/1.1.0/firmware.bin` として登録します。MQTT は OTA request/reply/status の制御だけに使い、firmware 本体は hub の HTTP server から配信します。
+この API は firmware binary 内の `INAS_FW_MANIFEST_V1` を読み、URL path の `device_kind` / `version` と埋め込み値が一致する場合だけ登録します。`build_id`、`project`、`target`、`framework` も埋め込み manifest から artifact metadata に保存します。size と sha256 は hub が自動計算し、artifact URL を `${resolved_firmware_base_url}/firmware/WTR/1.1.0/firmware.bin` として登録します。MQTT は retained OTA offer と OTA status の制御だけに使い、firmware 本体は hub の HTTP server から配信します。
 
 ## Instagram 関連（任意）
 
