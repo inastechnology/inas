@@ -222,6 +222,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('<select id="target-firmware-version">', html)
         self.assertIn('id="firmware-upload-form"', html)
         self.assertIn('id="firmware-version" name="version" type="text" value="" readonly', html)
+        self.assertIn('id="inspect-firmware-manifest"', html)
         self.assertIn("firmware.bin を選択すると", html)
         self.assertIn("2026-07-01T00:00:00Z+abcdef0", html)
         self.assertIn("/local/api/firmware-artifacts/", html)

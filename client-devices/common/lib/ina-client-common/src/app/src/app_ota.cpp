@@ -18,6 +18,9 @@
 
 #define APP_OTA_PENDING_FILE "/.ota_pending"
 
+extern "C" const char INAS_FIRMWARE_MANIFEST[];
+static const char *const INAS_FIRMWARE_MANIFEST_LINK_ANCHOR __attribute__((used)) = INAS_FIRMWARE_MANIFEST;
+
 typedef struct
 {
     bool received;

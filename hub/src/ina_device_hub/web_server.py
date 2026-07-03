@@ -1985,6 +1985,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <input id="firmware-file" name="firmware" type="file" required>
                   <div id="firmware-manifest-summary" class="empty">firmware.bin を選択すると、埋め込みmanifestからデバイス種別・バージョン・ビルドIDを読み取ります。</div>
                   <div class="actions">
+                    <button type="button" id="inspect-firmware-manifest">manifest再読み取り</button>
                     <label><input id="firmware-force" name="force" type="checkbox">強制更新</label>
                     <label><input id="firmware-allow-downgrade" name="allow_downgrade" type="checkbox">古いバージョンへの更新を許可</label>
                     <button type="submit" class="primary">アップロードして登録</button>
@@ -2531,6 +2532,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             let inspectedFirmwareFileKey = "";
             const firmwareFileInput = document.getElementById("firmware-file");
             const firmwareManifestSummary = document.getElementById("firmware-manifest-summary");
+            const inspectFirmwareManifestButton = document.getElementById("inspect-firmware-manifest");
 
             function firmwareFileKey(file) {
               return file ? [file.name, file.size, file.lastModified].join(":") : "";
@@ -2589,7 +2591,19 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             }
 
             if (firmwareFileInput) {
+              firmwareFileInput.addEventListener("click", () => {
+                inspectedFirmwareManifest = null;
+                inspectedFirmwareFileKey = "";
+                firmwareFileInput.value = "";
+              });
               firmwareFileInput.addEventListener("change", () => {
+                inspectSelectedFirmware().catch((error) => showResult(error.message, false));
+              });
+            }
+            if (inspectFirmwareManifestButton) {
+              inspectFirmwareManifestButton.addEventListener("click", () => {
+                inspectedFirmwareManifest = null;
+                inspectedFirmwareFileKey = "";
                 inspectSelectedFirmware().catch((error) => showResult(error.message, false));
               });
             }
