@@ -310,13 +310,12 @@ bool AppDevice::check_ota_update(uint32_t seq_id) const
     }
 
     app_ota_finish_waiting();
-    Serial.println("Retained OTA offer was not received; reporting timeout before normal wake cycle continues");
+    Serial.println("Retained OTA offer was not received; continuing normal wake cycle");
     APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
-                        APP_DEBUG_LOG_WARNING,
+                        APP_DEBUG_LOG_INFO,
                         APP_DEBUG_EVENT_OTA_OFFER_TIMEOUT,
                         APP_OTA_OFFER_WAIT_MS,
                         0);
-    app_ota_publish_offer_timeout_status(seq_id, APP_OTA_OFFER_WAIT_MS);
     return false;
 }
 

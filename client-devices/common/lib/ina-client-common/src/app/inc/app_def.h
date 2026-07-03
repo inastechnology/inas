@@ -170,14 +170,6 @@
 #define APP_MQTT_OTA_KIND "ota"
 #endif
 
-#ifndef APP_MQTT_OTA_REQUEST_MODE
-#define APP_MQTT_OTA_REQUEST_MODE "request"
-#endif
-
-#ifndef APP_MQTT_OTA_REPLY_MODE
-#define APP_MQTT_OTA_REPLY_MODE "reply"
-#endif
-
 #ifndef APP_MQTT_OTA_STATUS_MODE
 #define APP_MQTT_OTA_STATUS_MODE "status"
 #endif

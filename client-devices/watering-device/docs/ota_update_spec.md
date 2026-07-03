@@ -381,15 +381,16 @@ Allowed states:
 | `confirmed` | New firmware passed startup self-check |
 | `failed` | OTA update failed and old firmware continues |
 
-The device must publish a `failed` OTA status before deep sleep when the OTA
-control exchange itself fails. This makes the difference between “no offer
-arrived” and “download/write failed” visible in remote logs.
+No retained `ota/offer` means no update is currently assigned. The device logs
+that condition and continues the normal wake cycle without publishing a failed
+OTA status. The device must publish a `failed` OTA status before deep sleep
+when an offer was received but the payload, download, validation, or write step
+fails.
 
 Recommended error codes:
 
 | Error | Meaning |
 |---|---|
-| `offer_timeout_<wait_ms>ms` | Device did not receive retained `ota/offer` before the wait deadline |
 | `invalid_payload` | JSON or required fields invalid |
 | `unsupported_schema` | `schema_version` not supported |
 | `device_kind_mismatch` | Offer device kind did not match this firmware |
