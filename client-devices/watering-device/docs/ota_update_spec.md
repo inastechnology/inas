@@ -532,13 +532,19 @@ Generate digest:
 sha256sum .pio/build/seeed_xiao_esp32s3/firmware.bin
 ```
 
+Check the embedded Hub manifest before uploading:
+
+```bash
+make check-firmware
+```
+
 Release checklist:
 
 1. Set `APP_DEVICE_KIND`, `APP_FIRMWARE_VERSION`, `APP_FIRMWARE_BUILD_ID`,
    `APP_FIRMWARE_PROJECT`, `APP_FIRMWARE_TARGET`, and
    `APP_FIRMWARE_FRAMEWORK`.
 2. Run `make build`.
-3. Confirm `firmware.bin` contains `INAS_FW_MANIFEST_V1_BEGIN`.
+3. Run `make check-firmware` and confirm the embedded manifest is printed.
 4. Confirm `firmware.bin` size is smaller than the OTA app slot.
 5. Upload `firmware.bin` with the Hub upload/register API so embedded manifest,
    size, and SHA-256 are calculated by the Hub.

@@ -12,6 +12,15 @@ from urllib.parse import quote
 
 from ina_device_hub.device_config_repository import device_config_repository
 from ina_device_hub.device_event_log import append_device_event
+from ina_device_hub.firmware_manifest import (
+    FirmwareManifestValidationError,
+)
+from ina_device_hub.firmware_manifest import (
+    extract_firmware_manifest as _extract_firmware_manifest,
+)
+from ina_device_hub.firmware_manifest import (
+    validate_firmware_manifest as _validate_firmware_manifest,
+)
 from ina_device_hub.general_log import logger
 from ina_device_hub.setting import setting
 
@@ -21,9 +30,6 @@ DEVICE_KIND_RE = re.compile(r"^[A-Z]{3}$")
 SAFE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._:+-]+$")
 IPV4_HOST_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
 OTA_UPDATE_REPLY_RETRY_DELAYS_SEC = (0.25, 0.6, 1.2)
-FIRMWARE_MANIFEST_BEGIN = b"INAS_FW_MANIFEST_V1_BEGIN\n"
-FIRMWARE_MANIFEST_END = b"INAS_FW_MANIFEST_V1_END"
-FIRMWARE_MANIFEST_REQUIRED_KEYS = {"schema", "project", "device_kind", "version", "build_id", "target", "framework"}
 
 
 class FirmwareArtifactValidationError(ValueError):
@@ -572,72 +578,17 @@ def _decision_artifact_summary(artifact: dict | None):
 
 
 def extract_firmware_manifest(binary: bytes):
-    if not isinstance(binary, bytes | bytearray) or not binary:
-        raise FirmwareArtifactValidationError("firmware binary must not be empty")
-
-    start = bytes(binary).find(FIRMWARE_MANIFEST_BEGIN)
-    if start < 0:
-        raise FirmwareArtifactValidationError("firmware manifest marker not found")
-    manifest_start = start + len(FIRMWARE_MANIFEST_BEGIN)
-    end = bytes(binary).find(FIRMWARE_MANIFEST_END, manifest_start)
-    if end < 0:
-        raise FirmwareArtifactValidationError("firmware manifest end marker not found")
-    if end - manifest_start > 1024:
-        raise FirmwareArtifactValidationError("firmware manifest is too large")
-
     try:
-        manifest_text = bytes(binary)[manifest_start:end].decode("ascii")
-    except UnicodeDecodeError as exc:
-        raise FirmwareArtifactValidationError("firmware manifest must be ASCII") from exc
-
-    metadata = {}
-    for line in manifest_text.splitlines():
-        if not line.strip():
-            continue
-        if "=" not in line:
-            raise FirmwareArtifactValidationError("firmware manifest contains malformed line")
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if not key or key in metadata:
-            raise FirmwareArtifactValidationError("firmware manifest contains duplicate or empty key")
-        metadata[key] = value
-
-    return validate_firmware_manifest(metadata)
+        return _extract_firmware_manifest(binary)
+    except FirmwareManifestValidationError as exc:
+        raise FirmwareArtifactValidationError(str(exc)) from exc
 
 
 def validate_firmware_manifest(metadata: dict):
-    if not isinstance(metadata, dict):
-        raise FirmwareArtifactValidationError("firmware manifest must be an object")
-
-    missing = sorted(FIRMWARE_MANIFEST_REQUIRED_KEYS - set(metadata))
-    if missing:
-        raise FirmwareArtifactValidationError(f"firmware manifest missing keys: {', '.join(missing)}")
-
-    schema = metadata.get("schema")
-    if schema != "1":
-        raise FirmwareArtifactValidationError("firmware manifest schema must be 1")
-
-    normalized = {
-        "schema": schema,
-        "project": _normalize_manifest_token("project", metadata.get("project"), max_len=64),
-        "device_kind": _normalize_device_kind(metadata.get("device_kind")),
-        "version": _normalize_version(metadata.get("version")),
-        "build_id": _normalize_manifest_token("build_id", metadata.get("build_id"), max_len=64),
-        "target": _normalize_manifest_token("target", metadata.get("target"), max_len=64),
-        "framework": _normalize_manifest_token("framework", metadata.get("framework"), max_len=32),
-    }
-    return normalized
-
-
-def _normalize_manifest_token(name: str, value, *, max_len: int):
-    if not isinstance(value, str) or not value:
-        raise FirmwareArtifactValidationError(f"firmware manifest {name} must be a non-empty string")
-    if SAFE_TOKEN_RE.match(value) is None:
-        raise FirmwareArtifactValidationError(f"firmware manifest {name} contains unsupported characters")
-    if len(value) >= max_len:
-        raise FirmwareArtifactValidationError(f"firmware manifest {name} must be shorter than {max_len} characters")
-    return value
+    try:
+        return _validate_firmware_manifest(metadata)
+    except FirmwareManifestValidationError as exc:
+        raise FirmwareArtifactValidationError(str(exc)) from exc
 
 
 def _artifact_key(device_kind: str, version: str):

@@ -37,8 +37,12 @@ cd client-devices/watering-device
 
 ```bash
 make build
+make check-firmware
 make upload
 ```
+
+`make check-firmware` verifies that `.pio/build/seeed_xiao_esp32s3/firmware.bin`
+contains the OTA manifest required by the Hub upload screen.
 
 To create a single flashable image for another PC, use:
 

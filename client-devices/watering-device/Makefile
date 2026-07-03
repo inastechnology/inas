@@ -2,8 +2,11 @@
 
 # Set the board environment variable
 PIO ?= platformio
+PYTHON ?= python3
 ENV = seeed_xiao_esp32s3
 BUILD_DIR := .pio/build/$(ENV)
+REPO_ROOT := $(abspath ../..)
+FIRMWARE_CHECKER ?= $(REPO_ROOT)/hub/scripts/check_firmware_manifest.py
 PIO_PYTHON ?= $(HOME)/.platformio/penv/bin/python
 ESPTOOL ?= $(HOME)/.platformio/packages/tool-esptoolpy/esptool.py
 BOOT_APP0 ?= $(HOME)/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin
@@ -15,7 +18,7 @@ FLASH_SIZE ?= keep
 AUTO_UPLOAD_PORT := $(shell ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n 1)
 UPLOAD_PORT ?= $(AUTO_UPLOAD_PORT)
 
-.PHONY: build buildfs merged-bin flash-merged upload ports remote-upload remote-monitor help
+.PHONY: build check-firmware buildfs merged-bin flash-merged upload ports remote-upload remote-monitor help
 
 all: build
 	@echo "Building for environment: $(ENV)"
@@ -25,6 +28,10 @@ all: build
 # Build the project
 build:
 	$(PIO) run --environment $(ENV)
+
+# Check that the OTA firmware artifact embeds the Hub-readable manifest.
+check-firmware: build
+	$(PYTHON) "$(FIRMWARE_CHECKER)" "$(BUILD_DIR)/firmware.bin"
 
 # Build the LittleFS image from data/
 buildfs:
@@ -100,6 +107,7 @@ remote-monitor:
 help:
 	@echo "Available targets:"
 	@echo "  build           - Build the project"
+	@echo "  check-firmware  - Build firmware.bin and verify the embedded OTA manifest"
 	@echo "  buildfs         - Build the LittleFS image from data/"
 	@echo "  merged-bin      - Build a single flashable image at $(MERGED_BIN)"
 	@echo "  flash-merged    - Write the merged image to a connected board"
