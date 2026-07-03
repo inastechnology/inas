@@ -344,19 +344,21 @@ static bool app_network_is_ota_kind_offer_topic(const char *topic)
 
 void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
 {
-    Serial.print("Message arrived [");
-    Serial.print(topic);
-    Serial.print("] ");
-
     // handle message
     if (length >= 512)
     {
+        Serial.print("Message arrived [");
+        Serial.print(topic);
+        Serial.print("] ");
         Serial.println("Payload too large");
         return;
     }
 
     if (app_network_is_ota_kind_offer_topic(topic))
     {
+        Serial.print("Message arrived [");
+        Serial.print(topic);
+        Serial.print("] ");
         if (app_ota_apply_offer_json(payload, length))
         {
             Serial.println("OTA offer received via MQTT");
@@ -369,6 +371,9 @@ void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
     char topicMode[32];
     if (app_network_parse_kinds_topic(topic, topicClientId, sizeof(topicClientId), topicKind, sizeof(topicKind), topicMode, sizeof(topicMode)) == false)
     {
+        Serial.print("Message arrived [");
+        Serial.print(topic);
+        Serial.print("] ");
         Serial.println("Invalid topic");
         return;
     }
@@ -378,6 +383,10 @@ void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
         ESP_LOGD(TAG, "Ignore message for other client: %s", topicClientId);
         return;
     }
+
+    Serial.print("Message arrived [");
+    Serial.print(topic);
+    Serial.print("] ");
 
     if (strcmp(topicKind, APP_MQTT_CONFIG_KIND) == 0)
     {
