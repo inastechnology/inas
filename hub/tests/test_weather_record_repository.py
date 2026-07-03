@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
@@ -76,6 +77,7 @@ class WeatherRecordRepositoryTest(unittest.TestCase):
             self.assertEqual(record["daily_summaries"][0]["precipitation_mm"], 0.0)
             self.assertEqual(record["daily_summaries"][0]["sunshine_hours"], 12.06)
             self.assertEqual(record["growth_metrics"]["solar_radiation_mj_m2"], 27.88)
+            self.assertEqual(datetime.fromisoformat(record["recorded_at"]).utcoffset().total_seconds(), 0)
 
     def test_add_forecast_writes_growth_weather_jsonl_once(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -129,6 +131,7 @@ class WeatherRecordRepositoryTest(unittest.TestCase):
             self.assertEqual(record["daily_summaries"][0]["precipitation_probability_avg_percent"], 5.0)
             self.assertIsNone(record["daily_summaries"][0]["precipitation_mm"])
             self.assertIsNone(record["daily_summaries"][0]["sunshine_hours"])
+            self.assertEqual(datetime.fromisoformat(record["recorded_at"]).utcoffset().total_seconds(), 0)
 
 
 if __name__ == "__main__":

@@ -42,7 +42,7 @@ class DataProcessor:
                     {
                         "name": message["device_id"],
                         "type": message["device_id"].split("-")[0],
-                        "detected_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                        "detected_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     },
                 )
 

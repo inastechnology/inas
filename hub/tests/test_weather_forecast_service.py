@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
@@ -61,6 +62,7 @@ class WeatherForecastServiceTest(unittest.TestCase):
         self.assertEqual(forecast["feed_url"], "https://example.test/feed.xml")
         self.assertEqual(forecast["office"], "松山地方気象台")
         self.assertEqual(forecast["daily_weather"][0]["weather"], "くもり後晴れ")
+        self.assertEqual(datetime.fromisoformat(forecast["fetched_at"]).utcoffset().total_seconds(), 0)
 
     def test_parse_forecast_extracts_area_level_weather_only(self):
         forecast = WeatherForecastService(area_name="東予").parse_forecast(self._forecast_xml())

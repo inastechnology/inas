@@ -28,6 +28,24 @@ app = Flask(__name__)
 MQTT_ADMIN_STATUS_HISTORY_LIMIT = 2000
 
 
+def _local_timezone():
+    return datetime.now().astimezone().tzinfo
+
+
+def _to_local_datetime(value):
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        return None
+    return parsed.astimezone(_local_timezone())
+
+
+def _to_local_plot_time(value):
+    local_dt = _to_local_datetime(value)
+    if local_dt is None:
+        return None
+    return local_dt.replace(tzinfo=None)
+
+
 def _normalize_display_value(value):
     if value is None:
         return "null"
@@ -390,6 +408,19 @@ def _build_mqtt_admin_view(devices, selected_device_id, selected_device, selecte
     }
 
 
+def _format_firmware_artifacts_for_ui(firmware_artifacts):
+    formatted = {}
+    for key, artifact in (firmware_artifacts or {}).items():
+        if not isinstance(artifact, dict):
+            formatted[key] = artifact
+            continue
+        formatted_artifact = dict(artifact)
+        formatted_artifact["created_at"] = _format_datetime(artifact.get("created_at"))
+        formatted_artifact["updated_at"] = _format_datetime(artifact.get("updated_at"))
+        formatted[key] = formatted_artifact
+    return formatted
+
+
 def _device_sort_key(device_id, record):
     state_order = {"active": 0, "pending": 1, "disabled": 2, "retired": 3}
     return (state_order.get(record.get("state"), 9), str(record.get("name") or device_id))
@@ -570,7 +601,7 @@ def _watering_trend_points(statuses):
     points = []
     for entry in statuses or []:
         payload = entry.get("payload") if isinstance(entry, dict) else None
-        received_at = _parse_datetime(entry.get("received_at")) if isinstance(entry, dict) else None
+        received_at = _to_local_plot_time(entry.get("received_at")) if isinstance(entry, dict) else None
         if received_at is None or not isinstance(payload, dict) or not _has_watering_information(payload):
             continue
         duration_sec = payload.get("watering_duration_sec")
@@ -594,7 +625,7 @@ def _soil_moisture_points(statuses):
     points = []
     for entry in statuses or []:
         payload = entry.get("payload") if isinstance(entry, dict) else None
-        received_at = _parse_datetime(entry.get("received_at")) if isinstance(entry, dict) else None
+        received_at = _to_local_plot_time(entry.get("received_at")) if isinstance(entry, dict) else None
         if received_at is None or not isinstance(payload, dict):
             continue
         soil_moisture = payload.get("last_soil_moisture")
@@ -840,11 +871,11 @@ def _format_age(value, now=None):
 
 
 def _format_datetime(value):
-    parsed = _parse_datetime(value)
-    if parsed is None:
+    local_dt = _to_local_datetime(value)
+    if local_dt is None:
         return "未取得"
-    jst = parsed.astimezone(UTC) + timedelta(hours=9)
-    return jst.strftime("%Y-%m-%d %H:%M JST")
+    timezone_name = local_dt.tzname() or "local"
+    return local_dt.strftime(f"%Y-%m-%d %H:%M {timezone_name}")
 
 
 def _parse_datetime(value):
@@ -1835,7 +1866,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead>
                   <tbody>
                     {% for status in selected_statuses | reverse %}
-                    <tr><td>{{ status.received_at }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>
+                    <tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>
                     {% endfor %}
                   </tbody>
                 </table>
@@ -1844,7 +1875,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead>
                   <tbody>
                     {% for status in selected_ota_statuses | reverse %}
-                    <tr><td>{{ status.received_at }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>
+                    <tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>
                     {% endfor %}
                   </tbody>
                 </table>
@@ -2471,11 +2502,12 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         selected_device=selected_device,
         selected_statuses=selected_statuses,
         selected_ota_statuses=selected_ota_statuses,
-        firmware_artifacts=firmware_artifacts,
+        firmware_artifacts=_format_firmware_artifacts_for_ui(firmware_artifacts),
         connection_events=connection_events,
         recent_events=recent_events,
         admin_view=admin_view,
         format_json=_format_json,
+        format_datetime=_format_datetime,
         render_events=_render_event_table,
         demo_mode=demo_mode,
         device_link_prefix=device_link_prefix,
@@ -2800,7 +2832,7 @@ def _render_event_table(events):
         payload = escape(_format_json(event.get("payload")))
         rows.append(
             "<tr>"
-            f"<td>{escape(str(event.get('occurred_at') or ''))}</td>"
+            f"<td>{escape(_format_datetime(event.get('occurred_at')))}</td>"
             f"<td>{escape(str(event.get('event_type') or ''))}</td>"
             f"<td>{escape(str(event.get('direction') or ''))}</td>"
             f"<td>{escape(str(event.get('topic') or ''))}</td>"

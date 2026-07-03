@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 
 from ina_device_hub.setting import setting
 
@@ -44,7 +44,7 @@ class WeatherRecordRepository:
         return {
             "schema": self.SCHEMA,
             "record_id": record_id,
-            "recorded_at": datetime.now().isoformat(timespec="seconds"),
+            "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "source": source,
             "location": {
                 "office": forecast.get("office"),
@@ -70,7 +70,7 @@ class WeatherRecordRepository:
         return {
             "schema": self.SCHEMA,
             "record_id": record_id,
-            "recorded_at": datetime.now().isoformat(timespec="seconds"),
+            "recorded_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "source": source,
             "location": location,
             "daily_weather": [],

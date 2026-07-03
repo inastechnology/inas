@@ -2,6 +2,7 @@ import hashlib
 import os
 import tempfile
 import unittest
+from datetime import timedelta, timezone
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("LOCAL_STORAGE_BASE_DIR", tempfile.mkdtemp())
@@ -211,6 +212,33 @@ class WebServerOTATest(unittest.TestCase):
         charts = charts_response.get_json()
         self.assertIn("Plotly.newPlot", charts["watering"])
         self.assertIn("Plotly.newPlot", charts["soil_moisture"])
+
+    def test_mqtt_device_times_are_rendered_in_local_time(self):
+        utc_received_at = "2026-07-02T21:30:15+00:00"
+        original_local_timezone = web_server._local_timezone
+        web_server._local_timezone = lambda: timezone(timedelta(hours=9), "JST")
+        self.addCleanup(lambda: setattr(web_server, "_local_timezone", original_local_timezone))
+
+        self.assertEqual(web_server._format_datetime(utc_received_at), "2026-07-03 06:30 JST")
+
+        statuses = [
+            {
+                "received_at": utc_received_at,
+                "payload": {
+                    "watering_due": True,
+                    "watering_started": True,
+                    "watering_duration_sec": 120,
+                    "channel_mask": 1,
+                    "last_soil_moisture": 42,
+                    "threshold": 40,
+                },
+            }
+        ]
+
+        chart_html = web_server._build_watering_trend_chart(statuses)
+
+        self.assertIn("2026-07-03T06:30:15", chart_html)
+        self.assertNotIn("2026-07-02T21:30:15", chart_html)
 
     def test_mqtt_devices_query_device_id_redirects_to_detail_path(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000201"

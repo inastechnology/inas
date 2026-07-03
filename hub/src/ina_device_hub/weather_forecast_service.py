@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib import error, request
 from xml.etree import ElementTree
 
@@ -43,7 +43,7 @@ class WeatherForecastService:
         forecast = {
             "source": "jma_xml",
             "area": self.area_name,
-            "fetched_at": datetime.now().isoformat(timespec="seconds"),
+            "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "report_datetime": self._find_text(root, ".//ib:ReportDateTime"),
             "target_datetime": self._find_text(root, ".//ib:TargetDateTime"),
             "daily_weather": [],
