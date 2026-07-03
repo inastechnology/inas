@@ -177,6 +177,7 @@ Used by `APP_DEBUG_EVENT_WATERING_DECISION`.
 | 82 | `APP_DEBUG_EVENT_OTA_OFFER_TIMEOUT` | WARNING | offer wait timeout ms | `0` |
 | 83 | `APP_DEBUG_EVENT_OTA_OFFER_RECEIVED` | INFO | offer received: `1` | offer wait timeout ms |
 | 84 | `APP_DEBUG_EVENT_OTA_HANDLE_RESULT` | INFO or WARNING | update attempted: `1/0` | `0` |
+| 85 | `APP_DEBUG_EVENT_OTA_LATE_OFFER_IGNORED` | WARNING | payload length bytes | `0` |
 
 ### Network events
 

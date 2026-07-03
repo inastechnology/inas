@@ -12,6 +12,7 @@
 #include "esp_ota_ops.h"
 
 #include "app_config.h"
+#include "app_debug_log.h"
 #include "app_def.h"
 #include "app_network.h"
 
@@ -43,6 +44,7 @@ typedef struct
 
 static app_ota_offer_t s_offer;
 static app_ota_pending_boot_t s_pending_boot;
+static bool s_accepting_offer = false;
 
 static void app_ota_clear_offer()
 {
@@ -446,19 +448,38 @@ static bool app_ota_download_and_install(uint32_t seq_id)
 void app_ota_init()
 {
     app_ota_clear_offer();
+    s_accepting_offer = false;
     app_ota_load_pending_boot();
 }
 
 void app_ota_mark_waiting()
 {
     app_ota_clear_offer();
+    s_accepting_offer = true;
+}
+
+void app_ota_finish_waiting()
+{
+    s_accepting_offer = false;
 }
 
 bool app_ota_apply_offer_json(const uint8_t *payload, size_t length)
 {
+    if (!s_accepting_offer)
+    {
+        Serial.println("Late OTA offer ignored because OTA wait phase is closed");
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                            APP_DEBUG_LOG_WARNING,
+                            APP_DEBUG_EVENT_OTA_LATE_OFFER_IGNORED,
+                            static_cast<int32_t>(length),
+                            0);
+        return false;
+    }
+
     app_ota_clear_offer();
     if (payload == nullptr || length == 0)
     {
+        s_accepting_offer = false;
         app_ota_set_offer_error("invalid_payload");
         return false;
     }
@@ -468,11 +489,13 @@ bool app_ota_apply_offer_json(const uint8_t *payload, size_t length)
     if (error)
     {
         Serial.printf("Failed to parse OTA offer JSON: %s\n", error.c_str());
+        s_accepting_offer = false;
         app_ota_set_offer_error("invalid_payload");
         return false;
     }
 
     s_offer.received = true;
+    s_accepting_offer = false;
     const int schema_version = doc["schema_version"] | 0;
     if (schema_version != 1)
     {

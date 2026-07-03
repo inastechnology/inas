@@ -61,6 +61,7 @@ enum app_debug_log_event_t : uint8_t
     APP_DEBUG_EVENT_OTA_OFFER_TIMEOUT = 82,
     APP_DEBUG_EVENT_OTA_OFFER_RECEIVED = 83,
     APP_DEBUG_EVENT_OTA_HANDLE_RESULT = 84,
+    APP_DEBUG_EVENT_OTA_LATE_OFFER_IGNORED = 85,
 };
 
 void app_debug_log_reset();

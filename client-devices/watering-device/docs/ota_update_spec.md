@@ -155,6 +155,14 @@ backoff delays in the same wake window. This mitigates transient MQTT timing
 races without increasing the device wake frequency or adding another
 device-side retry cycle.
 
+The device treats OTA as a separate phase before normal operation. It accepts
+`ota/reply` and `ota/push` only while it is explicitly waiting for an offer
+after publishing `ota/request`. Once the wait deadline expires or an offer has
+been received, the OTA phase is closed. Late OTA replies received during
+watering or other operation are ignored and logged as
+`APP_DEBUG_EVENT_OTA_LATE_OFFER_IGNORED`; they must not alter the current wake
+cycle.
+
 ## 8. OTA Request Payload
 
 The device publishes this after runtime config handling and before watering evaluation.
