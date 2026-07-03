@@ -136,6 +136,44 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.assertTrue(new_mqtt_client.published[-1]["retain"])
         self.assertEqual(json.loads(new_mqtt_client.published[-1]["payload"])["action"], "update")
 
+    def test_confirmed_status_clears_retained_offer_when_reported_version_matches(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000110"
+        self.repository.record_status(device_id, {"device_kind": "WTR", "firmware_version": "1.0.0"})
+        self.repository.set_state(device_id, "active", approved_by="operator")
+        self.artifact_repository.upsert("1.1.0", _artifact())
+        self.service.set_firmware_target(device_id, "1.1.0")
+        self.mqtt_client.published = []
+
+        handled = self.service.handle_mqtt_message(None, _ota_status_message(device_id, "confirmed", firmware_version="1.1.0", to_version="1.1.0"))
+
+        self.assertTrue(handled)
+        self.assertEqual(self.mqtt_client.published[-1]["topic"], f"/kinds/WTR/devices/{device_id}/ota/offer")
+        self.assertEqual(self.mqtt_client.published[-1]["payload"], "")
+        self.assertTrue(self.mqtt_client.published[-1]["retain"])
+        record = self.repository.get(device_id)
+        self.assertEqual(record["firmware_version"], "1.1.0")
+        self.assertIsNone(record["ota_error"])
+
+    def test_confirmed_status_keeps_retained_offer_when_reported_version_mismatches(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000111"
+        self.repository.record_status(device_id, {"device_kind": "WTR", "firmware_version": "1.0.0"})
+        self.repository.set_state(device_id, "active", approved_by="operator")
+        self.artifact_repository.upsert("1.1.0", _artifact())
+        self.service.set_firmware_target(device_id, "1.1.0")
+        self.mqtt_client.published = []
+
+        handled = self.service.handle_mqtt_message(None, _ota_status_message(device_id, "confirmed", firmware_version="0.0.0-dev", to_version="1.1.0"))
+
+        self.assertTrue(handled)
+        self.assertEqual(self.mqtt_client.published[-1]["topic"], f"/kinds/WTR/devices/{device_id}/ota/offer")
+        self.assertTrue(self.mqtt_client.published[-1]["retain"])
+        payload = json.loads(self.mqtt_client.published[-1]["payload"])
+        self.assertEqual(payload["action"], "update")
+        self.assertEqual(payload["version"], "1.1.0")
+        record = self.repository.get(device_id)
+        self.assertEqual(record["firmware_version"], "0.0.0-dev")
+        self.assertEqual(record["ota_error"], "confirmed_version_mismatch")
+
     def test_pending_device_does_not_receive_update_offer(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000103"
         self.repository.set_firmware_target(device_id, "1.1.0")
@@ -349,6 +387,27 @@ def _ota_request_message(device_id: str, firmware_version: str, device_kind: str
         "device_id": device_id,
         "category": "ota",
         "action": "request",
+        "payload": json.dumps(payload).encode("utf-8"),
+    }
+
+
+def _ota_status_message(device_id: str, state: str, firmware_version: str, to_version: str):
+    payload = {
+        "schema_version": 1,
+        "device_kind": "WTR",
+        "update_id": "watering-device-1.1.0-aaaaaaaa",
+        "state": state,
+        "from_version": "1.0.0",
+        "to_version": to_version,
+        "firmware_version": firmware_version,
+        "firmware_build_id": "2026-07-01T00:00:00Z+0000000",
+        "progress": 100,
+    }
+    return {
+        "message_type": "device_config",
+        "device_id": device_id,
+        "category": "ota",
+        "action": "status",
         "payload": json.dumps(payload).encode("utf-8"),
     }
 

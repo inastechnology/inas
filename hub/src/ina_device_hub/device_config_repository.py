@@ -183,8 +183,11 @@ class DeviceConfigRepository:
         if state == "confirmed":
             record["ota_confirmed_at"] = now
             to_version = status.get("to_version")
-            if isinstance(to_version, str) and to_version:
+            reported_version = status.get("firmware_version")
+            if isinstance(to_version, str) and to_version and reported_version == to_version:
                 record["firmware_version"] = to_version
+            elif isinstance(to_version, str) and to_version:
+                record["ota_error"] = "confirmed_version_mismatch"
         ota_status_history = deque(record.get("ota_status_history", []), maxlen=MAX_OTA_STATUS_HISTORY)
         ota_status_history.append({"received_at": now, "payload": copy.deepcopy(status)})
         record["ota_status_history"] = list(ota_status_history)

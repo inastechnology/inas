@@ -259,6 +259,7 @@ class OTAUpdateService:
                 return True
 
             record = self.repository.record_ota_status(device_id, status_payload)
+            self.sync_retained_offer_for_record(record)
             append_device_event(
                 "ota_status",
                 "inbound",
