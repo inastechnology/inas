@@ -174,6 +174,35 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.assertEqual(record["firmware_version"], "0.0.0-dev")
         self.assertEqual(record["ota_error"], "confirmed_version_mismatch")
 
+    def test_already_running_skip_is_treated_as_confirmed(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000112"
+        self.repository.record_status(device_id, {"device_kind": "WTR", "firmware_version": "1.1.0"})
+        self.repository.set_state(device_id, "active", approved_by="operator")
+        self.artifact_repository.upsert("1.1.0", _artifact())
+        self.service.set_firmware_target(device_id, "1.1.0")
+        self.mqtt_client.published = []
+
+        handled = self.service.handle_mqtt_message(
+            None,
+            _ota_status_message(
+                device_id,
+                "skipped",
+                firmware_version="1.1.0",
+                to_version="1.1.0",
+                error="already_running",
+            ),
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(self.mqtt_client.published[-1]["topic"], f"/kinds/WTR/devices/{device_id}/ota/offer")
+        self.assertEqual(self.mqtt_client.published[-1]["payload"], "")
+        self.assertTrue(self.mqtt_client.published[-1]["retain"])
+        record = self.repository.get(device_id)
+        self.assertEqual(record["firmware_version"], "1.1.0")
+        self.assertEqual(record["ota_state"], "confirmed")
+        self.assertIsNone(record["ota_error"])
+        self.assertIsNotNone(record["ota_confirmed_at"])
+
     def test_pending_device_does_not_receive_update_offer(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000103"
         self.repository.set_firmware_target(device_id, "1.1.0")
@@ -444,7 +473,7 @@ def _ota_request_message(device_id: str, firmware_version: str, device_kind: str
     }
 
 
-def _ota_status_message(device_id: str, state: str, firmware_version: str, to_version: str):
+def _ota_status_message(device_id: str, state: str, firmware_version: str, to_version: str, error: str | None = None):
     payload = {
         "schema_version": 1,
         "device_kind": "WTR",
@@ -456,6 +485,8 @@ def _ota_status_message(device_id: str, state: str, firmware_version: str, to_ve
         "firmware_build_id": "2026-07-01T00:00:00Z+0000000",
         "progress": 100,
     }
+    if error is not None:
+        payload["error"] = error
     return {
         "message_type": "device_config",
         "device_id": device_id,

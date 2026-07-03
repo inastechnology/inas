@@ -173,14 +173,20 @@ class DeviceConfigRepository:
         record["last_seen_at"] = now
         record["last_ota_status_at"] = now
         record["ota_update_id"] = status.get("update_id") or record.get("ota_update_id")
-        record["ota_state"] = state or record.get("ota_state")
-        record["ota_error"] = status.get("error")
+        already_running = (
+            state == "skipped"
+            and status.get("error") == "already_running"
+            and isinstance(status.get("to_version"), str)
+            and status.get("firmware_version") == status.get("to_version")
+        )
+        record["ota_state"] = "confirmed" if already_running else state or record.get("ota_state")
+        record["ota_error"] = None if already_running else status.get("error")
         _apply_device_kind(record, status)
         _apply_firmware_metadata(record, status)
         if state == "started":
             record["ota_attempt_count"] = int(record.get("ota_attempt_count") or 0) + 1
             record["ota_last_attempt_at"] = now
-        if state == "confirmed":
+        if state == "confirmed" or already_running:
             record["ota_confirmed_at"] = now
             to_version = status.get("to_version")
             reported_version = status.get("firmware_version")
