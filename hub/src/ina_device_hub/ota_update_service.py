@@ -165,6 +165,10 @@ class OTAUpdateService:
             record = self.repository.get(device_id)
             offer = self.decide_offer(device_id, request_payload, record=record)
             published = self.publish_reply(device_id, offer, notify=False, log_event=False)
+            if offer.get("action") == "update":
+                retained_offer_published = self.publish_retained_offer(device_id, offer, notify=False, log_event=False)
+            else:
+                retained_offer_published = self.clear_retained_offer(device_id, device_kind=request_payload.get("device_kind"), notify=False, log_event=False)
             retry_results = self._retry_update_offer(device_id, offer)
 
             append_device_event(
@@ -186,6 +190,14 @@ class OTAUpdateService:
                 retain=False,
                 retry_results=retry_results,
             )
+            if retained_offer_published["topic"]:
+                self._record_offer_publish(
+                    device_id,
+                    retained_offer_published["topic"],
+                    offer if offer.get("action") == "update" else {"action": "clear"},
+                    retained_offer_published["mqtt_rc"],
+                    retain=True,
+                )
             return True
 
         if action == "status":
@@ -261,17 +273,51 @@ class OTAUpdateService:
         }
 
     def publish_reply(self, device_id: str, offer: dict, *, notify: bool = True, log_event: bool = True):
+        return self._publish_offer(device_id, offer, "reply", retain=False, notify=notify, log_event=log_event)
+
+    def publish_retained_offer(self, device_id: str, offer: dict, *, notify: bool = True, log_event: bool = True):
+        device_kind = offer.get("device_kind")
+        if not _is_device_kind(device_kind):
+            raise ValueError("retained OTA offer requires device_kind")
+        topic = f"/kinds/{device_kind}/devices/{device_id}/ota/offer"
+        return self._publish_offer_to_topic(device_id, topic, offer, retain=True, notify=notify, log_event=log_event)
+
+    def clear_retained_offer(self, device_id: str, device_kind: str | None = None, *, notify: bool = True, log_event: bool = True):
         if self.mqtt_client is None:
             raise RuntimeError("mqtt client is not attached")
 
-        topic = f"/{device_id}/kinds/ota/reply"
+        if not _is_device_kind(device_kind):
+            record = self.repository.get(device_id)
+            device_kind = record.get("device_kind") if isinstance(record, dict) else None
+        if not _is_device_kind(device_kind):
+            return {"topic": "", "payload": "", "mqtt_rc": 0}
+
+        topic = f"/kinds/{device_kind}/devices/{device_id}/ota/offer"
+        try:
+            result = self.mqtt_client.publish(topic, "", qos=0, retain=True, notify=notify)
+        except TypeError:
+            result = self.mqtt_client.publish(topic, "", qos=0, retain=True)
+        if log_event:
+            self._record_offer_publish(device_id, topic, {"action": "clear"}, result.rc, retain=True)
+        if result.rc != 0:
+            logger.error("Failed to clear retained OTA offer for device_id=%s topic=%s rc=%s", device_id, topic, result.rc)
+        return {"topic": topic, "payload": "", "mqtt_rc": result.rc}
+
+    def _publish_offer(self, device_id: str, offer: dict, mode: str, *, retain: bool, notify: bool, log_event: bool):
+        topic = f"/{device_id}/kinds/ota/{mode}"
+        return self._publish_offer_to_topic(device_id, topic, offer, retain=retain, notify=notify, log_event=log_event)
+
+    def _publish_offer_to_topic(self, device_id: str, topic: str, offer: dict, *, retain: bool, notify: bool, log_event: bool):
+        if self.mqtt_client is None:
+            raise RuntimeError("mqtt client is not attached")
+
         payload = json.dumps(offer, ensure_ascii=True, separators=(",", ":"))
         try:
-            result = self.mqtt_client.publish(topic, payload, qos=0, retain=False, notify=notify)
+            result = self.mqtt_client.publish(topic, payload, qos=0, retain=retain, notify=notify)
         except TypeError:
-            result = self.mqtt_client.publish(topic, payload, qos=0, retain=False)
+            result = self.mqtt_client.publish(topic, payload, qos=0, retain=retain)
         if log_event:
-            self._record_offer_publish(device_id, topic, offer, result.rc, retain=False)
+            self._record_offer_publish(device_id, topic, offer, result.rc, retain=retain)
         if result.rc != 0:
             logger.error("Failed to publish OTA offer for device_id=%s topic=%s rc=%s", device_id, topic, result.rc)
         return {"topic": topic, "payload": offer, "mqtt_rc": result.rc}
@@ -286,7 +332,7 @@ class OTAUpdateService:
             device_id,
             topic=topic,
             category="ota",
-            action="reply",
+            action=topic.rsplit("/", 1)[-1],
             payload=payload,
             mqtt_rc=mqtt_rc,
             retain=retain,

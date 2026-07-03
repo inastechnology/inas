@@ -24,6 +24,7 @@
 // ==========================================
 // MQTT topic format: /<client_id>/kinds/<kind>/<mode>
 #define MQTT_PUB_TOPIC_FMT "/%s/kinds/%s/%s"
+#define MQTT_OTA_KIND_OFFER_TOPIC_FMT "/kinds/%s/devices/%s/ota/offer"
 
 static const char *kAppMsgKind[MAX_APP_MSG_TYPE] = {
     APP_MQTT_PUB_KIND,
@@ -49,6 +50,9 @@ static bool s_setup_portal_enabled = true;
 
 void app_network_sub_callback(char *topic, byte *payload, unsigned int length);
 static bool app_network_subscribe_topics();
+static bool app_network_subscribe_topic(const char *kind, const char *mode);
+static bool app_network_subscribe_ota_kind_offer_topic();
+static bool app_network_is_ota_kind_offer_topic(const char *topic);
 
 // ================================================================
 // Private functions
@@ -276,14 +280,67 @@ static bool app_network_connect_mqtt_with_retries(const char *context)
 
 static bool app_network_subscribe_topics()
 {
-    if (client.subscribe(APP_MQTT_SUB_TOPIC) == false)
+    bool ok = true;
+
+    ok = app_network_subscribe_topic(APP_MQTT_CONFIG_KIND, APP_MQTT_CONFIG_REPLY_MODE) && ok;
+    ok = app_network_subscribe_topic(APP_MQTT_CONFIG_KIND, APP_MQTT_CONFIG_PUSH_MODE) && ok;
+    ok = app_network_subscribe_topic(APP_MQTT_OTA_KIND, APP_MQTT_OTA_REPLY_MODE) && ok;
+    ok = app_network_subscribe_ota_kind_offer_topic() && ok;
+    ok = app_network_subscribe_topic(APP_MQTT_PUB_KIND, "immediate") && ok;
+    ok = app_network_subscribe_topic(APP_MQTT_PUB_KIND, "enqueue") && ok;
+
+    return ok;
+}
+
+static bool app_network_subscribe_topic(const char *kind, const char *mode)
+{
+    char topic[128];
+    const int write_len = snprintf(topic, sizeof(topic), MQTT_PUB_TOPIC_FMT, appConfig.device_id, kind, mode);
+    if (write_len < 0 || static_cast<size_t>(write_len) >= sizeof(topic))
     {
-        ESP_LOGE(TAG, "Failed to subscribe topic: %s\n", APP_MQTT_SUB_TOPIC);
+        ESP_LOGE(TAG, "Failed to build subscribe topic: %s/%s\n", kind, mode);
         return false;
     }
 
-    ESP_LOGI(TAG, "** Subscribed to topic: %s\n", APP_MQTT_SUB_TOPIC);
+    if (client.subscribe(topic) == false)
+    {
+        ESP_LOGE(TAG, "Failed to subscribe topic: %s\n", topic);
+        return false;
+    }
+
+    ESP_LOGI(TAG, "** Subscribed to topic: %s\n", topic);
     return true;
+}
+
+static bool app_network_subscribe_ota_kind_offer_topic()
+{
+    char topic[128];
+    const int write_len = snprintf(topic, sizeof(topic), MQTT_OTA_KIND_OFFER_TOPIC_FMT, APP_DEVICE_KIND, appConfig.device_id);
+    if (write_len < 0 || static_cast<size_t>(write_len) >= sizeof(topic))
+    {
+        ESP_LOGE(TAG, "Failed to build OTA kind offer subscribe topic\n");
+        return false;
+    }
+
+    if (client.subscribe(topic) == false)
+    {
+        ESP_LOGE(TAG, "Failed to subscribe topic: %s\n", topic);
+        return false;
+    }
+
+    ESP_LOGI(TAG, "** Subscribed to topic: %s\n", topic);
+    return true;
+}
+
+static bool app_network_is_ota_kind_offer_topic(const char *topic)
+{
+    char expected[128];
+    const int write_len = snprintf(expected, sizeof(expected), MQTT_OTA_KIND_OFFER_TOPIC_FMT, APP_DEVICE_KIND, appConfig.device_id);
+    if (write_len < 0 || static_cast<size_t>(write_len) >= sizeof(expected))
+    {
+        return false;
+    }
+    return strcmp(topic, expected) == 0;
 }
 
 void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
@@ -296,6 +353,15 @@ void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
     if (length >= 512)
     {
         Serial.println("Payload too large");
+        return;
+    }
+
+    if (app_network_is_ota_kind_offer_topic(topic))
+    {
+        if (app_ota_apply_offer_json(payload, length))
+        {
+            Serial.println("OTA offer received via MQTT");
+        }
         return;
     }
 
@@ -328,7 +394,7 @@ void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
 
     if (strcmp(topicKind, APP_MQTT_OTA_KIND) == 0)
     {
-        if (strcmp(topicMode, APP_MQTT_OTA_REPLY_MODE) == 0 || strcmp(topicMode, APP_MQTT_OTA_PUSH_MODE) == 0)
+        if (strcmp(topicMode, APP_MQTT_OTA_REPLY_MODE) == 0)
         {
             if (app_ota_apply_offer_json(payload, length))
             {

@@ -479,8 +479,7 @@ bool app_ota_apply_offer_json(const uint8_t *payload, size_t length)
     app_ota_clear_offer();
     if (payload == nullptr || length == 0)
     {
-        s_accepting_offer = false;
-        app_ota_set_offer_error("invalid_payload");
+        Serial.println("Empty OTA offer ignored");
         return false;
     }
 

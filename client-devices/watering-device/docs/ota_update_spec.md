@@ -144,22 +144,31 @@ OTA topics:
 |---|---|---|---:|---|
 | `ota` | `request` | Device -> Server | No | Device asks whether an update is available |
 | `ota` | `reply` | Server -> Device | No | Server replies to an OTA request |
-| `ota` | `push` | Server -> Device | Optional | Server offers an update without waiting for request |
 | `ota` | `status` | Device -> Server | No | Device reports OTA progress/result |
 
-The device already subscribes to wildcard topics. OTA implementation must extend the subscribe callback to process only `ota/reply` and `ota/push` messages addressed to its own `device_id`.
+Retained OTA offer topic:
+
+```text
+/kinds/<device_kind>/devices/<device_id>/ota/offer
+```
+
+The device subscribes only to Hub-originated inbound topics for its own
+`device_id`. It does not subscribe to its own outbound `request`, `status`, or
+debug log topics. OTA implementation processes `ota/reply` for request/response
+compatibility and the retained `ota/offer` topic above.
 
 The Hub replies immediately to each OTA request. When the reply is an
-`action: "update"` offer, the Hub also republishes the same reply with short
-backoff delays in the same wake window. This mitigates transient MQTT timing
-races without increasing the device wake frequency or adding another
-device-side retry cycle.
+`action: "update"` offer, the Hub also publishes the same offer to the retained
+`/kinds/<device_kind>/devices/<device_id>/ota/offer` topic and republishes
+`ota/reply` with short backoff delays in the same wake window. This mitigates
+transient MQTT timing races without increasing the device wake frequency or
+adding another device-side retry cycle.
 
 The device treats OTA as a separate phase before normal operation. It accepts
-`ota/reply` and `ota/push` only while it is explicitly waiting for an offer
-after publishing `ota/request`. Once the wait deadline expires or an offer has
-been received, the OTA phase is closed. Late OTA replies received during
-watering or other operation are ignored and logged as
+`ota/reply` and retained `ota/offer` only while it is explicitly waiting for an
+offer after publishing `ota/request`. Once the wait deadline expires or an
+offer has been received, the OTA phase is closed. Late OTA replies received
+during watering or other operation are ignored and logged as
 `APP_DEBUG_EVENT_OTA_LATE_OFFER_IGNORED`; they must not alter the current wake
 cycle.
 
@@ -390,7 +399,7 @@ Recommended error codes:
 | Error | Meaning |
 |---|---|
 | `request_publish_failed` | Device could not publish `ota/request` |
-| `offer_timeout_<wait_ms>ms` | Device published `ota/request` but did not receive `ota/reply` or `ota/push` before the wait deadline |
+| `offer_timeout_<wait_ms>ms` | Device published `ota/request` but did not receive `ota/reply` or retained `ota/offer` before the wait deadline |
 | `invalid_payload` | JSON or required fields invalid |
 | `unsupported_schema` | `schema_version` not supported |
 | `device_kind_mismatch` | Offer device kind did not match this firmware |

@@ -66,11 +66,14 @@ class OTAUpdateServiceTest(unittest.TestCase):
             handled = self.service.handle_mqtt_message(None, _ota_request_message(device_id, firmware_version="1.0.0"))
 
         self.assertTrue(handled)
-        self.assertEqual(len(self.mqtt_client.published), 1 + len(OTA_UPDATE_REPLY_RETRY_DELAYS_SEC))
+        self.assertEqual(len(self.mqtt_client.published), 2 + len(OTA_UPDATE_REPLY_RETRY_DELAYS_SEC))
         sleep_mock.assert_has_calls([call(delay) for delay in OTA_UPDATE_REPLY_RETRY_DELAYS_SEC])
         self.assertEqual(self.mqtt_client.published[0]["topic"], f"/{device_id}/kinds/ota/reply")
         self.assertEqual(self.mqtt_client.published[0]["qos"], 0)
         self.assertFalse(self.mqtt_client.published[0]["retain"])
+        self.assertEqual(self.mqtt_client.published[1]["topic"], f"/kinds/WTR/devices/{device_id}/ota/offer")
+        self.assertEqual(self.mqtt_client.published[1]["qos"], 0)
+        self.assertTrue(self.mqtt_client.published[1]["retain"])
         payload = json.loads(self.mqtt_client.published[0]["payload"])
         self.assertEqual(payload["action"], "update")
         self.assertEqual(payload["device_kind"], "WTR")
@@ -90,9 +93,12 @@ class OTAUpdateServiceTest(unittest.TestCase):
 
         self.service.handle_mqtt_message(None, _ota_request_message(device_id, firmware_version="1.1.0"))
 
-        self.assertEqual(len(self.mqtt_client.published), 1)
+        self.assertEqual(len(self.mqtt_client.published), 2)
         payload = json.loads(self.mqtt_client.published[0]["payload"])
         self.assertEqual(payload, {"schema_version": 1, "action": "none", "reason": "already_target"})
+        self.assertEqual(self.mqtt_client.published[1]["topic"], f"/kinds/WTR/devices/{device_id}/ota/offer")
+        self.assertEqual(self.mqtt_client.published[1]["payload"], "")
+        self.assertTrue(self.mqtt_client.published[1]["retain"])
 
     def test_pending_device_does_not_receive_update_offer(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000103"

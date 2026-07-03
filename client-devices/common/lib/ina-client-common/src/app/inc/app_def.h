@@ -138,10 +138,6 @@
 #define APP_MQTT_PASSWORD "" // MQTT Password (未設定時は空文字)
 #endif
 
-#ifndef APP_MQTT_SUB_TOPIC
-#define APP_MQTT_SUB_TOPIC "/+/kinds/+/+" // Subscribe Topic
-#endif
-
 #ifndef APP_MQTT_PUB_KIND
 #define APP_MQTT_PUB_KIND "agri" // Publish Topic kind
 #endif
@@ -180,10 +176,6 @@
 
 #ifndef APP_MQTT_OTA_REPLY_MODE
 #define APP_MQTT_OTA_REPLY_MODE "reply"
-#endif
-
-#ifndef APP_MQTT_OTA_PUSH_MODE
-#define APP_MQTT_OTA_PUSH_MODE "push"
 #endif
 
 #ifndef APP_MQTT_OTA_STATUS_MODE
