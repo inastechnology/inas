@@ -58,7 +58,7 @@ class WebServerOTATest(unittest.TestCase):
         self.tmp_dir.cleanup()
 
     def test_upload_registers_and_serves_firmware_binary(self):
-        firmware = b"test-firmware-binary"
+        firmware = _firmware_binary(device_kind="WTR", version="1.1.0", build_id="2026-07-01T00:00:00Z+abcdef0")
 
         response = self.client.post(
             "/local/api/firmware-artifacts/WTR/1.1.0/upload?build_id=2026-07-01T00:00:00Z%2Babcdef0",
@@ -73,6 +73,8 @@ class WebServerOTATest(unittest.TestCase):
         self.assertEqual(artifact["url"], "http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin")
         self.assertEqual(artifact["size"], len(firmware))
         self.assertEqual(artifact["sha256"], hashlib.sha256(firmware).hexdigest())
+        self.assertEqual(artifact["build_id"], "2026-07-01T00:00:00Z+abcdef0")
+        self.assertEqual(artifact["firmware_metadata"]["target"], "seeed_xiao_esp32s3")
 
         download = self.client.get("/firmware/WTR/1.1.0/firmware.bin")
 
@@ -80,6 +82,22 @@ class WebServerOTATest(unittest.TestCase):
         self.assertEqual(download.data, firmware)
         self.assertEqual(download.content_type, "application/octet-stream")
         download.close()
+
+    def test_inspect_firmware_artifact_reads_embedded_manifest(self):
+        firmware = _firmware_binary(device_kind="WTR", version="1.2.0", build_id="2026-07-03T10:31:34+0900+f31d9e6")
+
+        response = self.client.post(
+            "/local/api/firmware-artifacts/inspect",
+            data=firmware,
+            content_type="application/octet-stream",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        metadata = response.get_json()
+        self.assertEqual(metadata["device_kind"], "WTR")
+        self.assertEqual(metadata["version"], "1.2.0")
+        self.assertEqual(metadata["build_id"], "2026-07-03T10:31:34+0900+f31d9e6")
+        self.assertEqual(metadata["project"], "watering-device")
 
     def test_upload_rejects_invalid_boolean_form_value(self):
         response = self.client.post(
@@ -201,7 +219,11 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('id="runtime-config-json"', html)
         self.assertIn('id="save-push-runtime-config"', html)
         self.assertIn('id="firmware-target-form"', html)
+        self.assertIn('<select id="target-firmware-version">', html)
         self.assertIn('id="firmware-upload-form"', html)
+        self.assertIn('id="firmware-version" name="version" type="text" value="" readonly', html)
+        self.assertIn("firmware.bin を選択すると", html)
+        self.assertIn("2026-07-01T00:00:00Z+abcdef0", html)
         self.assertIn("/local/api/firmware-artifacts/", html)
         self.assertIn("OTA Status History", html)
         self.assertIn("watering-device-1.1.0-aaaaaaaa", html)
@@ -294,6 +316,29 @@ class WebServerOTATest(unittest.TestCase):
         charts = charts_response.get_json()
         self.assertIn("Plotly.newPlot", charts["watering"])
         self.assertIn("Plotly.newPlot", charts["soil_moisture"])
+
+
+def _firmware_binary(
+    *,
+    device_kind: str = "WTR",
+    version: str = "1.1.0",
+    build_id: str = "2026-07-01T00:00:00Z+abcdef0",
+    project: str = "watering-device",
+    target: str = "seeed_xiao_esp32s3",
+    framework: str = "arduino",
+):
+    manifest = (
+        "INAS_FW_MANIFEST_V1_BEGIN\n"
+        "schema=1\n"
+        f"project={project}\n"
+        f"device_kind={device_kind}\n"
+        f"version={version}\n"
+        f"build_id={build_id}\n"
+        f"target={target}\n"
+        f"framework={framework}\n"
+        "INAS_FW_MANIFEST_V1_END\n"
+    ).encode("ascii")
+    return b"\xe9ESP32BIN" + manifest + b"\x00firmware-body"
 
 
 if __name__ == "__main__":

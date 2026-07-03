@@ -16,7 +16,7 @@ from ina_device_hub.device_config_repository import DeviceConfigValidationError,
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.device_event_log import list_device_events
 from ina_device_hub.location_repository import location_repository
-from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, ota_update_service
+from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
 from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
@@ -417,8 +417,70 @@ def _format_firmware_artifacts_for_ui(firmware_artifacts):
         formatted_artifact = dict(artifact)
         formatted_artifact["created_at"] = _format_datetime(artifact.get("created_at"))
         formatted_artifact["updated_at"] = _format_datetime(artifact.get("updated_at"))
+        metadata = artifact.get("firmware_metadata") if isinstance(artifact.get("firmware_metadata"), dict) else {}
+        formatted_artifact["manifest_label"] = _firmware_manifest_label(metadata)
+        formatted_artifact["option_label"] = _firmware_artifact_option_label(formatted_artifact)
         formatted[key] = formatted_artifact
     return formatted
+
+
+def _firmware_manifest_label(metadata):
+    if not metadata:
+        return "未取得"
+    details = []
+    for key in ("project", "target", "framework"):
+        value = metadata.get(key)
+        if value:
+            details.append(f"{key}={value}")
+    return " / ".join(details) if details else "取得済み"
+
+
+def _firmware_artifact_option_label(artifact):
+    label = f"{artifact.get('version') or 'version未設定'}"
+    build_id = artifact.get("build_id")
+    if build_id:
+        label += f" / build {build_id}"
+    rollout_state = artifact.get("rollout_state")
+    if rollout_state:
+        label += f" / {rollout_state}"
+    return label
+
+
+def _build_firmware_target_options(firmware_artifacts, selected_device):
+    selected_kind = selected_device.get("device_kind") if isinstance(selected_device, dict) else None
+    options = []
+    seen_versions = set()
+    for artifact in (firmware_artifacts or {}).values():
+        if not isinstance(artifact, dict):
+            continue
+        version = artifact.get("version")
+        device_kind = artifact.get("device_kind")
+        if not version:
+            continue
+        if selected_kind and device_kind != selected_kind:
+            continue
+        if version in seen_versions:
+            continue
+        seen_versions.add(version)
+        options.append(
+            {
+                "version": version,
+                "device_kind": device_kind,
+                "label": _firmware_artifact_option_label(artifact),
+            }
+        )
+    options.sort(key=lambda item: (str(item.get("version") or ""), str(item.get("device_kind") or "")), reverse=True)
+    current_target = selected_device.get("target_firmware_version") if isinstance(selected_device, dict) else None
+    if current_target and current_target not in seen_versions:
+        options.insert(
+            0,
+            {
+                "version": current_target,
+                "device_kind": selected_kind,
+                "label": f"{current_target} / 登録済みF/Wなし",
+            },
+        )
+    return options
 
 
 def _device_sort_key(device_id, record):
@@ -1849,7 +1911,12 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <div class="detail-body">
                 <form id="firmware-target-form">
                   <label for="target-firmware-version">更新したいバージョン</label>
-                  <input id="target-firmware-version" type="text" value="{{ selected_device.target_firmware_version or '' }}">
+                  <select id="target-firmware-version">
+                    <option value="">設定なし</option>
+                    {% for artifact in firmware_target_options %}
+                    <option value="{{ artifact.version }}" {% if selected_device.target_firmware_version == artifact.version %}selected{% endif %}>{{ artifact.label }}</option>
+                    {% endfor %}
+                  </select>
                   <div class="actions">
                     <button type="submit" class="primary">更新対象に設定</button>
                     <button type="button" id="clear-firmware-target">更新対象を解除</button>
@@ -1895,15 +1962,15 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <div class="form-grid">
                     <div>
                       <label for="firmware-device-kind">デバイス種別</label>
-                      <input id="firmware-device-kind" name="device_kind" type="text" value="{{ selected_device.device_kind if selected_device and selected_device.device_kind else 'WTR' }}" maxlength="3">
+                      <input id="firmware-device-kind" name="device_kind" type="text" value="{{ selected_device.device_kind if selected_device and selected_device.device_kind else 'WTR' }}" maxlength="3" readonly>
                     </div>
                     <div>
                       <label for="firmware-version">バージョン</label>
-                      <input id="firmware-version" name="version" type="text" value="{{ selected_device.target_firmware_version if selected_device and selected_device.target_firmware_version else '' }}">
+                      <input id="firmware-version" name="version" type="text" value="" readonly>
                     </div>
                     <div>
                       <label for="firmware-build-id">ビルド ID</label>
-                      <input id="firmware-build-id" name="build_id" type="text">
+                      <input id="firmware-build-id" name="build_id" type="text" readonly>
                     </div>
                     <div>
                       <label for="firmware-rollout-state">配信状態</label>
@@ -1916,6 +1983,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   </div>
                   <label for="firmware-file">firmware.bin</label>
                   <input id="firmware-file" name="firmware" type="file" required>
+                  <div id="firmware-manifest-summary" class="empty">firmware.bin を選択すると、埋め込みmanifestからデバイス種別・バージョン・ビルドIDを読み取ります。</div>
                   <div class="actions">
                     <label><input id="firmware-force" name="force" type="checkbox">強制更新</label>
                     <label><input id="firmware-allow-downgrade" name="allow_downgrade" type="checkbox">古いバージョンへの更新を許可</label>
@@ -1928,13 +1996,15 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <summary>登録済みファームウェア</summary>
               <div class="detail-body">
                 <table>
-                  <thead><tr><th>キー</th><th>バージョン</th><th>種別</th><th>状態</th><th>サイズ</th><th>SHA-256</th><th>URL</th><th>更新日時</th></tr></thead>
+                  <thead><tr><th>キー</th><th>バージョン</th><th>種別</th><th>ビルドID</th><th>Manifest</th><th>状態</th><th>サイズ</th><th>SHA-256</th><th>URL</th><th>更新日時</th></tr></thead>
                   <tbody>
                     {% for key, artifact in firmware_artifacts.items() %}
                     <tr>
                       <td>{{ key }}</td>
                       <td>{{ artifact.version }}</td>
                       <td>{{ artifact.device_kind }}</td>
+                      <td>{{ artifact.build_id or '未取得' }}</td>
+                      <td>{{ artifact.manifest_label }}</td>
                       <td>{{ artifact.rollout_state }}</td>
                       <td>{{ artifact.size }}</td>
                       <td>{{ artifact.sha256 }}</td>
@@ -2457,22 +2527,96 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           const firmwareUploadForm = document.getElementById("firmware-upload-form");
           if (firmwareUploadForm) {
-            firmwareUploadForm.addEventListener("submit", async (event) => {
-              event.preventDefault();
-              const deviceKind = document.getElementById("firmware-device-kind").value.trim();
-              const version = document.getElementById("firmware-version").value.trim();
-              if (!deviceKind || !version) {
-                showResult("デバイス種別とバージョンは必須です", false);
-                return;
+            let inspectedFirmwareManifest = null;
+            let inspectedFirmwareFileKey = "";
+            const firmwareFileInput = document.getElementById("firmware-file");
+            const firmwareManifestSummary = document.getElementById("firmware-manifest-summary");
+
+            function firmwareFileKey(file) {
+              return file ? [file.name, file.size, file.lastModified].join(":") : "";
+            }
+
+            function setFirmwareManifestSummary(message, ok) {
+              if (!firmwareManifestSummary) return;
+              firmwareManifestSummary.textContent = message;
+              firmwareManifestSummary.classList.toggle("ok", Boolean(ok));
+              firmwareManifestSummary.classList.toggle("error", ok === false);
+            }
+
+            async function inspectSelectedFirmware() {
+              const file = firmwareFileInput.files[0];
+              if (!file) {
+                inspectedFirmwareManifest = null;
+                inspectedFirmwareFileKey = "";
+                setFirmwareManifestSummary("firmware.bin を選択してください", false);
+                return null;
+              }
+              const currentKey = firmwareFileKey(file);
+              if (inspectedFirmwareManifest && inspectedFirmwareFileKey === currentKey) {
+                return inspectedFirmwareManifest;
               }
               const formData = new FormData();
+              formData.append("firmware", file);
+              try {
+                const manifest = await requestJson(
+                  "/local/api/firmware-artifacts/inspect",
+                  { method: "POST", body: formData },
+                  "firmware.bin のmanifestを読み取っています...",
+                );
+                inspectedFirmwareManifest = manifest;
+                inspectedFirmwareFileKey = currentKey;
+                document.getElementById("firmware-device-kind").value = manifest.device_kind || "";
+                document.getElementById("firmware-version").value = manifest.version || "";
+                document.getElementById("firmware-build-id").value = manifest.build_id || "";
+                setFirmwareManifestSummary(
+                  "読み取り済み: " +
+                    "device_kind=" + (manifest.device_kind || "-") +
+                    " / version=" + (manifest.version || "-") +
+                    " / build_id=" + (manifest.build_id || "-") +
+                    " / target=" + (manifest.target || "-") +
+                    " / project=" + (manifest.project || "-"),
+                  true,
+                );
+                return manifest;
+              } catch (error) {
+                inspectedFirmwareManifest = null;
+                inspectedFirmwareFileKey = "";
+                document.getElementById("firmware-version").value = "";
+                document.getElementById("firmware-build-id").value = "";
+                setFirmwareManifestSummary(error.message, false);
+                throw error;
+              }
+            }
+
+            if (firmwareFileInput) {
+              firmwareFileInput.addEventListener("change", () => {
+                inspectSelectedFirmware().catch((error) => showResult(error.message, false));
+              });
+            }
+
+            firmwareUploadForm.addEventListener("submit", async (event) => {
+              event.preventDefault();
               const file = document.getElementById("firmware-file").files[0];
               if (!file) {
                 showResult("firmware.bin を選択してください", false);
                 return;
               }
+              let manifest;
+              try {
+                manifest = await inspectSelectedFirmware();
+              } catch (error) {
+                showResult(error.message, false);
+                return;
+              }
+              const deviceKind = (manifest && manifest.device_kind ? manifest.device_kind : "").trim();
+              const version = (manifest && manifest.version ? manifest.version : "").trim();
+              if (!deviceKind || !version) {
+                showResult("firmware.bin のmanifestからデバイス種別とバージョンを読み取れません", false);
+                return;
+              }
+              const formData = new FormData();
               formData.append("firmware", file);
-              const buildId = document.getElementById("firmware-build-id").value;
+              const buildId = manifest.build_id || "";
               if (buildId) formData.append("build_id", buildId);
               formData.append("rollout_state", document.getElementById("firmware-rollout-state").value);
               formData.append("force", document.getElementById("firmware-force").checked ? "true" : "false");
@@ -2503,6 +2647,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         selected_statuses=selected_statuses,
         selected_ota_statuses=selected_ota_statuses,
         firmware_artifacts=_format_firmware_artifacts_for_ui(firmware_artifacts),
+        firmware_target_options=_build_firmware_target_options(firmware_artifacts, selected_device),
         connection_events=connection_events,
         recent_events=recent_events,
         admin_view=admin_view,
@@ -2701,6 +2846,20 @@ def _plotly_javascript():
 @app.route("/local/api/firmware-artifacts", methods=["GET"])
 def list_firmware_artifacts():
     return jsonify(ota_update_service().get_artifacts())
+
+
+@app.route("/local/api/firmware-artifacts/inspect", methods=["POST"])
+def inspect_firmware_artifact():
+    uploaded_file = request.files.get("firmware") or request.files.get("file")
+    firmware_binary = uploaded_file.read() if uploaded_file is not None else request.get_data()
+    if not firmware_binary:
+        return jsonify({"error": "firmware binary must not be empty"}), 400
+
+    try:
+        metadata = extract_firmware_manifest(firmware_binary)
+    except FirmwareArtifactValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(metadata)
 
 
 @app.route("/local/api/firmware-artifacts/<version>", methods=["PUT"])
