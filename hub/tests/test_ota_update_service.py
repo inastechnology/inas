@@ -100,6 +100,42 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.assertEqual(self.mqtt_client.published[1]["payload"], "")
         self.assertTrue(self.mqtt_client.published[1]["retain"])
 
+    def test_set_firmware_target_publishes_retained_offer_without_device_request(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000108"
+        self.repository.record_status(
+            device_id,
+            {
+                "device_kind": "WTR",
+                "firmware_version": "1.0.0",
+                "firmware_build_id": "2026-07-01T00:00:00Z+0000000",
+            },
+        )
+        self.repository.set_state(device_id, "active", approved_by="operator")
+        self.artifact_repository.upsert("1.1.0", _artifact())
+
+        record = self.service.set_firmware_target(device_id, "1.1.0")
+
+        self.assertEqual(record["target_firmware_version"], "1.1.0")
+        self.assertEqual(self.mqtt_client.published[-1]["topic"], f"/kinds/WTR/devices/{device_id}/ota/offer")
+        self.assertTrue(self.mqtt_client.published[-1]["retain"])
+        payload = json.loads(self.mqtt_client.published[-1]["payload"])
+        self.assertEqual(payload["action"], "update")
+        self.assertEqual(payload["url"], "http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin")
+
+    def test_attach_mqtt_client_syncs_existing_retained_offers(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000109"
+        self.repository.record_status(device_id, {"device_kind": "WTR", "firmware_version": "1.0.0"})
+        self.repository.set_state(device_id, "active", approved_by="operator")
+        self.repository.set_firmware_target(device_id, "1.1.0")
+        self.artifact_repository.upsert("1.1.0", _artifact())
+        new_mqtt_client = _MqttClient()
+
+        self.service.attach_mqtt_client(new_mqtt_client)
+
+        self.assertEqual(new_mqtt_client.published[-1]["topic"], f"/kinds/WTR/devices/{device_id}/ota/offer")
+        self.assertTrue(new_mqtt_client.published[-1]["retain"])
+        self.assertEqual(json.loads(new_mqtt_client.published[-1]["payload"])["action"], "update")
+
     def test_pending_device_does_not_receive_update_offer(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000103"
         self.repository.set_firmware_target(device_id, "1.1.0")

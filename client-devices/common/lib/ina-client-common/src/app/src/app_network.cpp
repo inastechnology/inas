@@ -284,7 +284,6 @@ static bool app_network_subscribe_topics()
 
     ok = app_network_subscribe_topic(APP_MQTT_CONFIG_KIND, APP_MQTT_CONFIG_REPLY_MODE) && ok;
     ok = app_network_subscribe_topic(APP_MQTT_CONFIG_KIND, APP_MQTT_CONFIG_PUSH_MODE) && ok;
-    ok = app_network_subscribe_topic(APP_MQTT_OTA_KIND, APP_MQTT_OTA_REPLY_MODE) && ok;
     ok = app_network_subscribe_ota_kind_offer_topic() && ok;
     ok = app_network_subscribe_topic(APP_MQTT_PUB_KIND, "immediate") && ok;
     ok = app_network_subscribe_topic(APP_MQTT_PUB_KIND, "enqueue") && ok;
@@ -387,18 +386,6 @@ void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
             if (app_device_adapter_apply_runtime_config_json(payload, length))
             {
                 Serial.println("Runtime config received via MQTT");
-            }
-        }
-        return;
-    }
-
-    if (strcmp(topicKind, APP_MQTT_OTA_KIND) == 0)
-    {
-        if (strcmp(topicMode, APP_MQTT_OTA_REPLY_MODE) == 0)
-        {
-            if (app_ota_apply_offer_json(payload, length))
-            {
-                Serial.println("OTA offer received via MQTT");
             }
         }
         return;
@@ -726,30 +713,6 @@ bool app_network_request_runtime_config()
     }
 
     const int write_len = snprintf(topic, sizeof(topic), "/%s/kinds/%s/%s", appConfig.device_id, APP_MQTT_CONFIG_KIND, APP_MQTT_CONFIG_REQUEST_MODE);
-    if (write_len < 0 || static_cast<size_t>(write_len) >= sizeof(topic))
-    {
-        return false;
-    }
-
-    return client.publish(topic, reinterpret_cast<const uint8_t *>(payload), strlen(payload), false);
-}
-
-bool app_network_request_ota_update(uint32_t seq_id)
-{
-    char topic[128];
-    char payload[384];
-
-    if (!client.connected())
-    {
-        return false;
-    }
-
-    if (!app_ota_build_request_payload(payload, sizeof(payload), seq_id))
-    {
-        return false;
-    }
-
-    const int write_len = snprintf(topic, sizeof(topic), "/%s/kinds/%s/%s", appConfig.device_id, APP_MQTT_OTA_KIND, APP_MQTT_OTA_REQUEST_MODE);
     if (write_len < 0 || static_cast<size_t>(write_len) >= sizeof(topic))
     {
         return false;

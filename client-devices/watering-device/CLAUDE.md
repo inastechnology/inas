@@ -108,7 +108,7 @@ Watering-device responsibilities:
 | Direction | Topic example | Notes |
 |---|---|---|
 | Publish | `/<INADS-uuid>/kinds/agri/immediate` | Status, sensor data, images |
-| Subscribe | `/<INADS-uuid>/kinds/config/reply`, `/<INADS-uuid>/kinds/config/push`, `/<INADS-uuid>/kinds/ota/reply`, `/kinds/WTR/devices/<INADS-uuid>/ota/offer`, `/<INADS-uuid>/kinds/agri/immediate`, `/<INADS-uuid>/kinds/agri/enqueue` | Hub-originated inbound topics only; the device does not subscribe to its own outbound messages |
+| Subscribe | `/<INADS-uuid>/kinds/config/reply`, `/<INADS-uuid>/kinds/config/push`, `/kinds/WTR/devices/<INADS-uuid>/ota/offer`, `/<INADS-uuid>/kinds/agri/immediate`, `/<INADS-uuid>/kinds/agri/enqueue` | Hub-originated inbound topics only; the device does not subscribe to its own outbound messages |
 
 Incoming binary payloads matching the `task_request_header_t` magic (`0x1A5D`) are fed to the task engine. Currently defined task types: `TASK_ID_SENSOR_REPORT`, `TASK_ID_CAMERA_REPORT`, `TASK_ID_AUDIO_REPORT`, `TASK_ID_PUMP_CONTROL`, `TASK_ID_VALVE_CONTROL`.
 

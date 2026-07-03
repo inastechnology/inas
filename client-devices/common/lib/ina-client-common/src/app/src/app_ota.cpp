@@ -131,12 +131,6 @@ static bool app_ota_is_device_kind(const char *value)
     return true;
 }
 
-static const char *app_ota_running_partition_label()
-{
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    return running != nullptr ? running->label : "unknown";
-}
-
 static void app_ota_digest_to_hex(const uint8_t *digest, char *hex_out, size_t hex_size)
 {
     if (hex_out == nullptr || hex_size < 65)
@@ -454,7 +448,6 @@ void app_ota_init()
 
 void app_ota_mark_waiting()
 {
-    app_ota_clear_offer();
     s_accepting_offer = true;
 }
 
@@ -465,21 +458,10 @@ void app_ota_finish_waiting()
 
 bool app_ota_apply_offer_json(const uint8_t *payload, size_t length)
 {
-    if (!s_accepting_offer)
-    {
-        Serial.println("Late OTA offer ignored because OTA wait phase is closed");
-        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
-                            APP_DEBUG_LOG_WARNING,
-                            APP_DEBUG_EVENT_OTA_LATE_OFFER_IGNORED,
-                            static_cast<int32_t>(length),
-                            0);
-        return false;
-    }
-
     app_ota_clear_offer();
     if (payload == nullptr || length == 0)
     {
-        Serial.println("Empty OTA offer ignored");
+        Serial.println("Empty OTA offer received; cached offer cleared");
         return false;
     }
 
@@ -488,7 +470,6 @@ bool app_ota_apply_offer_json(const uint8_t *payload, size_t length)
     if (error)
     {
         Serial.printf("Failed to parse OTA offer JSON: %s\n", error.c_str());
-        s_accepting_offer = false;
         app_ota_set_offer_error("invalid_payload");
         return false;
     }
@@ -570,25 +551,6 @@ bool app_ota_should_update()
     return s_offer.received && s_offer.valid && s_offer.has_update;
 }
 
-bool app_ota_build_request_payload(char *payload_out, size_t payload_size, uint32_t seq_id)
-{
-    if (payload_out == nullptr || payload_size == 0)
-    {
-        return false;
-    }
-
-    const int write_len = snprintf(payload_out,
-                                   payload_size,
-                                   "{\"request\":\"firmware_update\",\"schema_version\":1,\"seq\":%lu,\"device_kind\":\"%s\",\"firmware_version\":\"%s\",\"firmware_build_id\":\"%s\",\"running_partition\":\"%s\",\"free_heap\":%lu}",
-                                   static_cast<unsigned long>(seq_id),
-                                   APP_DEVICE_KIND,
-                                   APP_FIRMWARE_VERSION,
-                                   APP_FIRMWARE_BUILD_ID,
-                                   app_ota_running_partition_label(),
-                                   static_cast<unsigned long>(ESP.getFreeHeap()));
-    return write_len >= 0 && static_cast<size_t>(write_len) < payload_size;
-}
-
 bool app_ota_publish_pending_boot_status(uint32_t seq_id)
 {
     if (!s_pending_boot.exists)
@@ -612,16 +574,6 @@ bool app_ota_publish_pending_boot_status(uint32_t seq_id)
     LittleFS.remove(APP_OTA_PENDING_FILE);
     memset(&s_pending_boot, 0, sizeof(s_pending_boot));
     return true;
-}
-
-bool app_ota_publish_request_failed_status(uint32_t seq_id)
-{
-    const bool sent = app_ota_publish_status(seq_id, "failed", "none", APP_FIRMWARE_VERSION, 0, "request_publish_failed");
-    if (sent)
-    {
-        app_network_flush(APP_MQTT_STATUS_PUBLISH_DRAIN_MS);
-    }
-    return sent;
 }
 
 bool app_ota_publish_offer_timeout_status(uint32_t seq_id, uint32_t wait_ms)

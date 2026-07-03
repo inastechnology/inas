@@ -437,7 +437,7 @@ OTAの詳細仕様は[ota_update_spec.md](ota_update_spec.md)を参照してく�
 概要:
 
 - Firmware本体はMQTTでは送らず、Hubまたは管理サーバがHTTPで配信します。
-- MQTTは`ota/request`、`ota/reply`、retained `ota/offer`、`ota/status`を扱います。
+- MQTTはretained `ota/offer`と`ota/status`を扱います。`ota/request`/`ota/reply`は旧firmware互換のためHub側に残せますが、新firmwareのOTA判断では使用しません。
 - 更新有無はHubまたは管理サーバが判断します。デバイスは`device_kind`と現在の`firmware_version`を送信し、サーバはdeviceごとの`target_firmware_version`、同じ`device_kind`のartifact metadata、rollout状態を見て`action: "update"`または`action: "none"`を返します。
 - `device_kind`は3文字の大文字英字です。watering deviceは`WTR`です。Hubはrequestとartifactの`device_kind`が一致しない場合、更新offerを返してはいけません。
 - デバイスはruntime config取得後、灌水判定前にOTA offerを確認します。
@@ -797,4 +797,4 @@ mosquitto_pub -h <broker> -r \
 - topic内の`device_id`が自分のIDと一致しないmessageは無視します。
 - `config/request`はデバイスからserverへの要求であり、デバイス側はrequest topicをruntime configとして処理しません。
 - 現状、デバイス側からconfig適用成功/失敗だけを直接ackする専用topicはありません。`status.config_received`で結果を判断してください。
-- OTA topicは`ota/request`、`ota/reply`、retained `ota/offer`、`ota/status`を使用します。デバイスは自分の`device_id`宛ての`ota/reply`と`/kinds/<device_kind>/devices/<device_id>/ota/offer`だけをofferとして処理します。
+- OTA topicはretained `ota/offer`と`ota/status`を使用します。デバイスは`/kinds/<device_kind>/devices/<device_id>/ota/offer`だけをofferとして処理します。`ota/request`/`ota/reply`は旧firmware互換用途です。

@@ -13,7 +13,7 @@
 - NTP同期失敗
 - schedule判定結果
 - 灌水開始、スキップ、出力開始失敗
-- OTA request publish、offer受信、offer timeout
+- retained OTA offer受信、offer timeout
 - status publish成否
 - 次回sleep秒数
 

@@ -127,24 +127,75 @@ class OTAUpdateService:
 
     def attach_mqtt_client(self, mqtt_client):
         self.mqtt_client = mqtt_client
+        self.sync_retained_offers()
 
     def get_artifacts(self):
         return self.artifact_repository.get_all()
 
     def upsert_artifact(self, version: str, artifact: dict):
-        return self.artifact_repository.upsert(version, artifact)
+        saved = self.artifact_repository.upsert(version, artifact)
+        self.sync_retained_offers(device_kind=saved["device_kind"], target_firmware_version=saved["version"])
+        return saved
 
     def upsert_firmware_binary(self, device_kind: str, version: str, content: bytes, metadata: dict | None = None):
-        return self.artifact_repository.upsert_binary(device_kind, version, content, metadata=metadata)
+        saved = self.artifact_repository.upsert_binary(device_kind, version, content, metadata=metadata)
+        self.sync_retained_offers(device_kind=saved["device_kind"], target_firmware_version=saved["version"])
+        return saved
 
     def get_firmware_path(self, device_kind: str, version: str):
         return self.artifact_repository.firmware_path(device_kind, version)
 
     def set_firmware_target(self, device_id: str, target_firmware_version: str | None):
-        return self.repository.set_firmware_target(device_id, target_firmware_version)
+        record = self.repository.set_firmware_target(device_id, target_firmware_version)
+        self.sync_retained_offer_for_record(record)
+        return record
 
     def list_ota_statuses(self, device_id: str, limit: int = 100):
         return self.repository.list_ota_statuses(device_id, limit=limit)
+
+    def sync_retained_offers(self, *, device_kind: str | None = None, target_firmware_version: str | None = None):
+        if self.mqtt_client is None:
+            return []
+
+        results = []
+        for record in self.repository.get_all().values():
+            if device_kind is not None and record.get("device_kind") != device_kind:
+                continue
+            if target_firmware_version is not None and record.get("target_firmware_version") != target_firmware_version:
+                continue
+            published = self.sync_retained_offer_for_record(record)
+            if published is not None:
+                results.append(published)
+        return results
+
+    def sync_retained_offer_for_record(self, record: dict):
+        if self.mqtt_client is None:
+            return None
+
+        device_id = record.get("device_id")
+        device_kind = record.get("device_kind")
+        if not isinstance(device_id, str) or not device_id:
+            return None
+        if not _is_device_kind(device_kind):
+            return None
+
+        request_payload = {
+            "request": "firmware_update",
+            "schema_version": 1,
+            "device_kind": device_kind,
+            "firmware_version": record.get("firmware_version"),
+            "firmware_build_id": record.get("firmware_build_id"),
+        }
+        offer = self.decide_offer(device_id, request_payload, record=record)
+        if offer.get("action") == "update":
+            published = self.publish_retained_offer(device_id, offer, notify=False, log_event=False)
+            self._record_offer_publish(device_id, published["topic"], offer, published["mqtt_rc"], retain=True)
+            return published
+
+        published = self.clear_retained_offer(device_id, device_kind=device_kind, notify=False, log_event=False)
+        if published["topic"]:
+            self._record_offer_publish(device_id, published["topic"], {"action": "clear", "reason": offer.get("reason")}, published["mqtt_rc"], retain=True)
+        return published
 
     def handle_mqtt_message(self, mqtt_client, message: dict):
         del mqtt_client

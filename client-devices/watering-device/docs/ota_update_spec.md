@@ -83,7 +83,7 @@ Normal OTA artifacts use only `.pio/build/seeed_xiao_esp32s3/firmware.bin`.
 
 ## 5. Firmware Versioning
 
-The firmware must expose a version in MQTT status and OTA requests.
+The firmware must expose a version in normal MQTT status and OTA status.
 
 Recommended build flags:
 
@@ -124,26 +124,18 @@ OTA compatibility is scoped by a three-letter uppercase device kind code.
 Rules:
 
 - `device_kind` must be exactly three uppercase alphabetic characters: `^[A-Z]{3}$`.
-- Device OTA requests, normal status, OTA status, and firmware artifacts must include `device_kind`.
-- Hub must not offer an artifact whose `device_kind` differs from the requesting device.
+- Normal status, OTA status, retained OTA offers, and firmware artifacts must include `device_kind`.
+- Hub must not offer an artifact whose `device_kind` differs from the target device.
 - Device firmware must reject an OTA offer whose `device_kind` differs from its built-in `APP_DEVICE_KIND`.
 - New device projects must assign their own three-letter code in their local
   `platformio.ini`.
 
 ## 7. MQTT Topics
 
-All OTA control topics use the existing application topic shape:
-
-```text
-/<device_id>/kinds/<kind>/<mode>
-```
-
-OTA topics:
+OTA status topics use the existing application topic shape:
 
 | kind | mode | Direction | Retain | Purpose |
 |---|---|---|---:|---|
-| `ota` | `request` | Device -> Server | No | Device asks whether an update is available |
-| `ota` | `reply` | Server -> Device | No | Server replies to an OTA request |
 | `ota` | `status` | Device -> Server | No | Device reports OTA progress/result |
 
 Retained OTA offer topic:
@@ -154,33 +146,30 @@ Retained OTA offer topic:
 
 The device subscribes only to Hub-originated inbound topics for its own
 `device_id`. It does not subscribe to its own outbound `request`, `status`, or
-debug log topics. OTA implementation processes `ota/reply` for request/response
-compatibility and the retained `ota/offer` topic above.
+debug log topics. OTA implementation processes only the retained `ota/offer`
+topic above.
 
-The Hub replies immediately to each OTA request. When the reply is an
-`action: "update"` offer, the Hub also publishes the same offer to the retained
-`/kinds/<device_kind>/devices/<device_id>/ota/offer` topic and republishes
-`ota/reply` with short backoff delays in the same wake window. This mitigates
-transient MQTT timing races without increasing the device wake frequency or
-adding another device-side retry cycle.
+The Hub materializes retained OTA offers before the device wakes. Hub startup,
+firmware artifact registration, and per-device target firmware changes must
+sync `/kinds/<device_kind>/devices/<device_id>/ota/offer` for every active
+device that needs an update. The device can therefore receive the OTA URL by
+subscribing to the retained offer topic, without depending on a fresh
+`ota/request` round trip.
 
-The device treats OTA as a separate phase before normal operation. It accepts
-`ota/reply` and retained `ota/offer` only while it is explicitly waiting for an
-offer after publishing `ota/request`. Once the wait deadline expires or an
-offer has been received, the OTA phase is closed. Late OTA replies received
-during watering or other operation are ignored and logged as
-`APP_DEBUG_EVENT_OTA_LATE_OFFER_IGNORED`; they must not alter the current wake
-cycle.
+The Hub may still reply to legacy `ota/request` messages for old firmware, but
+new firmware must not depend on request/reply sequencing for OTA decisions.
 
-While the OTA phase is open, the device republishes `ota/request` with bounded
-backoff inside the same wake window. The default is three request attempts
-within `APP_OTA_OFFER_WAIT_MS`. This creates multiple reply opportunities
-without scheduling extra wakes or keeping the device awake beyond the OTA wait
-deadline.
+The device treats OTA as a separate phase before normal operation. Retained
+offers may arrive immediately after MQTT subscribe, before the explicit OTA
+phase starts, so firmware caches a received offer and evaluates it during the
+OTA phase. Once the wait deadline expires or an offer has been handled, the OTA
+phase is closed. Offers received during later normal operation may be cached
+but must not interrupt watering or other work in the current wake cycle.
 
-## 8. OTA Request Payload
+## 8. Legacy OTA Request Payload
 
-The device publishes this after runtime config handling and before watering evaluation.
+Legacy firmware may publish this after runtime config handling and before
+watering evaluation. New firmware should use retained `ota/offer` instead.
 
 Topic:
 
@@ -262,7 +251,9 @@ Required fields for `action: "update"`:
 
 ### Update Availability Decision
 
-The device does not decide whether an update is available. It reports its current firmware metadata in `ota/request`; the Hub or management server compares that metadata with the desired state for the device and replies with `action: "update"` or `action: "none"`.
+The device does not decide whether an update is available. The Hub or management
+server compares each device record with the desired state and materializes a
+retained `ota/offer` containing `action: "update"` when an update is needed.
 
 Recommended server-side decision inputs:
 
@@ -398,8 +389,7 @@ Recommended error codes:
 
 | Error | Meaning |
 |---|---|
-| `request_publish_failed` | Device could not publish `ota/request` |
-| `offer_timeout_<wait_ms>ms` | Device published `ota/request` but did not receive `ota/reply` or retained `ota/offer` before the wait deadline |
+| `offer_timeout_<wait_ms>ms` | Device did not receive retained `ota/offer` before the wait deadline |
 | `invalid_payload` | JSON or required fields invalid |
 | `unsupported_schema` | `schema_version` not supported |
 | `device_kind_mismatch` | Offer device kind did not match this firmware |
@@ -425,7 +415,7 @@ The Hub or management server must provide:
 - OTA offer URL generation from `FIRMWARE_HOSTNAME` or OS hostname and `FIRMWARE_PORT`, for example `http://<hubのドメイン名またはIPアドレス>:39151`
 - Optional `FIRMWARE_BASE_URL` override when the full base URL must be fixed explicitly
 - SHA-256 digest generation and validation before publishing an offer
-- OTA request handling and reply publishing
+- Retained OTA offer materialization and legacy OTA request handling
 - OTA status storage and monitoring
 - Audit log for who assigned an update to which device
 
@@ -557,7 +547,7 @@ Server tests:
 ## 17. Compatibility Notes
 
 - Current firmware rejects MQTT payloads of 512 bytes or more. OTA control payloads must remain below this limit unless the receive guard is changed.
-- Firmware metadata is included in normal status, OTA request, and OTA status payloads.
+- Firmware metadata is included in normal status and OTA status payloads.
 - Current `Makefile` uses a fixed LittleFS offset. OTA-capable provisioning must write LittleFS at `0x670000`.
 - OTA-capable partition layout is a prerequisite because app OTA does not rewrite the partition table.
 - Current Hub validation requires `device_kind` to be exactly three uppercase letters, keeps `version` under 32 characters, `update_id` and `build_id` under 64 characters, and artifact `url` under 256 characters so OTA offers fit the device receive limit.
