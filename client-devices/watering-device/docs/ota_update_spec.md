@@ -163,6 +163,12 @@ watering or other operation are ignored and logged as
 `APP_DEBUG_EVENT_OTA_LATE_OFFER_IGNORED`; they must not alter the current wake
 cycle.
 
+While the OTA phase is open, the device republishes `ota/request` with bounded
+backoff inside the same wake window. The default is three request attempts
+within `APP_OTA_OFFER_WAIT_MS`. This creates multiple reply opportunities
+without scheduling extra wakes or keeping the device awake beyond the OTA wait
+deadline.
+
 ## 8. OTA Request Payload
 
 The device publishes this after runtime config handling and before watering evaluation.

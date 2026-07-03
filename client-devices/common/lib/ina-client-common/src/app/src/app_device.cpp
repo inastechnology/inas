@@ -289,21 +289,45 @@ bool AppDevice::sync_time(const AppDeviceWakeContext &context) const
 bool AppDevice::check_ota_update(uint32_t seq_id) const
 {
     app_ota_mark_waiting();
-    const bool ota_requested = app_network_request_ota_update(seq_id);
-    APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
-                        ota_requested ? APP_DEBUG_LOG_INFO : APP_DEBUG_LOG_ERROR,
-                        ota_requested ? APP_DEBUG_EVENT_OTA_REQUEST_SENT : APP_DEBUG_EVENT_OTA_REQUEST_FAILED,
-                        ota_requested ? 1 : 0,
-                        APP_OTA_OFFER_WAIT_MS);
-    if (!ota_requested)
+    bool ota_requested = false;
+    bool ota_offer_received = false;
+    const uint32_t started_at_ms = millis();
+    const uint8_t request_retry_count = APP_OTA_REQUEST_RETRY_COUNT > 0 ? APP_OTA_REQUEST_RETRY_COUNT : 1;
+    const uint32_t wait_slice_ms = APP_OTA_OFFER_WAIT_MS / request_retry_count;
+
+    for (uint8_t attempt = 1; attempt <= request_retry_count; attempt++)
     {
-        app_ota_finish_waiting();
-        Serial.println("OTA update request was not sent; reporting failure before normal wake cycle continues");
-        app_ota_publish_request_failed_status(seq_id);
-        return false;
+        const uint32_t elapsed_ms = millis() - started_at_ms;
+        if (elapsed_ms >= APP_OTA_OFFER_WAIT_MS)
+        {
+            break;
+        }
+
+        const bool request_sent = app_network_request_ota_update(seq_id);
+        ota_requested = ota_requested || request_sent;
+        APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
+                            request_sent ? APP_DEBUG_LOG_INFO : APP_DEBUG_LOG_ERROR,
+                            request_sent ? APP_DEBUG_EVENT_OTA_REQUEST_SENT : APP_DEBUG_EVENT_OTA_REQUEST_FAILED,
+                            attempt,
+                            APP_OTA_OFFER_WAIT_MS);
+        if (!request_sent)
+        {
+            continue;
+        }
+
+        const uint32_t remaining_ms = APP_OTA_OFFER_WAIT_MS - elapsed_ms;
+        uint32_t wait_ms = wait_slice_ms > 0 ? wait_slice_ms : remaining_ms;
+        if (attempt == request_retry_count || wait_ms > remaining_ms)
+        {
+            wait_ms = remaining_ms;
+        }
+        ota_offer_received = app_network_wait_for_ota_offer(wait_ms);
+        if (ota_offer_received)
+        {
+            break;
+        }
     }
 
-    const bool ota_offer_received = app_network_wait_for_ota_offer(APP_OTA_OFFER_WAIT_MS);
     if (ota_offer_received)
     {
         app_ota_finish_waiting();
@@ -322,6 +346,13 @@ bool AppDevice::check_ota_update(uint32_t seq_id) const
     }
 
     app_ota_finish_waiting();
+    if (!ota_requested)
+    {
+        Serial.println("OTA update request was not sent; reporting failure before normal wake cycle continues");
+        app_ota_publish_request_failed_status(seq_id);
+        return false;
+    }
+
     Serial.println("OTA offer was not received; reporting timeout before normal wake cycle continues");
     APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
                         APP_DEBUG_LOG_WARNING,

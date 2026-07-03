@@ -172,8 +172,8 @@ Used by `APP_DEBUG_EVENT_WATERING_DECISION`.
 
 | Code | Symbol | Typical level | arg0 | arg1 |
 |---:|---|---|---|---|
-| 80 | `APP_DEBUG_EVENT_OTA_REQUEST_SENT` | INFO | request published: `1` | offer wait timeout ms |
-| 81 | `APP_DEBUG_EVENT_OTA_REQUEST_FAILED` | ERROR | request published: `0` | offer wait timeout ms |
+| 80 | `APP_DEBUG_EVENT_OTA_REQUEST_SENT` | INFO | request attempt number | offer wait timeout ms |
+| 81 | `APP_DEBUG_EVENT_OTA_REQUEST_FAILED` | ERROR | request attempt number | offer wait timeout ms |
 | 82 | `APP_DEBUG_EVENT_OTA_OFFER_TIMEOUT` | WARNING | offer wait timeout ms | `0` |
 | 83 | `APP_DEBUG_EVENT_OTA_OFFER_RECEIVED` | INFO | offer received: `1` | offer wait timeout ms |
 | 84 | `APP_DEBUG_EVENT_OTA_HANDLE_RESULT` | INFO or WARNING | update attempted: `1/0` | `0` |
