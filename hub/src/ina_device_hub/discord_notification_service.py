@@ -1,4 +1,5 @@
 import json
+import struct
 import threading
 from datetime import UTC, datetime, timedelta, timezone
 from urllib import error, request
@@ -8,18 +9,78 @@ from ina_device_hub.setting import setting
 
 DISCORD_CONTENT_LIMIT = 2000
 PAYLOAD_PREVIEW_LIMIT = 900
+DEBUG_LOG_HEADER_SIZE = 16
+DEBUG_LOG_RECORD_SIZE = 13
+DEBUG_LOG_MAX_DISPLAY_RECORDS = 20
+
+DEBUG_LOG_LEVELS = {
+    1: "INFO",
+    2: "WARNING",
+    3: "ERROR",
+}
+
+DEBUG_LOG_FILES = {
+    1: ("APP", "src/app/src/app.cpp"),
+    2: ("NETWORK", "common/lib/ina-client-common/src/app/src/app_network.cpp"),
+    3: ("RUNTIME_CONFIG", "src/app/src/app_runtime_config.cpp"),
+    4: ("WATERING", "src/app/src/app_watering.cpp"),
+}
+
+DEBUG_LOG_EVENTS = {
+    1: ("BOOT", "起動"),
+    2: ("LITTLEFS_MOUNTED", "LittleFS マウント完了"),
+    3: ("CONFIG_LOADED", "保存設定読み込み"),
+    4: ("RUNTIME_CONFIG_INIT", "runtime config 初期化"),
+    5: ("NETWORK_START", "ネットワーク開始"),
+    6: ("NETWORK_UNAVAILABLE", "ネットワーク利用不可"),
+    7: ("RUNTIME_CONFIG_REQUEST", "runtime config 要求"),
+    8: ("RUNTIME_CONFIG_ACTIVE", "runtime config 適用中"),
+    9: ("TIME_SYNC_NTP_FAILED_RTC", "NTP 同期失敗、RTC を使用"),
+    10: ("TIME_SYNC_OFFLINE_RTC", "オフラインのため RTC を使用"),
+    11: ("TIME_SYNC_UNAVAILABLE", "時刻同期不可"),
+    12: ("TIME_SYNC_OK", "時刻同期成功"),
+    13: ("SCHEDULE_CHECK", "スケジュール判定"),
+    14: ("WATERING_DUE_RESULT", "灌水予定判定結果"),
+    15: ("SLEEP_PLANNED", "次回 sleep 計画"),
+    16: ("STATUS_SENT", "status 送信成功"),
+    17: ("STATUS_FAILED", "status 送信失敗"),
+    18: ("STATUS_SKIPPED", "status 送信スキップ"),
+    19: ("DEBUG_LOG_PUBLISH_ENABLED", "debug log 送信有効"),
+    30: ("MQTT_DNS_FAILED", "MQTT DNS 解決失敗"),
+    31: ("MQTT_CONNECTED", "MQTT 接続成功"),
+    32: ("MQTT_FAILED", "MQTT 接続失敗"),
+    33: ("WIFI_FAILED", "Wi-Fi 接続失敗"),
+    34: ("WIFI_CONNECTED", "Wi-Fi 接続成功"),
+    35: ("WIFI_RECONNECT_FAILED", "Wi-Fi 再接続失敗"),
+    36: ("WIFI_RECONNECTED", "Wi-Fi 再接続成功"),
+    50: ("RUNTIME_CONFIG_UPDATED", "runtime config 更新"),
+    70: ("WATERING_OUTPUT_MAP", "灌水出力マップ"),
+    71: ("WATERING_DECISION", "灌水判定"),
+    72: ("WATERING_OUTPUT_START_FAILED", "灌水出力開始失敗"),
+    73: ("WATERING_STARTED", "灌水開始"),
+    74: ("WATERING_SKIPPED_MOISTURE", "土壌水分により灌水スキップ"),
+    75: ("WATERING_COMPLETED", "灌水完了"),
+    82: ("OTA_OFFER_TIMEOUT", "OTA offer 待機タイムアウト"),
+    83: ("OTA_OFFER_RECEIVED", "OTA offer 受信"),
+    84: ("OTA_HANDLE_RESULT", "OTA 処理結果"),
+}
 
 
 class DiscordNotificationService:
     def __init__(self, webhook_url: str | None = None):
         discord_settings = setting().get("discord") or {}
+        self.discord_settings = discord_settings
         self.webhook_url = (webhook_url if webhook_url is not None else discord_settings.get("webhook_url", "")).strip()
 
     def enabled(self):
         return bool(self.webhook_url)
 
+    def notification_enabled(self, notification_type: str):
+        key = f"notify_{notification_type}"
+        return bool(self.discord_settings.get(key, True))
+
     def notify_mqtt_activity(self, direction: str, topic: str, payload=None, parsed_message: dict | None = None, mqtt_rc: int | None = None):
-        if not self.enabled():
+        if not self.enabled() or not self.notification_enabled("mqtt_activity"):
             return
 
         content = format_mqtt_activity(direction, topic, payload=payload, parsed_message=parsed_message, mqtt_rc=mqtt_rc)
@@ -27,10 +88,18 @@ class DiscordNotificationService:
         worker_thread.start()
 
     def notify_new_device(self, device_id: str, record: dict, source: str, payload: dict | None = None):
-        if not self.enabled():
+        if not self.enabled() or not self.notification_enabled("new_device"):
             return
 
         content = format_new_device(device_id, record, source, payload=payload)
+        worker_thread = threading.Thread(target=self._post, args=(content,), daemon=True)
+        worker_thread.start()
+
+    def notify_health_alert(self, alert_type: str, device_id: str, record: dict, details: dict):
+        if not self.enabled() or not self.notification_enabled(alert_type):
+            return
+
+        content = format_health_alert(alert_type, device_id, record, details)
         worker_thread = threading.Thread(target=self._post, args=(content,), daemon=True)
         worker_thread.start()
 
@@ -118,7 +187,47 @@ def format_new_device(device_id: str, record: dict, source: str, payload: dict |
     return content
 
 
-def _event_title(direction: str, topic: str, parsed_message: dict):
+def format_health_alert(alert_type: str, device_id: str, record: dict, details: dict):
+    if alert_type == "device_offline":
+        title = "【死活監視】デバイスの接続が途絶えています"
+    elif alert_type == "watering_missing":
+        title = "【死活監視】水やりが一定期間確認できません"
+    else:
+        title = "【死活監視】確認が必要です"
+
+    lines = [
+        f"[INA Device Hub] {title}",
+        f"時刻: {_local_time()}",
+        f"デバイス: {device_id}",
+        f"状態: {record.get('state') or 'unknown'}",
+    ]
+    if record.get("name"):
+        lines.append(f"名前: {record['name']}")
+    if record.get("location"):
+        lines.append(f"場所: {record['location']}")
+    if record.get("device_kind"):
+        lines.append(f"種別: {record['device_kind']}")
+
+    if details.get("last_seen_at"):
+        lines.append(f"最終接続: {details['last_seen_at']}")
+    if details.get("offline_hours") is not None:
+        lines.append(f"未接続時間: {details['offline_hours']:.1f} 時間")
+    if details.get("offline_threshold_hours") is not None:
+        lines.append(f"しきい値: {details['offline_threshold_hours']} 時間")
+    if details.get("last_watering_at"):
+        lines.append(f"最終水やり: {details['last_watering_at']}")
+    if details.get("days_since_watering") is not None:
+        lines.append(f"未水やり日数: {details['days_since_watering']:.1f} 日")
+    if details.get("watering_threshold_days") is not None:
+        lines.append(f"しきい値: {details['watering_threshold_days']} 日")
+
+    content = "\n".join(lines)
+    if len(content) > DISCORD_CONTENT_LIMIT:
+        content = content[: DISCORD_CONTENT_LIMIT - 20] + "\n...[省略]"
+    return content
+
+
+def _event_title(direction: str, topic: str, parsed_message: dict):  # noqa: PLR0911
     category = parsed_message.get("category")
     action = parsed_message.get("action")
     message_type = parsed_message.get("message_type")
@@ -136,6 +245,8 @@ def _event_title(direction: str, topic: str, parsed_message: dict):
         return "【設定要求】デバイスが runtime config を要求しました"
     if direction == "received" and category == "agri" and action == "immediate":
         return "【状態通知】デバイスの稼働状態を受信しました"
+    if direction == "received" and category == "debug" and action == "log":
+        return "【Debug Log】デバイスの起床ログを受信しました"
     if direction == "received" and message_type == "sensor_data":
         return f"【センサーデータ】{kind or 'telemetry'} を受信しました"
     if direction == "publish":
@@ -156,9 +267,12 @@ def _parse_topic(topic: str):
     return {}
 
 
-def _payload_summary(direction: str, parsed_message: dict, payload_data):
+def _payload_summary(direction: str, parsed_message: dict, payload_data):  # noqa: PLR0911
     category = parsed_message.get("category")
     action = parsed_message.get("action")
+
+    if category == "debug" and action == "log" and isinstance(payload_data, dict) and payload_data.get("_payload_type") == "debug_log":
+        return _format_debug_log_summary(payload_data)
 
     if direction == "connected" and isinstance(payload_data, dict):
         broker = payload_data.get("broker")
@@ -251,6 +365,8 @@ def _should_show_raw_payload(parsed_message: dict, payload_data):
         return False
     if category == "agri" and action == "immediate":
         return False
+    if category == "debug" and action == "log" and isinstance(payload_data, dict) and payload_data.get("_payload_type") == "debug_log":
+        return False
     return not isinstance(payload_data, dict)
 
 
@@ -258,6 +374,9 @@ def _decode_payload(payload):
     if payload is None:
         return None
     if isinstance(payload, bytes):
+        debug_log = _decode_debug_log_payload(payload)
+        if debug_log is not None:
+            return debug_log
         payload = payload.decode("utf-8", errors="replace")
     if isinstance(payload, str):
         try:
@@ -265,6 +384,199 @@ def _decode_payload(payload):
         except json.JSONDecodeError:
             return payload
     return payload
+
+
+def _decode_debug_log_payload(payload: bytes):
+    if len(payload) < DEBUG_LOG_HEADER_SIZE or payload[:3] != b"DLG":
+        return None
+
+    version = payload[3]
+    if version != 1:
+        return {
+            "_payload_type": "debug_log",
+            "decode_error": f"unsupported debug log version: {version}",
+            "version": version,
+            "raw_bytes": len(payload),
+        }
+
+    seq, total_records, sent_records, dropped = struct.unpack_from("<IHHH", payload, 4)
+    record_size = payload[14]
+    flags = payload[15]
+    if record_size != DEBUG_LOG_RECORD_SIZE:
+        return {
+            "_payload_type": "debug_log",
+            "decode_error": f"unsupported debug log record size: {record_size}",
+            "version": version,
+            "seq": seq,
+            "total_records": total_records,
+            "sent_records": sent_records,
+            "dropped": dropped,
+            "flags": flags,
+            "raw_bytes": len(payload),
+        }
+
+    records = []
+    offset = DEBUG_LOG_HEADER_SIZE
+    for index in range(sent_records):
+        if offset + record_size > len(payload):
+            return {
+                "_payload_type": "debug_log",
+                "decode_error": f"truncated debug log record at index {index}",
+                "version": version,
+                "seq": seq,
+                "total_records": total_records,
+                "sent_records": sent_records,
+                "dropped": dropped,
+                "flags": flags,
+                "raw_bytes": len(payload),
+                "records": records,
+            }
+        file_id, line, level, event_code, arg0, arg1 = struct.unpack_from("<BHBBii", payload, offset)
+        records.append(
+            {
+                "file_id": file_id,
+                "line": line,
+                "level": level,
+                "event": event_code,
+                "arg0": arg0,
+                "arg1": arg1,
+            }
+        )
+        offset += record_size
+
+    return {
+        "_payload_type": "debug_log",
+        "version": version,
+        "seq": seq,
+        "total_records": total_records,
+        "sent_records": sent_records,
+        "dropped": dropped,
+        "record_size": record_size,
+        "flags": flags,
+        "raw_bytes": len(payload),
+        "records": records,
+    }
+
+
+def _format_debug_log_summary(debug_log: dict):
+    if debug_log.get("decode_error"):
+        return [
+            "Debug log decode error: " + str(debug_log["decode_error"]),
+            f"payload bytes: {debug_log.get('raw_bytes')}",
+        ]
+
+    records = debug_log.get("records") or []
+    lines = [
+        f"Debug seq: {debug_log.get('seq')}",
+        f"Records: {debug_log.get('sent_records')}/{debug_log.get('total_records')} sent, dropped={debug_log.get('dropped')}, bytes={debug_log.get('raw_bytes')}",
+    ]
+    if debug_log.get("flags"):
+        lines.append(f"Flags: {debug_log.get('flags')}")
+
+    for index, record in enumerate(records[:DEBUG_LOG_MAX_DISPLAY_RECORDS], start=1):
+        lines.append(f"{index}. {_format_debug_log_record(record)}")
+
+    if len(records) > DEBUG_LOG_MAX_DISPLAY_RECORDS:
+        lines.append(f"...ほか {len(records) - DEBUG_LOG_MAX_DISPLAY_RECORDS} 件")
+    return lines
+
+
+def _format_debug_log_record(record: dict):
+    level = DEBUG_LOG_LEVELS.get(record.get("level"), f"LEVEL-{record.get('level')}")
+    file_name, source_path = DEBUG_LOG_FILES.get(record.get("file_id"), (f"FILE-{record.get('file_id')}", "unknown"))
+    event_symbol, event_label = DEBUG_LOG_EVENTS.get(record.get("event"), (f"EVENT-{record.get('event')}", "未定義イベント"))
+    args = _format_debug_log_args(record.get("event"), record.get("arg0"), record.get("arg1"))
+    return f"[{level}] {event_label} ({event_symbol}) @ {file_name}:{record.get('line')} [{source_path}] {args}"
+
+
+def _format_debug_log_args(event_code, arg0, arg1):  # noqa: PLR0911
+    if event_code in {8, 50}:
+        flags = _decode_runtime_flags(arg0)
+        parts = [
+            f"しきい値={flags['moisture_threshold']}%",
+            f"強制灌水={_yes_no(flags['force_watering'])}",
+            f"debug_log={_yes_no(flags['debug_log_on_wake'])}",
+            f"schedule_count={flags['schedule_count']}",
+        ]
+        if event_code == 50:
+            parts.append(f"timezone_offset_sec={arg1}")
+        return ", ".join(parts)
+    if event_code == 1:
+        return f"reset_reason={arg0}"
+    if event_code == 3:
+        return f"network_configured={_yes_no(arg0)}, config_crc32=0x{arg1 & 0xFFFFFFFF:08x}"
+    if event_code == 4:
+        return f"runtime_config_valid={_yes_no(arg0)}, debug_log_on_wake={_yes_no(arg1)}"
+    if event_code == 5:
+        return f"network_start={_success_fail(arg0)}, mqtt_connected={_yes_no(arg1)}"
+    if event_code == 7:
+        return f"request_published={_yes_no(arg0)}, config_received={_yes_no(arg1)}"
+    if event_code in {9, 10}:
+        return f"using_rtc={_yes_no(arg0)}"
+    if event_code == 11:
+        return f"woke_from_deep_sleep={_yes_no(arg0)}"
+    if event_code == 12:
+        return f"epoch={arg0}"
+    if event_code == 13:
+        return f"watering_due={_yes_no(arg0 & 1)}, runtime_config_valid={_yes_no(arg0 & 2)}, last_executed_schedule_utc={arg1}"
+    if event_code == 14:
+        return f"duration_sec={arg0 & 0xFFFF}, watering_started={_yes_no(arg0 & 0x10000)}, channel_mask={arg1}"
+    if event_code == 15:
+        return f"sleep_sec={arg0}"
+    if event_code == 19:
+        return f"status_sent={_yes_no(arg0)}, sleep_sec={arg1}"
+    if event_code in {30, 31, 32}:
+        context = {1: "startup", 2: "reconnect"}.get(arg0, arg0)
+        if event_code == 31:
+            return f"context={context}, mqtt_port={arg1}"
+        if event_code == 32:
+            return f"context={context}, mqtt_state={arg1}"
+        return f"context={context}"
+    if event_code in {33, 35}:
+        return f"wifi_status={arg0}"
+    if event_code in {34, 36}:
+        return f"rssi={arg0} dBm"
+    if event_code == 70:
+        return f"valve_mask={arg0}, pump_mask={arg1}"
+    if event_code == 71:
+        flags = _decode_watering_decision_flags(arg0)
+        return f"soil={flags['soil_moisture']}%, threshold={flags['threshold']}%, force_watering={_yes_no(flags['force_watering'])}, output_mask={arg1}"
+    if event_code in {72, 73}:
+        return f"duration_sec={arg0}, output_mask={arg1}"
+    if event_code == 74:
+        return f"soil={arg0}%, threshold={arg1}%"
+    if event_code == 82:
+        return f"offer_wait_ms={arg0}"
+    if event_code == 83:
+        return f"offer_received={_yes_no(arg0)}, offer_wait_timeout_ms={arg1}"
+    if event_code == 84:
+        return f"update_attempted={_yes_no(arg0)}"
+    return f"arg0={arg0}, arg1={arg1}"
+
+
+def _decode_runtime_flags(value):
+    return {
+        "moisture_threshold": value & 0xFF,
+        "force_watering": bool(value & 0x100),
+        "debug_log_on_wake": bool(value & 0x200),
+        "schedule_count": (value >> 16) & 0xFF,
+    }
+
+
+def _decode_watering_decision_flags(value):
+    return {
+        "soil_moisture": value & 0xFF,
+        "threshold": (value >> 8) & 0xFF,
+        "force_watering": bool(value & 0x10000),
+    }
+
+
+def _yes_no(value):
+    return "はい" if bool(value) else "いいえ"
+
+
+def _success_fail(value):
+    return "成功" if bool(value) else "失敗"
 
 
 def _local_time():

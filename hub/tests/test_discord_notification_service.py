@@ -1,4 +1,5 @@
 import os
+import struct
 import tempfile
 import unittest
 
@@ -16,7 +17,7 @@ os.environ.setdefault("MQTT_BROKER_USERNAME", "")
 os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
-from ina_device_hub.discord_notification_service import DISCORD_CONTENT_LIMIT, format_mqtt_activity, format_new_device  # noqa: E402
+from ina_device_hub.discord_notification_service import DISCORD_CONTENT_LIMIT, format_health_alert, format_mqtt_activity, format_new_device  # noqa: E402
 
 
 class DiscordNotificationServiceTest(unittest.TestCase):
@@ -68,6 +69,33 @@ class DiscordNotificationServiceTest(unittest.TestCase):
         self.assertIn("次回起床: ", content)
         self.assertIn("JST (60 秒後)", content)
 
+    def test_format_mqtt_activity_decodes_debug_log_binary_payload(self):
+        payload = bytearray(16)
+        payload[0:3] = b"DLG"
+        payload[3] = 1
+        struct.pack_into("<IHHH", payload, 4, 888, 3, 3, 0)
+        payload[14] = 13
+        payload[15] = 0
+        payload.extend(struct.pack("<BHBBii", 2, 256, 2, 34, -72, 0))
+        payload.extend(struct.pack("<BHBBii", 4, 120, 1, 71, 35 | (45 << 8), 3))
+        payload.extend(struct.pack("<BHBBii", 1, 150, 1, 15, 60, 0))
+
+        content = format_mqtt_activity(
+            "received",
+            "/INADS-00000000-0000-4000-8000-000000000001/kinds/debug/log",
+            payload=bytes(payload),
+        )
+
+        self.assertIn("【Debug Log】デバイスの起床ログを受信しました", content)
+        self.assertIn("Debug seq: 888", content)
+        self.assertIn("Records: 3/3 sent, dropped=0", content)
+        self.assertIn("[WARNING] Wi-Fi 接続成功 (WIFI_CONNECTED) @ NETWORK:256", content)
+        self.assertIn("rssi=-72 dBm", content)
+        self.assertIn("[INFO] 灌水判定 (WATERING_DECISION) @ WATERING:120", content)
+        self.assertIn("soil=35%, threshold=45%, force_watering=いいえ, output_mask=3", content)
+        self.assertIn("[INFO] 次回 sleep 計画 (SLEEP_PLANNED) @ APP:150", content)
+        self.assertNotIn("```json", content)
+
     def test_format_mqtt_activity_caps_discord_message_length(self):
         content = format_mqtt_activity("received", "unknown/topic", payload={"value": "x" * 5000})
 
@@ -95,6 +123,19 @@ class DiscordNotificationServiceTest(unittest.TestCase):
         self.assertIn("種別: WTR", content)
         self.assertIn("FW: 0.0.0-dev", content)
         self.assertIn("土壌水分: 100%", content)
+
+    def test_format_health_alert_shows_offline_details(self):
+        content = format_health_alert(
+            "device_offline",
+            "INADS-00000000-0000-4000-8000-000000000006",
+            {"state": "active", "name": "north bed", "location": "greenhouse", "device_kind": "WTR"},
+            {"last_seen_at": "2026-07-04 06:32:13 JST", "offline_hours": 12.5, "offline_threshold_hours": 12},
+        )
+
+        self.assertIn("【死活監視】デバイスの接続が途絶えています", content)
+        self.assertIn("名前: north bed", content)
+        self.assertIn("場所: greenhouse", content)
+        self.assertIn("未接続時間: 12.5 時間", content)
 
 
 if __name__ == "__main__":
