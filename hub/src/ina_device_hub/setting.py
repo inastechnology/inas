@@ -148,6 +148,12 @@ HEALTH_MONITOR_INTERVAL_SECONDS = _int_env("HEALTH_MONITOR_INTERVAL_SECONDS", 18
 HEALTH_DEVICE_OFFLINE_AFTER_HOURS = _int_env("HEALTH_DEVICE_OFFLINE_AFTER_HOURS", 12)
 HEALTH_WATERING_MISSING_AFTER_DAYS = _int_env("HEALTH_WATERING_MISSING_AFTER_DAYS", 2)
 
+SWITCHBOT_OPEN_TOKEN = os.environ.get("SWITCHBOT_OPEN_TOKEN", "").strip()
+SWITCHBOT_SECRET_KEY = os.environ.get("SWITCHBOT_SECRET_KEY", "").strip()
+SWITCHBOT_BASE_URL = os.environ.get("SWITCHBOT_BASE_URL", "https://api.switch-bot.com").strip()
+SWITCHBOT_TIMEOUT_SECONDS = _int_env("SWITCHBOT_TIMEOUT_SECONDS", 20)
+SWITCHBOT_PLUG_MINI_DEVICE_ID = os.environ.get("SWITCHBOT_PLUG_MINI_DEVICE_ID", "").strip()
+
 
 def get_device_id():
     prefix = "inahub-"
@@ -264,6 +270,13 @@ DEFAULT_SETTINGS = {
         "interval_seconds": HEALTH_MONITOR_INTERVAL_SECONDS,
         "device_offline_after_hours": HEALTH_DEVICE_OFFLINE_AFTER_HOURS,
         "watering_missing_after_days": HEALTH_WATERING_MISSING_AFTER_DAYS,
+    },
+    "switchbot": {
+        "open_token": SWITCHBOT_OPEN_TOKEN,
+        "secret_key": SWITCHBOT_SECRET_KEY,
+        "base_url": SWITCHBOT_BASE_URL,
+        "timeout_seconds": SWITCHBOT_TIMEOUT_SECONDS,
+        "plug_mini_device_id": SWITCHBOT_PLUG_MINI_DEVICE_ID,
     },
 }
 

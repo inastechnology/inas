@@ -91,6 +91,16 @@ curl -X POST \
 
 注意: ブローカーが TLS を要求する場合、証明書の配置やポート（8883 など）を設定してください。
 
+## SwitchBot
+
+SwitchBot Cloud API で Plug Mini などを制御する場合だけ設定します。
+
+- `SWITCHBOT_OPEN_TOKEN` (任意) — SwitchBot アプリの Developer Options で取得した Open Token。
+- `SWITCHBOT_SECRET_KEY` (任意) — SwitchBot アプリの Developer Options で取得した Secret Key。
+- `SWITCHBOT_PLUG_MINI_DEVICE_ID` (任意) — 制御対象 Plug Mini の device ID。
+- `SWITCHBOT_BASE_URL` (任意) — SwitchBot API の base URL。通常は既定値 `https://api.switch-bot.com` のままでよいです。
+- `SWITCHBOT_TIMEOUT_SECONDS` (任意) — API timeout 秒数。既定値は `20`。
+
 ## センサー / 保存設定
 
 - `SENSOR_SAVE_IMAGE` (任意) — 受信画像をローカルに保存する場合は `true`（デフォルト `false`）。
