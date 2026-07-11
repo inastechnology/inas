@@ -65,6 +65,42 @@ class TimelapseMediaService:
                 frames.append(os.path.join(root, file_name))
         return sorted(frames)
 
+    def list_frame_records(
+        self,
+        device_id: str,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+        limit: int = 100,
+    ):
+        frame_paths = self.list_frames(device_id, start_at=start_at, end_at=end_at)
+        records = []
+        for frame_path in reversed(frame_paths[-limit:]):
+            timestamp = self._parse_frame_timestamp(os.path.basename(frame_path))
+            if timestamp is None:
+                continue
+            relative_path = os.path.relpath(frame_path, self.local_storage_base_dir)
+            records.append(
+                {
+                    "camera_id": device_id,
+                    "captured_at": timestamp.isoformat(),
+                    "relative_path": relative_path,
+                    "url": f"/local/api/camera-images/{relative_path}",
+                }
+            )
+        return records
+
+    def resolve_frame_path(self, relative_path: str):
+        normalized = os.path.normpath(relative_path).lstrip(os.sep)
+        if not normalized.startswith(os.path.join("timelapse_frames", "")):
+            return None
+        full_path = os.path.abspath(os.path.join(self.local_storage_base_dir, normalized))
+        base_path = os.path.abspath(os.path.join(self.local_storage_base_dir, "timelapse_frames"))
+        if not full_path.startswith(base_path + os.sep):
+            return None
+        if not os.path.isfile(full_path):
+            return None
+        return full_path
+
     def create_video(
         self,
         device_id: str,

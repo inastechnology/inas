@@ -22,6 +22,7 @@ from ina_device_hub.sensor_device_repository import sensor_device_repository
 from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
 from ina_device_hub.setting import setting
 from ina_device_hub.storage_connector import storage_connector
+from ina_device_hub.timelapse_media_service import timelapse_media_service
 from ina_device_hub.utils import Utils
 
 app = Flask(__name__)
@@ -394,6 +395,88 @@ def preview_camera(device_id):
     </html>
     """
     return render_template_string(html, device_id=device_id)
+
+
+@app.route("/camera/<device_id>/images", methods=["GET"])
+def camera_images(device_id):
+    date_value = request.args.get("date", "").strip()
+    limit = _request_limit(default=48, maximum=500)
+    start_at, end_at, date_error = _camera_image_date_range(date_value)
+    if date_error:
+        return jsonify({"error": date_error}), 400
+
+    images = timelapse_media_service().list_frame_records(
+        device_id,
+        start_at=start_at,
+        end_at=end_at,
+        limit=limit,
+    )
+    camera = camera_connector().camera_device_repository.get(device_id) or {}
+    html = """
+    <!doctype html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Camera Images</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 0; background: #f7f8fa; color: #20242a; }
+          header { padding: 16px 20px; background: #ffffff; border-bottom: 1px solid #dfe3e8; }
+          main { padding: 16px 20px 28px; }
+          form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-bottom: 16px; }
+          label { display: grid; gap: 4px; font-size: 13px; color: #4d5662; }
+          input, button { font-size: 15px; padding: 8px 10px; border: 1px solid #c8ced6; border-radius: 6px; background: #fff; }
+          button { cursor: pointer; background: #1f6feb; border-color: #1f6feb; color: #fff; }
+          .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+          .image-card { background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; }
+          .image-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #e9edf2; }
+          .meta { padding: 8px 10px; font-size: 13px; color: #4d5662; }
+          .empty { padding: 28px; background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; color: #4d5662; }
+          a { color: #1f6feb; text-decoration: none; }
+        </style>
+      </head>
+      <body>
+        <header>
+          <h1>Camera Images</h1>
+          <div>{{ camera_name }} / {{ device_id }}</div>
+        </header>
+        <main>
+          <form method="get">
+            <label>
+              Date
+              <input type="date" name="date" value="{{ date_value }}">
+            </label>
+            <label>
+              Limit
+              <input type="number" name="limit" min="1" max="500" value="{{ limit }}">
+            </label>
+            <button type="submit">表示</button>
+            <a href="/camera/{{ device_id }}/images">直近</a>
+            <a href="/camera/{{ device_id }}/preview">ライブ</a>
+          </form>
+          {% if images %}
+          <div class="grid">
+            {% for image in images %}
+            <a class="image-card" href="{{ image.url }}" target="_blank" rel="noreferrer">
+              <img src="{{ image.url }}" alt="{{ image.captured_at }}">
+              <div class="meta">{{ image.captured_at }}</div>
+            </a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="empty">画像がありません。</div>
+          {% endif %}
+        </main>
+      </body>
+    </html>
+    """
+    return render_template_string(
+        html,
+        device_id=device_id,
+        camera_name=camera.get("name") or device_id,
+        date_value=date_value,
+        limit=limit,
+        images=images,
+    )
 
 
 def _build_mqtt_admin_view(devices, selected_device_id, selected_device, selected_statuses, selected_ota_statuses):
@@ -2980,6 +3063,31 @@ def video_feed(device_id):
     )
 
 
+@app.route("/local/api/camera/<device_id>/images", methods=["GET"])
+def list_camera_images(device_id):
+    date_value = request.args.get("date", "").strip()
+    limit = _request_limit(default=48, maximum=500)
+    start_at, end_at, date_error = _camera_image_date_range(date_value)
+    if date_error:
+        return jsonify({"error": date_error}), 400
+    return jsonify(
+        timelapse_media_service().list_frame_records(
+            device_id,
+            start_at=start_at,
+            end_at=end_at,
+            limit=limit,
+        )
+    )
+
+
+@app.route("/local/api/camera-images/<path:image_path>", methods=["GET"])
+def get_camera_image(image_path):
+    frame_path = timelapse_media_service().resolve_frame_path(image_path)
+    if frame_path is None:
+        return jsonify({"error": "no image"}), 404
+    return send_file(frame_path, mimetype="image/jpeg")
+
+
 def flask_run():
     http_settings = setting().get("http") or {}
     app.run(host=http_settings.get("host", "0.0.0.0"), port=int(http_settings.get("port", 39151)))
@@ -2991,6 +3099,18 @@ def _request_limit(default: int = 100, maximum: int = 1000):
     except ValueError:
         return default
     return max(1, min(limit, maximum))
+
+
+def _camera_image_date_range(date_value: str):
+    if not date_value:
+        return None, None, None
+    try:
+        target_date = datetime.strptime(date_value, "%Y-%m-%d")
+    except ValueError:
+        return None, None, "date must be YYYY-MM-DD"
+    start_at = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_at = start_at + timedelta(days=1) - timedelta(microseconds=1)
+    return start_at, end_at, None
 
 
 def _format_json(value):

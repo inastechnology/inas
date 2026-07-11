@@ -2,6 +2,7 @@ from ina_device_hub import web_server
 from ina_device_hub.data_processor import DataProcessor
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.hub_mqtt_client import HubMQTTClient
+from ina_device_hub.health_monitor_task import health_monitor_task
 from ina_device_hub.instagram_post_task import instagram_post_task
 from ina_device_hub.ota_update_service import ota_update_service
 from ina_device_hub.timelapse_task import timelapse_task
@@ -35,6 +36,7 @@ def run():
     timelapse_task().start()
     weather_record_task().start()
     instagram_post_task().start()
+    health_monitor_task().start()
 
     # Flaskサーバーを起動
     web_server.flask_run()

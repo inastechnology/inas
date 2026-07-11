@@ -14,6 +14,13 @@ def _int_env(name: str, default: int) -> int:
     return int(value) if value else default
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.environ.get(name, "").strip().lower()
+    if not value:
+        return default
+    return value in {"1", "true", "yes", "on"}
+
+
 # device name
 try:
     DEVICE_NAME = os.environ["HOSTNAME"]
@@ -132,6 +139,14 @@ DEVICE_CONFIG_DEFAULT_TIMEZONE_OFFSET_SEC = int(os.environ.get("DEVICE_CONFIG_DE
 DEVICE_CONFIG_DEFAULT_MOISTURE_THRESHOLD = int(os.environ.get("DEVICE_CONFIG_DEFAULT_MOISTURE_THRESHOLD", "35"))
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+DISCORD_NOTIFY_MQTT_ACTIVITY = _bool_env("DISCORD_NOTIFY_MQTT_ACTIVITY", True)
+DISCORD_NOTIFY_NEW_DEVICE = _bool_env("DISCORD_NOTIFY_NEW_DEVICE", True)
+DISCORD_NOTIFY_DEVICE_OFFLINE = _bool_env("DISCORD_NOTIFY_DEVICE_OFFLINE", True)
+DISCORD_NOTIFY_WATERING_MISSING = _bool_env("DISCORD_NOTIFY_WATERING_MISSING", True)
+HEALTH_MONITOR_ENABLED = _bool_env("HEALTH_MONITOR_ENABLED", False)
+HEALTH_MONITOR_INTERVAL_SECONDS = _int_env("HEALTH_MONITOR_INTERVAL_SECONDS", 1800)
+HEALTH_DEVICE_OFFLINE_AFTER_HOURS = _int_env("HEALTH_DEVICE_OFFLINE_AFTER_HOURS", 12)
+HEALTH_WATERING_MISSING_AFTER_DAYS = _int_env("HEALTH_WATERING_MISSING_AFTER_DAYS", 2)
 
 
 def get_device_id():
@@ -239,6 +254,16 @@ DEFAULT_SETTINGS = {
     },
     "discord": {
         "webhook_url": DISCORD_WEBHOOK_URL,
+        "notify_mqtt_activity": DISCORD_NOTIFY_MQTT_ACTIVITY,
+        "notify_new_device": DISCORD_NOTIFY_NEW_DEVICE,
+        "notify_device_offline": DISCORD_NOTIFY_DEVICE_OFFLINE,
+        "notify_watering_missing": DISCORD_NOTIFY_WATERING_MISSING,
+    },
+    "health_monitor": {
+        "enabled": HEALTH_MONITOR_ENABLED,
+        "interval_seconds": HEALTH_MONITOR_INTERVAL_SECONDS,
+        "device_offline_after_hours": HEALTH_DEVICE_OFFLINE_AFTER_HOURS,
+        "watering_missing_after_days": HEALTH_WATERING_MISSING_AFTER_DAYS,
     },
 }
 

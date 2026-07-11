@@ -20,6 +20,22 @@ from ina_device_hub import web_server  # noqa: E402
 from ina_device_hub.sensor_device_repository import SensorDeviceRepository  # noqa: E402
 
 
+class FakeTimelapseMediaService:
+    def __init__(self):
+        self.calls = []
+
+    def list_frame_records(self, device_id, start_at=None, end_at=None, limit=100):
+        self.calls.append((device_id, start_at, end_at, limit))
+        return [
+            {
+                "camera_id": device_id,
+                "captured_at": "2026-07-04T06:30:00",
+                "relative_path": "timelapse_frames/camera-1/20260704/20260704_063000.jpg",
+                "url": "/local/api/camera-images/timelapse_frames/camera-1/20260704/20260704_063000.jpg",
+            }
+        ]
+
+
 class WebServerBasicUITest(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
@@ -30,10 +46,14 @@ class WebServerBasicUITest(unittest.TestCase):
 
         self.original_sensor_device_repository = web_server.sensor_device_repository
         web_server.sensor_device_repository = lambda: self.sensor_device_repository
+        self.fake_timelapse_media_service = FakeTimelapseMediaService()
+        self.original_timelapse_media_service = web_server.timelapse_media_service
+        web_server.timelapse_media_service = lambda: self.fake_timelapse_media_service
         self.client = web_server.app.test_client()
 
     def tearDown(self):
         web_server.sensor_device_repository = self.original_sensor_device_repository
+        web_server.timelapse_media_service = self.original_timelapse_media_service
         self.tmp_dir.cleanup()
 
     def test_device_edit_form_updates_existing_device(self):
@@ -71,6 +91,19 @@ class WebServerBasicUITest(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertIn('enctype="multipart/form-data"', html)
         self.assertIn('name="location_image"', html)
+
+    def test_camera_images_api_filters_by_date(self):
+        response = self.client.get("/local/api/camera/camera-1/images?date=2026-07-04&limit=12")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body[0]["camera_id"], "camera-1")
+        self.assertEqual(body[0]["captured_at"], "2026-07-04T06:30:00")
+        device_id, start_at, end_at, limit = self.fake_timelapse_media_service.calls[-1]
+        self.assertEqual(device_id, "camera-1")
+        self.assertEqual(start_at.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-04 00:00:00")
+        self.assertEqual(end_at.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-04 23:59:59")
+        self.assertEqual(limit, 12)
 
 
 if __name__ == "__main__":
