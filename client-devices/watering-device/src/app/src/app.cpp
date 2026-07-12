@@ -35,7 +35,25 @@ struct WateringCycleState
     bool debug_log_on_wake = false;
     bool runtime_config_valid = false;
     uint32_t ota_check_interval_sec = APP_RUNTIME_DEFAULT_OTA_CHECK_INTERVAL_SEC;
+    bool watering_pattern_enabled = false;
+    uint16_t watering_pattern_on_sec = 0;
+    uint16_t watering_pattern_off_sec = 0;
+    uint8_t watering_pattern_repeat_count = 0;
+    bool soil_calibration_auto_mode = false;
+    bool soil_calibration_applied = false;
+    bool soil_calibration_suggested = false;
+    uint16_t soil_raw_before_watering = 0;
+    uint16_t soil_raw_after_watering = 0;
+    uint16_t soil_calibration_dry_raw = 0;
+    uint16_t soil_calibration_wet_raw = 0;
+    uint16_t soil_calibration_suggested_dry_raw = 0;
+    uint16_t soil_calibration_suggested_wet_raw = 0;
 };
+
+static void app_cycle_idle_loop()
+{
+    app_network_loop();
+}
 
 class WateringDevice : public AppDevice
 {
@@ -84,11 +102,16 @@ protected:
         (void)config_received;
         const app_runtime_config_t &runtime_config = app_runtime_config_get();
         app_watering_set_threshold(runtime_config.moisture_threshold);
-        Serial.printf("Runtime config in app loop: threshold=%u force_watering=%s debug_log_on_wake=%s ota_check_interval_sec=%lu\n",
+        app_watering_set_soil_calibration(runtime_config.soil_calibration.dry_raw,
+                                          runtime_config.soil_calibration.wet_raw);
+        Serial.printf("Runtime config in app loop: threshold=%u force_watering=%s debug_log_on_wake=%s ota_check_interval_sec=%lu watering_pattern=%s soil_calibration=%u/%u\n",
                       runtime_config.moisture_threshold,
                       runtime_config.force_watering ? "true" : "false",
                       runtime_config.debug_log_on_wake ? "true" : "false",
-                      static_cast<unsigned long>(runtime_config.ota_check_interval_sec));
+                      static_cast<unsigned long>(runtime_config.ota_check_interval_sec),
+                      runtime_config.watering_pattern.enabled ? "true" : "false",
+                      runtime_config.soil_calibration.dry_raw,
+                      runtime_config.soil_calibration.wet_raw);
         APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
                             APP_DEBUG_LOG_INFO,
                             APP_DEBUG_EVENT_RUNTIME_CONFIG_ACTIVE,
@@ -169,9 +192,39 @@ protected:
                           app_watering_get_threshold(),
                           runtime_config.force_watering ? "true" : "false");
 
-            m_cycle.watering_started = app_watering_start_async(due_schedule.duration_sec,
-                                                                due_schedule.channel_mask,
-                                                                runtime_config.force_watering);
+            m_cycle.watering_pattern_enabled = runtime_config.watering_pattern.enabled;
+            m_cycle.watering_pattern_on_sec = runtime_config.watering_pattern.on_sec;
+            m_cycle.watering_pattern_off_sec = runtime_config.watering_pattern.off_sec;
+            m_cycle.watering_pattern_repeat_count = runtime_config.watering_pattern.repeat_count;
+            m_cycle.soil_calibration_auto_mode = runtime_config.soil_calibration.auto_mode_enabled;
+            m_cycle.soil_calibration_dry_raw = runtime_config.soil_calibration.dry_raw;
+            m_cycle.soil_calibration_wet_raw = runtime_config.soil_calibration.wet_raw;
+
+            const bool should_probe_soil_calibration =
+                runtime_config.soil_calibration.auto_mode_enabled ||
+                runtime_config.soil_calibration.drift_check_enabled;
+            if (should_probe_soil_calibration)
+            {
+                m_cycle.soil_raw_before_watering = app_watering_read_soil_raw_average(20, 40);
+            }
+
+            if (runtime_config.watering_pattern.enabled)
+            {
+                m_cycle.watering_duration_sec =
+                    runtime_config.watering_pattern.on_sec * runtime_config.watering_pattern.repeat_count;
+                m_cycle.watering_started = app_watering_run_pattern(runtime_config.watering_pattern.on_sec,
+                                                                    runtime_config.watering_pattern.off_sec,
+                                                                    runtime_config.watering_pattern.repeat_count,
+                                                                    due_schedule.channel_mask,
+                                                                    runtime_config.force_watering,
+                                                                    app_cycle_idle_loop);
+            }
+            else
+            {
+                m_cycle.watering_started = app_watering_start_async(due_schedule.duration_sec,
+                                                                    due_schedule.channel_mask,
+                                                                    runtime_config.force_watering);
+            }
             m_cycle.last_soil_moisture = app_watering_get_last_soil_moisture();
             APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_APP,
                                 m_cycle.watering_started ? APP_DEBUG_LOG_INFO : APP_DEBUG_LOG_WARNING,
@@ -179,11 +232,42 @@ protected:
                                 static_cast<int32_t>(due_schedule.duration_sec) | (m_cycle.watering_started ? (1L << 16) : 0),
                                 static_cast<int32_t>(due_schedule.channel_mask));
 
-            while (app_watering_is_in_progress())
+            while (!runtime_config.watering_pattern.enabled && app_watering_is_in_progress())
             {
                 app_watering_loop();
                 app_network_loop();
                 delay(50);
+            }
+
+            if (m_cycle.watering_started && should_probe_soil_calibration)
+            {
+                delay(2000);
+                m_cycle.soil_raw_after_watering = app_watering_read_soil_raw_average(20, 40);
+                const uint16_t before_raw = m_cycle.soil_raw_before_watering;
+                const uint16_t after_raw = m_cycle.soil_raw_after_watering;
+                const uint16_t delta_raw = before_raw > after_raw ? before_raw - after_raw : 0;
+                if (delta_raw >= runtime_config.soil_calibration.min_delta_raw)
+                {
+                    m_cycle.soil_calibration_suggested = true;
+                    m_cycle.soil_calibration_suggested_dry_raw = before_raw;
+                    m_cycle.soil_calibration_suggested_wet_raw = after_raw;
+                    if (runtime_config.soil_calibration.auto_mode_enabled &&
+                        runtime_config.soil_calibration.apply_auto_calibration)
+                    {
+                        app_watering_set_soil_calibration(before_raw, after_raw);
+                        app_runtime_config_update_soil_calibration(before_raw, after_raw);
+                        m_cycle.soil_calibration_applied = true;
+                        m_cycle.soil_calibration_dry_raw = before_raw;
+                        m_cycle.soil_calibration_wet_raw = after_raw;
+                    }
+                }
+                else if (runtime_config.soil_calibration.drift_check_enabled &&
+                         delta_raw < runtime_config.soil_calibration.drift_tolerance_raw)
+                {
+                    m_cycle.soil_calibration_suggested = true;
+                    m_cycle.soil_calibration_suggested_dry_raw = runtime_config.soil_calibration.dry_raw;
+                    m_cycle.soil_calibration_suggested_wet_raw = runtime_config.soil_calibration.wet_raw;
+                }
             }
 
             s_last_executed_schedule_utc = due_schedule_epoch_utc;
@@ -208,10 +292,10 @@ protected:
     bool publish_device_status(const AppDeviceWakeContext &context,
                                const AppDeviceCycleResult &cycle_result) override
     {
-        char payload[1024];
+        char payload[1600];
         snprintf(payload,
                  sizeof(payload),
-                 "{\"seq\":%u,\"device_kind\":\"%s\",\"firmware_version\":\"%s\",\"firmware_build_id\":\"%s\",\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"ota_check_interval_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s,\"debug_log_on_wake\":%s,\"ota_update_attempted\":%s}",
+                 "{\"seq\":%u,\"device_kind\":\"%s\",\"firmware_version\":\"%s\",\"firmware_build_id\":\"%s\",\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"ota_check_interval_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s,\"debug_log_on_wake\":%s,\"ota_update_attempted\":%s,\"watering_pattern_enabled\":%s,\"watering_pattern_on_sec\":%u,\"watering_pattern_off_sec\":%u,\"watering_pattern_repeat_count\":%u,\"soil_calibration_auto_mode\":%s,\"soil_calibration_applied\":%s,\"soil_calibration_suggested\":%s,\"soil_raw_before_watering\":%u,\"soil_raw_after_watering\":%u,\"soil_calibration_dry_raw\":%u,\"soil_calibration_wet_raw\":%u,\"soil_calibration_suggested_dry_raw\":%u,\"soil_calibration_suggested_wet_raw\":%u}",
                  context.seq_id,
                  APP_DEVICE_KIND,
                  APP_FIRMWARE_VERSION,
@@ -231,7 +315,20 @@ protected:
                  app_watering_get_threshold(),
                  m_cycle.force_watering ? "true" : "false",
                  m_cycle.debug_log_on_wake ? "true" : "false",
-                 context.ota_update_attempted ? "true" : "false");
+                 context.ota_update_attempted ? "true" : "false",
+                 m_cycle.watering_pattern_enabled ? "true" : "false",
+                 m_cycle.watering_pattern_on_sec,
+                 m_cycle.watering_pattern_off_sec,
+                 m_cycle.watering_pattern_repeat_count,
+                 m_cycle.soil_calibration_auto_mode ? "true" : "false",
+                 m_cycle.soil_calibration_applied ? "true" : "false",
+                 m_cycle.soil_calibration_suggested ? "true" : "false",
+                 m_cycle.soil_raw_before_watering,
+                 m_cycle.soil_raw_after_watering,
+                 m_cycle.soil_calibration_dry_raw,
+                 m_cycle.soil_calibration_wet_raw,
+                 m_cycle.soil_calibration_suggested_dry_raw,
+                 m_cycle.soil_calibration_suggested_wet_raw);
 
         Serial.printf("Sending status: %s\n", payload);
         const bool sent = app_network_send(APP_MSG_TYPE_STATUS,

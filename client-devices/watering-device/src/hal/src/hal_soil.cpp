@@ -41,16 +41,24 @@ uint16_t hal_soil_read_raw(void)
     return s_ready ? analogRead(s_pin) : 0;
 }
 
-uint8_t hal_soil_read_percent(void)
+uint16_t hal_soil_read_raw_average(uint8_t sample_count, uint16_t interval_ms)
 {
     uint32_t sum_of_raw = 0;
-    const int num_samples = 20; // 平均化のためのサンプル
-    for (int i = 0; i < num_samples; ++i)
+    const uint8_t samples = sample_count == 0 ? 1 : sample_count;
+    for (uint8_t i = 0; i < samples; ++i)
     {
         sum_of_raw += hal_soil_read_raw();
-        delay(40); // サンプリング間隔
+        if (interval_ms > 0 && i + 1 < samples)
+        {
+            delay(interval_ms);
+        }
     }
-    uint16_t raw = sum_of_raw / num_samples; // 平均値を計算
+    return sum_of_raw / samples;
+}
+
+uint8_t hal_soil_read_percent(void)
+{
+    uint16_t raw = hal_soil_read_raw_average(20, 40); // 平均値を計算
     Serial.printf("Soil raw value: %d\n", raw);
     raw = constrain(raw, s_wet_raw, s_dry_raw); // 範囲クランプ
     Serial.printf("Constrained raw value: %d\n", raw);

@@ -1834,6 +1834,62 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
               </div>
 
+              <div>
+                <h3>分割灌水</h3>
+                <div class="config-toolbar">
+                  <label class="switch-row" for="watering-pattern-enabled">
+                    <input id="watering-pattern-enabled" type="checkbox">
+                    分割灌水を使う
+                  </label>
+                  <div class="config-field">
+                    <label for="watering-pattern-on-sec">ON 秒数</label>
+                    <input id="watering-pattern-on-sec" type="number" min="0" max="3600" step="1">
+                  </div>
+                  <div class="config-field">
+                    <label for="watering-pattern-off-sec">休止 秒数</label>
+                    <input id="watering-pattern-off-sec" type="number" min="0" max="3600" step="1">
+                  </div>
+                  <div class="config-field">
+                    <label for="watering-pattern-repeat-count">繰り返し回数</label>
+                    <input id="watering-pattern-repeat-count" type="number" min="0" max="20" step="1">
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3>土壌水分計 校正</h3>
+                <div class="config-toolbar">
+                  <label class="switch-row" for="soil-calibration-auto-mode">
+                    <input id="soil-calibration-auto-mode" type="checkbox">
+                    自動校正モード
+                  </label>
+                  <label class="switch-row" for="soil-calibration-apply-auto">
+                    <input id="soil-calibration-apply-auto" type="checkbox">
+                    校正値を device に反映
+                  </label>
+                  <label class="switch-row" for="soil-calibration-drift-check">
+                    <input id="soil-calibration-drift-check" type="checkbox">
+                    ズレ検知
+                  </label>
+                  <div class="config-field">
+                    <label for="soil-calibration-dry-raw">乾燥 raw</label>
+                    <input id="soil-calibration-dry-raw" type="number" min="1" max="4095" step="1">
+                  </div>
+                  <div class="config-field">
+                    <label for="soil-calibration-wet-raw">湿潤 raw</label>
+                    <input id="soil-calibration-wet-raw" type="number" min="0" max="4094" step="1">
+                  </div>
+                  <div class="config-field">
+                    <label for="soil-calibration-min-delta-raw">校正差分 raw</label>
+                    <input id="soil-calibration-min-delta-raw" type="number" min="10" max="2000" step="1">
+                  </div>
+                  <div class="config-field">
+                    <label for="soil-calibration-drift-tolerance-raw">ズレ検知 raw</label>
+                    <input id="soil-calibration-drift-tolerance-raw" type="number" min="10" max="2000" step="1">
+                  </div>
+                </div>
+              </div>
+
               <div class="actions">
                 <button type="submit">設定を保存</button>
                 <button type="button" id="save-push-runtime-config" class="primary">保存して device に送信</button>
@@ -2389,6 +2445,32 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             return String(seconds) + "秒";
           }
 
+          function todayDateString() {
+            const date = new Date();
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const day = String(date.getDate()).padStart(2, "0");
+            return year + "-" + month + "-" + day;
+          }
+
+          function scheduleFrequency(schedule) {
+            const frequency = (schedule || {}).frequency || {};
+            const mode = ["daily", "interval", "weekdays"].includes(frequency.mode) ? frequency.mode : "daily";
+            return {
+              mode,
+              interval_days: Number.isInteger(frequency.interval_days) ? frequency.interval_days : 2,
+              start_date: frequency.start_date || todayDateString(),
+              weekdays: Array.isArray(frequency.weekdays) ? frequency.weekdays : [],
+            };
+          }
+
+          function setFrequencyControlsVisible(row) {
+            const mode = row.querySelector("[data-schedule-frequency-mode]").value;
+            row.querySelectorAll("[data-frequency-panel]").forEach((panel) => {
+              panel.hidden = panel.getAttribute("data-frequency-panel") !== mode;
+            });
+          }
+
           function createScheduleRow(schedule) {
             const row = document.createElement("div");
             row.className = "schedule-row";
@@ -2396,11 +2478,23 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               '<div><label>時刻</label><input data-schedule-time type="time" required></div>',
               '<div><label>灌水時間（秒）</label><input data-schedule-duration type="number" min="1" max="3600" step="1" required></div>',
               '<div><label>系統</label><select data-schedule-channel><option value="1">系統1</option><option value="2">系統2</option><option value="3">系統1・系統2</option></select></div>',
+              '<div><label>頻度</label><select data-schedule-frequency-mode><option value="daily">毎日</option><option value="interval">日にちごと</option><option value="weekdays">曜日指定</option></select></div>',
+              '<div data-frequency-panel="interval"><label>間隔</label><input data-schedule-interval-days type="number" min="1" max="31" step="1"></div>',
+              '<div data-frequency-panel="interval"><label>開始日</label><input data-schedule-start-date type="date"></div>',
+              '<div data-frequency-panel="weekdays"><label>曜日</label><select data-schedule-weekdays multiple size="4"><option value="0">日</option><option value="1">月</option><option value="2">火</option><option value="3">水</option><option value="4">木</option><option value="5">金</option><option value="6">土</option></select></div>',
               '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－</button>',
             ].join("");
+            const frequency = scheduleFrequency(schedule || {});
             row.querySelector("[data-schedule-time]").value = scheduleToTime(schedule || {});
             row.querySelector("[data-schedule-duration]").value = String((schedule || {}).duration_sec || 1);
             row.querySelector("[data-schedule-channel]").value = String((schedule || {}).channel_mask || 1);
+            row.querySelector("[data-schedule-frequency-mode]").value = frequency.mode;
+            row.querySelector("[data-schedule-interval-days]").value = String(frequency.interval_days || 2);
+            row.querySelector("[data-schedule-start-date]").value = frequency.start_date || todayDateString();
+            Array.from(row.querySelector("[data-schedule-weekdays]").options).forEach((option) => {
+              option.selected = frequency.weekdays.includes(Number(option.value));
+            });
+            setFrequencyControlsVisible(row);
             row.querySelector("[data-remove-schedule]").addEventListener("click", () => {
               if (document.querySelectorAll("#schedule-editor .schedule-row").length <= 1) {
                 showResult("灌水予約は最低 1 件必要です", false);
@@ -2409,6 +2503,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               row.remove();
               refreshRuntimeConfigPreview();
             });
+            row.querySelector("[data-schedule-frequency-mode]").addEventListener("input", () => setFrequencyControlsVisible(row));
             row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", refreshRuntimeConfigPreview));
             return row;
           }
@@ -2432,10 +2527,36 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const otaCheckInterval = document.getElementById("ota-check-interval");
             if (otaCheckInterval) otaCheckInterval.value = String(Number.isInteger(config.ota_check_interval_sec) ? config.ota_check_interval_sec : 21600);
 
+            const wateringPattern = config.watering_pattern || {};
+            const wateringPatternEnabled = document.getElementById("watering-pattern-enabled");
+            if (wateringPatternEnabled) wateringPatternEnabled.checked = Boolean(wateringPattern.enabled);
+            const wateringPatternOnSec = document.getElementById("watering-pattern-on-sec");
+            if (wateringPatternOnSec) wateringPatternOnSec.value = String(Number.isInteger(wateringPattern.on_sec) ? wateringPattern.on_sec : 0);
+            const wateringPatternOffSec = document.getElementById("watering-pattern-off-sec");
+            if (wateringPatternOffSec) wateringPatternOffSec.value = String(Number.isInteger(wateringPattern.off_sec) ? wateringPattern.off_sec : 0);
+            const wateringPatternRepeatCount = document.getElementById("watering-pattern-repeat-count");
+            if (wateringPatternRepeatCount) wateringPatternRepeatCount.value = String(Number.isInteger(wateringPattern.repeat_count) ? wateringPattern.repeat_count : 0);
+
+            const soilCalibration = config.soil_calibration || {};
+            const soilCalibrationAutoMode = document.getElementById("soil-calibration-auto-mode");
+            if (soilCalibrationAutoMode) soilCalibrationAutoMode.checked = Boolean(soilCalibration.auto_mode_enabled);
+            const soilCalibrationApplyAuto = document.getElementById("soil-calibration-apply-auto");
+            if (soilCalibrationApplyAuto) soilCalibrationApplyAuto.checked = Boolean(soilCalibration.apply_auto_calibration);
+            const soilCalibrationDriftCheck = document.getElementById("soil-calibration-drift-check");
+            if (soilCalibrationDriftCheck) soilCalibrationDriftCheck.checked = Boolean(soilCalibration.drift_check_enabled);
+            const soilCalibrationDryRaw = document.getElementById("soil-calibration-dry-raw");
+            if (soilCalibrationDryRaw) soilCalibrationDryRaw.value = String(Number.isInteger(soilCalibration.dry_raw) ? soilCalibration.dry_raw : 1895);
+            const soilCalibrationWetRaw = document.getElementById("soil-calibration-wet-raw");
+            if (soilCalibrationWetRaw) soilCalibrationWetRaw.value = String(Number.isInteger(soilCalibration.wet_raw) ? soilCalibration.wet_raw : 1285);
+            const soilCalibrationMinDeltaRaw = document.getElementById("soil-calibration-min-delta-raw");
+            if (soilCalibrationMinDeltaRaw) soilCalibrationMinDeltaRaw.value = String(Number.isInteger(soilCalibration.min_delta_raw) ? soilCalibration.min_delta_raw : 80);
+            const soilCalibrationDriftToleranceRaw = document.getElementById("soil-calibration-drift-tolerance-raw");
+            if (soilCalibrationDriftToleranceRaw) soilCalibrationDriftToleranceRaw.value = String(Number.isInteger(soilCalibration.drift_tolerance_raw) ? soilCalibration.drift_tolerance_raw : 120);
+
             const editor = document.getElementById("schedule-editor");
             if (editor) {
               editor.innerHTML = "";
-              const schedules = Array.isArray(config.schedules) && config.schedules.length ? config.schedules : [{ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1 }];
+              const schedules = Array.isArray(config.schedules) && config.schedules.length ? config.schedules : [{ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1, frequency: { mode: "daily" } }];
               schedules.slice(0, 8).forEach((schedule) => editor.appendChild(createScheduleRow(schedule)));
             }
             refreshRuntimeConfigPreview();
@@ -2448,14 +2569,38 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const schedules = Array.from(document.querySelectorAll("#schedule-editor .schedule-row")).map((row) => {
               const time = row.querySelector("[data-schedule-time]").value || "00:00";
               const parts = time.split(":");
+              const mode = row.querySelector("[data-schedule-frequency-mode]").value || "daily";
+              const frequency = { mode };
+              if (mode === "interval") {
+                frequency.interval_days = Number(row.querySelector("[data-schedule-interval-days]").value);
+                frequency.start_date = row.querySelector("[data-schedule-start-date]").value || todayDateString();
+              } else if (mode === "weekdays") {
+                frequency.weekdays = Array.from(row.querySelector("[data-schedule-weekdays]").selectedOptions).map((option) => Number(option.value));
+              }
               return {
                 hour: Number(parts[0]),
                 minute: Number(parts[1]),
                 duration_sec: Number(row.querySelector("[data-schedule-duration]").value),
                 channel_mask: Number(row.querySelector("[data-schedule-channel]").value),
+                frequency,
               };
             });
             if (schedules.length < 1 || schedules.length > 8) throw new Error("灌水予約は 1〜8 件にしてください");
+            const wateringPattern = {
+              enabled: document.getElementById("watering-pattern-enabled").checked,
+              on_sec: Number(document.getElementById("watering-pattern-on-sec").value),
+              off_sec: Number(document.getElementById("watering-pattern-off-sec").value),
+              repeat_count: Number(document.getElementById("watering-pattern-repeat-count").value),
+            };
+            const soilCalibration = {
+              auto_mode_enabled: document.getElementById("soil-calibration-auto-mode").checked,
+              apply_auto_calibration: document.getElementById("soil-calibration-apply-auto").checked,
+              drift_check_enabled: document.getElementById("soil-calibration-drift-check").checked,
+              dry_raw: Number(document.getElementById("soil-calibration-dry-raw").value),
+              wet_raw: Number(document.getElementById("soil-calibration-wet-raw").value),
+              min_delta_raw: Number(document.getElementById("soil-calibration-min-delta-raw").value),
+              drift_tolerance_raw: Number(document.getElementById("soil-calibration-drift-tolerance-raw").value),
+            };
             return {
               ntp_server: document.getElementById("ntp-server").value.trim() || "pool.ntp.org",
               timezone_offset_sec: timezoneOffset,
@@ -2463,6 +2608,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               force_watering: document.getElementById("force-watering").checked,
               debug_log_on_wake: document.getElementById("debug-log-on-wake").checked,
               ota_check_interval_sec: otaCheckInterval,
+              watering_pattern: wateringPattern,
+              soil_calibration: soilCalibration,
               schedules,
             };
           }
@@ -2552,7 +2699,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 showResult("灌水予約は最大 8 件です", false);
                 return;
               }
-              editor.appendChild(createScheduleRow({ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1 }));
+              editor.appendChild(createScheduleRow({ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1, frequency: { mode: "daily" } }));
               refreshRuntimeConfigPreview();
             });
           }

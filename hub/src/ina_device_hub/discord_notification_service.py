@@ -192,6 +192,8 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
         title = "【死活監視】デバイスの接続が途絶えています"
     elif alert_type == "watering_missing":
         title = "【死活監視】水やりが一定期間確認できません"
+    elif alert_type == "soil_calibration_suggested":
+        title = "【水分計】校正値の見直し候補があります"
     else:
         title = "【死活監視】確認が必要です"
 
@@ -220,6 +222,18 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
         lines.append(f"未水やり日数: {details['days_since_watering']:.1f} 日")
     if details.get("watering_threshold_days") is not None:
         lines.append(f"しきい値: {details['watering_threshold_days']} 日")
+    if details.get("soil_raw_before_watering") is not None:
+        lines.append(f"灌水前 raw: {details['soil_raw_before_watering']}")
+    if details.get("soil_raw_after_watering") is not None:
+        lines.append(f"灌水後 raw: {details['soil_raw_after_watering']}")
+    if details.get("soil_calibration_dry_raw") is not None and details.get("soil_calibration_wet_raw") is not None:
+        lines.append(f"現在の校正値: dry={details['soil_calibration_dry_raw']} wet={details['soil_calibration_wet_raw']}")
+    if details.get("soil_calibration_suggested_dry_raw") is not None and details.get("soil_calibration_suggested_wet_raw") is not None:
+        lines.append(
+            f"候補の校正値: dry={details['soil_calibration_suggested_dry_raw']} wet={details['soil_calibration_suggested_wet_raw']}"
+        )
+    if details.get("soil_calibration_applied") is not None:
+        lines.append(f"device反映: {_format_value(details['soil_calibration_applied'], 'soil_calibration_applied')}")
 
     content = "\n".join(lines)
     if len(content) > DISCORD_CONTENT_LIMIT:

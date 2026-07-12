@@ -76,6 +76,23 @@ uint8_t app_watering_read_soil_moisture()
     return _last_moisture;
 }
 
+uint16_t app_watering_read_soil_raw_average(uint8_t sample_count, uint16_t interval_ms)
+{
+    const uint16_t raw = hal_soil_read_raw_average(sample_count, interval_ms);
+    Serial.printf("Soil raw average: %u\n", raw);
+    return raw;
+}
+
+void app_watering_set_soil_calibration(uint16_t dry_raw, uint16_t wet_raw)
+{
+    hal_soil_set_calibration(dry_raw, wet_raw);
+}
+
+void app_watering_get_soil_calibration(uint16_t *dry_raw, uint16_t *wet_raw)
+{
+    hal_soil_get_calibration(dry_raw, wet_raw);
+}
+
 bool app_watering_start(int duration_sec, uint32_t channel_mask, bool force_watering)
 {
     if (!app_watering_start_async(duration_sec, channel_mask, force_watering))
@@ -90,6 +107,56 @@ bool app_watering_start(int duration_sec, uint32_t channel_mask, bool force_wate
     }
 
     return true;
+}
+
+bool app_watering_run_pattern(uint16_t on_sec,
+                              uint16_t off_sec,
+                              uint8_t repeat_count,
+                              uint32_t channel_mask,
+                              bool force_watering,
+                              void (*idle_loop)())
+{
+    if (on_sec == 0 || repeat_count == 0)
+    {
+        return false;
+    }
+
+    bool any_started = false;
+    for (uint8_t i = 0; i < repeat_count; i++)
+    {
+        const bool pulse_force = force_watering || any_started;
+        if (!app_watering_start_async(on_sec, channel_mask, pulse_force))
+        {
+            return any_started;
+        }
+        any_started = true;
+
+        while (app_watering_is_in_progress())
+        {
+            app_watering_loop();
+            if (idle_loop != nullptr)
+            {
+                idle_loop();
+            }
+            delay(50);
+        }
+
+        if (off_sec > 0 && i + 1 < repeat_count)
+        {
+            const uint32_t pause_until_ms = millis() + static_cast<uint32_t>(off_sec) * 1000UL;
+            while (static_cast<int32_t>(pause_until_ms - millis()) > 0)
+            {
+                app_watering_loop();
+                if (idle_loop != nullptr)
+                {
+                    idle_loop();
+                }
+                delay(50);
+            }
+        }
+    }
+
+    return any_started;
 }
 
 bool app_watering_start_async(int duration_sec, uint32_t channel_mask, bool force_watering)

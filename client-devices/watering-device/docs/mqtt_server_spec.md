@@ -214,18 +214,35 @@ payloadはJSONです。
   "force_watering": false,
   "debug_log_on_wake": false,
   "ota_check_interval_sec": 21600,
+  "watering_pattern": {
+    "enabled": true,
+    "on_sec": 60,
+    "off_sec": 60,
+    "repeat_count": 3
+  },
+  "soil_calibration": {
+    "auto_mode_enabled": false,
+    "apply_auto_calibration": false,
+    "drift_check_enabled": true,
+    "dry_raw": 1895,
+    "wet_raw": 1285,
+    "min_delta_raw": 80,
+    "drift_tolerance_raw": 120
+  },
   "schedules": [
     {
       "hour": 7,
       "minute": 30,
       "duration_sec": 60,
-      "channel_mask": 1
+      "channel_mask": 1,
+      "frequency": {"mode": "daily"}
     },
     {
       "hour": 18,
       "minute": 0,
       "duration_sec": 90,
-      "channel_mask": 1
+      "channel_mask": 1,
+      "frequency": {"mode": "weekdays", "weekdays": [1, 3, 5]}
     }
   ]
 }
@@ -241,7 +258,30 @@ payloadはJSONです。
 | `force_watering` | No | boolean | default: `false` | Water on due schedules even when soil moisture is high |
 | `debug_log_on_wake` | No | boolean | default: `false` | Publish a debug log at the end of each wake cycle |
 | `ota_check_interval_sec` | No | integer | `3600..86400`, default: `21600` | Maximum deep-sleep interval before the next OTA check. Device wakes earlier when a watering schedule is due |
+| `watering_pattern` | No | object | default: disabled | When enabled, run `on_sec` water / `off_sec` pause for `repeat_count` pulses instead of one continuous schedule duration |
+| `soil_calibration` | No | object | default: `dry_raw=1895`, `wet_raw=1285` | Soil moisture raw-to-percent calibration and auto/drift check settings |
 | `schedules` | Yes | array | 1 to 8 valid entries | Daily watering schedules |
+
+### watering_pattern fields
+
+| Field | Required | Type | Range | Description |
+|---|---:|---|---|---|
+| `enabled` | No | boolean | default: `false` | Enable pulsed watering |
+| `on_sec` | No | integer | `0..3600` | Watering seconds per pulse. Required when enabled |
+| `off_sec` | No | integer | `0..3600` | Pause seconds between pulses |
+| `repeat_count` | No | integer | `0..20` | Number of pulses. Required when enabled |
+
+### soil_calibration fields
+
+| Field | Required | Type | Range | Description |
+|---|---:|---|---|---|
+| `auto_mode_enabled` | No | boolean | default: `false` | Measure raw values before/after watering for calibration mode |
+| `apply_auto_calibration` | No | boolean | default: `false` | Persist the detected dry/wet raw values on the device when auto mode succeeds |
+| `drift_check_enabled` | No | boolean | default: `false` | Publish a calibration suggestion when watering response indicates possible drift |
+| `dry_raw` | No | integer | `1..4095` | Raw value mapped to 0% moisture |
+| `wet_raw` | No | integer | `0..4094` | Raw value mapped to 100% moisture; must be lower than `dry_raw` |
+| `min_delta_raw` | No | integer | `10..2000` | Minimum before/after raw drop required for an auto-calibration candidate |
+| `drift_tolerance_raw` | No | integer | `10..2000` | Minimum expected raw change during drift check |
 
 ### Schedule fields
 
@@ -251,6 +291,17 @@ payloadはJSONです。
 | `minute` | Yes | integer | `0..59` | Local minute |
 | `duration_sec` | Yes | integer | `1..65535` recommended | Watering duration in seconds |
 | `channel_mask` | Yes | integer | `1..4294967295` | Valve channel bit mask; pump is automatic |
+| `frequency` | No | object | default: `{ "mode": "daily" }` | Optional frequency condition for this schedule |
+
+### Schedule frequency fields
+
+| Field | Required | Type | Range | Description |
+|---|---:|---|---|---|
+| `mode` | No | string | `daily`, `interval`, `weekdays` | `daily`: every day, `interval`: every N days, `weekdays`: selected weekdays |
+| `interval_days` | When `interval` | integer | `1..31` | Run every N days from `start_date`; use `2` for every other day, `3` for every third day |
+| `start_date` | When `interval` | string | `YYYY-MM-DD` | Anchor date for interval schedules in local time |
+| `weekdays` | When `weekdays` | array[int] | `0..6` | Weekdays, where `0=Sunday`, `1=Monday`, ..., `6=Saturday` |
+| `weekdays_mask` | No | integer | bit mask | Alternative to `weekdays`; bit0=Sunday, bit1=Monday, ..., bit6=Saturday |
 
 ### channel_mask
 
@@ -273,7 +324,7 @@ Examples:
 サーバは、publish前に以下を検証してください。
 
 - JSONとしてvalidであること
-- MQTT payloadが512 bytes未満であること
+- MQTT payloadが2048 bytes未満であること
 - `schedules`が配列であること
 - 有効なscheduleが1件以上あること
 - schedule数が8件以下であること
@@ -281,6 +332,9 @@ Examples:
 - `minute`が`0..59`
 - `duration_sec`が`1`以上
 - `channel_mask`が`1`以上
+- `frequency.mode`が未指定、`daily`、`interval`、`weekdays`のいずれか
+- `interval`の場合は`interval_days`が`1..31`、`start_date`が`YYYY-MM-DD`
+- `weekdays`の場合は曜日指定が1件以上あり、各曜日が`0..6`
 - `moisture_threshold`が`0..100`
 - `timezone_offset_sec`が運用地域に対して正しいこと
 

@@ -24,6 +24,9 @@ extern "C"
     /** 1 回だけ読み取り（RAW 0-4095） */
     uint16_t hal_soil_read_raw(void);
 
+    /** 複数回読み取りの平均 RAW 0-4095 */
+    uint16_t hal_soil_read_raw_average(uint8_t sample_count, uint16_t interval_ms);
+
     /** 0-100 %（水分量）の整数値を返す */
     uint8_t hal_soil_read_percent(void);
 

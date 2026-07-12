@@ -30,12 +30,28 @@ class DeviceConfigService:
             "force_watering": True,
             "debug_log_on_wake": False,
             "ota_check_interval_sec": 21600,
+            "watering_pattern": {
+                "enabled": False,
+                "on_sec": 0,
+                "off_sec": 0,
+                "repeat_count": 0,
+            },
+            "soil_calibration": {
+                "auto_mode_enabled": False,
+                "apply_auto_calibration": False,
+                "drift_check_enabled": False,
+                "dry_raw": 1895,
+                "wet_raw": 1285,
+                "min_delta_raw": 80,
+                "drift_tolerance_raw": 120,
+            },
             "schedules": [
                 {
                     "hour": 6,
                     "minute": 30,
                     "duration_sec": 1,
                     "channel_mask": 1,
+                    "frequency": {"mode": "daily"},
                 }
             ],
         }

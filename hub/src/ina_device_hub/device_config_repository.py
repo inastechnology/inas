@@ -223,6 +223,14 @@ class DeviceConfigRepository:
         return _normalize_device_record(device_id, record)
 
 
+def _is_yyyy_mm_dd(value: str):
+    parts = value.split("-")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        return False
+    year, month, day = (int(part) for part in parts)
+    return 1970 <= year <= 2099 and 1 <= month <= 12 and 1 <= day <= 31
+
+
 def validate_device_config(config: dict):
     if not isinstance(config, dict):
         raise DeviceConfigValidationError("config must be an object")
@@ -262,6 +270,49 @@ def validate_device_config(config: dict):
     if not isinstance(ota_check_interval_sec, int) or not 3600 <= ota_check_interval_sec <= 86400:
         raise DeviceConfigValidationError("ota_check_interval_sec must be between 3600 and 86400")
 
+    def _optional_bool(parent: dict, key: str, default: bool = False, label: str | None = None):
+        value = parent.get(key, default)
+        if not isinstance(value, bool):
+            raise DeviceConfigValidationError(f"{label or key} must be a boolean")
+        return value
+
+    def _optional_int(parent: dict, key: str, default: int, min_value: int, max_value: int, label: str | None = None):
+        value = parent.get(key, default)
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise DeviceConfigValidationError(f"{label or key} must be an integer")
+        if not min_value <= value <= max_value:
+            raise DeviceConfigValidationError(f"{label or key} must be between {min_value} and {max_value}")
+        return value
+
+    watering_pattern = config.get("watering_pattern", {"enabled": False})
+    if not isinstance(watering_pattern, dict):
+        raise DeviceConfigValidationError("watering_pattern must be an object")
+    normalized_watering_pattern = {
+        "enabled": _optional_bool(watering_pattern, "enabled", False, "watering_pattern.enabled"),
+        "on_sec": _optional_int(watering_pattern, "on_sec", 0, 0, 3600, "watering_pattern.on_sec"),
+        "off_sec": _optional_int(watering_pattern, "off_sec", 0, 0, 3600, "watering_pattern.off_sec"),
+        "repeat_count": _optional_int(watering_pattern, "repeat_count", 0, 0, 20, "watering_pattern.repeat_count"),
+    }
+    if normalized_watering_pattern["enabled"] and (
+        normalized_watering_pattern["on_sec"] <= 0 or normalized_watering_pattern["repeat_count"] <= 0
+    ):
+        raise DeviceConfigValidationError("enabled watering_pattern requires on_sec and repeat_count")
+
+    soil_calibration = config.get("soil_calibration", {})
+    if not isinstance(soil_calibration, dict):
+        raise DeviceConfigValidationError("soil_calibration must be an object")
+    normalized_soil_calibration = {
+        "auto_mode_enabled": _optional_bool(soil_calibration, "auto_mode_enabled", False, "soil_calibration.auto_mode_enabled"),
+        "apply_auto_calibration": _optional_bool(soil_calibration, "apply_auto_calibration", False, "soil_calibration.apply_auto_calibration"),
+        "drift_check_enabled": _optional_bool(soil_calibration, "drift_check_enabled", False, "soil_calibration.drift_check_enabled"),
+        "dry_raw": _optional_int(soil_calibration, "dry_raw", 1895, 1, 4095, "soil_calibration.dry_raw"),
+        "wet_raw": _optional_int(soil_calibration, "wet_raw", 1285, 0, 4094, "soil_calibration.wet_raw"),
+        "min_delta_raw": _optional_int(soil_calibration, "min_delta_raw", 80, 10, 2000, "soil_calibration.min_delta_raw"),
+        "drift_tolerance_raw": _optional_int(soil_calibration, "drift_tolerance_raw", 120, 10, 2000, "soil_calibration.drift_tolerance_raw"),
+    }
+    if normalized_soil_calibration["dry_raw"] <= normalized_soil_calibration["wet_raw"]:
+        raise DeviceConfigValidationError("soil_calibration.dry_raw must be greater than wet_raw")
+
     schedules = config["schedules"]
     if not isinstance(schedules, list):
         raise DeviceConfigValidationError("schedules must be an array")
@@ -293,12 +344,42 @@ def validate_device_config(config: dict):
         if not isinstance(channel_mask, int) or channel_mask <= 0:
             raise DeviceConfigValidationError(f"schedules[{index}].channel_mask must be > 0")
 
+        frequency = schedule.get("frequency", {"mode": "daily"})
+        if not isinstance(frequency, dict):
+            raise DeviceConfigValidationError(f"schedules[{index}].frequency must be an object")
+        mode = frequency.get("mode", "daily")
+        if mode not in {"daily", "interval", "weekdays"}:
+            raise DeviceConfigValidationError(f"schedules[{index}].frequency.mode must be daily, interval, or weekdays")
+        normalized_frequency = {"mode": mode}
+        if mode == "interval":
+            interval_days = frequency.get("interval_days", 1)
+            if not isinstance(interval_days, int) or isinstance(interval_days, bool) or not 1 <= interval_days <= 31:
+                raise DeviceConfigValidationError(f"schedules[{index}].frequency.interval_days must be between 1 and 31")
+            start_date = frequency.get("start_date", "1970-01-01")
+            if not isinstance(start_date, str) or not _is_yyyy_mm_dd(start_date):
+                raise DeviceConfigValidationError(f"schedules[{index}].frequency.start_date must be YYYY-MM-DD")
+            normalized_frequency["interval_days"] = interval_days
+            normalized_frequency["start_date"] = start_date
+        elif mode == "weekdays":
+            weekdays = frequency.get("weekdays", [])
+            if not isinstance(weekdays, list) or not weekdays:
+                raise DeviceConfigValidationError(f"schedules[{index}].frequency.weekdays must contain at least one weekday")
+            normalized_weekdays = []
+            for weekday in weekdays:
+                if not isinstance(weekday, int) or isinstance(weekday, bool) or not 0 <= weekday <= 6:
+                    raise DeviceConfigValidationError(f"schedules[{index}].frequency.weekdays values must be 0-6")
+                if weekday not in normalized_weekdays:
+                    normalized_weekdays.append(weekday)
+            normalized_frequency["weekdays"] = sorted(normalized_weekdays)
+            normalized_frequency["weekdays_mask"] = sum(1 << weekday for weekday in normalized_frequency["weekdays"])
+
         normalized_schedules.append(
             {
                 "hour": hour,
                 "minute": minute,
                 "duration_sec": duration_sec,
                 "channel_mask": channel_mask,
+                "frequency": normalized_frequency,
             }
         )
 
@@ -309,11 +390,13 @@ def validate_device_config(config: dict):
         "force_watering": force_watering,
         "debug_log_on_wake": debug_log_on_wake,
         "ota_check_interval_sec": ota_check_interval_sec,
+        "watering_pattern": normalized_watering_pattern,
+        "soil_calibration": normalized_soil_calibration,
         "schedules": normalized_schedules,
     }
     payload = json.dumps(normalized, ensure_ascii=True, separators=(",", ":"))
-    if len(payload.encode("utf-8")) >= 512:
-        raise DeviceConfigValidationError("config payload must be less than 512 bytes")
+    if len(payload.encode("utf-8")) >= 2048:
+        raise DeviceConfigValidationError("config payload must be less than 2048 bytes")
     return normalized
 
 

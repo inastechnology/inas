@@ -58,6 +58,7 @@ class HealthMonitorTask:
 
             changed |= self._check_device_offline(device_id, record, now)
             changed |= self._check_watering_missing(device_id, record, now)
+            changed |= self._check_soil_calibration_suggested(device_id, record)
 
         if changed:
             self._save_state()
@@ -132,6 +133,29 @@ class HealthMonitorTask:
                 },
             )
         return self._clear_alert(device_id, "watering_missing")
+
+    def _check_soil_calibration_suggested(self, device_id: str, record: dict):
+        if not _is_watering_device(record):
+            return self._clear_alert(device_id, "soil_calibration_suggested")
+
+        payload = record.get("last_status") or {}
+        if not isinstance(payload, dict) or payload.get("soil_calibration_suggested") is not True:
+            return self._clear_alert(device_id, "soil_calibration_suggested")
+
+        return self._raise_alert(
+            device_id,
+            "soil_calibration_suggested",
+            record,
+            {
+                "soil_raw_before_watering": payload.get("soil_raw_before_watering"),
+                "soil_raw_after_watering": payload.get("soil_raw_after_watering"),
+                "soil_calibration_dry_raw": payload.get("soil_calibration_dry_raw"),
+                "soil_calibration_wet_raw": payload.get("soil_calibration_wet_raw"),
+                "soil_calibration_suggested_dry_raw": payload.get("soil_calibration_suggested_dry_raw"),
+                "soil_calibration_suggested_wet_raw": payload.get("soil_calibration_suggested_wet_raw"),
+                "soil_calibration_applied": payload.get("soil_calibration_applied"),
+            },
+        )
 
     def _raise_alert(self, device_id: str, alert_type: str, record: dict, details: dict):
         device_state = self.state.setdefault(device_id, {})
