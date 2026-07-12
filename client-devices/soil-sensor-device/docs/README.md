@@ -1,6 +1,8 @@
 # INA Soil Sensor Docs
 
 Document the fixed `SOI` hardware contract here:
+Layer boundaries follow
+[../../docs/firmware_layering_policy.md](../../docs/firmware_layering_policy.md).
 
 - pin assignment
 - connected sensors and actuators

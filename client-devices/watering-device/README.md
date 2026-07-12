@@ -121,6 +121,9 @@ See more details in the [Makefile](Makefile) or `make help` command.
 
 ## Source Layout
 
+Layer boundaries follow
+[../docs/firmware_layering_policy.md](../docs/firmware_layering_policy.md).
+
 Device-specific code remains in this project:
 
 - `src/app/src/app.cpp`: `WateringDevice : AppDevice`, implementing runtime config, watering cycle, and status payload hooks.

@@ -12,6 +12,8 @@ client-devices/<device>/lib/ina-client-common
 The library is intentionally limited to reusable client firmware behavior. Keep
 device-specific application flow, pin maps, sensor logic, actuator logic, and
 runtime config schemas inside each device project.
+Detailed layer separation rules are defined in
+[../../../docs/firmware_layering_policy.md](../../../docs/firmware_layering_policy.md).
 
 ## Device Lifecycle
 

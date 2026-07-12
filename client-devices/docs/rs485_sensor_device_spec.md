@@ -229,8 +229,8 @@ that enclosure and wiring work can be reused:
 
 | Signal | XIAO pin | GPIO | Purpose |
 |---|---:|---:|---|
-| Valve MOSFET | `D2` | `GPIO3` | Irrigation line 1 |
-| Pump MOSFET | `D3` | `GPIO4` | Pump output while irrigation is active |
+| Irrigation output 1 MOSFET | `D2` | `GPIO3` | Irrigation channel 1 |
+| Irrigation output 2 MOSFET | `D3` | `GPIO4` | Irrigation channel 2 |
 | RS485 DE/RE | `D4` | `GPIO5` | Transmit/receive direction control |
 | RS485 TX | `D6` | `GPIO43` | UART TX |
 | RS485 RX | `D7` | `GPIO44` | UART RX |

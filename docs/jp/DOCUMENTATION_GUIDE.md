@@ -7,9 +7,9 @@
 ## 言語ルール
 
 - 既定のドキュメントは英語で書く。
-- 日本語版は、同じ階層にある `jp/` ディレクトリ配下に置く。
+- 日本語版は、`docs/`、`doc/`、`<device>/docs/` など、対象のドキュメントツリー内にある `jp/` ディレクトリ配下に置く。
 - 可能な限り、英語版と日本語版で同じファイル名を使う。
-- 詳細な既存文書が日本語だけの場合は、日本語原文を `jp/` に残し、既定位置には英語の要約または入口文書を置く。
+- 詳細な既存文書が日本語だけの場合は、日本語原文を対象ドキュメントツリーの `jp/` に置き、既定位置には英語の要約または入口文書を置く。
 
 例:
 
@@ -17,8 +17,14 @@
 docs/SYSTEM_SPECIFICATION.md
 docs/jp/SYSTEM_SPECIFICATION.md
 
+hub/README.md
+hub/doc/jp/README.md
+
 hub/doc/OPERATIONS.md
 hub/doc/jp/OPERATIONS.md
+
+client-devices/README.md
+client-devices/docs/jp/README.md
 
 client-devices/docs/pin_assignments.md
 client-devices/docs/jp/pin_assignments.md
@@ -26,19 +32,20 @@ client-devices/docs/jp/pin_assignments.md
 
 ## ディレクトリルール
 
-各階層は、自分の階層に日本語版ディレクトリを持つ。
+各ドキュメント階層は、自分の階層に日本語版ディレクトリを持つ。専用の `doc` / `docs` ディレクトリを持たない入口文書は、最も近いドキュメントツリーに日本語版を置く。
 
 | 既定位置 | 日本語版 | 対象 |
 |---|---|---|
+| `README.md` | `docs/jp/README.md` | repository 入口文書 |
 | `docs/` | `docs/jp/` | 横断仕様、全体図 |
-| `hub/` | `hub/jp/` | hub の入口文書 |
+| `hub/README.md` | `hub/doc/jp/README.md` | hub の入口文書 |
 | `hub/doc/` | `hub/doc/jp/` | hub 運用、Cloudflare、UX、設計メモ |
 | `hub/doc/spec/` | `hub/doc/spec/jp/` | hub 実装仕様 |
-| `client-devices/` | `client-devices/jp/` | client device の入口文書 |
+| `client-devices/README.md` | `client-devices/docs/jp/README.md` | client device の入口文書 |
 | `client-devices/docs/` | `client-devices/docs/jp/` | device 共通仕様、図 |
 | `client-devices/<device>/docs/` | `client-devices/<device>/docs/jp/` | device 固有の手順書、仕様書 |
 
-下位コンポーネントに属する日本語文書を、グローバルな `jp/` だけに集約しない。英語版の隣にある `jp/` へ置く。
+下位コンポーネントに属する日本語文書を、グローバルな `jp/` だけに集約しない。また、repository root、`hub/`、`client-devices/` の直下に top-level `jp/` を作らず、`doc` / `docs` 配下に置く。
 
 ## リンクルール
 

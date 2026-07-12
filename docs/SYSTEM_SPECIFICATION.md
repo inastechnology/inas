@@ -57,6 +57,7 @@ hub.
 
 Related documents:
 
+- [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md)
 - [hub/doc/NETWORK_ARCHITECTURE.md](../hub/doc/NETWORK_ARCHITECTURE.md)
 - [hub/doc/CLOUDFLARE_HOSTED_OPTION.md](../hub/doc/CLOUDFLARE_HOSTED_OPTION.md)
 - [hub/doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md](../hub/doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md)
@@ -121,6 +122,7 @@ variant.
 Related documents:
 
 - [client-devices/docs/rs485_sensor_device_spec.md](../client-devices/docs/rs485_sensor_device_spec.md)
+- [client-devices/docs/firmware_layering_policy.md](../client-devices/docs/firmware_layering_policy.md)
 - [client-devices/docs/pin_assignments.md](../client-devices/docs/pin_assignments.md)
 - [client-devices/README.md](../client-devices/README.md)
 - [CULTIVATION_SYSTEM_ORCHESTRATION.md](CULTIVATION_SYSTEM_ORCHESTRATION.md)
@@ -224,20 +226,22 @@ printed in logs or committed to documentation.
 
 When adding functionality:
 
-1. Decide which `device_kind` owns the behavior. Do not hide product differences
+1. Apply [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md) and decide which layer owns the decision.
+2. Decide which `device_kind` owns the behavior. Do not hide product differences
    behind a dynamic capabilities model.
-2. Decide whether the data belongs to the whole field, section, ridge/bed, or
+3. Decide whether the data belongs to the whole field, section, ridge/bed, or
    measurement point.
-3. For measurements, add definitions and store time-series values through
+4. For measurements, add definitions and store time-series values through
    `sensor_measurements`.
-4. For actions, store proposal, approval, execution, and evaluation history.
-5. Keep the primary UI farmer-facing; move raw JSON to detail screens.
-6. Add Cloudflare hosted features without breaking the local hub operating model.
+5. For actions, store proposal, approval, execution, and evaluation history.
+6. Keep the primary UI farmer-facing; move raw JSON to detail screens.
+7. Add Cloudflare hosted features without breaking the local hub operating model.
 
 ## Related Documents
 
 - [hub/README.md](../hub/README.md)
 - [client-devices/README.md](../client-devices/README.md)
+- [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md)
 - [hub/doc/AI_AGENT_ENVIRONMENT_SETUP.md](../hub/doc/AI_AGENT_ENVIRONMENT_SETUP.md)
 - [hub/doc/ENVIRONMENT.md](../hub/doc/ENVIRONMENT.md)
 - [hub/doc/OPERATIONS.md](../hub/doc/OPERATIONS.md)

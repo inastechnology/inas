@@ -23,6 +23,8 @@
 - Use module-prefixed snake_case names: `app_*` for app layer, `hal_*` for HAL.
 - Keep filenames lowercase with module prefixes, e.g. `app_watering.cpp`, `hal_output.h`.
 - Prefer `constexpr`/typed constants for compile-time values; reserve macros for build flags and cross-module defines.
+- Follow [../docs/firmware_layering_policy.md](../docs/firmware_layering_policy.md):
+  HAL modules describe hardware primitives, not product behavior; App modules own runtime config, schedules, MQTT payloads, and watering policy.
 
 ## Testing Guidelines
 - Place tests under `test/`, grouped by feature (for example `test/watering/test_watering.cpp`).

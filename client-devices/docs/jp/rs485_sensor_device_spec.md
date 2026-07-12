@@ -192,8 +192,8 @@ ENV status payload:
 
 | 信号 | XIAO ピン | GPIO | 用途 |
 |---|---:|---:|---|
-| Valve MOSFET | `D2` | `GPIO3` | 灌水系統 1 |
-| Pump MOSFET | `D3` | `GPIO4` | 灌水中のポンプ出力 |
+| 灌水1系 MOSFET | `D2` | `GPIO3` | 灌水系統 1 |
+| 灌水2系 MOSFET | `D3` | `GPIO4` | 灌水系統 2 |
 | RS485 DE/RE | `D4` | `GPIO5` | 送受信方向制御 |
 | RS485 TX | `D6` | `GPIO43` | UART TX |
 | RS485 RX | `D7` | `GPIO44` | UART RX |

@@ -42,3 +42,6 @@ Device projects currently own:
 `app_network` must not include a device runtime configuration header directly.
 `AppDevice::initialize()` registers the concrete device as the active
 `AppDeviceAdapter` before the common network stack starts.
+
+Firmware layer separation rules are defined in
+[../docs/firmware_layering_policy.md](../docs/firmware_layering_policy.md).

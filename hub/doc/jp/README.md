@@ -1,9 +1,13 @@
 # ina-device-hub
 
+英語版: [../../README.md](../../README.md)
+
+この文書のコマンド例は、特記がない限り `hub/` ディレクトリで実行します。
+
 ina-device-hub は、MQTT で受信したセンサーデータやカメラ画像を集約し、ローカル／クラウドへ保存・連携する
 軽量な IoT ハブです（Turso / S3 互換ストレージ対応、Flask による簡易 Web 表示、タイムラプス等）。
 
-hub と client device を横断した全体仕様は `../docs/SYSTEM_SPECIFICATION.md` を参照してください。Cloudflare、デバイス種別、圃場データ、OTA の関係を図付きでまとめています。
+hub と client device を横断した全体仕様は [../../../docs/jp/SYSTEM_SPECIFICATION.md](../../../docs/jp/SYSTEM_SPECIFICATION.md) を参照してください。Cloudflare、デバイス種別、圃場データ、OTA の関係を図付きでまとめています。
 
 なにができるか（要点）
 
@@ -91,13 +95,13 @@ sudo ./scripts/hub_service.sh restart
 Cloudflare hosted option は 2 種類あります。
 
 - Tunnel 版: デバイス側で local hub を起動し、Cloudflare Access + Tunnel で公開します。
-- Cloud app 版: Cloudflare Workers + Hono + Turso で管理 API / UI を動かします。実装方針と現在の範囲は `doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` を参照してください。
+- Cloud app 版: Cloudflare Workers + Hono + Turso で管理 API / UI を動かします。実装方針と現在の範囲は [CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md](CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md) を参照してください。
 
-Tunnel 版のネットワーク構成図は `doc/NETWORK_ARCHITECTURE.md` を参照してください。
+Tunnel 版のネットワーク構成図は [NETWORK_ARCHITECTURE.md](NETWORK_ARCHITECTURE.md) を参照してください。
 
-hub の管理 UI は、営農者が水やり状況・土壌水分・起動履歴を先に確認できる admin panel 風の構成にしています。UI 改善方針は `doc/HUB_ADMIN_UX_IMPLEMENTATION.md` を参照してください。
+hub の管理 UI は、営農者が水やり状況・土壌水分・起動履歴を先に確認できる admin panel 風の構成にしています。UI 改善方針は [HUB_ADMIN_UX_IMPLEMENTATION.md](HUB_ADMIN_UX_IMPLEMENTATION.md) を参照してください。
 
-圃場画面では、作物名、品種、生育段階、栽培方式、土壌・培地、目標レンジ、制御方針、参考情報を登録できます。圃場内の区画・畝・測点も任意で定義でき、ENV/SOI/WTR/WRS/カメラなどのデバイスを「圃場全体」「区画」「畝」「測点」に紐づけられます。これらを前提条件として、hub は最新センサー値との差から灌水・液肥・噴霧などの判断候補を作ります。現時点で hub から制御できるのは WTR/WRS の灌水のみで、液肥と噴霧は将来デバイス向けの候補として記録します。改善ループの仕様は `doc/AGRI_IMPROVEMENT_LOOP.md` を参照してください。
+圃場画面では、作物名、品種、生育段階、栽培方式、土壌・培地、目標レンジ、制御方針、参考情報を登録できます。圃場内の区画・畝・測点も任意で定義でき、ENV/SOI/WTR/WRS/カメラなどのデバイスを「圃場全体」「区画」「畝」「測点」に紐づけられます。これらを前提条件として、hub は最新センサー値との差から灌水・液肥・噴霧などの判断候補を作ります。現時点で hub から制御できるのは WTR/WRS の灌水のみで、液肥と噴霧は将来デバイス向けの候補として記録します。改善ループの仕様は [AGRI_IMPROVEMENT_LOOP.md](AGRI_IMPROVEMENT_LOOP.md) を参照してください。
 
 実データがない開発環境では、サンプルの WTR デバイスと履歴を使って UI/UX を確認できます。次のコマンドは Flask の web UI だけを起動し、MQTT やデバイス接続は開始しません。
 
@@ -109,7 +113,7 @@ python scripts/run_admin_demo_server.py
 
 Tunnel 版を使う場合は、`.env` に固定したい Cloudflare account / hostname、許可 email、ユーザー側で発行した `CLOUDFLARE_ACCESS_API_TOKEN` を設定してから、次のスクリプトを実行します。
 
-AI Agent に環境構築や Cloudflare hosted option のセットアップを依頼する場合は、先に `doc/AI_AGENT_ENVIRONMENT_SETUP.md` を読ませてください。`.env` を正として扱うこと、secret を出力しないこと、Cloudflare resource を idempotent script で作成・再利用することを前提にしています。
+AI Agent に環境構築や Cloudflare hosted option のセットアップを依頼する場合は、先に [AI_AGENT_ENVIRONMENT_SETUP.md](AI_AGENT_ENVIRONMENT_SETUP.md) を読ませてください。`.env` を正として扱うこと、secret を出力しないこと、Cloudflare resource を idempotent script で作成・再利用することを前提にしています。
 
 ```bash
 # Access / Tunnel / DNS を構築し、必要なら cloudflared を hub/.data/bin に入れる

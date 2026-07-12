@@ -5,6 +5,7 @@
 `SOI` と `ENV` は測定専用デバイスとして実装する。ただし電源要件が異なるため、`SOI` は 18650 バッテリー前提の土壌水分専用、`ENV` は 12V 電源前提の RS485 センサーハブとして分ける。
 
 RS485 Modbus RTU の低レベル処理は共通ライブラリに置き、`ENV` は register map と status payload だけを持つ。`SOI` は現状の接続制約に合わせて ADC 土壌水分センサーのみを読む。
+レイヤ境界は [firmware_layering_policy.md](firmware_layering_policy.md) に従う。
 
 ## 実装ステップ
 
@@ -20,11 +21,12 @@ RS485 Modbus RTU の低レベル処理は共通ライブラリに置き、`ENV` 
    - キャリブレーション値は LittleFS に保存し、deep sleep 後も保持する。
    - 初期 sleep interval は 900 秒。
 
-3. RS485/Modbus 共通 HAL
+3. RS485/Modbus 共通レイヤ
    - `hal_rs485_modbus_init()` で UART と DE/RE ピンを初期化する。
-   - `hal_rs485_modbus_read_registers()` で Modbus function `0x03` / `0x04` を読む。
-   - CRC16、slave id、function code、byte count を検証する。
-   - timeout や CRC 不一致は `false` で返し、status payload では `par_ok=false` / `soil_rs485_ok=false` にする。
+   - `hal_rs485_bus_read_registers()` で register 操作として公開する。
+   - sensor register map と unit conversion は `hal_rs485_sensor_protocol` に置く。
+   - CRC16、slave id、function code、byte count は Modbus layer で検証する。
+   - timeout や CRC 不一致は `false` で返し、device App が status payload で `par_ok=false` / `soil_rs485_ok=false` として表現する。
 
 4. ENV firmware
    - 起床時に PAR register を読む。

@@ -27,11 +27,14 @@ an RS485 Modbus soil sensor.
 
 ## Firmware Layers
 
-- `hal_rs485_bus`: common RS485 bus boundary used by protocol drivers.
+Layer boundaries follow
+[../docs/firmware_layering_policy.md](../docs/firmware_layering_policy.md).
+
+- `hal_power_switch`: common switched MOSFET/power control. WRS uses separate
+  instances for irrigation output 1, irrigation output 2, and 12V sensor power.
+- `hal_rs485_bus`: common RS485 bus boundary.
 - `hal_rs485_sensor_protocol`: common Modbus register mapping for RS485 soil
   and PAR sensors.
-- `hal_power_switch`: common switched 12V sensor power control.
-- `hal_mosfet_output`: common timed MOSFET output control.
 - `app_wrs_runtime_config`: WRS runtime config, schedule parsing, persistence.
 - `app.cpp`: WRS cycle orchestration.
 

@@ -43,6 +43,7 @@ INAS は、小規模な営農者が水やり、土壌状態、環境状態、作
 
 関連仕様:
 
+- [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md)
 - [hub/doc/jp/NETWORK_ARCHITECTURE.md](../../hub/doc/jp/NETWORK_ARCHITECTURE.md)
 - [hub/doc/jp/CLOUDFLARE_HOSTED_OPTION.md](../../hub/doc/jp/CLOUDFLARE_HOSTED_OPTION.md)
 - [hub/doc/jp/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md](../../hub/doc/jp/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md)
@@ -88,8 +89,9 @@ WRS は RS485 層でコンポーサブルにする。PAR、日射、土壌水分
 関連仕様:
 
 - [client-devices/docs/jp/rs485_sensor_device_spec.md](../../client-devices/docs/jp/rs485_sensor_device_spec.md)
+- [client-devices/docs/jp/firmware_layering_policy.md](../../client-devices/docs/jp/firmware_layering_policy.md)
 - [client-devices/docs/jp/pin_assignments.md](../../client-devices/docs/jp/pin_assignments.md)
-- [client-devices/jp/README.md](../../client-devices/jp/README.md)
+- [client-devices/docs/jp/README.md](../../client-devices/docs/jp/README.md)
 - [CULTIVATION_SYSTEM_ORCHESTRATION.md](CULTIVATION_SYSTEM_ORCHESTRATION.md)
 
 ## 圃場とデバイス配置
@@ -176,17 +178,19 @@ local hub:
 
 新しい機能を追加する場合は、次の順で整理する。
 
-1. どの device_kind の責務かを決める。可変 capabilities で逃がさない。
-2. 圃場全体、区画、畝、測点のどこに紐づくデータかを決める。
-3. 測定値なら `sensor_measurement_definitions` と `sensor_measurements` に載せる。
-4. アクションなら、提案、承認、実行、評価の履歴を残す。
-5. UI は営農者向けサマリを先に出し、raw JSON は詳細へ置く。
-6. Cloudflare hosted option は local hub を壊さず、Turso を境界に段階的に追加する。
+1. [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md) に沿って、どの layer が判断を持つかを決める。
+2. どの device_kind の責務かを決める。可変 capabilities で逃がさない。
+3. 圃場全体、区画、畝、測点のどこに紐づくデータかを決める。
+4. 測定値なら `sensor_measurement_definitions` と `sensor_measurements` に載せる。
+5. アクションなら、提案、承認、実行、評価の履歴を残す。
+6. UI は営農者向けサマリを先に出し、raw JSON は詳細へ置く。
+7. Cloudflare hosted option は local hub を壊さず、Turso を境界に段階的に追加する。
 
 ## 関連ドキュメント
 
-- [hub/jp/README.md](../../hub/jp/README.md)
-- [client-devices/jp/README.md](../../client-devices/jp/README.md)
+- [hub/doc/jp/README.md](../../hub/doc/jp/README.md)
+- [client-devices/docs/jp/README.md](../../client-devices/docs/jp/README.md)
+- [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md)
 - [hub/doc/jp/AI_AGENT_ENVIRONMENT_SETUP.md](../../hub/doc/jp/AI_AGENT_ENVIRONMENT_SETUP.md)
 - [hub/doc/jp/ENVIRONMENT.md](../../hub/doc/jp/ENVIRONMENT.md)
 - [hub/doc/jp/OPERATIONS.md](../../hub/doc/jp/OPERATIONS.md)

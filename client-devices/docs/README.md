@@ -14,6 +14,7 @@ Japanese version:
 
 ## Specifications
 
+- [Client firmware layering policy](firmware_layering_policy.md)
 - [XIAO ESP32S3 pin assignments](pin_assignments.md)
 - [RS485 sensor device specification](rs485_sensor_device_spec.md)
 - [RS485 sensor device implementation plan](rs485_sensor_device_implementation_plan.md)

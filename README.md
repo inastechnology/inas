@@ -10,8 +10,11 @@ options. The draw.io source for the system diagrams is
 [docs/assets/inas_system_diagrams.drawio](docs/assets/inas_system_diagrams.drawio).
 Documentation writing and localization rules are defined in
 [docs/DOCUMENTATION_GUIDE.md](docs/DOCUMENTATION_GUIDE.md).
-Japanese documentation is stored under `jp/` directories, such as
-[docs/jp/SYSTEM_SPECIFICATION.md](docs/jp/SYSTEM_SPECIFICATION.md).
+System-wide layer boundaries are defined in
+[docs/ARCHITECTURE_LAYERING_POLICY.md](docs/ARCHITECTURE_LAYERING_POLICY.md).
+Japanese documentation is stored under documentation directories such as
+[docs/jp/README.md](docs/jp/README.md), [hub/doc/jp/README.md](hub/doc/jp/README.md),
+and [client-devices/docs/jp/README.md](client-devices/docs/jp/README.md).
 
 ## Client Device Layout
 

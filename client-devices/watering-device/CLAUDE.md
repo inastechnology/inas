@@ -30,6 +30,11 @@ Keep watering logic, pin mapping, runtime config schema, sensor behavior, and
 status payload shape in this project. Shared boot/wake lifecycle code belongs in
 `client-devices/common/lib/ina-client-common`.
 
+Layer boundaries follow
+[`../docs/firmware_layering_policy.md`](../docs/firmware_layering_policy.md).
+HAL modules must describe hardware primitives or concrete peripherals. Do not
+add product-name wrappers that only group existing HAL calls.
+
 ---
 
 ## Build & Flash Workflow
@@ -117,6 +122,9 @@ Large payloads use `app_network_send_large()` which chunks data in 896-byte writ
 ---
 
 ## HAL Layer Conventions
+
+Follow the firmware layering policy above. WTR currently has device-specific
+HAL modules only where they represent concrete hardware behavior.
 
 - **`hal_output`** — single MOSFET channel driven by an ESP32 hardware timer (Timer 0, 80× prescaler → 1 µs/tick). `hal_output_start_async(duration_ms, callback)` starts the pulse; an ISR fires `on_complete` and pulls the pin LOW. Only one channel at a time (guarded by `s_in_progress`).
 - **`hal_soil`** — ADC read with linear mapping from (`dry_raw=1895`, `wet_raw=1285`) to 0–100%. Calibration values match real sensor measurements for this hardware.

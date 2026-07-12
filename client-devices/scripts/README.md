@@ -4,6 +4,10 @@
 
 Use `create_device_project.py` to scaffold a new PlatformIO firmware project
 that uses the shared INAS client library.
+Before creating a new project, check
+[../docs/firmware_layering_policy.md](../docs/firmware_layering_policy.md) and
+confirm that the change is really a new fixed hardware contract rather than App
+orchestration over existing common HAL/protocol modules.
 
 ```bash
 python3 client-devices/scripts/create_device_project.py soil-device SOI \

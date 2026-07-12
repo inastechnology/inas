@@ -4,6 +4,12 @@
 
 This is a Python IoT hub using a `src` layout. Application modules live in `src/ina_device_hub/`, including MQTT handling, storage, repositories, scheduling, Flask web serving, and settings. HTML templates are in `src/ina_device_hub/templates/`. Operational scripts live in `scripts/`, systemd units in `systemd/`, and design/operations documentation in `doc/` and `doc/spec/`. Root files such as `pyproject.toml`, `README.md`, `serve.sh`, and environment templates define local setup and entry points.
 
+System-wide layer boundaries are defined in
+`../docs/ARCHITECTURE_LAYERING_POLICY.md`. Keep Flask routes thin, put
+orchestration/domain decisions in services, keep persistence in repositories,
+and isolate external systems in connectors/adapters. Hub code must not depend on
+firmware GPIO behavior or sensor register-map details.
+
 ## Build, Test, and Development Commands
 
 - `rye sync`: install and sync project dependencies into the managed environment.

@@ -13,6 +13,7 @@ are different. `SOI` is a battery-powered soil moisture node. `ENV` is a
 Low-level RS485 Modbus RTU handling belongs in the shared library. `ENV` owns
 the register maps and status payload conversion. `SOI` reads only an analog soil
 moisture sensor for now.
+Layer boundaries follow [firmware_layering_policy.md](firmware_layering_policy.md).
 
 ## Implementation Steps
 
@@ -31,13 +32,16 @@ moisture sensor for now.
    - Persist calibration values in LittleFS across deep sleep.
    - Start with a 900-second sleep interval.
 
-3. Shared RS485/Modbus HAL
+3. Shared RS485/Modbus layers
    - Initialize UART and DE/RE pin with `hal_rs485_modbus_init()`.
-   - Read Modbus function `0x03` / `0x04` registers with
-     `hal_rs485_modbus_read_registers()`.
-   - Validate CRC16, slave id, function code, and byte count.
-   - Return `false` on timeout or CRC mismatch, and expose failures in status
-     payloads such as `par_ok=false` or `soil_rs485_ok=false`.
+   - Expose register operations through `hal_rs485_bus_read_registers()`.
+   - Keep sensor register maps and unit conversion in
+     `hal_rs485_sensor_protocol`.
+   - Validate CRC16, slave id, function code, and byte count in the Modbus
+     layer.
+   - Return `false` on timeout or CRC mismatch, and let the device App expose
+     failures in status payloads such as `par_ok=false` or
+     `soil_rs485_ok=false`.
 
 4. ENV application
    - Read the PAR register after wake.

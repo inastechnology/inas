@@ -6,7 +6,7 @@ local admin UI/API, and integrates with Turso/libSQL and S3-compatible storage.
 
 Japanese version:
 
-- [jp/README.md](jp/README.md)
+- [doc/jp/README.md](doc/jp/README.md)
 
 Cross-project specification:
 

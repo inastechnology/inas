@@ -5,6 +5,8 @@ firmware, Cloudflare hosted options, field data, OTA, and operational model.
 
 - [SYSTEM_SPECIFICATION.md](SYSTEM_SPECIFICATION.md): start here for the INAS
   system-level specification.
+- [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md): system-wide
+  layer boundaries for hub, firmware, contracts, storage, UI, and adapters.
 - [DOCUMENTATION_GUIDE.md](DOCUMENTATION_GUIDE.md): documentation writing,
   localization, linking, and asset rules.
 - [CULTIVATION_SYSTEM_ORCHESTRATION.md](CULTIVATION_SYSTEM_ORCHESTRATION.md):
@@ -24,7 +26,7 @@ python3 docs/assets/generate_system_diagrams.py
 Documentation convention:
 
 - Default documents in each directory are written in English.
-- Japanese documents are stored under a sibling `jp/` directory at the same
-  hierarchy level.
+- Japanese documents are stored under `jp/` inside the relevant documentation
+  tree.
 - Keep paths stable where possible, and link from English docs to Japanese docs
   when both are available.

@@ -4,6 +4,8 @@ PlatformIO firmware project for `SOI`.
 
 This project is generated from the INAS device scaffold and uses the shared
 client library at `lib/ina-client-common`.
+Layer boundaries follow
+[../docs/firmware_layering_policy.md](../docs/firmware_layering_policy.md).
 
 `SOI` is a low-power soil moisture node. It currently reads only an analog soil
 moisture sensor on `A0`; 12V RS485 sensors such as EC/pH/NPK belong to `ENV`.

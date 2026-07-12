@@ -2,18 +2,16 @@
 
 #include <Arduino.h>
 
-static hal_power_switch_config_t s_config = {};
-static bool s_initialized = false;
-static bool s_enabled = false;
+static hal_power_switch_t s_default_switch = {};
 
-static int inactive_level()
+static int inactive_level(const hal_power_switch_config_t &config)
 {
-    return s_config.active_high ? LOW : HIGH;
+    return config.active_high ? LOW : HIGH;
 }
 
-static int active_level()
+static int active_level(const hal_power_switch_config_t &config)
 {
-    return s_config.active_high ? HIGH : LOW;
+    return config.active_high ? HIGH : LOW;
 }
 
 hal_power_switch_config_t hal_power_switch_default_config()
@@ -25,74 +23,131 @@ hal_power_switch_config_t hal_power_switch_default_config()
     return config;
 }
 
-bool hal_power_switch_init(const hal_power_switch_config_t *config)
+bool hal_power_switch_open(hal_power_switch_t *power_switch, const hal_power_switch_config_t *config)
 {
-    s_config = config != nullptr ? *config : hal_power_switch_default_config();
-    s_enabled = false;
-
-    if (s_config.pin < 0)
+    if (power_switch == nullptr)
     {
-        s_initialized = true;
-        Serial.println("12V sensor power switch disabled: APP_SENSOR_12V_POWER_PIN is not set");
+        return false;
+    }
+    if (power_switch->initialized)
+    {
+        hal_power_switch_close(power_switch);
+    }
+
+    power_switch->config = config != nullptr ? *config : hal_power_switch_default_config();
+    power_switch->enabled = false;
+
+    if (power_switch->config.pin < 0)
+    {
+        power_switch->initialized = true;
+        Serial.println("Power switch disabled: pin is not set");
         return true;
     }
 
-    pinMode(static_cast<uint8_t>(s_config.pin), OUTPUT);
-    digitalWrite(static_cast<uint8_t>(s_config.pin), inactive_level());
-    s_initialized = true;
-    Serial.printf("12V sensor power switch initialized: pin=%d active_high=%s settle=%lu ms\n",
-                  s_config.pin,
-                  s_config.active_high ? "true" : "false",
-                  static_cast<unsigned long>(s_config.settle_ms));
+    pinMode(static_cast<uint8_t>(power_switch->config.pin), OUTPUT);
+    digitalWrite(static_cast<uint8_t>(power_switch->config.pin), inactive_level(power_switch->config));
+    power_switch->initialized = true;
+    Serial.printf("Power switch initialized: pin=%d active_high=%s settle=%lu ms\n",
+                  power_switch->config.pin,
+                  power_switch->config.active_high ? "true" : "false",
+                  static_cast<unsigned long>(power_switch->config.settle_ms));
     return true;
 }
 
-void hal_power_switch_deinit()
+void hal_power_switch_close(hal_power_switch_t *power_switch)
 {
-    if (s_initialized && s_config.pin >= 0)
+    if (power_switch == nullptr)
     {
-        digitalWrite(static_cast<uint8_t>(s_config.pin), inactive_level());
-        pinMode(static_cast<uint8_t>(s_config.pin), INPUT);
+        return;
     }
-    s_initialized = false;
-    s_enabled = false;
-}
 
-bool hal_power_switch_is_configured()
-{
-    return s_initialized && s_config.pin >= 0;
-}
-
-bool hal_power_switch_is_enabled()
-{
-    return s_enabled;
-}
-
-void hal_power_switch_set_enabled(bool enabled)
-{
-    if (!s_initialized)
+    if (power_switch->initialized && power_switch->config.pin >= 0)
     {
-        hal_power_switch_init(nullptr);
+        digitalWrite(static_cast<uint8_t>(power_switch->config.pin), inactive_level(power_switch->config));
+        pinMode(static_cast<uint8_t>(power_switch->config.pin), INPUT);
     }
-    if (s_config.pin >= 0)
-    {
-        digitalWrite(static_cast<uint8_t>(s_config.pin), enabled ? active_level() : inactive_level());
-    }
-    s_enabled = enabled;
+    power_switch->initialized = false;
+    power_switch->enabled = false;
 }
 
-bool hal_power_switch_enable_and_wait(uint32_t settle_ms_override)
+bool hal_power_switch_configured(const hal_power_switch_t *power_switch)
 {
-    if (!s_initialized && !hal_power_switch_init(nullptr))
+    return power_switch != nullptr && power_switch->initialized && power_switch->config.pin >= 0;
+}
+
+bool hal_power_switch_enabled(const hal_power_switch_t *power_switch)
+{
+    return power_switch != nullptr && power_switch->enabled;
+}
+
+bool hal_power_switch_set(hal_power_switch_t *power_switch, bool enabled)
+{
+    if (power_switch == nullptr || !power_switch->initialized)
+    {
+        return false;
+    }
+    if (power_switch->config.pin >= 0)
+    {
+        digitalWrite(static_cast<uint8_t>(power_switch->config.pin),
+                     enabled ? active_level(power_switch->config) : inactive_level(power_switch->config));
+    }
+    power_switch->enabled = enabled;
+    return true;
+}
+
+bool hal_power_switch_enable_wait(hal_power_switch_t *power_switch, uint32_t settle_ms_override)
+{
+    if (power_switch == nullptr || !power_switch->initialized)
     {
         return false;
     }
 
-    hal_power_switch_set_enabled(true);
-    const uint32_t wait_ms = settle_ms_override > 0 ? settle_ms_override : s_config.settle_ms;
+    if (!hal_power_switch_set(power_switch, true))
+    {
+        return false;
+    }
+    const uint32_t wait_ms = settle_ms_override > 0 ? settle_ms_override : power_switch->config.settle_ms;
     if (wait_ms > 0)
     {
         delay(wait_ms);
     }
     return true;
+}
+
+bool hal_power_switch_init(const hal_power_switch_config_t *config)
+{
+    return hal_power_switch_open(&s_default_switch, config);
+}
+
+void hal_power_switch_deinit()
+{
+    hal_power_switch_close(&s_default_switch);
+}
+
+bool hal_power_switch_is_configured()
+{
+    return hal_power_switch_configured(&s_default_switch);
+}
+
+bool hal_power_switch_is_enabled()
+{
+    return hal_power_switch_enabled(&s_default_switch);
+}
+
+void hal_power_switch_set_enabled(bool enabled)
+{
+    if (!s_default_switch.initialized)
+    {
+        hal_power_switch_init(nullptr);
+    }
+    hal_power_switch_set(&s_default_switch, enabled);
+}
+
+bool hal_power_switch_enable_and_wait(uint32_t settle_ms_override)
+{
+    if (!s_default_switch.initialized && !hal_power_switch_init(nullptr))
+    {
+        return false;
+    }
+    return hal_power_switch_enable_wait(&s_default_switch, settle_ms_override);
 }

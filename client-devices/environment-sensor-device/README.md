@@ -4,6 +4,8 @@ PlatformIO firmware project for `ENV`.
 
 This project is generated from the INAS device scaffold and uses the shared
 client library at `lib/ina-client-common`.
+Layer boundaries follow
+[../docs/firmware_layering_policy.md](../docs/firmware_layering_policy.md).
 
 `ENV` is a 12V-powered RS485 sensor node. Use it for PAR/light sensors and
 12V soil EC/pH/NPK sensors that are not suitable for the battery-powered `SOI`

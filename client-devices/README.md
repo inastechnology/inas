@@ -7,8 +7,8 @@ field data, and OTA, see
 [../docs/SYSTEM_SPECIFICATION.md](../docs/SYSTEM_SPECIFICATION.md).
 Device-specific XIAO ESP32S3 pin assignments are documented in
 [docs/pin_assignments.md](docs/pin_assignments.md).
-Japanese versions are stored under `jp/` directories at the same hierarchy
-level, such as [docs/jp/pin_assignments.md](docs/jp/pin_assignments.md).
+Japanese device documentation is indexed from
+[docs/jp/README.md](docs/jp/README.md).
 
 ```text
 client-devices/
@@ -20,6 +20,9 @@ client-devices/
 ```
 
 ## Layering Policy
+
+Detailed firmware layer rules are defined in
+[docs/firmware_layering_policy.md](docs/firmware_layering_policy.md).
 
 - `common/lib/ina-client-common`: shared client firmware library.
 - `<device>/src/app`: device-specific `AppDevice` subclass, runtime config, and

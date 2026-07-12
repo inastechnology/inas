@@ -9,40 +9,35 @@
 #include "app_device.h"
 #include "app_network.h"
 #include "app_wrs_runtime_config.h"
-#include "hal_mosfet_output.h"
 #include "hal_power_switch.h"
 #include "hal_rs485_bus.h"
 #include "hal_rs485_sensor_protocol.h"
 
+#define APP_WRS_WATERING_DUE_GRACE_SEC (15 * 60)
+
 #ifndef APP_WRS_IRRIGATION1_PIN
-#ifdef APP_WRS_VALVE_PIN
-#define APP_WRS_IRRIGATION1_PIN APP_WRS_VALVE_PIN
-#else
 #define APP_WRS_IRRIGATION1_PIN D2
-#endif
 #endif
 
 #ifndef APP_WRS_IRRIGATION2_PIN
-#ifdef APP_WRS_PUMP_PIN
-#define APP_WRS_IRRIGATION2_PIN APP_WRS_PUMP_PIN
-#else
 #define APP_WRS_IRRIGATION2_PIN D3
-#endif
 #endif
 
 #ifndef APP_WRS_OUTPUT_ACTIVE_HIGH
 #define APP_WRS_OUTPUT_ACTIVE_HIGH 1
 #endif
 
-#define APP_WRS_WATERING_DUE_GRACE_SEC (15 * 60)
-
 RTC_DATA_ATTR static time_t s_last_executed_schedule_utc = 0;
 
-static const uint8_t kWateringOutputPins[] = {
+static constexpr uint8_t kIrrigationOutputCount = 2;
+static constexpr uint32_t kIrrigationOutputMask = (1UL << kIrrigationOutputCount) - 1UL;
+static const int kIrrigationOutputPins[kIrrigationOutputCount] = {
     APP_WRS_IRRIGATION1_PIN,
     APP_WRS_IRRIGATION2_PIN,
 };
-static constexpr uint32_t kWateringOutputMask = (1UL << (sizeof(kWateringOutputPins) / sizeof(kWateringOutputPins[0]))) - 1;
+static hal_power_switch_t s_irrigation_outputs[kIrrigationOutputCount] = {};
+static hal_power_switch_t s_sensor_power = {};
+static bool s_rs485_ready = false;
 
 struct WrsSensorSample
 {
@@ -87,7 +82,83 @@ static int32_t pack_runtime_flags(const app_wrs_runtime_config_t &config)
 
 static uint32_t output_mask_for_channels(uint32_t requested_channel_mask)
 {
-    return requested_channel_mask & kWateringOutputMask;
+    return requested_channel_mask & kIrrigationOutputMask;
+}
+
+static hal_power_switch_config_t irrigation_output_config(int pin)
+{
+    hal_power_switch_config_t config = {};
+    config.pin = pin;
+    config.active_high = APP_WRS_OUTPUT_ACTIVE_HIGH != 0;
+    config.settle_ms = 0;
+    return config;
+}
+
+static bool init_irrigation_outputs()
+{
+    for (uint8_t i = 0; i < kIrrigationOutputCount; ++i)
+    {
+        const hal_power_switch_config_t config = irrigation_output_config(kIrrigationOutputPins[i]);
+        if (!hal_power_switch_open(&s_irrigation_outputs[i], &config))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void deinit_irrigation_outputs()
+{
+    for (uint8_t i = 0; i < kIrrigationOutputCount; ++i)
+    {
+        hal_power_switch_close(&s_irrigation_outputs[i]);
+    }
+}
+
+static bool set_irrigation_outputs_enabled(uint32_t output_mask, bool enabled)
+{
+    output_mask = output_mask_for_channels(output_mask);
+    if (output_mask == 0)
+    {
+        return false;
+    }
+
+    bool any_set = false;
+    for (uint8_t i = 0; i < kIrrigationOutputCount; ++i)
+    {
+        if ((output_mask & (1UL << i)) == 0)
+        {
+            continue;
+        }
+        if (!hal_power_switch_set(&s_irrigation_outputs[i], enabled))
+        {
+            if (enabled)
+            {
+                set_irrigation_outputs_enabled(kIrrigationOutputMask, false);
+            }
+            return false;
+        }
+        any_set = true;
+    }
+    return any_set;
+}
+
+static void stop_irrigation_outputs()
+{
+    for (uint8_t i = 0; i < kIrrigationOutputCount; ++i)
+    {
+        hal_power_switch_set(&s_irrigation_outputs[i], false);
+    }
+}
+
+static void wait_with_network_for_ms(uint32_t duration_ms)
+{
+    const uint32_t end_at_ms = millis() + duration_ms;
+    while (static_cast<int32_t>(end_at_ms - millis()) > 0)
+    {
+        app_network_loop();
+        delay(50);
+    }
 }
 
 class WateringRs485Device : public AppDevice
@@ -123,25 +194,22 @@ protected:
                             app_wrs_runtime_config_is_valid() ? 1 : 0,
                             app_wrs_runtime_config_get().debug_log_on_wake ? 1 : 0);
 
-        hal_mosfet_output_init(kWateringOutputPins,
-                               sizeof(kWateringOutputPins) / sizeof(kWateringOutputPins[0]),
-                               APP_WRS_OUTPUT_ACTIVE_HIGH != 0);
-        Serial.printf("WRS output map: output_mask=0x%lx irrigation1_pin=%u irrigation2_pin=%u\n",
-                      static_cast<unsigned long>(kWateringOutputMask),
-                      static_cast<unsigned int>(APP_WRS_IRRIGATION1_PIN),
-                      static_cast<unsigned int>(APP_WRS_IRRIGATION2_PIN));
+        const bool irrigation_ready = init_irrigation_outputs();
+        const hal_power_switch_config_t sensor_power_config = hal_power_switch_default_config();
+        const bool sensor_power_ready = hal_power_switch_open(&s_sensor_power, &sensor_power_config);
+        const hal_rs485_modbus_config_t rs485_config = hal_rs485_modbus_default_config();
+        s_rs485_ready = hal_rs485_bus_init(&rs485_config);
+        Serial.printf("WRS output map: output_mask=0x%lx irrigation1_pin=%d irrigation2_pin=%d\n",
+                      static_cast<unsigned long>(kIrrigationOutputMask),
+                      kIrrigationOutputPins[0],
+                      kIrrigationOutputPins[1]);
         APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_WATERING,
                             APP_DEBUG_LOG_INFO,
                             APP_DEBUG_EVENT_WATERING_OUTPUT_MAP,
-                            static_cast<int32_t>(kWateringOutputMask),
+                            static_cast<int32_t>(kIrrigationOutputMask),
                             0);
-
-        const hal_power_switch_config_t power_switch_config = hal_power_switch_default_config();
-        hal_power_switch_init(&power_switch_config);
-        const hal_rs485_modbus_config_t rs485_config = hal_rs485_modbus_default_config();
-        const bool rs485_ready = hal_rs485_bus_init(&rs485_config);
-        Serial.printf("WRS RS485 bus ready=%s\n", rs485_ready ? "true" : "false");
-        return rs485_ready;
+        Serial.printf("WRS RS485 bus ready=%s\n", s_rs485_ready ? "true" : "false");
+        return irrigation_ready && sensor_power_ready && s_rs485_ready;
     }
 
     void prepare_runtime_config_request() override
@@ -237,9 +305,9 @@ protected:
             }
         }
 
-        if (hal_power_switch_is_enabled())
+        if (hal_power_switch_enabled(&s_sensor_power))
         {
-            hal_power_switch_set_enabled(false);
+            hal_power_switch_set(&s_sensor_power, false);
         }
 
         const time_t finish_utc = time(nullptr);
@@ -340,19 +408,19 @@ private:
     bool enable_sensor_power(WrsSensorSample &sample, const app_wrs_runtime_config_t &config)
     {
         sample.sensor_power_requested = config.sensors.soil.enabled || config.sensors.par.enabled;
-        sample.sensor_power_configured = hal_power_switch_is_configured();
+        sample.sensor_power_configured = hal_power_switch_configured(&s_sensor_power);
         if (!sample.sensor_power_requested)
         {
             return true;
         }
-        if (hal_power_switch_is_enabled())
+        if (hal_power_switch_enabled(&s_sensor_power))
         {
             return true;
         }
-        if (!hal_power_switch_enable_and_wait(config.sensors.power_settle_ms))
+        if (!hal_power_switch_enable_wait(&s_sensor_power, config.sensors.power_settle_ms))
         {
             sample.sensor_power_error = true;
-            hal_power_switch_set_enabled(false);
+            hal_power_switch_set(&s_sensor_power, false);
             return false;
         }
         return true;
@@ -368,17 +436,17 @@ private:
             return;
         }
 
-        if (config.sensors.soil.enabled)
+        if (s_rs485_ready && config.sensors.soil.enabled)
         {
             hal_rs485_soil_sensor_read(&config.sensors.soil, &sample.soil);
         }
-        if (config.sensors.par.enabled)
+        if (s_rs485_ready && config.sensors.par.enabled)
         {
             hal_rs485_par_sensor_read(&config.sensors.par, &sample.par);
         }
         if (!keep_power_enabled)
         {
-            hal_power_switch_set_enabled(false);
+            hal_power_switch_set(&s_sensor_power, false);
         }
         m_cycle.sensors = sample;
     }
@@ -440,7 +508,7 @@ private:
         {
             const uint16_t remaining_sec = m_cycle.watering_requested_duration_sec - m_cycle.watering_elapsed_sec;
             const uint16_t chunk_sec = min(remaining_sec, config.watering.check_interval_sec);
-            if (!hal_mosfet_output_start_channels(m_cycle.output_channel_mask, static_cast<uint32_t>(chunk_sec) * 1000UL))
+            if (!set_irrigation_outputs_enabled(m_cycle.output_channel_mask, true))
             {
                 m_cycle.watering_skipped = !m_cycle.watering_started;
                 m_cycle.watering_stop_reason = "output_start_failed";
@@ -458,12 +526,8 @@ private:
                                 APP_DEBUG_EVENT_WATERING_STARTED,
                                 chunk_sec,
                                 static_cast<int32_t>(m_cycle.output_channel_mask));
-            while (hal_mosfet_output_is_in_progress())
-            {
-                hal_mosfet_output_loop();
-                app_network_loop();
-                delay(50);
-            }
+            wait_with_network_for_ms(static_cast<uint32_t>(chunk_sec) * 1000UL);
+            stop_irrigation_outputs();
             m_cycle.watering_elapsed_sec += chunk_sec;
 
             read_sensors(true);
@@ -474,7 +538,7 @@ private:
             if (!m_cycle.sensors.soil.ok && config.watering.require_soil_feedback)
             {
                 m_cycle.watering_stop_reason = "soil_feedback_lost";
-                hal_mosfet_output_stop_all();
+                stop_irrigation_outputs();
                 return;
             }
             if (m_cycle.sensors.soil.ok &&
@@ -482,7 +546,7 @@ private:
             {
                 m_cycle.watering_completed = true;
                 m_cycle.watering_stop_reason = "target_moisture_reached";
-                hal_mosfet_output_stop_all();
+                stop_irrigation_outputs();
                 APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_WATERING,
                                     APP_DEBUG_LOG_INFO,
                                     APP_DEBUG_EVENT_WATERING_COMPLETED,
@@ -515,9 +579,11 @@ int app_init()
 
 void app_deinit()
 {
-    hal_mosfet_output_deinit();
-    hal_power_switch_deinit();
+    stop_irrigation_outputs();
+    deinit_irrigation_outputs();
+    hal_power_switch_close(&s_sensor_power);
     hal_rs485_bus_deinit();
+    s_rs485_ready = false;
 }
 
 void app_loop()

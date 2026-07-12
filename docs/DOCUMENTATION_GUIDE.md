@@ -8,11 +8,12 @@ maintained in this repository.
 ## Language Policy
 
 - English is the default language for documentation.
-- Japanese documentation is stored under a sibling `jp/` directory at the same
-  hierarchy level.
+- Japanese documentation is stored under a `jp/` directory inside the relevant
+  documentation tree, such as `docs/`, `doc/`, or `<device>/docs/`.
 - Keep the same file name in Japanese directories whenever practical.
-- If a detailed document exists only in Japanese, keep it under `jp/` and add an
-  English summary or index document at the default path.
+- If a detailed document exists only in Japanese, keep it under the relevant
+  documentation tree's `jp/` directory and add an English summary or index
+  document at the default path.
 
 Examples:
 
@@ -20,8 +21,14 @@ Examples:
 docs/SYSTEM_SPECIFICATION.md
 docs/jp/SYSTEM_SPECIFICATION.md
 
+hub/README.md
+hub/doc/jp/README.md
+
 hub/doc/OPERATIONS.md
 hub/doc/jp/OPERATIONS.md
+
+client-devices/README.md
+client-devices/docs/jp/README.md
 
 client-devices/docs/pin_assignments.md
 client-devices/docs/jp/pin_assignments.md
@@ -29,21 +36,25 @@ client-devices/docs/jp/pin_assignments.md
 
 ## Directory Rules
 
-Each documentation hierarchy owns its own Japanese directory:
+Each documentation hierarchy owns its own Japanese directory. Entry documents
+without a dedicated `doc` or `docs` directory are localized into the nearest
+documentation tree.
 
 | Default location | Japanese location | Scope |
 |---|---|---|
+| `README.md` | `docs/jp/README.md` | Repository entry documentation |
 | `docs/` | `docs/jp/` | Cross-project specifications and system diagrams |
-| `hub/` | `hub/jp/` | Hub entry documentation |
+| `hub/README.md` | `hub/doc/jp/README.md` | Hub entry documentation |
 | `hub/doc/` | `hub/doc/jp/` | Hub operations, Cloudflare, UX, and design notes |
 | `hub/doc/spec/` | `hub/doc/spec/jp/` | Hub implementation specifications |
-| `client-devices/` | `client-devices/jp/` | Client device entry documentation |
+| `client-devices/README.md` | `client-devices/docs/jp/README.md` | Client device entry documentation |
 | `client-devices/docs/` | `client-devices/docs/jp/` | Shared device specifications and diagrams |
 | `client-devices/<device>/docs/` | `client-devices/<device>/docs/jp/` | Device-specific manuals and specifications |
 
 Do not move Japanese documents to a single global directory when the document
-belongs to a lower-level component. The `jp/` directory should stay next to the
-English document it mirrors.
+belongs to a lower-level component. Also do not create top-level `jp/`
+directories directly under the repository root, `hub/`, or `client-devices/`;
+place Japanese Markdown under their `doc` or `docs` tree.
 
 ## Link Rules
 
