@@ -15,7 +15,9 @@ from ina_device_hub.camera_connector import camera_connector
 from ina_device_hub.device_config_repository import DeviceConfigValidationError, DeviceRecordValidationError
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.device_event_log import list_device_events
+from ina_device_hub.field_repository import FieldValidationError, field_repository
 from ina_device_hub.location_repository import location_repository
+from ina_device_hub.ai_content_service import ai_content_service
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
@@ -107,6 +109,7 @@ def index():
         <h1>INA Device Hub</h1>
         <h2>Devices</h2>
         <p><a href="/mqtt-devices">MQTT Devices</a></p>
+        <p><a href="/fields">Fields</a></p>
         <ul>
           {% for device_id, info in devices.items() %}
           <li>
@@ -2903,6 +2906,709 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         is_detail_page=is_detail_page,
         list_path=list_path,
     )
+
+
+
+# ==========================================
+# Field pages
+# ==========================================
+@app.route("/fields", methods=["GET", "POST"])
+def fields_page():
+    repo = field_repository()
+    if request.method == "POST":
+        data = {
+            "name": request.form.get("name", ""),
+            "crop": request.form.get("crop", ""),
+            "stage": request.form.get("stage", ""),
+            "memo": request.form.get("memo", ""),
+            "device_ids": _split_lines_or_commas(request.form.get("device_ids", "")),
+            "camera_device_ids": _split_lines_or_commas(request.form.get("camera_device_ids", "")),
+        }
+        try:
+            field = repo.upsert(None, data)
+        except FieldValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return redirect(f"/fields/{field['id']}")
+
+    fields = repo.list()
+    devices = device_config_service().get_all_records()
+    template = """
+    <html>
+      <head>
+        <title>Fields - INA Device Hub</title>
+        <style>
+          body { font-family: system-ui, sans-serif; margin: 24px; color: #1f2933; }
+          a { color: #0f766e; }
+          .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
+          .field-list { display: grid; gap: 12px; }
+          .field-card, form { border: 1px solid #d8dee4; border-radius: 8px; padding: 16px; background: #fff; }
+          .meta { color: #667085; font-size: 13px; }
+          label { display: block; font-weight: 600; margin-top: 10px; }
+          input, textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+          textarea { min-height: 72px; }
+          button { margin-top: 12px; padding: 8px 12px; border: 1px solid #0f766e; border-radius: 6px; background: #0f766e; color: white; cursor: pointer; }
+          code { background: #eef2f7; padding: 2px 4px; border-radius: 4px; }
+        </style>
+      </head>
+      <body>
+        <p><a href="/">Home</a> / Fields</p>
+        <h1>圃場</h1>
+        <div class="layout">
+          <section class="field-list">
+            {% for field in fields %}
+            <article class="field-card">
+              <h2><a href="/fields/{{ field.id }}">{{ field.name }}</a></h2>
+              <p class="meta">作物: {{ field.crop or '未設定' }} / ステージ: {{ field.stage or '未設定' }}</p>
+              <p class="meta">デバイス: {{ field.device_ids|length }} 件 / カメラ: {{ field.camera_device_ids|length }} 件 / メモ: {{ field.notes|length }} 件 / 振り返り: {{ field.reflections|length }} 件</p>
+              {% if field.memo %}<p>{{ field.memo }}</p>{% endif %}
+            </article>
+            {% else %}
+            <p>圃場はまだありません。</p>
+            {% endfor %}
+          </section>
+          <form method="post">
+            <h2>圃場を追加</h2>
+            <label>名前</label><input name="name" required>
+            <label>作物</label><input name="crop" placeholder="例: トマト">
+            <label>栽培ステージ</label><input name="stage" placeholder="例: 育苗、開花、収穫期">
+            <label>MQTT device IDs</label><textarea name="device_ids" placeholder="1行に1つ、またはカンマ区切り"></textarea>
+            <label>Camera device IDs</label><textarea name="camera_device_ids" placeholder="timelapse camera ID など"></textarea>
+            <label>メモ</label><textarea name="memo"></textarea>
+            <button type="submit">追加</button>
+            <p class="meta">登録済みMQTTデバイス: {% for device_id in devices.keys() %}<code>{{ device_id }}</code> {% endfor %}</p>
+          </form>
+        </div>
+      </body>
+    </html>
+    """
+    return render_template_string(template, fields=fields, devices=devices)
+
+
+@app.route("/fields/<field_id>", methods=["GET", "POST"])
+def field_detail_page(field_id):
+    repo = field_repository()
+    field = repo.get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+
+    if request.method == "POST":
+        data = {
+            "name": request.form.get("name", ""),
+            "crop": request.form.get("crop", ""),
+            "stage": request.form.get("stage", ""),
+            "memo": request.form.get("memo", ""),
+            "device_ids": _split_lines_or_commas(request.form.get("device_ids", "")),
+            "camera_device_ids": _split_lines_or_commas(request.form.get("camera_device_ids", "")),
+        }
+        try:
+            repo.upsert(field_id, data)
+        except FieldValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return redirect(f"/fields/{field_id}")
+
+    compare_date = request.args.get("compare_date", "").strip()
+    context = _build_field_context(field, compare_date=compare_date)
+    template = """
+    <html>
+      <head>
+        <title>{{ field.name }} - INA Field</title>
+        <script src="/local/assets/plotly.min.js"></script>
+        <style>
+          body { font-family: system-ui, sans-serif; margin: 0; color: #1f2933; background: #f6f8fb; }
+          header { padding: 20px 28px; background: #fff; border-bottom: 1px solid #d8dee4; }
+          main { padding: 20px 28px 36px; display: grid; gap: 18px; }
+          a { color: #0f766e; }
+          h1, h2, h3 { margin: 0 0 10px; }
+          .meta { color: #667085; font-size: 13px; }
+          .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+          .wide-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
+          section, article, form { border: 1px solid #d8dee4; border-radius: 8px; padding: 16px; background: #fff; }
+          .panel-flat { border: 0; padding: 0; background: transparent; }
+          .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+          .metric { display: grid; gap: 4px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fbfcfe; }
+          .metric span { color: #667085; font-size: 12px; }
+          .metric strong { font-size: 18px; }
+          .timeline { display: grid; gap: 10px; max-height: 620px; overflow: auto; }
+          .timeline article { padding: 12px; }
+          .tag { display: inline-block; padding: 2px 7px; border-radius: 999px; background: #e6f4f1; color: #0f766e; font-size: 12px; }
+          label { display: block; font-weight: 600; margin-top: 10px; }
+          input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
+          textarea { min-height: 84px; }
+          button { margin-top: 12px; padding: 8px 12px; border: 1px solid #0f766e; border-radius: 6px; background: #0f766e; color: white; cursor: pointer; }
+          img { max-width: 100%; border-radius: 6px; border: 1px solid #e5e7eb; background: #f8fafc; }
+          pre { white-space: pre-wrap; background: #f8fafc; padding: 12px; border-radius: 6px; }
+          .image-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+          .image-compare-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+          .chart-box { min-height: 340px; }
+          @media (max-width: 900px) { .wide-grid, .image-compare, .image-compare-three { grid-template-columns: 1fr; } header, main { padding-left: 14px; padding-right: 14px; } }
+        </style>
+      </head>
+      <body>
+        <header>
+          <p class="meta"><a href="/fields">Fields</a> / {{ field.name }}</p>
+          <h1>{{ field.name }}</h1>
+          <p class="meta">作物: {{ field.crop or '未設定' }} / ステージ: {{ field.stage or '未設定' }} / MQTT: {{ field.device_ids|length }} / Camera: {{ field.camera_device_ids|length }}</p>
+          {% if field.memo %}<p>{{ field.memo }}</p>{% endif %}
+        </header>
+        <main>
+          <div class="grid">
+            <section>
+              <h2>最新センサー</h2>
+              <div class="metrics">
+                {% for item in context.latest_sensor_values %}
+                  {% for key, value in item["values"].items() %}
+                  <div class="metric"><span>{{ item.device_id }} / {{ key }}</span><strong>{{ value }}</strong></div>
+                  {% endfor %}
+                {% else %}<p>センサー値はまだありません。</p>{% endfor %}
+              </div>
+            </section>
+            <section>
+              <h2>画像比較</h2>
+              <form method="get" class="panel-flat">
+                <label>基準日</label>
+                <input type="date" name="compare_date" value="{{ context.compare_date }}">
+                <button type="submit">比較日を更新</button>
+              </form>
+              <div class="image-compare image-compare-three">
+                {% for group in context.image_compare_groups %}
+                <article class="panel-flat">
+                  <h3>{{ group.label }}</h3>
+                  <p class="meta">{{ group.date }}</p>
+                  {% if group.image %}
+                  <p class="meta">{{ group.image.device_id or group.image.camera_id }} / {{ group.image.created_at or group.image.captured_at }}</p>
+                  <img src="{{ group.image.url }}" alt="field image">
+                  {% else %}<p>画像なし</p>{% endif %}
+                </article>
+                {% endfor %}
+              </div>
+            </section>
+          </div>
+
+          <div class="wide-grid">
+            <section>
+              <h2>土壌水分推移</h2>
+              <div class="chart-box">{{ context.soil_moisture_chart|safe if context.soil_moisture_chart else '土壌水分グラフのデータはまだありません。' }}</div>
+            </section>
+            <section>
+              <h2>圃場イベント</h2>
+              <form method="post" action="/fields/{{ field.id }}/events">
+                <label>種類</label><select name="event_type"><option value="watering">潅水</option><option value="fertigation">液肥</option><option value="fertilizer">追肥</option><option value="shade">遮光</option><option value="pest">病害虫</option><option value="harvest">収穫</option><option value="other">その他</option></select>
+                <label>時刻</label><input name="occurred_at" type="datetime-local">
+                <label>タイトル</label><input name="title" placeholder="例: 液肥追加、遮光ネット設置">
+                <div class="grid"><div><label>量</label><input name="amount" placeholder="例: 500"></div><div><label>単位</label><input name="unit" placeholder="例: ml, g"></div></div>
+                <label>対象デバイス</label><select name="device_id"><option value="">圃場全体</option>{% for device_id in field.device_ids %}<option value="{{ device_id }}">{{ device_id }}</option>{% endfor %}</select>
+                <label>内容</label><textarea name="description"></textarea>
+                <label>人間の評価</label><textarea name="human_evaluation" placeholder="結果、効いた/効かなかった、次回見ること"></textarea>
+                <label>タグ</label><input name="tags" placeholder="カンマ区切り">
+                <button type="submit">イベントを記録</button>
+              </form>
+            </section>
+          </div>
+
+          <div class="wide-grid">
+            <section>
+              <h2>統合タイムライン</h2>
+              <div class="timeline">
+                {% for item in context.timeline %}
+                <article>
+                  <p class="meta">{{ item.at or '時刻なし' }} <span class="tag">{{ item.kind }}</span></p>
+                  <h3>{{ item.title }}</h3>
+                  {% if item.body %}<p>{{ item.body }}</p>{% endif %}
+                </article>
+                {% else %}<p>タイムラインはまだありません。</p>{% endfor %}
+              </div>
+            </section>
+            <section>
+              <h2>人間メモ</h2>
+              <form method="post" action="/fields/{{ field.id }}/notes">
+                <label>種別</label><select name="category"><option value="observation">観察</option><option value="work">作業</option><option value="fertilizer">施肥/液肥</option><option value="shade">遮光</option><option value="evaluation">評価</option></select>
+                <label>メモ</label><textarea name="text" required></textarea>
+                <label>人間の評価</label><textarea name="human_evaluation" placeholder="結果、良かった点、悪かった点、次回見ること"></textarea>
+                <label>タグ</label><input name="tags" placeholder="カンマ区切り">
+                <button type="submit">記録</button>
+              </form>
+            </section>
+          </div>
+
+          <section>
+            <h2>データと評価の振り返り</h2>
+            <form method="post" action="/fields/{{ field.id }}/reflections">
+              <div class="grid"><div><label>期間開始</label><input name="period_start" type="date"></div><div><label>期間終了</label><input name="period_end" type="date"></div></div>
+              <label>人間の評価</label><textarea name="human_evaluation" placeholder="この期間の結果、印象、作業の良し悪し"></textarea>
+              <button type="submit">LLM振り返りを生成して保存</button>
+            </form>
+            <div class="timeline">
+              {% for reflection in field.reflections|reverse %}
+              <article>
+                <p class="meta">{{ reflection.created_at }} / {{ reflection.period_start or '-' }} - {{ reflection.period_end or '-' }}</p>
+                {% if reflection.human_evaluation %}<h3>人間の評価</h3><pre>{{ reflection.human_evaluation }}</pre>{% endif %}
+                <h3>LLM振り返り</h3><pre>{{ reflection.llm_reflection }}</pre>
+              </article>
+              {% else %}<p>振り返りはまだありません。</p>{% endfor %}
+            </div>
+          </section>
+
+          <section>
+            <h2>圃場設定</h2>
+            <form method="post">
+              <label>名前</label><input name="name" value="{{ field.name }}" required>
+              <label>作物</label><input name="crop" value="{{ field.crop }}">
+              <label>栽培ステージ</label><input name="stage" value="{{ field.stage }}">
+              <label>MQTT device IDs</label><textarea name="device_ids">{{ field.device_ids|join('\n') }}</textarea>
+              <label>Camera device IDs</label><textarea name="camera_device_ids">{{ field.camera_device_ids|join('\n') }}</textarea>
+              <label>メモ</label><textarea name="memo">{{ field.memo }}</textarea>
+              <button type="submit">保存</button>
+            </form>
+          </section>
+        </main>
+      </body>
+    </html>
+    """
+    return render_template_string(template, field=field, context=context)
+
+
+@app.route("/fields/<field_id>/notes", methods=["POST"])
+def add_field_note(field_id):
+    try:
+        field_repository().add_note(
+            field_id,
+            {
+                "category": request.form.get("category", "observation"),
+                "text": request.form.get("text", ""),
+                "human_evaluation": request.form.get("human_evaluation", ""),
+                "tags": _split_lines_or_commas(request.form.get("tags", "")),
+            },
+        )
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return redirect(f"/fields/{field_id}")
+
+
+@app.route("/fields/<field_id>/events", methods=["POST"])
+def add_field_event(field_id):
+    try:
+        field_repository().add_event(
+            field_id,
+            {
+                "event_type": request.form.get("event_type", "observation"),
+                "occurred_at": request.form.get("occurred_at", ""),
+                "title": request.form.get("title", ""),
+                "description": request.form.get("description", ""),
+                "amount": request.form.get("amount", ""),
+                "unit": request.form.get("unit", ""),
+                "device_id": request.form.get("device_id", ""),
+                "human_evaluation": request.form.get("human_evaluation", ""),
+                "tags": _split_lines_or_commas(request.form.get("tags", "")),
+            },
+        )
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return redirect(f"/fields/{field_id}")
+
+
+@app.route("/fields/<field_id>/reflections", methods=["POST"])
+def add_field_reflection(field_id):
+    repo = field_repository()
+    field = repo.get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    context = _build_field_context(field)
+    human_evaluation = request.form.get("human_evaluation", "")
+    llm_reflection = ai_content_service().generate_field_reflection(context, human_evaluation=human_evaluation)
+    try:
+        repo.add_reflection(
+            field_id,
+            {
+                "period_start": request.form.get("period_start", ""),
+                "period_end": request.form.get("period_end", ""),
+                "human_evaluation": human_evaluation,
+                "llm_reflection": llm_reflection,
+                "context_snapshot": context,
+            },
+        )
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return redirect(f"/fields/{field_id}")
+
+
+@app.route("/local/api/fields", methods=["GET"])
+def list_fields_api():
+    return jsonify(field_repository().list())
+
+
+@app.route("/local/api/fields/<field_id>", methods=["GET"])
+def get_field_api(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    return jsonify({"field": field, "context": _build_field_context(field, compare_date=request.args.get("compare_date", ""))})
+
+
+@app.route("/local/api/fields", methods=["POST"])
+def create_field_api():
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        field = field_repository().upsert(None, request_body)
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(field), 201
+
+
+@app.route("/local/api/fields/<field_id>", methods=["PUT"])
+def update_field_api(field_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        field = field_repository().upsert(field_id, request_body)
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(field)
+
+
+@app.route("/local/api/fields/<field_id>/notes", methods=["POST"])
+def add_field_note_api(field_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        note = field_repository().add_note(field_id, request_body)
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(note), 201
+
+
+@app.route("/local/api/fields/<field_id>/events", methods=["POST"])
+def add_field_event_api(field_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        event = field_repository().add_event(field_id, request_body)
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(event), 201
+
+
+@app.route("/local/api/fields/<field_id>/reflections", methods=["POST"])
+def add_field_reflection_api(field_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    repo = field_repository()
+    field = repo.get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    context = _build_field_context(field)
+    human_evaluation = request_body.get("human_evaluation", "")
+    llm_reflection = request_body.get("llm_reflection") or ai_content_service().generate_field_reflection(context, human_evaluation=human_evaluation)
+    try:
+        reflection = repo.add_reflection(
+            field_id,
+            {
+                "period_start": request_body.get("period_start", ""),
+                "period_end": request_body.get("period_end", ""),
+                "human_evaluation": human_evaluation,
+                "llm_reflection": llm_reflection,
+                "context_snapshot": context,
+            },
+        )
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(reflection), 201
+
+
+def _split_lines_or_commas(value: str):
+    parts = []
+    for line in (value or "").replace(",", "\n").splitlines():
+        item = line.strip()
+        if item and item not in parts:
+            parts.append(item)
+    return parts
+
+
+def _build_field_context(field: dict, compare_date: str = ""):
+    compare_day = _field_compare_day(compare_date)
+    device_records = device_config_service().get_all_records()
+    device_ids = field.get("device_ids") or []
+    camera_ids = field.get("camera_device_ids") or []
+    devices = []
+    latest_sensor_values = []
+    recent_status_events = []
+    recent_images = []
+    statuses_for_chart = []
+
+    for device_id in device_ids:
+        record = device_records.get(device_id)
+        devices.append({"device_id": device_id, "record": _compact_device_record(record)})
+        latest = _field_latest_sensor_value(device_id, record)
+        if latest:
+            latest_sensor_values.append(latest)
+        device_statuses = (record or {}).get("status_history", [])
+        statuses_for_chart.extend(device_statuses[-240:])
+        for status in device_statuses[-24:]:
+            recent_status_events.append(_field_status_event(device_id, status))
+        recent_images.extend(_field_sensor_images(device_id, limit=2))
+
+    for camera_id in camera_ids:
+        recent_images.extend(_field_camera_images(camera_id, limit=2))
+
+    image_compare_groups = _field_image_compare_groups(camera_ids, compare_day)
+
+    recent_status_events = sorted(recent_status_events, key=lambda item: item.get("received_at") or "", reverse=True)[:40]
+    field_events = sorted(list(field.get("events") or []), key=lambda item: item.get("occurred_at") or item.get("created_at") or "", reverse=True)
+    timeline = _build_field_timeline(recent_status_events, field_events, field.get("notes") or [])
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "field": {key: field.get(key) for key in ("id", "name", "crop", "stage", "memo")},
+        "devices": devices,
+        "latest_sensor_values": latest_sensor_values,
+        "recent_status_events": recent_status_events,
+        "recent_field_events": field_events[:40],
+        "timeline": timeline[:80],
+        "recent_notes": list(field.get("notes") or [])[-20:],
+        "recent_images": recent_images[:12],
+        "compare_date": compare_day.strftime("%Y-%m-%d"),
+        "image_compare": recent_images[:2],
+        "image_compare_groups": image_compare_groups,
+        "soil_moisture_chart": _build_field_soil_moisture_chart(statuses_for_chart, field_events, include_plotlyjs=False) if statuses_for_chart else "",
+    }
+
+
+def _field_compare_day(compare_date: str):
+    if compare_date:
+        try:
+            return datetime.strptime(compare_date, "%Y-%m-%d")
+        except ValueError:
+            pass
+    return datetime.now(_local_timezone()).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _field_image_compare_groups(camera_ids: list, compare_day: datetime):
+    targets = [
+        ("基準日", compare_day),
+        ("前日", compare_day - timedelta(days=1)),
+        ("7日前", compare_day - timedelta(days=7)),
+    ]
+    groups = []
+    for label, target_day in targets:
+        image = None
+        for camera_id in camera_ids:
+            images = _field_camera_images_for_date(camera_id, target_day, limit=1)
+            if images:
+                image = images[0]
+                break
+        groups.append({"label": label, "date": target_day.strftime("%Y-%m-%d"), "image": image})
+    return groups
+
+
+def _field_camera_images_for_date(camera_id: str, target_day: datetime, limit: int = 1):
+    start_at = target_day.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_at = start_at + timedelta(days=1) - timedelta(microseconds=1)
+    try:
+        images = timelapse_media_service().list_frame_records(camera_id, start_at=start_at, end_at=end_at, limit=limit)
+    except Exception:
+        return []
+    return [dict(image, camera_id=camera_id) for image in images]
+
+
+def _build_field_soil_moisture_chart(statuses, field_events, include_plotlyjs=False):
+    points = _soil_moisture_points(statuses)
+    if not points:
+        return ""
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=[point["time"] for point in points],
+            y=[point["soil_moisture"] for point in points],
+            mode="lines+markers",
+            name="土壌水分",
+            line={"color": "#047857", "width": 3},
+            marker={"size": 7},
+            customdata=[[point["state"], point["threshold_label"]] for point in points],
+            hovertemplate=("%{x|%Y-%m-%d %H:%M}<br>土壌水分: %{y}%<br>状態: %{customdata[0]}<br>しきい値: %{customdata[1]}<extra></extra>"),
+        )
+    )
+    threshold_points = [point for point in points if point["threshold"] is not None]
+    if threshold_points:
+        fig.add_trace(
+            go.Scatter(
+                x=[point["time"] for point in threshold_points],
+                y=[point["threshold"] for point in threshold_points],
+                mode="lines",
+                name="灌水しきい値",
+                line={"color": "#f59e0b", "width": 2, "dash": "dash"},
+                hovertemplate="%{x|%Y-%m-%d %H:%M}<br>しきい値: %{y}%<extra></extra>",
+            )
+        )
+    _add_field_event_markers(fig, field_events)
+    fig.update_layout(
+        title="土壌水分推移と圃場イベント",
+        height=380,
+        margin={"l": 56, "r": 24, "t": 48, "b": 48},
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        yaxis_title="土壌水分（%）",
+        legend={"orientation": "h", "y": -0.24},
+    )
+    _configure_time_axis(fig, points)
+    fig.update_yaxes(range=[0, 100])
+    return _plotly_div(fig, "field-soil-moisture-chart", include_plotlyjs=include_plotlyjs)
+
+
+def _add_field_event_markers(fig, field_events):
+    colors = {
+        "watering": "#2563eb",
+        "fertigation": "#7c3aed",
+        "fertilizer": "#9333ea",
+        "shade": "#64748b",
+        "pest": "#dc2626",
+        "harvest": "#ea580c",
+    }
+    for event in (field_events or [])[:40]:
+        event_time = _to_local_plot_time(event.get("occurred_at") or event.get("created_at"))
+        if event_time is None:
+            continue
+        event_type = event.get("event_type") or "event"
+        label = event.get("title") or event_type
+        color = colors.get(event_type, "#475569")
+        fig.add_shape(
+            type="line",
+            x0=event_time,
+            x1=event_time,
+            y0=0,
+            y1=1,
+            xref="x",
+            yref="paper",
+            line={"color": color, "width": 1, "dash": "dot"},
+        )
+        fig.add_annotation(
+            x=event_time,
+            y=1,
+            xref="x",
+            yref="paper",
+            text=label[:16],
+            showarrow=False,
+            yanchor="bottom",
+            textangle=-90,
+            font={"size": 10, "color": color},
+        )
+
+
+def _build_field_timeline(status_events: list, field_events: list, notes: list):
+    timeline = []
+    for event in status_events:
+        timeline.append({
+            "kind": "device_status",
+            "at": event.get("received_at"),
+            "title": event.get("summary"),
+            "body": event.get("device_id"),
+        })
+    for event in field_events:
+        amount = ""
+        if event.get("amount"):
+            amount = f" {event.get('amount')}{event.get('unit') or ''}"
+        timeline.append({
+            "kind": event.get("event_type") or "field_event",
+            "at": event.get("occurred_at") or event.get("created_at"),
+            "title": f"{event.get('title') or event.get('event_type')}{amount}",
+            "body": event.get("description") or event.get("human_evaluation") or "",
+        })
+    for note in notes:
+        timeline.append({
+            "kind": note.get("category") or "note",
+            "at": note.get("created_at"),
+            "title": note.get("text"),
+            "body": note.get("human_evaluation") or "",
+        })
+    return sorted(timeline, key=lambda item: item.get("at") or "", reverse=True)
+
+
+def _compact_device_record(record: dict | None):
+    if not isinstance(record, dict):
+        return None
+    return {
+        "name": record.get("name"),
+        "location": record.get("location"),
+        "device_kind": record.get("device_kind"),
+        "state": record.get("state"),
+        "last_seen_at": record.get("last_seen_at"),
+        "last_status_at": record.get("last_status_at"),
+    }
+
+
+def _field_latest_sensor_value(device_id: str, record: dict | None):
+    payload = (record or {}).get("last_status") or {}
+    values = {}
+    for key in (
+        "last_soil_moisture",
+        "soil_moisture_1_pct",
+        "soil_moisture_2_pct",
+        "soil_temp_c",
+        "battery_v",
+        "rssi",
+        "threshold",
+    ):
+        if payload.get(key) is not None:
+            values[key] = payload.get(key)
+    try:
+        sensor_latest = sensor_data_repository().get_latest(device_id)
+    except Exception:
+        sensor_latest = None
+    if sensor_latest:
+        telemetry = sensor_latest.get("telemetry") or {}
+        for key in ("soil_moisture_1_pct", "soil_moisture_2_pct", "soil_temp_c", "battery_v", "rssi"):
+            if telemetry.get(key) is not None:
+                values[key] = telemetry.get(key)
+        return {
+            "device_id": device_id,
+            "updated_at": sensor_latest.get("updated_at"),
+            "received_at": (record or {}).get("last_status_at"),
+            "values": values,
+        }
+    if not values:
+        return None
+    return {"device_id": device_id, "received_at": (record or {}).get("last_status_at"), "values": values}
+
+
+def _field_status_event(device_id: str, status_entry: dict):
+    payload = status_entry.get("payload") or {}
+    parts = []
+    if payload.get("watering_due") is True:
+        parts.append("灌水予定")
+    if payload.get("watering_started") is True:
+        parts.append(f"灌水開始 {payload.get('watering_duration_sec', '-')}秒")
+    if payload.get("soil_calibration_suggested") is True:
+        parts.append("水分計校正見直し候補")
+    if payload.get("last_soil_moisture") is not None:
+        parts.append(f"土壌水分 {payload.get('last_soil_moisture')}%")
+    if not parts:
+        parts.append("status受信")
+    return {"device_id": device_id, "received_at": status_entry.get("received_at"), "summary": " / ".join(parts), "payload": payload}
+
+
+def _field_sensor_images(device_id: str, limit: int = 2):
+    try:
+        images = sensor_image_repogitory().fetch_latest(device_id, limit=limit)
+    except Exception:
+        return []
+    result = []
+    for image in images:
+        item = dict(image)
+        item["url"] = f"/local/api/images/{item.get('image_path')}"
+        result.append(item)
+    return result
+
+
+def _field_camera_images(camera_id: str, limit: int = 2):
+    try:
+        images = timelapse_media_service().list_frame_records(camera_id, limit=limit)
+    except Exception:
+        return []
+    return [dict(image, camera_id=camera_id) for image in images]
 
 
 # ==========================================

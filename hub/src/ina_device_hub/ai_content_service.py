@@ -75,6 +75,43 @@ class AIContentService:
             temperature=0.8,
         )
 
+    def generate_field_reflection(self, field_context: dict, human_evaluation: str = ""):
+        compact_context = self._build_field_reflection_context(field_context)
+        fallback = self._fallback_field_reflection(compact_context, human_evaluation)
+        if not self.ai_settings.get("text_analyze_api_key"):
+            return fallback
+
+        serialized_context = json.dumps(compact_context, ensure_ascii=False, indent=2, default=str)
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "あなたはスマート農業の栽培記録を振り返るアシスタントです。"
+                    "センサー値、画像記録、作業イベント、人間の評価を分けて扱い、過剰な断定を避けてください。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "次の圃場データと人間の評価をもとに、振り返りを日本語で作成してください。\n"
+                    "出力は 1) 観察された事実 2) 人間評価との対応 3) 次に確認すること 4) 改善候補 の4項目にしてください。\n\n"
+                    f"人間の評価:\n{human_evaluation or 'なし'}\n\n"
+                    f"圃場データ:\n{serialized_context}"
+                ),
+            },
+        ]
+        try:
+            return self._chat_completion(
+                api_key=self.ai_settings.get("text_analyze_api_key"),
+                base_url=self.ai_settings.get("text_analyze_base_url"),
+                model=self.ai_settings.get("text_analyze_model"),
+                messages=messages,
+                temperature=0.2,
+            )
+        except RuntimeError:
+            logger.exception("Falling back to non-LLM field reflection")
+            return fallback
+
     def _summarize_visuals(self, media_context: dict):
         if not self.ai_settings.get("image_analyze_api_key"):
             return self._fallback_visual_summary(media_context)
@@ -173,6 +210,34 @@ class AIContentService:
             raise RuntimeError(detail) from exc
 
         return self._extract_text(body).strip()
+
+    def _build_field_reflection_context(self, field_context: dict):
+        return {
+            "field": field_context.get("field", {}),
+            "generated_at": field_context.get("generated_at"),
+            "devices": field_context.get("devices", []),
+            "latest_sensor_values": field_context.get("latest_sensor_values", []),
+            "recent_status_events": field_context.get("recent_status_events", []),
+            "recent_field_events": field_context.get("recent_field_events", []),
+            "recent_notes": field_context.get("recent_notes", []),
+            "recent_images": field_context.get("recent_images", []),
+        }
+
+    def _fallback_field_reflection(self, compact_context: dict, human_evaluation: str = ""):
+        field = compact_context.get("field", {})
+        sensor_count = len(compact_context.get("latest_sensor_values") or [])
+        status_count = len(compact_context.get("recent_status_events") or [])
+        event_count = len(compact_context.get("recent_field_events") or [])
+        note_count = len(compact_context.get("recent_notes") or [])
+        image_count = len(compact_context.get("recent_images") or [])
+        lines = [
+            f"圃場「{field.get('name') or field.get('id') or '未設定'}」の振り返りです。",
+            f"最新センサー値 {sensor_count} 件、status履歴 {status_count} 件、圃場イベント {event_count} 件、メモ {note_count} 件、画像 {image_count} 件を参照しました。",
+        ]
+        if human_evaluation:
+            lines.append(f"人間の評価: {human_evaluation}")
+        lines.append("LLM設定が未設定または呼び出し失敗のため、これはデータ件数ベースの自動サマリーです。")
+        return "\n".join(lines)
 
     def _build_compact_context(self, media_context: dict):
         return {
