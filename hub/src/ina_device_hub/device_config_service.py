@@ -80,6 +80,35 @@ class DeviceConfigService:
                 "soil_p_mg_kg": {"calibrated": False, "scale": 1.0, "offset": 0.0},
                 "soil_k_mg_kg": {"calibrated": False, "scale": 1.0, "offset": 0.0},
             },
+            "wrs": {
+                "watering": {
+                    "enabled": True,
+                    "auto_on_low_moisture": False,
+                    "require_soil_feedback": True,
+                    "force_watering": False,
+                    "moisture_threshold": device_config_defaults["moisture_threshold"],
+                    "stop_moisture_percent": 55,
+                    "max_duration_sec": 60,
+                    "check_interval_sec": 10,
+                    "channel_mask": 1,
+                },
+                "sensors": {
+                    "soil": {
+                        "enabled": True,
+                        "modbus_slave_id": 2,
+                        "modbus_function": 4,
+                        "start_register": 0,
+                    },
+                    "par": {
+                        "enabled": False,
+                        "modbus_slave_id": 1,
+                        "modbus_function": 3,
+                        "register": 0,
+                        "scale": 1.0,
+                    },
+                    "power_settle_ms": 800,
+                },
+            },
             "schedules": [
                 {
                     "hour": 6,

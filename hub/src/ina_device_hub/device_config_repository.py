@@ -422,6 +422,51 @@ def validate_device_config(config: dict):  # noqa: PLR0915
     for metric in env_metric_keys:
         normalized_env_calibration[metric] = _metric_calibration(metric)
 
+    wrs = config.get("wrs", {})
+    if not isinstance(wrs, dict):
+        raise DeviceConfigValidationError("wrs must be an object")
+    wrs_watering = wrs.get("watering", {})
+    wrs_sensors = wrs.get("sensors", {})
+    if not isinstance(wrs_watering, dict):
+        raise DeviceConfigValidationError("wrs.watering must be an object")
+    if not isinstance(wrs_sensors, dict):
+        raise DeviceConfigValidationError("wrs.sensors must be an object")
+    wrs_soil = wrs_sensors.get("soil", {})
+    wrs_par = wrs_sensors.get("par", {})
+    if not isinstance(wrs_soil, dict):
+        raise DeviceConfigValidationError("wrs.sensors.soil must be an object")
+    if not isinstance(wrs_par, dict):
+        raise DeviceConfigValidationError("wrs.sensors.par must be an object")
+    normalized_wrs = {
+        "watering": {
+            "enabled": _optional_bool(wrs_watering, "enabled", True, "wrs.watering.enabled"),
+            "auto_on_low_moisture": _optional_bool(wrs_watering, "auto_on_low_moisture", False, "wrs.watering.auto_on_low_moisture"),
+            "require_soil_feedback": _optional_bool(wrs_watering, "require_soil_feedback", True, "wrs.watering.require_soil_feedback"),
+            "force_watering": _optional_bool(wrs_watering, "force_watering", False, "wrs.watering.force_watering"),
+            "moisture_threshold": _optional_int(wrs_watering, "moisture_threshold", moisture_threshold, 0, 100, "wrs.watering.moisture_threshold"),
+            "stop_moisture_percent": _optional_int(wrs_watering, "stop_moisture_percent", 55, 0, 100, "wrs.watering.stop_moisture_percent"),
+            "max_duration_sec": _optional_int(wrs_watering, "max_duration_sec", 60, 1, 3600, "wrs.watering.max_duration_sec"),
+            "check_interval_sec": _optional_int(wrs_watering, "check_interval_sec", 10, 1, 600, "wrs.watering.check_interval_sec"),
+            "channel_mask": _optional_int(wrs_watering, "channel_mask", 1, 1, 0xFFFFFFFF, "wrs.watering.channel_mask"),
+        },
+        "sensors": {
+            "soil": {
+                "enabled": _optional_bool(wrs_soil, "enabled", True, "wrs.sensors.soil.enabled"),
+                "modbus_slave_id": _optional_int(wrs_soil, "modbus_slave_id", 2, 1, 247, "wrs.sensors.soil.modbus_slave_id"),
+                "modbus_function": _optional_int(wrs_soil, "modbus_function", 4, 3, 4, "wrs.sensors.soil.modbus_function"),
+                "start_register": _optional_int(wrs_soil, "start_register", 0, 0, 65535, "wrs.sensors.soil.start_register"),
+            },
+            "par": {
+                "enabled": _optional_bool(wrs_par, "enabled", False, "wrs.sensors.par.enabled"),
+                "modbus_slave_id": _optional_int(wrs_par, "modbus_slave_id", 1, 1, 247, "wrs.sensors.par.modbus_slave_id"),
+                "modbus_function": _optional_int(wrs_par, "modbus_function", 3, 3, 4, "wrs.sensors.par.modbus_function"),
+                "register": _optional_int(wrs_par, "register", 0, 0, 65535, "wrs.sensors.par.register"),
+                "scale": _optional_float(wrs_par, "scale", 1.0, 0.0001, 100000.0, "wrs.sensors.par.scale"),
+            },
+            "power_settle_ms": _optional_int(wrs_sensors, "power_settle_ms", 800, 0, 30000, "wrs.sensors.power_settle_ms"),
+        },
+    }
+
     schedules = config["schedules"]
     if not isinstance(schedules, list):
         raise DeviceConfigValidationError("schedules must be an array")
@@ -503,6 +548,7 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         "soil_calibration": normalized_soil_calibration,
         "env_sensors": normalized_env_sensors,
         "env_calibration": normalized_env_calibration,
+        "wrs": normalized_wrs,
         "schedules": normalized_schedules,
     }
     payload = json.dumps(normalized, ensure_ascii=True, separators=(",", ":"))

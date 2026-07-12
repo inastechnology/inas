@@ -58,14 +58,14 @@
 
 ## WRS
 
-RS485 前提の水やり全部入りデバイス。WRS は WTR の灌水出力と RS485 配線を流用する。analog soil pin は明示的に使う build でない限り診断用予約とする。
+RS485 前提の水やり全部入りデバイス。WRS は汎用の灌水 1 系 / 灌水 2 系と RS485 配線を持つ。device は pump / valve の役割を区別せず、設置側が各灌水出力を現場の負荷へ割り当てる。analog soil pin は明示的に使う build でない限り診断用予約とする。
 
 | XIAO pin | GPIO | 接続先 | 外部端子 | 線材 | 検査 |
 |---|---:|---|---|---|---|
 | `VBUS` | - | 5V DCDC output | Power `5V_OUT` | 橙 22-24 AWG | XIAO 接続前に 4.75-5.25V |
 | `GND` | - | device GND | Power `GND` | 黒 20-24 AWG | 12V negative、RS485 GND と導通 |
-| `D2` | `GPIO3` | valve MOSFET gate | Valve output channel 1 | 青 24-26 AWG | valve command 時に gate が変化 |
-| `D3` | `GPIO4` | pump MOSFET gate | Pump output | 青 24-26 AWG | valve active 中に pump output が ON |
+| `D2` | `GPIO3` | 灌水 1 系 MOSFET gate | `IRR1+` / `IRR1-` | 青 24-26 AWG | channel mask bit 0 指定時に gate が変化 |
+| `D3` | `GPIO4` | 灌水 2 系 MOSFET gate | `IRR2+` / `IRR2-` | 青 24-26 AWG | channel mask bit 1 指定時に gate が変化 |
 | `A5` / `D5` | `GPIO6` | reserved diagnostic analog input | internal test pad | 白 24-26 AWG | 明示仕様がなければ未接続 |
 | `D4` | `GPIO5` | RS485 transceiver DE/RE | internal RS485 driver | 灰 24-26 AWG | Modbus TX 時に direction pin が変化 |
 | `D6` | `GPIO43` | RS485 transceiver DI | internal RS485 TX | 青 24-26 AWG | request 時に UART TX が出る |
@@ -78,9 +78,9 @@ RS485 前提の水やり全部入りデバイス。WRS は WTR の灌水出力�
 
 | 端子 | 接続先 | 備考 |
 |---|---|---|
-| `12V_IN+` / `12V_IN-` | 12V supply | pump、valve、RS485、5V DCDC と GND 共通 |
-| `VALVE+` / `VALVE-` | solenoid valve または valve driver | 灌水 output |
-| `PUMP+` / `PUMP-` | pump または pump driver | 灌水中に active |
+| `12V_IN+` / `12V_IN-` | 12V supply | 灌水出力、RS485、5V DCDC と GND 共通 |
+| `IRR1+` / `IRR1-` | 灌水 1 系の負荷または driver | `channel_mask` bit 0 |
+| `IRR2+` / `IRR2-` | 灌水 2 系の負荷または driver | `channel_mask` bit 1 |
 | `RS485_A` / `RS485_B` | soil、PAR、日射センサー | sensor ごとに一意の Modbus slave ID |
 | `RS485_GND` | sensor bus ground | 長い配線では必須 |
 | `SENSOR_12V_SW+` | RS485 sensor 12V branch | sensor branch のみ。ESP32S3 電源ではない |

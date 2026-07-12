@@ -33,7 +33,7 @@ inspection.
 | `SOI` | Root-zone representative point in the ridge or bed |
 | `ENV` | Field or section representative environment point |
 | `WTR` | Near pump/valve and the irrigation target |
-| `WRS` | Near pump/valve with RS485 soil/PAR/irradiance sensors on the same bus |
+| `WRS` | Near irrigation output wiring with RS485 soil/PAR/irradiance sensors on the same bus |
 
 For strawberry drip cultivation, place soil feedback near the root-zone affected
 by the drip line. Do not validate irrigation only from pump runtime.

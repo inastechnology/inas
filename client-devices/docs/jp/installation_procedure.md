@@ -26,7 +26,7 @@
 | `SOI` | 畝・ベッド内の root-zone 代表測点 |
 | `ENV` | 圃場全体または区画の代表環境点 |
 | `WTR` | pump/valve と灌水対象の近く |
-| `WRS` | pump/valve の近く。同じ RS485 bus に soil/PAR/日射 sensor を接続 |
+| `WRS` | 灌水出力配線の近く。同じ RS485 bus に soil/PAR/日射 sensor を接続 |
 
 イチゴ点滴栽培では、drip line の影響を受ける root-zone 近くに土壌フィードバックを置く。pump runtime だけで灌水成功を判断しない。
 

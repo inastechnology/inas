@@ -386,6 +386,53 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                 }
             )
 
+    def test_config_validation_keeps_wrs_fields(self):
+        config = validate_device_config(
+            {
+                "ntp_server": "pool.ntp.org",
+                "timezone_offset_sec": 32400,
+                "moisture_threshold": 40,
+                "wrs": {
+                    "watering": {
+                        "enabled": True,
+                        "auto_on_low_moisture": True,
+                        "require_soil_feedback": True,
+                        "force_watering": False,
+                        "moisture_threshold": 42,
+                        "stop_moisture_percent": 58,
+                        "max_duration_sec": 120,
+                        "check_interval_sec": 15,
+                        "channel_mask": 1,
+                    },
+                    "sensors": {
+                        "soil": {"enabled": True, "modbus_slave_id": 2, "modbus_function": 4, "start_register": 0},
+                        "par": {"enabled": True, "modbus_slave_id": 3, "modbus_function": 3, "register": 1, "scale": 1.1},
+                        "power_settle_ms": 1200,
+                    },
+                },
+                "schedules": [{"hour": 7, "minute": 0, "duration_sec": 60, "channel_mask": 1}],
+            }
+        )
+
+        self.assertTrue(config["wrs"]["watering"]["auto_on_low_moisture"])
+        self.assertEqual(config["wrs"]["watering"]["moisture_threshold"], 42)
+        self.assertEqual(config["wrs"]["watering"]["stop_moisture_percent"], 58)
+        self.assertEqual(config["wrs"]["watering"]["check_interval_sec"], 15)
+        self.assertEqual(config["wrs"]["sensors"]["soil"]["modbus_slave_id"], 2)
+        self.assertEqual(config["wrs"]["sensors"]["par"]["scale"], 1.1)
+        self.assertEqual(config["wrs"]["sensors"]["power_settle_ms"], 1200)
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "wrs": {"watering": {"check_interval_sec": 0}},
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
 
 def _read_last_device_event():
     with open(_event_log_path(), encoding="utf-8") as file:

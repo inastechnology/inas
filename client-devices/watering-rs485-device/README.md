@@ -2,80 +2,151 @@
 
 Device kind: `WRS`
 
-Project status: design stub. Firmware has not been forked from
-`watering-device` yet.
+Project status: first firmware implementation.
 
-`WRS` is the RS485-first all-in-one watering device. It keeps the practical
-parts of `WTR`: local irrigation outputs, pump/valve control, and switched 12V
-sensor power. The difference is that the main sensor expansion boundary is the
-RS485 bus, not fixed analog pins.
-
-## Role
-
-- Execute irrigation locally, like `WTR`.
-- Measure root-zone feedback through RS485 soil sensors.
-- Measure PAR and optional irradiance on the same RS485 bus.
-- Publish the same measurement names as `ENV` and `WTR` so the hub can store
-  values in `sensor_measurements` without a separate schema.
+`WRS` is the RS485-first all-in-one watering device. It controls local 12V
+watering MOSFET outputs, switches 12V sensor power, reads RS485 sensors through
+the common bus abstraction, and publishes WTR/ENV-compatible measurement names
+to the hub.
 
 ## Hardware Boundary
 
-Reuse the WTR pin assignment for the first WRS revision:
+Default XIAO ESP32S3 pin assignment:
 
 | Signal | XIAO pin | GPIO | Purpose |
 |---|---:|---:|---|
-| Valve MOSFET | `D2` | `GPIO3` | Irrigation line 1 |
-| Pump MOSFET | `D3` | `GPIO4` | Pump output while irrigation is active |
-| RS485 DE/RE | `D4` | `GPIO5` | Transmit/receive direction control |
-| RS485 TX | `D6` | `GPIO43` | UART TX |
-| RS485 RX | `D7` | `GPIO44` | UART RX |
-| 12V sensor power MOSFET | `D8` | `GPIO7` | Switches the 12V branch going to RS485 sensors |
+| Irrigation output 1 MOSFET | `D2` | `GPIO3` | Watering channel 1 |
+| Irrigation output 2 MOSFET | `D3` | `GPIO4` | Watering channel 2 |
+| RS485 DE/RE | `D4` | `GPIO5` | MAX485 transmit/receive direction |
+| RS485 TX | `D6` | `GPIO43` | UART TX to MAX485 DI |
+| RS485 RX | `D7` | `GPIO44` | UART RX from MAX485 RO |
+| 12V sensor power MOSFET | `D8` | `GPIO7` | Switches 12V to RS485 sensors |
 
-The analog soil moisture ADC may remain unused or reserved for diagnostics.
+The analog soil moisture ADC is not used by WRS. Soil feedback is expected from
+an RS485 Modbus soil sensor.
 
-## RS485 Composition
+## Firmware Layers
 
-Add sensors by assigning each Modbus device a unique slave ID. Do not create a
-new pin assignment for every sensor combination. When an expected sensor is not
-connected, the firmware should treat timeout, CRC failure, or no response as a
-missing sensor and publish the related status flag as `*_ok=false`.
+- `hal_rs485_bus`: common RS485 bus boundary used by protocol drivers.
+- `hal_rs485_sensor_protocol`: common Modbus register mapping for RS485 soil
+  and PAR sensors.
+- `hal_power_switch`: common switched 12V sensor power control.
+- `hal_mosfet_output`: common timed MOSFET output control.
+- `app_wrs_runtime_config`: WRS runtime config, schedule parsing, persistence.
+- `app.cpp`: WRS cycle orchestration.
 
-Initial sensor groups:
+## Runtime Behavior
 
-- RS485 soil sensor: `soil_moisture_percent`, `soil_temperature_c`,
-  `soil_ec_us_cm`, `soil_ph`, `soil_n_mg_kg`, `soil_p_mg_kg`,
-  `soil_k_mg_kg`.
-- RS485 PAR sensor: `par_umol_m2_s`.
-- Optional RS485 irradiance sensor: `solar_radiation_w_m2`.
+Each wake cycle:
 
-## Hub Contract
+1. Requests runtime config from the hub.
+2. Powers RS485 sensors and reads soil/PAR values.
+3. Checks whether a watering schedule is due, or whether WRS auto watering is
+   enabled and soil moisture is below threshold.
+4. Starts watering only when enabled, selected channels are valid, and soil
+   feedback rules allow it.
+5. Waters in short chunks, re-reading RS485 soil moisture after each chunk.
+6. Stops when the configured target moisture is reached, feedback is lost, or
+   the duration limit is reached.
+7. Publishes status and measurement values, then sleeps.
 
-The hub treats `WRS` as a watering-capable device. Strawberry drip cultivation
-and similar crop systems should be modeled as hub-orchestrated compositions of
-field context, sensor feedback, and actuator devices rather than as monolithic
-crop-specific device kinds.
+## Runtime Config
 
-Example status payload:
+WRS accepts the existing WTR/ENV fields:
 
 ```json
 {
-  "device_kind": "WRS",
-  "sensor_model": "RS485-WATERING-AIO",
-  "watering_due": true,
-  "watering_started": true,
-  "soil_rs485_ok": true,
-  "soil_moisture_percent": 42.1,
-  "soil_temperature_c": 21.5,
-  "soil_ec_us_cm": 820,
-  "soil_ph": 6.5,
-  "par_ok": true,
-  "par_umol_m2_s": 1234.0,
-  "solar_radiation_ok": false
+  "ntp_server": "pool.ntp.org",
+  "timezone_offset_sec": 32400,
+  "sleep_sec": 300,
+  "moisture_threshold": 40,
+  "force_watering": false,
+  "debug_log_on_wake": false,
+  "ota_check_interval_sec": 21600,
+  "env_sensors": {
+    "soil": {
+      "enabled": true,
+      "modbus_slave_id": 2,
+      "modbus_function": 4,
+      "start_register": 0
+    },
+    "par": {
+      "enabled": false,
+      "modbus_slave_id": 1,
+      "modbus_function": 3,
+      "register": 0,
+      "scale": 1.0
+    },
+    "power_settle_ms": 800
+  },
+  "schedules": [
+    {
+      "hour": 6,
+      "minute": 30,
+      "duration_sec": 60,
+      "channel_mask": 1,
+      "frequency": {"mode": "daily"}
+    }
+  ]
 }
 ```
 
-## Implementation Note
+WRS also accepts a WRS-specific overlay:
 
-Start firmware implementation by reusing the WTR irrigation output behavior and
-the ENV/WTR RS485 sensor reading behavior. Split shared code only when the copy
-would otherwise duplicate meaningful watering or RS485 logic.
+```json
+{
+  "wrs": {
+    "watering": {
+      "enabled": true,
+      "auto_on_low_moisture": false,
+      "require_soil_feedback": true,
+      "force_watering": false,
+      "moisture_threshold": 40,
+      "stop_moisture_percent": 55,
+      "max_duration_sec": 60,
+      "check_interval_sec": 10,
+      "channel_mask": 1
+    },
+    "sensors": {
+      "soil": {"enabled": true, "modbus_slave_id": 2, "modbus_function": 4, "start_register": 0},
+      "par": {"enabled": false, "modbus_slave_id": 1, "modbus_function": 3, "register": 0, "scale": 1.0},
+      "power_settle_ms": 800
+    }
+  }
+}
+```
+
+The `wrs` overlay wins over `env_sensors` when both are present.
+
+`channel_mask` is a device-side irrigation output mask. WRS does not know
+whether an output is connected to a pump, valve, relay, or solenoid:
+
+| `channel_mask` | Active output |
+|---:|---|
+| `1` | Irrigation output 1 (`D2`) |
+| `2` | Irrigation output 2 (`D3`) |
+| `3` | Irrigation outputs 1 and 2 |
+
+## Status Payload
+
+WRS publishes:
+
+- watering state: `watering_due`, `watering_started`, `watering_stop_reason`,
+  `watering_elapsed_sec`.
+- RS485 soil values: `soil_moisture_percent`, `soil_temperature_c`,
+  `soil_ec_us_cm`, `soil_ph`, `soil_n_mg_kg`, `soil_p_mg_kg`,
+  `soil_k_mg_kg`.
+- PAR values: `par_umol_m2_s`.
+- raw Modbus values and sensor power state.
+
+These names match the hub measurement repository, so no WRS-only schema is
+required for time-series storage.
+
+## Build
+
+```bash
+cd client-devices/watering-rs485-device
+make build
+```
+
+Use `make check-firmware` to verify the embedded OTA manifest after build.

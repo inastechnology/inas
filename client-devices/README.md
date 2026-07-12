@@ -14,7 +14,7 @@ level, such as [docs/jp/pin_assignments.md](docs/jp/pin_assignments.md).
 client-devices/
   common/lib/ina-client-common/
   watering-device/              # WTR
-  watering-rs485-device/        # WRS design stub
+  watering-rs485-device/        # WRS
   soil-sensor-device/           # SOI
   environment-sensor-device/    # ENV
 ```

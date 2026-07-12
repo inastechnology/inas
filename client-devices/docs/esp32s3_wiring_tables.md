@@ -70,16 +70,17 @@ External terminals:
 
 ## WRS
 
-RS485-first all-in-one watering device. WRS reuses WTR irrigation and RS485
-wiring. The analog soil pin is reserved for diagnostics unless a build explicitly
-uses it.
+RS485-first all-in-one watering device. WRS exposes two generic irrigation
+outputs and RS485 wiring. The device does not distinguish pump and valve roles;
+the installer assigns irrigation output 1/2 to the field hardware. The analog
+soil pin is reserved for diagnostics unless a build explicitly uses it.
 
 | XIAO pin | GPIO | Connect to | External terminal | Wire | Inspection |
 |---|---:|---|---|---|---|
 | `VBUS` | - | 5V DC/DC output | Power `5V_OUT` | Orange 22-24 AWG | 4.75-5.25V at XIAO before plugging in |
 | `GND` | - | Device ground | Power `GND` | Black 20-24 AWG | Continuity to 12V negative and RS485 GND |
-| `D2` | `GPIO3` | Valve MOSFET gate | Valve output channel 1 | Blue 24-26 AWG | Gate changes when valve command is active |
-| `D3` | `GPIO4` | Pump MOSFET gate | Pump output | Blue 24-26 AWG | Pump output follows active valve channel |
+| `D2` | `GPIO3` | Irrigation output 1 MOSFET gate | `IRR1+` / `IRR1-` | Blue 24-26 AWG | Gate changes when channel mask includes bit 0 |
+| `D3` | `GPIO4` | Irrigation output 2 MOSFET gate | `IRR2+` / `IRR2-` | Blue 24-26 AWG | Gate changes when channel mask includes bit 1 |
 | `A5` / `D5` | `GPIO6` | Reserved diagnostic analog input | Internal test pad | White 24-26 AWG | Leave unconnected unless documented |
 | `D4` | `GPIO5` | RS485 transceiver DE and RE | Internal RS485 driver | Gray 24-26 AWG | Direction pin toggles during Modbus TX |
 | `D6` | `GPIO43` | RS485 transceiver DI | Internal RS485 TX | Blue 24-26 AWG | UART TX visible during request |
@@ -92,9 +93,9 @@ External terminals:
 
 | Terminal | Connects to | Notes |
 |---|---|---|
-| `12V_IN+` / `12V_IN-` | 12V supply | Common with pump, valve, RS485, and 5V DC/DC |
-| `VALVE+` / `VALVE-` | Solenoid valve or valve driver | Irrigation output |
-| `PUMP+` / `PUMP-` | Pump or pump driver | Active while watering |
+| `12V_IN+` / `12V_IN-` | 12V supply | Common with irrigation outputs, RS485, and 5V DC/DC |
+| `IRR1+` / `IRR1-` | Irrigation output 1 load or driver | `channel_mask` bit 0 |
+| `IRR2+` / `IRR2-` | Irrigation output 2 load or driver | `channel_mask` bit 1 |
 | `RS485_A` / `RS485_B` | Soil, PAR, and irradiance sensors | Unique Modbus slave ID per sensor |
 | `RS485_GND` | Sensor bus ground | Required for long cable stability |
 | `SENSOR_12V_SW+` | RS485 sensor 12V branch | Sensor branch only, not ESP32S3 power |
