@@ -1,27 +1,29 @@
 import json
 import os
-from pathlib import Path
 import uuid
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from html import escape
+from pathlib import Path
 
-from flask import Flask, Response, jsonify, redirect, render_template, render_template_string, request, send_file
 import plotly
+from flask import Flask, Response, jsonify, redirect, render_template, render_template_string, request, send_file
 from plotly import graph_objs as go
 from plotly.io import to_html
 
+from ina_device_hub.agri_action_service import METRIC_LABELS, build_action_candidates
+from ina_device_hub.ai_content_service import ai_content_service
 from ina_device_hub.camera_connector import camera_connector
 from ina_device_hub.device_config_repository import DeviceConfigValidationError, DeviceRecordValidationError
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.device_event_log import list_device_events
 from ina_device_hub.field_repository import FieldValidationError, field_repository
 from ina_device_hub.location_repository import location_repository
-from ina_device_hub.ai_content_service import ai_content_service
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
 from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
+from ina_device_hub.sensor_measurement_repository import sensor_measurement_repository
 from ina_device_hub.setting import setting
 from ina_device_hub.storage_connector import storage_connector
 from ina_device_hub.timelapse_media_service import timelapse_media_service
@@ -29,6 +31,32 @@ from ina_device_hub.utils import Utils
 
 app = Flask(__name__)
 MQTT_ADMIN_STATUS_HISTORY_LIMIT = 2000
+FIELD_AREA_TYPE_LABELS = {
+    "section": "区画",
+    "bed": "ベッド",
+    "ridge": "畝",
+    "zone": "ゾーン",
+    "point": "測点",
+    "other": "その他",
+}
+DEVICE_SCOPE_TYPE_LABELS = {
+    "field": "圃場全体",
+    "section": "区画",
+    "bed": "ベッド",
+    "ridge": "畝",
+    "zone": "ゾーン",
+    "point": "測点",
+    "other": "その他",
+}
+DEVICE_ROLE_LABELS = {
+    "environment": "環境センサー",
+    "soil": "土壌センサー",
+    "watering": "水やり機",
+    "camera": "カメラ",
+    "actuator": "制御デバイス",
+    "sensor": "センサー",
+    "other": "その他",
+}
 
 
 def _local_timezone():
@@ -1862,17 +1890,30 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <div>
                 <h3>土壌水分計 校正</h3>
                 <div class="config-toolbar">
+                  <div class="config-field">
+                    <label for="soil-calibration-mode">校正モード</label>
+                    <select id="soil-calibration-mode">
+                      <option value="normal">通常</option>
+                      <option value="capture_dry">乾いた状態を記録</option>
+                      <option value="capture_wet">湿った状態を記録</option>
+                      <option value="reset">未校正に戻す</option>
+                    </select>
+                  </div>
+                  <label class="switch-row" for="soil-calibration-calibrated">
+                    <input id="soil-calibration-calibrated" type="checkbox">
+                    手動校正値を使用
+                  </label>
                   <label class="switch-row" for="soil-calibration-auto-mode">
                     <input id="soil-calibration-auto-mode" type="checkbox">
-                    自動校正モード
+                    WTR 自動校正
                   </label>
                   <label class="switch-row" for="soil-calibration-apply-auto">
                     <input id="soil-calibration-apply-auto" type="checkbox">
-                    校正値を device に反映
+                    WTR 自動反映
                   </label>
                   <label class="switch-row" for="soil-calibration-drift-check">
                     <input id="soil-calibration-drift-check" type="checkbox">
-                    ズレ検知
+                    WTR ズレ検知
                   </label>
                   <div class="config-field">
                     <label for="soil-calibration-dry-raw">乾燥 raw</label>
@@ -1890,7 +1931,110 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                     <label for="soil-calibration-drift-tolerance-raw">ズレ検知 raw</label>
                     <input id="soil-calibration-drift-tolerance-raw" type="number" min="10" max="2000" step="1">
                   </div>
+                  <div class="config-field">
+                    <label for="soil-calibration-sample-count">平均回数</label>
+                    <input id="soil-calibration-sample-count" type="number" min="1" max="100" step="1">
+                  </div>
+                  <div class="config-field">
+                    <label for="soil-calibration-sample-interval-ms">平均間隔 ms</label>
+                    <input id="soil-calibration-sample-interval-ms" type="number" min="0" max="1000" step="1">
+                  </div>
                 </div>
+              </div>
+
+              <div>
+                <h3>環境センサー 校正</h3>
+                <div class="config-toolbar">
+                  <label class="switch-row" for="env-par-enabled">
+                    <input id="env-par-enabled" type="checkbox">
+                    光量センサーを使う
+                  </label>
+                  <label class="switch-row" for="env-soil-enabled">
+                    <input id="env-soil-enabled" type="checkbox">
+                    土壌EC/pH/NPKセンサーを使う
+                  </label>
+                  <div class="config-field">
+                    <label for="env-calibration-mode">校正モード</label>
+                    <select id="env-calibration-mode">
+                      <option value="normal">通常</option>
+                      <option value="capture_reference">基準値を記録</option>
+                      <option value="reset">未校正に戻す</option>
+                    </select>
+                  </div>
+                  <div class="config-field">
+                    <label for="env-calibration-target">記録する項目</label>
+                    <select id="env-calibration-target">
+                      <option value="par_umol_m2_s">光合成に使える光</option>
+                      <option value="soil_moisture_percent">土壌水分</option>
+                      <option value="soil_temperature_c">地温</option>
+                      <option value="soil_ec_us_cm">土壌EC</option>
+                      <option value="soil_ph">土壌pH</option>
+                      <option value="soil_n_mg_kg">窒素</option>
+                      <option value="soil_p_mg_kg">リン</option>
+                      <option value="soil_k_mg_kg">カリウム</option>
+                    </select>
+                  </div>
+                  <div class="config-field">
+                    <label for="env-calibration-reference-value">基準値</label>
+                    <input id="env-calibration-reference-value" type="number" step="0.01">
+                  </div>
+                </div>
+
+                <details class="config-details">
+                  <summary>環境センサー 詳細設定</summary>
+                  <div class="config-toolbar">
+                    <div class="config-field">
+                      <label for="env-par-slave">光量センサー ID</label>
+                      <input id="env-par-slave" type="number" min="1" max="247" step="1">
+                    </div>
+                    <div class="config-field">
+                      <label for="env-par-function">光量 Function</label>
+                      <input id="env-par-function" type="number" min="3" max="4" step="1">
+                    </div>
+                    <div class="config-field">
+                      <label for="env-par-register">光量 Register</label>
+                      <input id="env-par-register" type="number" min="0" max="65535" step="1">
+                    </div>
+                    <div class="config-field">
+                      <label for="env-soil-slave">土壌センサー ID</label>
+                      <input id="env-soil-slave" type="number" min="1" max="247" step="1">
+                    </div>
+                    <div class="config-field">
+                      <label for="env-soil-function">土壌 Function</label>
+                      <input id="env-soil-function" type="number" min="3" max="4" step="1">
+                    </div>
+                    <div class="config-field">
+                      <label for="env-soil-start-register">土壌 Start Register</label>
+                      <input id="env-soil-start-register" type="number" min="0" max="65535" step="1">
+                    </div>
+                  </div>
+                  <div class="config-toolbar">
+                    <label class="switch-row" for="env-cal-par-calibrated"><input id="env-cal-par-calibrated" type="checkbox"> 光 校正済み</label>
+                    <div class="config-field"><label for="env-cal-par-scale">光 scale</label><input id="env-cal-par-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-par-offset">光 offset</label><input id="env-cal-par-offset" type="number" step="0.01"></div>
+                    <label class="switch-row" for="env-cal-moisture-calibrated"><input id="env-cal-moisture-calibrated" type="checkbox"> 水分 校正済み</label>
+                    <div class="config-field"><label for="env-cal-moisture-scale">水分 scale</label><input id="env-cal-moisture-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-moisture-offset">水分 offset</label><input id="env-cal-moisture-offset" type="number" step="0.01"></div>
+                    <label class="switch-row" for="env-cal-temperature-calibrated"><input id="env-cal-temperature-calibrated" type="checkbox"> 地温 校正済み</label>
+                    <div class="config-field"><label for="env-cal-temperature-scale">地温 scale</label><input id="env-cal-temperature-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-temperature-offset">地温 offset</label><input id="env-cal-temperature-offset" type="number" step="0.01"></div>
+                    <label class="switch-row" for="env-cal-ec-calibrated"><input id="env-cal-ec-calibrated" type="checkbox"> EC 校正済み</label>
+                    <div class="config-field"><label for="env-cal-ec-scale">EC scale</label><input id="env-cal-ec-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-ec-offset">EC offset</label><input id="env-cal-ec-offset" type="number" step="0.01"></div>
+                    <label class="switch-row" for="env-cal-ph-calibrated"><input id="env-cal-ph-calibrated" type="checkbox"> pH 校正済み</label>
+                    <div class="config-field"><label for="env-cal-ph-scale">pH scale</label><input id="env-cal-ph-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-ph-offset">pH offset</label><input id="env-cal-ph-offset" type="number" step="0.01"></div>
+                    <label class="switch-row" for="env-cal-n-calibrated"><input id="env-cal-n-calibrated" type="checkbox"> 窒素 校正済み</label>
+                    <div class="config-field"><label for="env-cal-n-scale">窒素 scale</label><input id="env-cal-n-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-n-offset">窒素 offset</label><input id="env-cal-n-offset" type="number" step="0.01"></div>
+                    <label class="switch-row" for="env-cal-p-calibrated"><input id="env-cal-p-calibrated" type="checkbox"> リン 校正済み</label>
+                    <div class="config-field"><label for="env-cal-p-scale">リン scale</label><input id="env-cal-p-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-p-offset">リン offset</label><input id="env-cal-p-offset" type="number" step="0.01"></div>
+                    <label class="switch-row" for="env-cal-k-calibrated"><input id="env-cal-k-calibrated" type="checkbox"> カリウム 校正済み</label>
+                    <div class="config-field"><label for="env-cal-k-scale">カリウム scale</label><input id="env-cal-k-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-k-offset">カリウム offset</label><input id="env-cal-k-offset" type="number" step="0.01"></div>
+                  </div>
+                </details>
               </div>
 
               <div class="actions">
@@ -2541,6 +2685,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (wateringPatternRepeatCount) wateringPatternRepeatCount.value = String(Number.isInteger(wateringPattern.repeat_count) ? wateringPattern.repeat_count : 0);
 
             const soilCalibration = config.soil_calibration || {};
+            const soilCalibrationMode = document.getElementById("soil-calibration-mode");
+            if (soilCalibrationMode) soilCalibrationMode.value = typeof soilCalibration.mode === "string" ? soilCalibration.mode : "normal";
+            const soilCalibrationCalibrated = document.getElementById("soil-calibration-calibrated");
+            if (soilCalibrationCalibrated) soilCalibrationCalibrated.checked = Boolean(soilCalibration.calibrated);
             const soilCalibrationAutoMode = document.getElementById("soil-calibration-auto-mode");
             if (soilCalibrationAutoMode) soilCalibrationAutoMode.checked = Boolean(soilCalibration.auto_mode_enabled);
             const soilCalibrationApplyAuto = document.getElementById("soil-calibration-apply-auto");
@@ -2555,6 +2703,46 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (soilCalibrationMinDeltaRaw) soilCalibrationMinDeltaRaw.value = String(Number.isInteger(soilCalibration.min_delta_raw) ? soilCalibration.min_delta_raw : 80);
             const soilCalibrationDriftToleranceRaw = document.getElementById("soil-calibration-drift-tolerance-raw");
             if (soilCalibrationDriftToleranceRaw) soilCalibrationDriftToleranceRaw.value = String(Number.isInteger(soilCalibration.drift_tolerance_raw) ? soilCalibration.drift_tolerance_raw : 120);
+            const soilCalibrationSampleCount = document.getElementById("soil-calibration-sample-count");
+            if (soilCalibrationSampleCount) soilCalibrationSampleCount.value = String(Number.isInteger(soilCalibration.sample_count) ? soilCalibration.sample_count : 20);
+            const soilCalibrationSampleIntervalMs = document.getElementById("soil-calibration-sample-interval-ms");
+            if (soilCalibrationSampleIntervalMs) soilCalibrationSampleIntervalMs.value = String(Number.isInteger(soilCalibration.sample_interval_ms) ? soilCalibration.sample_interval_ms : 40);
+
+            const envSensors = config.env_sensors || {};
+            const envPar = envSensors.par || {};
+            const envSoil = envSensors.soil || {};
+            const envParEnabled = document.getElementById("env-par-enabled");
+            if (envParEnabled) envParEnabled.checked = envPar.enabled !== false;
+            const envSoilEnabled = document.getElementById("env-soil-enabled");
+            if (envSoilEnabled) envSoilEnabled.checked = Boolean(envSoil.enabled);
+            const envParSlave = document.getElementById("env-par-slave");
+            if (envParSlave) envParSlave.value = String(Number.isInteger(envPar.modbus_slave_id) ? envPar.modbus_slave_id : 1);
+            const envParFunction = document.getElementById("env-par-function");
+            if (envParFunction) envParFunction.value = String(Number.isInteger(envPar.modbus_function) ? envPar.modbus_function : 3);
+            const envParRegister = document.getElementById("env-par-register");
+            if (envParRegister) envParRegister.value = String(Number.isInteger(envPar.register) ? envPar.register : 0);
+            const envSoilSlave = document.getElementById("env-soil-slave");
+            if (envSoilSlave) envSoilSlave.value = String(Number.isInteger(envSoil.modbus_slave_id) ? envSoil.modbus_slave_id : 2);
+            const envSoilFunction = document.getElementById("env-soil-function");
+            if (envSoilFunction) envSoilFunction.value = String(Number.isInteger(envSoil.modbus_function) ? envSoil.modbus_function : 4);
+            const envSoilStartRegister = document.getElementById("env-soil-start-register");
+            if (envSoilStartRegister) envSoilStartRegister.value = String(Number.isInteger(envSoil.start_register) ? envSoil.start_register : 0);
+
+            const envCalibration = config.env_calibration || {};
+            const envCalibrationMode = document.getElementById("env-calibration-mode");
+            if (envCalibrationMode) envCalibrationMode.value = typeof envCalibration.mode === "string" ? envCalibration.mode : "normal";
+            const envCalibrationTarget = document.getElementById("env-calibration-target");
+            if (envCalibrationTarget) envCalibrationTarget.value = typeof envCalibration.target === "string" ? envCalibration.target : "par_umol_m2_s";
+            const envCalibrationReferenceValue = document.getElementById("env-calibration-reference-value");
+            if (envCalibrationReferenceValue) envCalibrationReferenceValue.value = String(typeof envCalibration.reference_value === "number" ? envCalibration.reference_value : 0);
+            setEnvMetricCalibration("par_umol_m2_s", "env-cal-par", envCalibration);
+            setEnvMetricCalibration("soil_moisture_percent", "env-cal-moisture", envCalibration);
+            setEnvMetricCalibration("soil_temperature_c", "env-cal-temperature", envCalibration);
+            setEnvMetricCalibration("soil_ec_us_cm", "env-cal-ec", envCalibration);
+            setEnvMetricCalibration("soil_ph", "env-cal-ph", envCalibration);
+            setEnvMetricCalibration("soil_n_mg_kg", "env-cal-n", envCalibration);
+            setEnvMetricCalibration("soil_p_mg_kg", "env-cal-p", envCalibration);
+            setEnvMetricCalibration("soil_k_mg_kg", "env-cal-k", envCalibration);
 
             const editor = document.getElementById("schedule-editor");
             if (editor) {
@@ -2595,7 +2783,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               off_sec: Number(document.getElementById("watering-pattern-off-sec").value),
               repeat_count: Number(document.getElementById("watering-pattern-repeat-count").value),
             };
+            const soilCalibrationMode = document.getElementById("soil-calibration-mode").value;
             const soilCalibration = {
+              mode: soilCalibrationMode,
+              request_id: soilCalibrationMode === "normal" ? "" : String(Date.now()),
+              calibrated: document.getElementById("soil-calibration-calibrated").checked,
               auto_mode_enabled: document.getElementById("soil-calibration-auto-mode").checked,
               apply_auto_calibration: document.getElementById("soil-calibration-apply-auto").checked,
               drift_check_enabled: document.getElementById("soil-calibration-drift-check").checked,
@@ -2603,6 +2795,37 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               wet_raw: Number(document.getElementById("soil-calibration-wet-raw").value),
               min_delta_raw: Number(document.getElementById("soil-calibration-min-delta-raw").value),
               drift_tolerance_raw: Number(document.getElementById("soil-calibration-drift-tolerance-raw").value),
+              sample_count: Number(document.getElementById("soil-calibration-sample-count").value),
+              sample_interval_ms: Number(document.getElementById("soil-calibration-sample-interval-ms").value),
+            };
+            const envCalibrationMode = document.getElementById("env-calibration-mode").value;
+            const envCalibration = {
+              mode: envCalibrationMode,
+              request_id: envCalibrationMode === "normal" ? "" : String(Date.now()),
+              target: document.getElementById("env-calibration-target").value,
+              reference_value: Number(document.getElementById("env-calibration-reference-value").value),
+              par_umol_m2_s: collectEnvMetricCalibration("env-cal-par"),
+              soil_moisture_percent: collectEnvMetricCalibration("env-cal-moisture"),
+              soil_temperature_c: collectEnvMetricCalibration("env-cal-temperature"),
+              soil_ec_us_cm: collectEnvMetricCalibration("env-cal-ec"),
+              soil_ph: collectEnvMetricCalibration("env-cal-ph"),
+              soil_n_mg_kg: collectEnvMetricCalibration("env-cal-n"),
+              soil_p_mg_kg: collectEnvMetricCalibration("env-cal-p"),
+              soil_k_mg_kg: collectEnvMetricCalibration("env-cal-k"),
+            };
+            const envSensors = {
+              par: {
+                enabled: document.getElementById("env-par-enabled").checked,
+                modbus_slave_id: Number(document.getElementById("env-par-slave").value),
+                modbus_function: Number(document.getElementById("env-par-function").value),
+                register: Number(document.getElementById("env-par-register").value),
+              },
+              soil: {
+                enabled: document.getElementById("env-soil-enabled").checked,
+                modbus_slave_id: Number(document.getElementById("env-soil-slave").value),
+                modbus_function: Number(document.getElementById("env-soil-function").value),
+                start_register: Number(document.getElementById("env-soil-start-register").value),
+              },
             };
             return {
               ntp_server: document.getElementById("ntp-server").value.trim() || "pool.ntp.org",
@@ -2613,7 +2836,27 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               ota_check_interval_sec: otaCheckInterval,
               watering_pattern: wateringPattern,
               soil_calibration: soilCalibration,
+              env_sensors: envSensors,
+              env_calibration: envCalibration,
               schedules,
+            };
+          }
+
+          function setEnvMetricCalibration(metric, prefix, envCalibration) {
+            const metricConfig = envCalibration[metric] || {};
+            const calibrated = document.getElementById(prefix + "-calibrated");
+            if (calibrated) calibrated.checked = Boolean(metricConfig.calibrated);
+            const scale = document.getElementById(prefix + "-scale");
+            if (scale) scale.value = String(typeof metricConfig.scale === "number" ? metricConfig.scale : 1);
+            const offset = document.getElementById(prefix + "-offset");
+            if (offset) offset.value = String(typeof metricConfig.offset === "number" ? metricConfig.offset : 0);
+          }
+
+          function collectEnvMetricCalibration(prefix) {
+            return {
+              calibrated: document.getElementById(prefix + "-calibrated").checked,
+              scale: Number(document.getElementById(prefix + "-scale").value),
+              offset: Number(document.getElementById(prefix + "-offset").value),
             };
           }
 
@@ -2916,14 +3159,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 def fields_page():
     repo = field_repository()
     if request.method == "POST":
-        data = {
-            "name": request.form.get("name", ""),
-            "crop": request.form.get("crop", ""),
-            "stage": request.form.get("stage", ""),
-            "memo": request.form.get("memo", ""),
-            "device_ids": _split_lines_or_commas(request.form.get("device_ids", "")),
-            "camera_device_ids": _split_lines_or_commas(request.form.get("camera_device_ids", "")),
-        }
+        data = _field_form_data(request.form)
         try:
             field = repo.upsert(None, data)
         except FieldValidationError as exc:
@@ -2943,9 +3179,13 @@ def fields_page():
           .field-list { display: grid; gap: 12px; }
           .field-card, form { border: 1px solid #d8dee4; border-radius: 8px; padding: 16px; background: #fff; }
           .meta { color: #667085; font-size: 13px; }
+          .summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+          .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #e6f4f1; color: #0f766e; font-size: 12px; }
           label { display: block; font-weight: 600; margin-top: 10px; }
-          input, textarea { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+          input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
           textarea { min-height: 72px; }
+          .check-row { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+          .check-row input { width: auto; }
           button { margin-top: 12px; padding: 8px 12px; border: 1px solid #0f766e; border-radius: 6px; background: #0f766e; color: white; cursor: pointer; }
           code { background: #eef2f7; padding: 2px 4px; border-radius: 4px; }
         </style>
@@ -2958,8 +3198,13 @@ def fields_page():
             {% for field in fields %}
             <article class="field-card">
               <h2><a href="/fields/{{ field.id }}">{{ field.name }}</a></h2>
-              <p class="meta">作物: {{ field.crop or '未設定' }} / ステージ: {{ field.stage or '未設定' }}</p>
+              <p class="meta">作物: {{ field.crop or '未設定' }}{% if field.crop_profile.cultivar %}（{{ field.crop_profile.cultivar }}）{% endif %} / ステージ: {{ field.stage or '未設定' }}</p>
               <p class="meta">デバイス: {{ field.device_ids|length }} 件 / カメラ: {{ field.camera_device_ids|length }} 件 / メモ: {{ field.notes|length }} 件 / 振り返り: {{ field.reflections|length }} 件</p>
+              <div class="summary">
+                {% if field.areas %}<span class="pill">監視単位 {{ field.areas|length }}件</span>{% else %}<span class="pill">監視単位 圃場全体</span>{% endif %}
+                <span class="pill">土壌水分目標 {{ field.growth_targets.soil_moisture_percent.min }}-{{ field.growth_targets.soil_moisture_percent.max }}%</span>
+                {% for action in field.control_policy.allowed_actions %}<span class="pill">{{ {'watering':'灌水','fertigation':'液肥','misting':'噴霧'}.get(action, action) }}</span>{% endfor %}
+              </div>
               {% if field.memo %}<p>{{ field.memo }}</p>{% endif %}
             </article>
             {% else %}
@@ -2970,7 +3215,13 @@ def fields_page():
             <h2>圃場を追加</h2>
             <label>名前</label><input name="name" required>
             <label>作物</label><input name="crop" placeholder="例: トマト">
+            <label>品種</label><input name="cultivar" placeholder="例: ミニトマト、桃太郎">
             <label>栽培ステージ</label><input name="stage" placeholder="例: 育苗、開花、収穫期">
+            <label>栽培方式</label><input name="cultivation_method" placeholder="例: 露地、ハウス、プランター">
+            <label>制御の目的</label><textarea name="objective" placeholder="例: 過湿を避けつつ土壌水分を安定させる"></textarea>
+            <label class="check-row"><input type="checkbox" name="allowed_actions" value="watering" checked> 灌水を判断候補に入れる</label>
+            <label class="check-row"><input type="checkbox" name="allowed_actions" value="fertigation"> 液肥を判断候補に入れる</label>
+            <label class="check-row"><input type="checkbox" name="allowed_actions" value="misting"> 噴霧を判断候補に入れる</label>
             <label>MQTT device IDs</label><textarea name="device_ids" placeholder="1行に1つ、またはカンマ区切り"></textarea>
             <label>Camera device IDs</label><textarea name="camera_device_ids" placeholder="timelapse camera ID など"></textarea>
             <label>メモ</label><textarea name="memo"></textarea>
@@ -2992,14 +3243,7 @@ def field_detail_page(field_id):
         return jsonify({"error": "field not found"}), 404
 
     if request.method == "POST":
-        data = {
-            "name": request.form.get("name", ""),
-            "crop": request.form.get("crop", ""),
-            "stage": request.form.get("stage", ""),
-            "memo": request.form.get("memo", ""),
-            "device_ids": _split_lines_or_commas(request.form.get("device_ids", "")),
-            "camera_device_ids": _split_lines_or_commas(request.form.get("camera_device_ids", "")),
-        }
+        data = _field_form_data(request.form)
         try:
             repo.upsert(field_id, data)
         except FieldValidationError as exc:
@@ -3031,9 +3275,18 @@ def field_detail_page(field_id):
           .timeline { display: grid; gap: 10px; max-height: 620px; overflow: auto; }
           .timeline article { padding: 12px; }
           .tag { display: inline-block; padding: 2px 7px; border-radius: 999px; background: #e6f4f1; color: #0f766e; font-size: 12px; }
+          .tag.warn { background: #fff7ed; color: #c2410c; }
+          .tag.wait { background: #eef2ff; color: #3730a3; }
+          .candidate { display: grid; gap: 8px; }
+          .candidate + .candidate { margin-top: 12px; }
+          .detail-list { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 8px 12px; font-size: 14px; }
+          .detail-list dt { color: #667085; }
+          .detail-list dd { margin: 0; }
           label { display: block; font-weight: 600; margin-top: 10px; }
           input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
           textarea { min-height: 84px; }
+          .check-row { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+          .check-row input { width: auto; }
           button { margin-top: 12px; padding: 8px 12px; border: 1px solid #0f766e; border-radius: 6px; background: #0f766e; color: white; cursor: pointer; }
           img { max-width: 100%; border-radius: 6px; border: 1px solid #e5e7eb; background: #f8fafc; }
           pre { white-space: pre-wrap; background: #f8fafc; padding: 12px; border-radius: 6px; }
@@ -3047,7 +3300,7 @@ def field_detail_page(field_id):
         <header>
           <p class="meta"><a href="/fields">Fields</a> / {{ field.name }}</p>
           <h1>{{ field.name }}</h1>
-          <p class="meta">作物: {{ field.crop or '未設定' }} / ステージ: {{ field.stage or '未設定' }} / MQTT: {{ field.device_ids|length }} / Camera: {{ field.camera_device_ids|length }}</p>
+          <p class="meta">作物: {{ field.crop or '未設定' }}{% if field.crop_profile.cultivar %}（{{ field.crop_profile.cultivar }}）{% endif %} / ステージ: {{ field.stage or '未設定' }} / MQTT: {{ field.device_ids|length }} / Camera: {{ field.camera_device_ids|length }}</p>
           {% if field.memo %}<p>{{ field.memo }}</p>{% endif %}
         </header>
         <main>
@@ -3057,10 +3310,45 @@ def field_detail_page(field_id):
               <div class="metrics">
                 {% for item in context.latest_sensor_values %}
                   {% for key, value in item["values"].items() %}
-                  <div class="metric"><span>{{ item.device_id }} / {{ key }}</span><strong>{{ value }}</strong></div>
+                  <div class="metric"><span>{{ item.device_id }}{% if item.scope_label %} / {{ item.scope_label }}{% endif %}{% if item.crop_name %} / {{ item.crop_name }}{% endif %} / {{ metric_labels.get(key, key) }}</span><strong>{{ value }}</strong></div>
                   {% endfor %}
                 {% else %}<p>センサー値はまだありません。</p>{% endfor %}
               </div>
+            </section>
+            <section>
+              <h2>生育の前提</h2>
+              <dl class="detail-list">
+                <dt>作物</dt><dd>{{ field.crop or '未設定' }}{% if field.crop_profile.cultivar %} / {{ field.crop_profile.cultivar }}{% endif %}</dd>
+                <dt>生育段階</dt><dd>{{ field.stage or '未設定' }}</dd>
+                <dt>栽培方式</dt><dd>{{ field.cultivation_context.cultivation_method or '未設定' }}</dd>
+                <dt>土・培地</dt><dd>{{ field.cultivation_context.soil_type or field.cultivation_context.substrate or '未設定' }}</dd>
+                <dt>制御方針</dt><dd>{{ field.control_policy.objective }}</dd>
+                <dt>自動化</dt><dd>{{ {'observe_only':'観察のみ','suggest_only':'提案のみ','manual_approval':'承認して実行','auto':'自動実行'}.get(field.control_policy.autonomy_level, field.control_policy.autonomy_level) }}</dd>
+              </dl>
+              <div class="metrics" style="margin-top: 12px;">
+                <div class="metric"><span>土壌水分目標</span><strong>{{ field.growth_targets.soil_moisture_percent.min }}-{{ field.growth_targets.soil_moisture_percent.max }}%</strong></div>
+                {% if field.growth_targets.soil_ec_us_cm.min or field.growth_targets.soil_ec_us_cm.max %}<div class="metric"><span>土壌EC目標</span><strong>{{ field.growth_targets.soil_ec_us_cm.min or '-' }}-{{ field.growth_targets.soil_ec_us_cm.max or '-' }}</strong></div>{% endif %}
+                {% if field.growth_targets.soil_ph.min or field.growth_targets.soil_ph.max %}<div class="metric"><span>土壌pH目標</span><strong>{{ field.growth_targets.soil_ph.min or '-' }}-{{ field.growth_targets.soil_ph.max or '-' }}</strong></div>{% endif %}
+                {% if field.growth_targets.air_humidity_percent.min or field.growth_targets.air_humidity_percent.max %}<div class="metric"><span>湿度目標</span><strong>{{ field.growth_targets.air_humidity_percent.min or '-' }}-{{ field.growth_targets.air_humidity_percent.max or '-' }}%</strong></div>{% endif %}
+              </div>
+              <h3 style="margin-top: 14px;">監視単位</h3>
+              <dl class="detail-list">
+                {% if field.areas %}
+                  {% for area in field.areas %}
+                  <dt>{{ area_type_labels.get(area.area_type, area.area_type) }}</dt><dd>{{ area.name }}{% if area.crop_name %} / {{ area.crop_name }}{% endif %}{% if area.memo %} / {{ area.memo }}{% endif %}</dd>
+                  {% endfor %}
+                {% else %}
+                  <dt>圃場全体</dt><dd>区画・畝は未設定です。</dd>
+                {% endif %}
+              </dl>
+              <h3 style="margin-top: 14px;">デバイス設置先</h3>
+              <dl class="detail-list">
+                {% for placement in context.device_placement_rows %}
+                <dt>{{ placement.device_role_label }}</dt><dd>{{ placement.device_id }} / {{ placement.scope_label }}{% if placement.crop_name %} / {{ placement.crop_name }}{% endif %}</dd>
+                {% else %}
+                <dt>未設定</dt><dd>デバイスはまだ紐づいていません。</dd>
+                {% endfor %}
+              </dl>
             </section>
             <section>
               <h2>画像比較</h2>
@@ -3084,6 +3372,42 @@ def field_detail_page(field_id):
             </section>
           </div>
 
+          <section>
+            <h2>次の判断候補</h2>
+            <div class="grid">
+              {% for candidate in context.action_candidates %}
+              <article class="candidate">
+                <p>
+                  <span class="tag">{{ candidate.action_label }}</span>
+                  {% if candidate.can_execute_now %}<span class="tag wait">承認後に実行可能</span>{% endif %}
+                  {% if not candidate.support.supported %}<span class="tag warn">制御デバイス未対応</span>{% endif %}
+                </p>
+                <h3>{{ candidate.title }}</h3>
+                <p>{{ candidate.scientific_reason }}</p>
+                <dl class="detail-list">
+                  <dt>根拠</dt><dd>{{ candidate.metric_label or '観察' }}{% if candidate.evidence.current_value is defined %}: {{ candidate.evidence.current_value }}{% endif %}</dd>
+                  <dt>期待する変化</dt><dd>{{ candidate.expected_effect }}</dd>
+                  <dt>注意点</dt><dd>{{ candidate.risk }}</dd>
+                  <dt>実行可否</dt><dd>{{ candidate.support.reason }}</dd>
+                </dl>
+                <form method="post" action="/fields/{{ field.id }}/action-plans" class="panel-flat">
+                  <input type="hidden" name="action_type" value="{{ candidate.action_type }}">
+                  <input type="hidden" name="status" value="proposed">
+                  <input type="hidden" name="title" value="{{ candidate.title }}">
+                  <input type="hidden" name="scientific_reason" value="{{ candidate.scientific_reason }}">
+                  <input type="hidden" name="expected_effect" value="{{ candidate.expected_effect }}">
+                  <input type="hidden" name="risk" value="{{ candidate.risk }}">
+                  <input type="hidden" name="source" value="{{ candidate.source }}">
+                  <input type="hidden" name="preconditions_json" value='{{ candidate.preconditions|tojson }}'>
+                  <input type="hidden" name="control_payload_json" value='{{ candidate.control_payload|tojson }}'>
+                  <label>人間の判断メモ</label><textarea name="human_evaluation" placeholder="採用する理由、見送る理由、確認したいこと"></textarea>
+                  <button type="submit">候補を記録する</button>
+                </form>
+              </article>
+              {% else %}<p>判断候補はまだありません。</p>{% endfor %}
+            </div>
+          </section>
+
           <div class="wide-grid">
             <section>
               <h2>土壌水分推移</h2>
@@ -3092,11 +3416,11 @@ def field_detail_page(field_id):
             <section>
               <h2>圃場イベント</h2>
               <form method="post" action="/fields/{{ field.id }}/events">
-                <label>種類</label><select name="event_type"><option value="watering">潅水</option><option value="fertigation">液肥</option><option value="fertilizer">追肥</option><option value="shade">遮光</option><option value="pest">病害虫</option><option value="harvest">収穫</option><option value="other">その他</option></select>
+                <label>種類</label><select name="event_type"><option value="watering">潅水</option><option value="fertigation">液肥</option><option value="misting">噴霧</option><option value="fertilizer">追肥</option><option value="shade">遮光</option><option value="pest">病害虫</option><option value="harvest">収穫</option><option value="other">その他</option></select>
                 <label>時刻</label><input name="occurred_at" type="datetime-local">
                 <label>タイトル</label><input name="title" placeholder="例: 液肥追加、遮光ネット設置">
                 <div class="grid"><div><label>量</label><input name="amount" placeholder="例: 500"></div><div><label>単位</label><input name="unit" placeholder="例: ml, g"></div></div>
-                <label>対象デバイス</label><select name="device_id"><option value="">圃場全体</option>{% for device_id in field.device_ids %}<option value="{{ device_id }}">{{ device_id }}</option>{% endfor %}</select>
+                <label>対象デバイス</label><select name="device_id"><option value="">圃場全体</option>{% for placement in context.device_placement_rows %}<option value="{{ placement.device_id }}">{{ placement.device_id }} / {{ placement.scope_label }}</option>{% endfor %}</select>
                 <label>内容</label><textarea name="description"></textarea>
                 <label>人間の評価</label><textarea name="human_evaluation" placeholder="結果、効いた/効かなかった、次回見ること"></textarea>
                 <label>タグ</label><input name="tags" placeholder="カンマ区切り">
@@ -3131,6 +3455,21 @@ def field_detail_page(field_id):
           </div>
 
           <section>
+            <h2>アクション計画の履歴</h2>
+            <div class="timeline">
+              {% for plan in field.action_plans|reverse %}
+              <article>
+                <p class="meta">{{ plan.created_at }} <span class="tag">{{ {'watering':'灌水','fertigation':'液肥','misting':'噴霧','observation':'観察','environment':'環境'}.get(plan.action_type, plan.action_type) }}</span> <span class="tag wait">{{ plan.status }}</span></p>
+                <h3>{{ plan.title }}</h3>
+                {% if plan.scientific_reason %}<p>{{ plan.scientific_reason }}</p>{% endif %}
+                {% if plan.expected_effect %}<p><strong>期待:</strong> {{ plan.expected_effect }}</p>{% endif %}
+                {% if plan.human_evaluation %}<p><strong>人間の判断:</strong> {{ plan.human_evaluation }}</p>{% endif %}
+              </article>
+              {% else %}<p>アクション計画はまだありません。</p>{% endfor %}
+            </div>
+          </section>
+
+          <section>
             <h2>データと評価の振り返り</h2>
             <form method="post" action="/fields/{{ field.id }}/reflections">
               <div class="grid"><div><label>期間開始</label><input name="period_start" type="date"></div><div><label>期間終了</label><input name="period_end" type="date"></div></div>
@@ -3152,10 +3491,103 @@ def field_detail_page(field_id):
             <h2>圃場設定</h2>
             <form method="post">
               <label>名前</label><input name="name" value="{{ field.name }}" required>
-              <label>作物</label><input name="crop" value="{{ field.crop }}">
-              <label>栽培ステージ</label><input name="stage" value="{{ field.stage }}">
+              <div class="grid">
+                <div><label>作物</label><input name="crop" value="{{ field.crop }}" placeholder="例: トマト"></div>
+                <div><label>品種</label><input name="cultivar" value="{{ field.crop_profile.cultivar }}" placeholder="例: 桃太郎、アイコ"></div>
+                <div><label>生育段階</label><input name="stage" value="{{ field.stage }}" placeholder="例: 育苗、開花、収穫期"></div>
+              </div>
+              <div class="grid">
+                <div><label>播種日</label><input type="date" name="seeding_date" value="{{ field.crop_profile.seeding_date }}"></div>
+                <div><label>定植日</label><input type="date" name="transplant_date" value="{{ field.crop_profile.transplant_date }}"></div>
+                <div><label>収穫目標日</label><input type="date" name="target_harvest_date" value="{{ field.crop_profile.target_harvest_date }}"></div>
+              </div>
+              <h3>栽培条件</h3>
+              <div class="grid">
+                <div><label>栽培方式</label><input name="cultivation_method" value="{{ field.cultivation_context.cultivation_method }}" placeholder="例: 露地、ハウス、プランター"></div>
+                <div><label>土質</label><input name="soil_type" value="{{ field.cultivation_context.soil_type }}" placeholder="例: 黒土、砂壌土"></div>
+                <div><label>培地</label><input name="substrate" value="{{ field.cultivation_context.substrate }}" placeholder="例: ココピート、培養土"></div>
+                <div><label>ハウス・設備</label><input name="greenhouse_type" value="{{ field.cultivation_context.greenhouse_type }}"></div>
+                <div><label>マルチ</label><input name="mulching" value="{{ field.cultivation_context.mulching }}"></div>
+                <div><label>潅水方式</label><input name="irrigation_method" value="{{ field.cultivation_context.irrigation_method }}" placeholder="例: 点滴、散水"></div>
+                <div><label>水源</label><input name="water_source" value="{{ field.cultivation_context.water_source }}"></div>
+                <div><label>面積 m2</label><input type="number" step="0.01" name="bed_area_m2" value="{{ field.cultivation_context.bed_area_m2 or '' }}"></div>
+                <div><label>株数</label><input type="number" name="plant_count" value="{{ field.cultivation_context.plant_count or '' }}"></div>
+              </div>
+              <label>栽培条件メモ</label><textarea name="cultivation_notes">{{ field.cultivation_context.notes }}</textarea>
+              <h3>圃場内の監視単位</h3>
+              <label>区画・畝・測点</label>
+              <textarea name="areas_text" placeholder="例: A区画,section,トマト,南側&#10;1番畝,ridge,トマト,SOI設置&#10;代表点,point,,ENVは圃場全体">{{ areas_text }}</textarea>
+              <p class="meta">1行に「名前,種類,作物,メモ」。種類は section=区画 / bed=ベッド / ridge=畝 / zone=ゾーン / point=測点 / other=その他。小規模なら空欄のままで圃場全体として扱います。</p>
+              <h3>目標レンジ</h3>
+              <div class="grid">
+                <div><label>土壌水分 下限%</label><input type="number" step="0.1" name="target_soil_moisture_min" value="{{ field.growth_targets.soil_moisture_percent.min or '' }}"></div>
+                <div><label>土壌水分 上限%</label><input type="number" step="0.1" name="target_soil_moisture_max" value="{{ field.growth_targets.soil_moisture_percent.max or '' }}"></div>
+                <div><label>土壌EC 下限</label><input type="number" step="0.1" name="target_soil_ec_min" value="{{ field.growth_targets.soil_ec_us_cm.min or '' }}"></div>
+                <div><label>土壌EC 上限</label><input type="number" step="0.1" name="target_soil_ec_max" value="{{ field.growth_targets.soil_ec_us_cm.max or '' }}"></div>
+                <div><label>土壌pH 下限</label><input type="number" step="0.1" name="target_soil_ph_min" value="{{ field.growth_targets.soil_ph.min or '' }}"></div>
+                <div><label>土壌pH 上限</label><input type="number" step="0.1" name="target_soil_ph_max" value="{{ field.growth_targets.soil_ph.max or '' }}"></div>
+                <div><label>湿度 下限%</label><input type="number" step="0.1" name="target_air_humidity_min" value="{{ field.growth_targets.air_humidity_percent.min or '' }}"></div>
+                <div><label>湿度 上限%</label><input type="number" step="0.1" name="target_air_humidity_max" value="{{ field.growth_targets.air_humidity_percent.max or '' }}"></div>
+                <div><label>光量 下限</label><input type="number" step="0.1" name="target_par_min" value="{{ field.growth_targets.par_umol_m2_s.min or '' }}"></div>
+                <div><label>光量 上限</label><input type="number" step="0.1" name="target_par_max" value="{{ field.growth_targets.par_umol_m2_s.max or '' }}"></div>
+              </div>
+              <h3>制御方針</h3>
+              <label>目的</label><textarea name="objective">{{ field.control_policy.objective }}</textarea>
+              <label>自動化レベル</label>
+              <select name="autonomy_level">
+                <option value="observe_only" {% if field.control_policy.autonomy_level == 'observe_only' %}selected{% endif %}>観察のみ</option>
+                <option value="suggest_only" {% if field.control_policy.autonomy_level == 'suggest_only' %}selected{% endif %}>提案のみ</option>
+                <option value="manual_approval" {% if field.control_policy.autonomy_level == 'manual_approval' %}selected{% endif %}>承認して実行</option>
+                <option value="auto" {% if field.control_policy.autonomy_level == 'auto' %}selected{% endif %}>自動実行</option>
+              </select>
+              <label class="check-row"><input type="checkbox" name="allowed_actions" value="watering" {% if 'watering' in field.control_policy.allowed_actions %}checked{% endif %}> 灌水</label>
+              <label class="check-row"><input type="checkbox" name="allowed_actions" value="fertigation" {% if 'fertigation' in field.control_policy.allowed_actions %}checked{% endif %}> 液肥</label>
+              <label class="check-row"><input type="checkbox" name="allowed_actions" value="misting" {% if 'misting' in field.control_policy.allowed_actions %}checked{% endif %}> 噴霧</label>
+              <div class="grid">
+                <div><label>1日の最大灌水秒数</label><input type="number" name="max_watering_sec_per_day" value="{{ field.control_policy.max_watering_sec_per_day or '' }}"></div>
+                <div><label>最小灌水間隔 分</label><input type="number" name="min_watering_interval_min" value="{{ field.control_policy.min_watering_interval_min or '' }}"></div>
+              </div>
+              <label>安全メモ</label><textarea name="safety_notes">{{ field.control_policy.safety_notes }}</textarea>
+              <h3>外部知識と画像観察</h3>
+              <label>調べたい研究・栽培テーマ</label><textarea name="research_queries" placeholder="1行に1テーマ">{{ field.knowledge_context.research_queries|join('\n') }}</textarea>
+              <label>参考URL</label><textarea name="external_reference_urls" placeholder="1行に1URL">{{ field.knowledge_context.external_reference_urls|join('\n') }}</textarea>
+              <label>画像を見るときの観点</label><textarea name="image_observation_prompt" placeholder="例: 葉色、萎れ、病斑、節間、開花数を見る">{{ field.knowledge_context.image_observation_prompt }}</textarea>
+              <label>知識メモ</label><textarea name="knowledge_notes">{{ field.knowledge_context.notes }}</textarea>
               <label>MQTT device IDs</label><textarea name="device_ids">{{ field.device_ids|join('\n') }}</textarea>
               <label>Camera device IDs</label><textarea name="camera_device_ids">{{ field.camera_device_ids|join('\n') }}</textarea>
+              <h3>デバイスの紐づけ先</h3>
+              <p class="meta">ENV は通常「圃場全体」、SOI は測点・畝、WTR は実際に水を入れる対象へ紐づけます。デバイスIDを追加した直後は保存後にここへ表示されます。</p>
+              {% for placement in context.device_placement_rows %}
+              <article class="panel-flat">
+                <h3>{{ placement.device_id }}</h3>
+                <p class="meta">{{ placement.device_role_label }} / 現在: {{ placement.scope_label }}{% if placement.crop_name %} / {{ placement.crop_name }}{% endif %}</p>
+                <input type="hidden" name="placement_device_id_{{ loop.index0 }}" value="{{ placement.device_id }}">
+                <input type="hidden" name="placement_device_role_{{ loop.index0 }}" value="{{ placement.device_role }}">
+                <div class="grid">
+                  <div>
+                    <label>設置先の範囲</label>
+                    <select name="placement_scope_type_{{ loop.index0 }}">
+                      {% for value, label in scope_type_labels.items() %}
+                      <option value="{{ value }}" {% if placement.scope_type == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div>
+                    <label>対象の区画・畝・測点</label>
+                    <select name="placement_area_id_{{ loop.index0 }}">
+                      <option value="">圃場全体</option>
+                      {% for area in field.areas %}
+                      <option value="{{ area.id }}" {% if placement.area_id == area.id %}selected{% endif %}>{{ area_type_labels.get(area.area_type, area.area_type) }}: {{ area.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div><label>参考にする作物</label><input name="placement_crop_name_{{ loop.index0 }}" value="{{ placement.crop_name }}" placeholder="未設定なら区画または圃場の作物"></div>
+                  <div><label>設置メモ</label><input name="placement_memo_{{ loop.index0 }}" value="{{ placement.memo }}"></div>
+                </div>
+              </article>
+              {% else %}
+              <p>紐づけるデバイスはまだありません。</p>
+              {% endfor %}
               <label>メモ</label><textarea name="memo">{{ field.memo }}</textarea>
               <button type="submit">保存</button>
             </form>
@@ -3164,7 +3596,15 @@ def field_detail_page(field_id):
       </body>
     </html>
     """
-    return render_template_string(template, field=field, context=context)
+    return render_template_string(
+        template,
+        field=field,
+        context=context,
+        metric_labels=METRIC_LABELS,
+        area_type_labels=FIELD_AREA_TYPE_LABELS,
+        scope_type_labels=DEVICE_SCOPE_TYPE_LABELS,
+        areas_text=_field_areas_text(field.get("areas") or []),
+    )
 
 
 @app.route("/fields/<field_id>/notes", methods=["POST"])
@@ -3197,6 +3637,31 @@ def add_field_event(field_id):
                 "amount": request.form.get("amount", ""),
                 "unit": request.form.get("unit", ""),
                 "device_id": request.form.get("device_id", ""),
+                "human_evaluation": request.form.get("human_evaluation", ""),
+                "tags": _split_lines_or_commas(request.form.get("tags", "")),
+            },
+        )
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return redirect(f"/fields/{field_id}")
+
+
+@app.route("/fields/<field_id>/action-plans", methods=["POST"])
+def add_field_action_plan(field_id):
+    try:
+        field_repository().add_action_plan(
+            field_id,
+            {
+                "action_type": request.form.get("action_type", "observation"),
+                "status": request.form.get("status", "proposed"),
+                "target_device_id": request.form.get("target_device_id", ""),
+                "title": request.form.get("title", ""),
+                "scientific_reason": request.form.get("scientific_reason", ""),
+                "preconditions": _json_form_payload("preconditions_json"),
+                "expected_effect": request.form.get("expected_effect", ""),
+                "risk": request.form.get("risk", ""),
+                "control_payload": _json_form_payload("control_payload_json"),
+                "source": request.form.get("source", "human"),
                 "human_evaluation": request.form.get("human_evaluation", ""),
                 "tags": _split_lines_or_commas(request.form.get("tags", "")),
             },
@@ -3292,6 +3757,18 @@ def add_field_event_api(field_id):
     return jsonify(event), 201
 
 
+@app.route("/local/api/fields/<field_id>/action-plans", methods=["POST"])
+def add_field_action_plan_api(field_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        plan = field_repository().add_action_plan(field_id, request_body)
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(plan), 201
+
+
 @app.route("/local/api/fields/<field_id>/reflections", methods=["POST"])
 def add_field_reflection_api(field_id):
     request_body = request.get_json(silent=True)
@@ -3329,11 +3806,159 @@ def _split_lines_or_commas(value: str):
     return parts
 
 
+def _field_form_data(form):
+    return {
+        "name": form.get("name", ""),
+        "crop": form.get("crop", ""),
+        "stage": form.get("stage", ""),
+        "memo": form.get("memo", ""),
+        "device_ids": _split_lines_or_commas(form.get("device_ids", "")),
+        "camera_device_ids": _split_lines_or_commas(form.get("camera_device_ids", "")),
+        "areas": _parse_field_areas_text(form.get("areas_text", "")),
+        "device_placements": _parse_device_placements_form(form),
+        "crop_profile": {
+            "crop_name": form.get("crop", ""),
+            "cultivar": form.get("cultivar", ""),
+            "growth_stage": form.get("stage", ""),
+            "seeding_date": form.get("seeding_date", ""),
+            "transplant_date": form.get("transplant_date", ""),
+            "target_harvest_date": form.get("target_harvest_date", ""),
+        },
+        "growth_targets": {
+            "soil_moisture_percent": _field_range_from_form(form, "target_soil_moisture"),
+            "soil_ec_us_cm": _field_range_from_form(form, "target_soil_ec"),
+            "soil_ph": _field_range_from_form(form, "target_soil_ph"),
+            "air_humidity_percent": _field_range_from_form(form, "target_air_humidity"),
+            "par_umol_m2_s": _field_range_from_form(form, "target_par"),
+        },
+        "cultivation_context": {
+            "cultivation_method": form.get("cultivation_method", ""),
+            "soil_type": form.get("soil_type", ""),
+            "substrate": form.get("substrate", ""),
+            "greenhouse_type": form.get("greenhouse_type", ""),
+            "mulching": form.get("mulching", ""),
+            "irrigation_method": form.get("irrigation_method", ""),
+            "water_source": form.get("water_source", ""),
+            "bed_area_m2": form.get("bed_area_m2", ""),
+            "plant_count": form.get("plant_count", ""),
+            "notes": form.get("cultivation_notes", ""),
+        },
+        "control_policy": {
+            "objective": form.get("objective", ""),
+            "autonomy_level": form.get("autonomy_level", "suggest_only"),
+            "allowed_actions": form.getlist("allowed_actions") or ["watering"],
+            "max_watering_sec_per_day": form.get("max_watering_sec_per_day", ""),
+            "min_watering_interval_min": form.get("min_watering_interval_min", ""),
+            "safety_notes": form.get("safety_notes", ""),
+        },
+        "knowledge_context": {
+            "research_queries": _split_lines_or_commas(form.get("research_queries", "")),
+            "external_reference_urls": _split_lines_or_commas(form.get("external_reference_urls", "")),
+            "image_observation_prompt": form.get("image_observation_prompt", ""),
+            "notes": form.get("knowledge_notes", ""),
+        },
+    }
+
+
+def _parse_field_areas_text(value: str):
+    areas = []
+    for line in (value or "").splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        parts = [part.strip() for part in text.split(",", 3)]
+        name = parts[0] if parts else ""
+        area_type = _area_type_from_text(parts[1] if len(parts) > 1 else "")
+        crop_name = parts[2] if len(parts) > 2 else ""
+        memo = parts[3] if len(parts) > 3 else ""
+        if name:
+            areas.append({"name": name, "area_type": area_type, "crop_name": crop_name, "memo": memo})
+    return areas
+
+
+def _area_type_from_text(value: str):
+    aliases = {
+        "": "section",
+        "区画": "section",
+        "section": "section",
+        "ベッド": "bed",
+        "bed": "bed",
+        "畝": "ridge",
+        "ridge": "ridge",
+        "ゾーン": "zone",
+        "zone": "zone",
+        "測点": "point",
+        "point": "point",
+        "その他": "other",
+        "other": "other",
+    }
+    return aliases.get((value or "").strip(), "section")
+
+
+def _parse_device_placements_form(form):
+    placements = []
+    indexes = sorted(
+        {
+            key.rsplit("_", 1)[-1]
+            for key in form.keys()
+            if key.startswith("placement_device_id_") and key.rsplit("_", 1)[-1].isdigit()
+        },
+        key=int,
+    )
+    for index in indexes:
+        device_id = form.get(f"placement_device_id_{index}", "")
+        if not device_id:
+            continue
+        placements.append(
+            {
+                "device_id": device_id,
+                "device_role": form.get(f"placement_device_role_{index}", "sensor"),
+                "scope_type": form.get(f"placement_scope_type_{index}", "field"),
+                "area_id": form.get(f"placement_area_id_{index}", ""),
+                "crop_name": form.get(f"placement_crop_name_{index}", ""),
+                "memo": form.get(f"placement_memo_{index}", ""),
+            }
+        )
+    return placements
+
+
+def _field_areas_text(areas):
+    lines = []
+    for area in areas or []:
+        lines.append(
+            ",".join(
+                [
+                    area.get("name") or "",
+                    area.get("area_type") or "section",
+                    area.get("crop_name") or "",
+                    area.get("memo") or "",
+                ]
+            )
+        )
+    return "\n".join(lines)
+
+
+def _field_range_from_form(form, prefix: str):
+    return {"min": form.get(f"{prefix}_min", ""), "max": form.get(f"{prefix}_max", "")}
+
+
+def _json_form_payload(name: str):
+    raw_value = request.form.get(name, "")
+    if not raw_value:
+        return {}
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
 def _build_field_context(field: dict, compare_date: str = ""):
     compare_day = _field_compare_day(compare_date)
     device_records = device_config_service().get_all_records()
     device_ids = field.get("device_ids") or []
     camera_ids = field.get("camera_device_ids") or []
+    placement_rows = _field_device_placement_rows(field, device_records)
     devices = []
     latest_sensor_values = []
     recent_status_events = []
@@ -3342,8 +3967,9 @@ def _build_field_context(field: dict, compare_date: str = ""):
 
     for device_id in device_ids:
         record = device_records.get(device_id)
-        devices.append({"device_id": device_id, "record": _compact_device_record(record)})
-        latest = _field_latest_sensor_value(device_id, record)
+        placement = _device_placement_for(placement_rows, device_id)
+        devices.append({"device_id": device_id, "record": _compact_device_record(record), "placement": placement})
+        latest = _field_latest_sensor_value(device_id, record, placement)
         if latest:
             latest_sensor_values.append(latest)
         device_statuses = (record or {}).get("status_history", [])
@@ -3360,13 +3986,32 @@ def _build_field_context(field: dict, compare_date: str = ""):
     recent_status_events = sorted(recent_status_events, key=lambda item: item.get("received_at") or "", reverse=True)[:40]
     field_events = sorted(list(field.get("events") or []), key=lambda item: item.get("occurred_at") or item.get("created_at") or "", reverse=True)
     timeline = _build_field_timeline(recent_status_events, field_events, field.get("notes") or [])
-    return {
+    field_snapshot = {
+        key: field.get(key)
+        for key in (
+            "id",
+            "name",
+            "crop",
+            "stage",
+            "memo",
+            "crop_profile",
+            "growth_targets",
+            "cultivation_context",
+            "control_policy",
+            "knowledge_context",
+            "areas",
+            "device_placements",
+        )
+    }
+    context = {
         "generated_at": datetime.now(UTC).isoformat(),
-        "field": {key: field.get(key) for key in ("id", "name", "crop", "stage", "memo")},
+        "field": field_snapshot,
         "devices": devices,
         "latest_sensor_values": latest_sensor_values,
         "recent_status_events": recent_status_events,
         "recent_field_events": field_events[:40],
+        "recent_action_plans": list(field.get("action_plans") or [])[-20:],
+        "device_placement_rows": placement_rows,
         "timeline": timeline[:80],
         "recent_notes": list(field.get("notes") or [])[-20:],
         "recent_images": recent_images[:12],
@@ -3375,6 +4020,8 @@ def _build_field_context(field: dict, compare_date: str = ""):
         "image_compare_groups": image_compare_groups,
         "soil_moisture_chart": _build_field_soil_moisture_chart(statuses_for_chart, field_events, include_plotlyjs=False) if statuses_for_chart else "",
     }
+    context["action_candidates"] = build_action_candidates(context)
+    return context
 
 
 def _field_compare_day(compare_date: str):
@@ -3384,6 +4031,75 @@ def _field_compare_day(compare_date: str):
         except ValueError:
             pass
     return datetime.now(_local_timezone()).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _field_device_placement_rows(field: dict, device_records: dict):
+    areas = field.get("areas") or []
+    explicit = {(item.get("device_id"), item.get("device_role")): item for item in field.get("device_placements") or []}
+    rows = []
+    seen = set()
+    for device_id in field.get("device_ids") or []:
+        record = device_records.get(device_id)
+        role = _infer_device_role(record)
+        placement = explicit.get((device_id, role)) or _first_device_placement(explicit, device_id)
+        rows.append(_format_device_placement(device_id, role, placement, areas))
+        seen.add(device_id)
+    for camera_id in field.get("camera_device_ids") or []:
+        if camera_id in seen:
+            continue
+        placement = explicit.get((camera_id, "camera")) or _first_device_placement(explicit, camera_id)
+        rows.append(_format_device_placement(camera_id, "camera", placement, areas))
+    return rows
+
+
+def _infer_device_role(record: dict | None):
+    device_kind = (record or {}).get("device_kind")
+    if device_kind == "ENV":
+        return "environment"
+    if device_kind == "SOI":
+        return "soil"
+    if device_kind == "WTR":
+        return "watering"
+    return "sensor"
+
+
+def _first_device_placement(explicit: dict, device_id: str):
+    for (candidate_device_id, _role), placement in explicit.items():
+        if candidate_device_id == device_id:
+            return placement
+    return None
+
+
+def _format_device_placement(device_id: str, role: str, placement: dict | None, areas: list):
+    area_by_id = {area.get("id"): area for area in areas or []}
+    placement = placement or {}
+    scope_type = placement.get("scope_type") or "field"
+    area_id = placement.get("area_id") or ""
+    area = area_by_id.get(area_id) if area_id else None
+    if scope_type == "field" or area is None:
+        scope_label = "圃場全体"
+        area_id = ""
+    else:
+        area_type_label = FIELD_AREA_TYPE_LABELS.get(area.get("area_type"), area.get("area_type") or "区画")
+        scope_label = f"{area_type_label}: {area.get('name')}"
+    return {
+        "device_id": device_id,
+        "device_role": placement.get("device_role") or role,
+        "device_role_label": DEVICE_ROLE_LABELS.get(placement.get("device_role") or role, placement.get("device_role") or role),
+        "scope_type": scope_type if scope_type in DEVICE_SCOPE_TYPE_LABELS else "field",
+        "scope_label": scope_label,
+        "area_id": area_id,
+        "area": area,
+        "crop_name": placement.get("crop_name") or (area or {}).get("crop_name") or "",
+        "memo": placement.get("memo") or "",
+    }
+
+
+def _device_placement_for(placement_rows: list, device_id: str):
+    for row in placement_rows:
+        if row.get("device_id") == device_id:
+            return row
+    return None
 
 
 def _field_image_compare_groups(camera_ids: list, compare_day: datetime):
@@ -3463,6 +4179,7 @@ def _add_field_event_markers(fig, field_events):
     colors = {
         "watering": "#2563eb",
         "fertigation": "#7c3aed",
+        "misting": "#0891b2",
         "fertilizer": "#9333ea",
         "shade": "#64748b",
         "pest": "#dc2626",
@@ -3540,20 +4257,35 @@ def _compact_device_record(record: dict | None):
     }
 
 
-def _field_latest_sensor_value(device_id: str, record: dict | None):
+def _field_latest_sensor_value(device_id: str, record: dict | None, placement: dict | None = None):
     payload = (record or {}).get("last_status") or {}
     values = {}
     for key in (
         "last_soil_moisture",
+        "soil_moisture_percent",
         "soil_moisture_1_pct",
         "soil_moisture_2_pct",
         "soil_temp_c",
+        "soil_temperature_c",
+        "soil_ec_us_cm",
+        "soil_ph",
+        "air_humidity_percent",
+        "par_umol_m2_s",
+        "solar_radiation_w_m2",
         "battery_v",
         "rssi",
         "threshold",
     ):
         if payload.get(key) is not None:
             values[key] = payload.get(key)
+    try:
+        latest_measurements = sensor_measurement_repository().latest_for_device(device_id, limit=30)
+    except Exception:
+        latest_measurements = []
+    for measurement in latest_measurements:
+        metric = measurement.get("metric")
+        if metric and measurement.get("value") is not None:
+            values[metric] = measurement.get("value")
     try:
         sensor_latest = sensor_data_repository().get_latest(device_id)
     except Exception:
@@ -3565,13 +4297,23 @@ def _field_latest_sensor_value(device_id: str, record: dict | None):
                 values[key] = telemetry.get(key)
         return {
             "device_id": device_id,
+            "scope_label": (placement or {}).get("scope_label"),
+            "crop_name": (placement or {}).get("crop_name"),
+            "area": (placement or {}).get("area"),
             "updated_at": sensor_latest.get("updated_at"),
             "received_at": (record or {}).get("last_status_at"),
             "values": values,
         }
     if not values:
         return None
-    return {"device_id": device_id, "received_at": (record or {}).get("last_status_at"), "values": values}
+    return {
+        "device_id": device_id,
+        "scope_label": (placement or {}).get("scope_label"),
+        "crop_name": (placement or {}).get("crop_name"),
+        "area": (placement or {}).get("area"),
+        "received_at": (record or {}).get("last_status_at"),
+        "values": values,
+    }
 
 
 def _field_status_event(device_id: str, status_entry: dict):

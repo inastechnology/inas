@@ -1,0 +1,3 @@
+Project-specific libraries go here.
+
+The shared INAS client framework is linked as `ina-client-common`.

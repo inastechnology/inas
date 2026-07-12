@@ -17,6 +17,7 @@ os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
 from ina_device_hub import web_server  # noqa: E402
+from ina_device_hub.field_repository import FieldRepository  # noqa: E402
 from ina_device_hub.sensor_device_repository import SensorDeviceRepository  # noqa: E402
 
 
@@ -49,11 +50,18 @@ class WebServerBasicUITest(unittest.TestCase):
         self.fake_timelapse_media_service = FakeTimelapseMediaService()
         self.original_timelapse_media_service = web_server.timelapse_media_service
         web_server.timelapse_media_service = lambda: self.fake_timelapse_media_service
+        self.field_repository = FieldRepository()
+        self.field_repository.field_repo_path = os.path.join(self.tmp_dir.name, ".fields.json")
+        self.field_repository.fields = {}
+        self.field_repository.save()
+        self.original_field_repository = web_server.field_repository
+        web_server.field_repository = lambda: self.field_repository
         self.client = web_server.app.test_client()
 
     def tearDown(self):
         web_server.sensor_device_repository = self.original_sensor_device_repository
         web_server.timelapse_media_service = self.original_timelapse_media_service
+        web_server.field_repository = self.original_field_repository
         self.tmp_dir.cleanup()
 
     def test_device_edit_form_updates_existing_device(self):
@@ -104,6 +112,131 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(start_at.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-04 00:00:00")
         self.assertEqual(end_at.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-04 23:59:59")
         self.assertEqual(limit, 12)
+
+    def test_field_create_form_stores_crop_context_and_policy(self):
+        response = self.client.post(
+            "/fields",
+            data={
+                "name": "試験ハウス",
+                "crop": "トマト",
+                "cultivar": "アイコ",
+                "stage": "開花",
+                "cultivation_method": "ハウス",
+                "objective": "土壌水分を安定させる",
+                "allowed_actions": ["watering", "fertigation"],
+                "target_soil_moisture_min": "35",
+                "target_soil_moisture_max": "65",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        field = self.field_repository.list()[0]
+        self.assertEqual(field["crop_profile"]["crop_name"], "トマト")
+        self.assertEqual(field["crop_profile"]["cultivar"], "アイコ")
+        self.assertEqual(field["cultivation_context"]["cultivation_method"], "ハウス")
+        self.assertEqual(field["growth_targets"]["soil_moisture_percent"]["max"], 65.0)
+        self.assertEqual(field["control_policy"]["allowed_actions"], ["watering", "fertigation"])
+
+    def test_field_detail_renders_growth_context_and_action_candidates(self):
+        field = self.field_repository.upsert(
+            None,
+            {
+                "name": "判断テスト圃場",
+                "crop": "トマト",
+                "stage": "開花",
+                "growth_targets": {"soil_moisture_percent": {"min": 35, "max": 65}},
+                "control_policy": {"allowed_actions": ["watering"]},
+            },
+        )
+
+        response = self.client.get(f"/fields/{field['id']}")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("生育の前提", html)
+        self.assertIn("次の判断候補", html)
+        self.assertIn("アクション計画の履歴", html)
+
+    def test_field_list_renders_summary_cards(self):
+        self.field_repository.upsert(
+            None,
+            {
+                "name": "一覧テスト圃場",
+                "crop": "キュウリ",
+                "stage": "育苗",
+                "growth_targets": {"soil_moisture_percent": {"min": 45, "max": 75}},
+                "control_policy": {"allowed_actions": ["watering", "misting"]},
+            },
+        )
+
+        response = self.client.get("/fields")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("一覧テスト圃場", html)
+        self.assertIn("土壌水分目標 45.0-75.0%", html)
+        self.assertIn("噴霧", html)
+
+    def test_field_detail_form_stores_monitoring_units_and_device_placement(self):
+        field = self.field_repository.upsert(
+            None,
+            {
+                "name": "設置先テスト圃場",
+                "crop": "トマト",
+                "stage": "開花",
+                "device_ids": ["INADS-env"],
+            },
+        )
+
+        response = self.client.post(
+            f"/fields/{field['id']}",
+            data={
+                "name": "設置先テスト圃場",
+                "crop": "トマト",
+                "stage": "開花",
+                "areas_text": "A区画,section,トマト,南側",
+                "device_ids": "INADS-env",
+                "camera_device_ids": "",
+                "allowed_actions": ["watering"],
+                "placement_device_id_0": "INADS-env",
+                "placement_device_role_0": "environment",
+                "placement_scope_type_0": "field",
+                "placement_area_id_0": "",
+                "placement_crop_name_0": "トマト",
+                "placement_memo_0": "圃場代表値",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        stored = self.field_repository.get(field["id"])
+        self.assertEqual(stored["areas"][0]["name"], "A区画")
+        self.assertEqual(stored["device_placements"][0]["device_role"], "environment")
+        self.assertEqual(stored["device_placements"][0]["scope_type"], "field")
+        self.assertEqual(stored["device_placements"][0]["memo"], "圃場代表値")
+
+    def test_field_detail_renders_monitoring_units_and_device_placements(self):
+        field = self.field_repository.upsert(
+            None,
+            {
+                "name": "監視単位表示圃場",
+                "crop": "イチゴ",
+                "stage": "定植",
+                "areas": [{"id": "bed-1", "name": "東ベッド", "area_type": "bed", "crop_name": "イチゴ"}],
+                "device_ids": ["INADS-soi"],
+                "device_placements": [
+                    {"device_id": "INADS-soi", "device_role": "soil", "scope_type": "bed", "area_id": "bed-1"},
+                ],
+            },
+        )
+
+        response = self.client.get(f"/fields/{field['id']}")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("監視単位", html)
+        self.assertIn("東ベッド", html)
+        self.assertIn("デバイス設置先", html)
+        self.assertIn("土壌センサー", html)
 
 
 if __name__ == "__main__":

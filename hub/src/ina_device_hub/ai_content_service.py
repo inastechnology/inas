@@ -87,14 +87,14 @@ class AIContentService:
                 "role": "system",
                 "content": (
                     "あなたはスマート農業の栽培記録を振り返るアシスタントです。"
-                    "センサー値、画像記録、作業イベント、人間の評価を分けて扱い、過剰な断定を避けてください。"
+                    "作物、栽培条件、目標レンジ、センサー値、画像記録、作業イベント、人間の評価を分けて扱い、過剰な断定を避けてください。"
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     "次の圃場データと人間の評価をもとに、振り返りを日本語で作成してください。\n"
-                    "出力は 1) 観察された事実 2) 人間評価との対応 3) 次に確認すること 4) 改善候補 の4項目にしてください。\n\n"
+                    "出力は 1) 観察された事実 2) 前提条件と目標レンジとの差 3) 人間評価との対応 4) 次に確認すること 5) 改善候補 の5項目にしてください。\n\n"
                     f"人間の評価:\n{human_evaluation or 'なし'}\n\n"
                     f"圃場データ:\n{serialized_context}"
                 ),
@@ -219,6 +219,8 @@ class AIContentService:
             "latest_sensor_values": field_context.get("latest_sensor_values", []),
             "recent_status_events": field_context.get("recent_status_events", []),
             "recent_field_events": field_context.get("recent_field_events", []),
+            "recent_action_plans": field_context.get("recent_action_plans", []),
+            "action_candidates": field_context.get("action_candidates", []),
             "recent_notes": field_context.get("recent_notes", []),
             "recent_images": field_context.get("recent_images", []),
         }
@@ -320,7 +322,7 @@ __instance = None
 
 
 def ai_content_service():
-    global __instance
+    global __instance  # noqa: PLW0603
     if not __instance:
         __instance = AIContentService()
     return __instance

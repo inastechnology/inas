@@ -1,0 +1,24 @@
+# Repository Guidelines
+
+## Project Structure
+
+- `src/main.cpp` is the firmware entry point.
+- `src/app/src/app.cpp` contains `EnvironmentSensorDevice : AppDevice`.
+- `src/app/inc` contains device-specific app headers.
+- `src/hal` is reserved for device-specific HAL drivers.
+- `lib/ina-client-common` is a symlink to the shared INAS client library.
+- `data/` contains LittleFS payload files.
+- `test/` is reserved for PlatformIO tests.
+
+## Commands
+
+- `make build`: compile firmware for `seeed_xiao_esp32s3`.
+- `make check-firmware`: build and verify the embedded OTA manifest.
+- `make upload`: build and upload to a locally connected board.
+- `make merged-bin`: create a single flashable provisioning image.
+
+## Device Contract
+
+`ENV` is a fixed device kind. Do not add runtime capabilities or
+ad-hoc pin profiles inside this project. If the hardware role changes, create a
+new device project with a new three-letter `APP_DEVICE_KIND`.

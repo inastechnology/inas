@@ -231,7 +231,7 @@ def _is_yyyy_mm_dd(value: str):
     return 1970 <= year <= 2099 and 1 <= month <= 12 and 1 <= day <= 31
 
 
-def validate_device_config(config: dict):
+def validate_device_config(config: dict):  # noqa: PLR0915
     if not isinstance(config, dict):
         raise DeviceConfigValidationError("config must be an object")
 
@@ -284,6 +284,24 @@ def validate_device_config(config: dict):
             raise DeviceConfigValidationError(f"{label or key} must be between {min_value} and {max_value}")
         return value
 
+    def _optional_float(parent: dict, key: str, default: float, min_value: float, max_value: float, label: str | None = None):
+        value = parent.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise DeviceConfigValidationError(f"{label or key} must be a number")
+        value = float(value)
+        if not min_value <= value <= max_value:
+            raise DeviceConfigValidationError(f"{label or key} must be between {min_value} and {max_value}")
+        return value
+
+    def _optional_str(parent: dict, key: str, default: str, label: str | None = None, max_length: int = 64):
+        value = parent.get(key, default)
+        if not isinstance(value, str):
+            raise DeviceConfigValidationError(f"{label or key} must be a string")
+        value = value.strip()
+        if len(value) > max_length:
+            raise DeviceConfigValidationError(f"{label or key} must be {max_length} characters or less")
+        return value
+
     watering_pattern = config.get("watering_pattern", {"enabled": False})
     if not isinstance(watering_pattern, dict):
         raise DeviceConfigValidationError("watering_pattern must be an object")
@@ -301,7 +319,17 @@ def validate_device_config(config: dict):
     soil_calibration = config.get("soil_calibration", {})
     if not isinstance(soil_calibration, dict):
         raise DeviceConfigValidationError("soil_calibration must be an object")
+    soil_calibration_mode = _optional_str(soil_calibration, "mode", "normal", "soil_calibration.mode", 16)
+    allowed_soil_calibration_modes = {"normal", "capture_dry", "capture_wet", "reset"}
+    if soil_calibration_mode not in allowed_soil_calibration_modes:
+        raise DeviceConfigValidationError("soil_calibration.mode must be normal, capture_dry, capture_wet, or reset")
+    soil_calibration_request_id = _optional_str(soil_calibration, "request_id", "", "soil_calibration.request_id", 39)
+    if soil_calibration_mode != "normal" and not soil_calibration_request_id:
+        raise DeviceConfigValidationError("soil_calibration.request_id is required when mode is not normal")
     normalized_soil_calibration = {
+        "mode": soil_calibration_mode,
+        "request_id": soil_calibration_request_id,
+        "calibrated": _optional_bool(soil_calibration, "calibrated", False, "soil_calibration.calibrated"),
         "auto_mode_enabled": _optional_bool(soil_calibration, "auto_mode_enabled", False, "soil_calibration.auto_mode_enabled"),
         "apply_auto_calibration": _optional_bool(soil_calibration, "apply_auto_calibration", False, "soil_calibration.apply_auto_calibration"),
         "drift_check_enabled": _optional_bool(soil_calibration, "drift_check_enabled", False, "soil_calibration.drift_check_enabled"),
@@ -309,9 +337,91 @@ def validate_device_config(config: dict):
         "wet_raw": _optional_int(soil_calibration, "wet_raw", 1285, 0, 4094, "soil_calibration.wet_raw"),
         "min_delta_raw": _optional_int(soil_calibration, "min_delta_raw", 80, 10, 2000, "soil_calibration.min_delta_raw"),
         "drift_tolerance_raw": _optional_int(soil_calibration, "drift_tolerance_raw", 120, 10, 2000, "soil_calibration.drift_tolerance_raw"),
+        "sample_count": _optional_int(soil_calibration, "sample_count", 20, 1, 100, "soil_calibration.sample_count"),
+        "sample_interval_ms": _optional_int(soil_calibration, "sample_interval_ms", 40, 0, 1000, "soil_calibration.sample_interval_ms"),
     }
     if normalized_soil_calibration["dry_raw"] <= normalized_soil_calibration["wet_raw"]:
         raise DeviceConfigValidationError("soil_calibration.dry_raw must be greater than wet_raw")
+
+    env_sensors = config.get("env_sensors", {})
+    if not isinstance(env_sensors, dict):
+        raise DeviceConfigValidationError("env_sensors must be an object")
+    env_par = env_sensors.get("par", {})
+    env_soil = env_sensors.get("soil", {})
+    if not isinstance(env_par, dict):
+        raise DeviceConfigValidationError("env_sensors.par must be an object")
+    if not isinstance(env_soil, dict):
+        raise DeviceConfigValidationError("env_sensors.soil must be an object")
+    normalized_env_sensors = {
+        "par": {
+            "enabled": _optional_bool(env_par, "enabled", True, "env_sensors.par.enabled"),
+            "modbus_slave_id": _optional_int(env_par, "modbus_slave_id", 1, 1, 247, "env_sensors.par.modbus_slave_id"),
+            "modbus_function": _optional_int(env_par, "modbus_function", 3, 3, 4, "env_sensors.par.modbus_function"),
+            "register": _optional_int(env_par, "register", 0, 0, 65535, "env_sensors.par.register"),
+        },
+        "soil": {
+            "enabled": _optional_bool(env_soil, "enabled", False, "env_sensors.soil.enabled"),
+            "modbus_slave_id": _optional_int(env_soil, "modbus_slave_id", 2, 1, 247, "env_sensors.soil.modbus_slave_id"),
+            "modbus_function": _optional_int(env_soil, "modbus_function", 4, 3, 4, "env_sensors.soil.modbus_function"),
+            "start_register": _optional_int(env_soil, "start_register", 0, 0, 65535, "env_sensors.soil.start_register"),
+        },
+    }
+
+    env_metric_keys = (
+        "par_umol_m2_s",
+        "soil_moisture_percent",
+        "soil_temperature_c",
+        "soil_ec_us_cm",
+        "soil_ph",
+        "soil_n_mg_kg",
+        "soil_p_mg_kg",
+        "soil_k_mg_kg",
+    )
+    env_calibration = config.get("env_calibration", {})
+    if not isinstance(env_calibration, dict):
+        raise DeviceConfigValidationError("env_calibration must be an object")
+    env_calibration_mode = _optional_str(env_calibration, "mode", "normal", "env_calibration.mode", 24)
+    allowed_env_calibration_modes = {"normal", "capture_reference", "reset"}
+    if env_calibration_mode not in allowed_env_calibration_modes:
+        raise DeviceConfigValidationError("env_calibration.mode must be normal, capture_reference, or reset")
+    env_calibration_request_id = _optional_str(env_calibration, "request_id", "", "env_calibration.request_id", 39)
+    if env_calibration_mode != "normal" and not env_calibration_request_id:
+        raise DeviceConfigValidationError("env_calibration.request_id is required when mode is not normal")
+    env_calibration_target = _optional_str(
+        env_calibration,
+        "target",
+        "par_umol_m2_s",
+        "env_calibration.target",
+        32,
+    )
+    if env_calibration_target not in env_metric_keys:
+        raise DeviceConfigValidationError("env_calibration.target is not supported")
+
+    def _metric_calibration(metric: str):
+        metric_config = env_calibration.get(metric, {})
+        if not isinstance(metric_config, dict):
+            raise DeviceConfigValidationError(f"env_calibration.{metric} must be an object")
+        return {
+            "calibrated": _optional_bool(metric_config, "calibrated", False, f"env_calibration.{metric}.calibrated"),
+            "scale": _optional_float(metric_config, "scale", 1.0, 0.0001, 100000.0, f"env_calibration.{metric}.scale"),
+            "offset": _optional_float(metric_config, "offset", 0.0, -100000.0, 100000.0, f"env_calibration.{metric}.offset"),
+        }
+
+    normalized_env_calibration = {
+        "mode": env_calibration_mode,
+        "request_id": env_calibration_request_id,
+        "target": env_calibration_target,
+        "reference_value": _optional_float(
+            env_calibration,
+            "reference_value",
+            0.0,
+            -100000.0,
+            100000.0,
+            "env_calibration.reference_value",
+        ),
+    }
+    for metric in env_metric_keys:
+        normalized_env_calibration[metric] = _metric_calibration(metric)
 
     schedules = config["schedules"]
     if not isinstance(schedules, list):
@@ -392,11 +502,13 @@ def validate_device_config(config: dict):
         "ota_check_interval_sec": ota_check_interval_sec,
         "watering_pattern": normalized_watering_pattern,
         "soil_calibration": normalized_soil_calibration,
+        "env_sensors": normalized_env_sensors,
+        "env_calibration": normalized_env_calibration,
         "schedules": normalized_schedules,
     }
     payload = json.dumps(normalized, ensure_ascii=True, separators=(",", ":"))
-    if len(payload.encode("utf-8")) >= 2048:
-        raise DeviceConfigValidationError("config payload must be less than 2048 bytes")
+    if len(payload.encode("utf-8")) >= 4096:
+        raise DeviceConfigValidationError("config payload must be less than 4096 bytes")
     return normalized
 
 

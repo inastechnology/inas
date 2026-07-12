@@ -202,7 +202,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertEqual(self.notification_service.new_devices[0]["source"], "status")
         self.assertEqual(self.notification_service.new_devices[0]["payload"]["seq"], 123)
 
-    def test_config_validation_requires_schedule_and_payload_under_512_bytes(self):
+    def test_config_validation_requires_schedule_and_payload_under_4096_bytes(self):
         with self.assertRaises(DeviceConfigValidationError):
             validate_device_config(
                 {
@@ -216,7 +216,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         with self.assertRaises(DeviceConfigValidationError):
             validate_device_config(
                 {
-                    "ntp_server": "x" * 480,
+                    "ntp_server": "x" * 4200,
                     "timezone_offset_sec": 32400,
                     "moisture_threshold": 40,
                     "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
@@ -268,6 +268,107 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                     "timezone_offset_sec": 32400,
                     "moisture_threshold": 40,
                     "force_watering": "true",
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
+    def test_config_validation_keeps_soil_calibration_mode_and_sampling_fields(self):
+        config = validate_device_config(
+            {
+                "ntp_server": "pool.ntp.org",
+                "timezone_offset_sec": 32400,
+                "moisture_threshold": 40,
+                "soil_calibration": {
+                    "mode": "capture_dry",
+                    "request_id": "cal-001",
+                    "calibrated": True,
+                    "dry_raw": 3200,
+                    "wet_raw": 1500,
+                    "min_delta_raw": 100,
+                    "sample_count": 30,
+                    "sample_interval_ms": 25,
+                },
+                "schedules": [{"hour": 7, "minute": 0, "duration_sec": 60, "channel_mask": 1}],
+            }
+        )
+
+        self.assertEqual(config["soil_calibration"]["mode"], "capture_dry")
+        self.assertEqual(config["soil_calibration"]["request_id"], "cal-001")
+        self.assertTrue(config["soil_calibration"]["calibrated"])
+        self.assertEqual(config["soil_calibration"]["sample_count"], 30)
+        self.assertEqual(config["soil_calibration"]["sample_interval_ms"], 25)
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "soil_calibration": {"mode": "bad-mode"},
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "soil_calibration": {"mode": "capture_wet"},
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
+    def test_config_validation_keeps_env_sensor_and_calibration_fields(self):
+        config = validate_device_config(
+            {
+                "ntp_server": "pool.ntp.org",
+                "timezone_offset_sec": 32400,
+                "moisture_threshold": 40,
+                "env_sensors": {
+                    "par": {"enabled": True, "modbus_slave_id": 3, "modbus_function": 4, "register": 10},
+                    "soil": {"enabled": True, "modbus_slave_id": 4, "modbus_function": 3, "start_register": 20},
+                },
+                "env_calibration": {
+                    "mode": "capture_reference",
+                    "request_id": "env-cal-001",
+                    "target": "soil_ph",
+                    "reference_value": 6.86,
+                    "soil_ph": {"calibrated": True, "scale": 1.0, "offset": -0.1},
+                    "par_umol_m2_s": {"calibrated": False, "scale": 1.2, "offset": 3.0},
+                },
+                "schedules": [{"hour": 7, "minute": 0, "duration_sec": 60, "channel_mask": 1}],
+            }
+        )
+
+        self.assertTrue(config["env_sensors"]["soil"]["enabled"])
+        self.assertEqual(config["env_sensors"]["par"]["modbus_slave_id"], 3)
+        self.assertEqual(config["env_calibration"]["mode"], "capture_reference")
+        self.assertEqual(config["env_calibration"]["request_id"], "env-cal-001")
+        self.assertEqual(config["env_calibration"]["target"], "soil_ph")
+        self.assertEqual(config["env_calibration"]["reference_value"], 6.86)
+        self.assertEqual(config["env_calibration"]["soil_ph"]["offset"], -0.1)
+        self.assertEqual(config["env_calibration"]["par_umol_m2_s"]["scale"], 1.2)
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "env_calibration": {"mode": "capture_reference", "target": "soil_ph", "reference_value": 6.86},
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "env_calibration": {"mode": "capture_reference", "request_id": "env-cal-002", "target": "bad"},
                     "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
                 }
             )

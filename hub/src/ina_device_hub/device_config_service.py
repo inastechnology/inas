@@ -9,6 +9,7 @@ from ina_device_hub.device_config_repository import (
 from ina_device_hub.device_event_log import append_device_event
 from ina_device_hub.discord_notification_service import discord_notification_service
 from ina_device_hub.general_log import logger
+from ina_device_hub.sensor_measurement_repository import safe_record_status_measurements
 from ina_device_hub.setting import setting
 
 
@@ -37,6 +38,9 @@ class DeviceConfigService:
                 "repeat_count": 0,
             },
             "soil_calibration": {
+                "mode": "normal",
+                "request_id": "",
+                "calibrated": False,
                 "auto_mode_enabled": False,
                 "apply_auto_calibration": False,
                 "drift_check_enabled": False,
@@ -44,6 +48,36 @@ class DeviceConfigService:
                 "wet_raw": 1285,
                 "min_delta_raw": 80,
                 "drift_tolerance_raw": 120,
+                "sample_count": 20,
+                "sample_interval_ms": 40,
+            },
+            "env_sensors": {
+                "par": {
+                    "enabled": True,
+                    "modbus_slave_id": 1,
+                    "modbus_function": 3,
+                    "register": 0,
+                },
+                "soil": {
+                    "enabled": False,
+                    "modbus_slave_id": 2,
+                    "modbus_function": 4,
+                    "start_register": 0,
+                },
+            },
+            "env_calibration": {
+                "mode": "normal",
+                "request_id": "",
+                "target": "par_umol_m2_s",
+                "reference_value": 0.0,
+                "par_umol_m2_s": {"calibrated": False, "scale": 1.0, "offset": 0.0},
+                "soil_moisture_percent": {"calibrated": False, "scale": 1.0, "offset": 0.0},
+                "soil_temperature_c": {"calibrated": False, "scale": 1.0, "offset": 0.0},
+                "soil_ec_us_cm": {"calibrated": False, "scale": 1.0, "offset": 0.0},
+                "soil_ph": {"calibrated": False, "scale": 1.0, "offset": 0.0},
+                "soil_n_mg_kg": {"calibrated": False, "scale": 1.0, "offset": 0.0},
+                "soil_p_mg_kg": {"calibrated": False, "scale": 1.0, "offset": 0.0},
+                "soil_k_mg_kg": {"calibrated": False, "scale": 1.0, "offset": 0.0},
             },
             "schedules": [
                 {
@@ -81,6 +115,7 @@ class DeviceConfigService:
         if is_new_device:
             self._notify_new_device(device_id, record, "status", payload=status)
         _log_device_status(device_id, record["last_status_at"], status)
+        safe_record_status_measurements(device_id, status, record["last_status_at"])
         append_device_event(
             "device_status",
             "inbound",

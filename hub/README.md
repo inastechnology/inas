@@ -95,6 +95,8 @@ Tunnel 版のネットワーク構成図は `doc/NETWORK_ARCHITECTURE.md` を参
 
 hub の管理 UI は、営農者が水やり状況・土壌水分・起動履歴を先に確認できる admin panel 風の構成にしています。UI 改善方針は `doc/HUB_ADMIN_UX_IMPLEMENTATION.md` を参照してください。
 
+圃場画面では、作物名、品種、生育段階、栽培方式、土壌・培地、目標レンジ、制御方針、参考情報を登録できます。圃場内の区画・畝・測点も任意で定義でき、ENV/SOI/WTR/カメラなどのデバイスを「圃場全体」「区画」「畝」「測点」に紐づけられます。これらを前提条件として、hub は最新センサー値との差から灌水・液肥・噴霧などの判断候補を作ります。現時点で hub から制御できるのは WTR の灌水のみで、液肥と噴霧は将来デバイス向けの候補として記録します。改善ループの仕様は `doc/AGRI_IMPROVEMENT_LOOP.md` を参照してください。
+
 実データがない開発環境では、サンプルの WTR デバイスと履歴を使って UI/UX を確認できます。次のコマンドは Flask の web UI だけを起動し、MQTT やデバイス接続は開始しません。
 
 ```bash
@@ -293,6 +295,13 @@ Farm Telemetry 受信
 - `soil_temp_c` は既存の温度グラフ互換のため `latest_sensor_data.temp` にも反映します。
 - `null` を含む payload を許容します。欠損値があっても受信処理が落ちない前提です。
 - デバイス詳細画面では最終受信時刻、電圧しきい値、未着時間に基づく簡易監視表示を出します。
+
+Sensor Measurements
+
+- MQTT device status から抽出できる測定値は `sensor_measurements` に縦持ちで保存します。
+- 測定項目の表示名、単位、対応 device_kind は `sensor_measurement_definitions` に定義します。
+- 初期定義には `SOI` / `WTR` の土壌水分、`ENV` の PAR、土壌水分、地温、EC、pH、N/P/K、将来の日射量を含みます。
+- `latest_sensor_data` は既存互換として残し、ENV の多項目測定は `sensor_measurements` を正とします。
 
 ローカル API
 

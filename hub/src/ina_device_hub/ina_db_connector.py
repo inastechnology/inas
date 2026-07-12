@@ -58,6 +58,7 @@ class InaDBConnector:
         else:
             self.conn = libsql.connect(db_path)
         self.ensure_device_event_table()
+        self.ensure_sensor_measurement_tables()
 
     def ensure_device_event_table(self):
         self.conn.execute(
@@ -86,6 +87,114 @@ class InaDBConnector:
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_device_events_event_type ON device_events (event_type)")
         self.conn.commit()
         _sync_if_supported(self.conn)
+
+    def ensure_sensor_measurement_tables(self):
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sensor_measurement_definitions (
+                metric TEXT PRIMARY KEY,
+                display_name TEXT NOT NULL,
+                unit TEXT,
+                category TEXT NOT NULL,
+                device_kinds TEXT NOT NULL,
+                value_type TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sensor_measurements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                device_kind TEXT,
+                measured_at TEXT NOT NULL,
+                metric TEXT NOT NULL,
+                value REAL NOT NULL,
+                unit TEXT,
+                quality TEXT NOT NULL DEFAULT 'ok',
+                raw_value REAL,
+                source TEXT NOT NULL DEFAULT 'mqtt_status',
+                payload TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(metric) REFERENCES sensor_measurement_definitions(metric)
+            )
+            """
+        )
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_sensor_measurements_device_time ON sensor_measurements (device_id, measured_at)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_sensor_measurements_metric_time ON sensor_measurements (metric, measured_at)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_sensor_measurements_device_metric_time ON sensor_measurements (device_id, metric, measured_at)")
+        self.conn.commit()
+        _sync_if_supported(self.conn)
+
+    @commit_and_sync
+    def upsert_sensor_measurement_definition(self, definition: dict):
+        self.conn.execute(
+            """
+            INSERT INTO sensor_measurement_definitions (
+                metric, display_name, unit, category, device_kinds, value_type, description, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(metric) DO UPDATE SET
+                display_name = excluded.display_name,
+                unit = excluded.unit,
+                category = excluded.category,
+                device_kinds = excluded.device_kinds,
+                value_type = excluded.value_type,
+                description = excluded.description,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                definition["metric"],
+                definition["display_name"],
+                definition.get("unit"),
+                definition["category"],
+                json.dumps(definition.get("device_kinds", []), ensure_ascii=True, separators=(",", ":")),
+                definition.get("value_type", "float"),
+                definition.get("description"),
+            ),
+        )
+
+    @commit_and_sync
+    def insert_sensor_measurements(self, measurements: list[dict]):
+        for measurement in measurements:
+            self.conn.execute(
+                """
+                INSERT INTO sensor_measurements (
+                    device_id, device_kind, measured_at, metric, value, unit, quality, raw_value, source, payload
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    measurement["device_id"],
+                    measurement.get("device_kind"),
+                    measurement["measured_at"],
+                    measurement["metric"],
+                    measurement["value"],
+                    measurement.get("unit"),
+                    measurement.get("quality", "ok"),
+                    measurement.get("raw_value"),
+                    measurement.get("source", "mqtt_status"),
+                    json.dumps(measurement.get("payload", {}), ensure_ascii=True, separators=(",", ":")),
+                ),
+            )
+
+    def fetch_sensor_measurement_definitions(self):
+        return self.conn.execute(
+            "SELECT metric, display_name, unit, category, device_kinds, value_type, description FROM sensor_measurement_definitions ORDER BY metric"
+        ).fetchall()
+
+    def fetch_latest_sensor_measurements(self, device_id: str, limit: int = 100):
+        return self.conn.execute(
+            """
+            SELECT device_id, device_kind, measured_at, metric, value, unit, quality, raw_value, source, payload
+            FROM sensor_measurements
+            WHERE device_id = ?
+            ORDER BY measured_at DESC, id DESC
+            LIMIT ?
+            """,
+            (device_id, limit),
+        ).fetchall()
 
     @commit_and_sync
     def insert_device_event(self, event: dict):
