@@ -13,6 +13,7 @@ INAS のセンサー系デバイスを、測定専用デバイスとして `WTR`
 | `SOI` | `soil-sensor-device` | 18650 バッテリー前提で土壌水分センサーを読む |
 | `ENV` | `environment-sensor-device` | 12V 電源前提で RS485 Modbus センサーを読む |
 | `WTR` | `watering-device` | 小規模向け統合水やり機 |
+| `WRS` | `watering-rs485-device` | RS485 前提の統合水やり機 |
 
 ## SOI ハードウェア前提
 
@@ -181,9 +182,50 @@ ENV status payload:
 }
 ```
 
+## WRS ハードウェア前提
+
+`WRS` は RS485 前提の水やり全部入りデバイスである。WTR と同じく灌水出力をローカルに持つが、土壌水分の主フィードバックをアナログ ADC ではなく RS485 bus 上のセンサーに置く。
+
+初期 pin assignment は WTR と同じ灌水出力・RS485 配線を使い、筐体や配線を流用できるようにする。
+
+| 信号 | XIAO ピン | GPIO | 用途 |
+|---|---:|---:|---|
+| Valve MOSFET | `D2` | `GPIO3` | 灌水ライン 1 |
+| Pump MOSFET | `D3` | `GPIO4` | 灌水中のポンプ出力 |
+| RS485 DE/RE | `D4` | `GPIO5` | 送受信方向制御 |
+| RS485 TX | `D6` | `GPIO43` | UART TX |
+| RS485 RX | `D7` | `GPIO44` | UART RX |
+| 12V sensor power MOSFET | `D8` | `GPIO7` | RS485 センサー向け 12V branch のみを switch する |
+
+アナログ土壌水分 ADC は未使用または診断用予約としてよい。センサーを増やすたびに新しい pin assignment を作らない。RS485 bus 上にセンサーを追加し、各センサーへ一意の Modbus slave ID を割り当てる。未接続センサーは timeout、CRC failure、no response 後に `*_ok=false` として報告する。
+
+初期 WRS センサー群:
+
+- RS485 PAR センサー: `par_umol_m2_s`。
+- RS485 土壌センサー: 土壌水分、地温、EC、pH、N/P/K。
+- 任意の RS485 日射センサー: `solar_radiation_w_m2`。
+
+WRS status は ENV/WTR と同じ metric 名を使い、hub が別 schema を持たずに縦持ち保存できるようにする。
+
+```json
+{
+  "device_kind": "WRS",
+  "sensor_model": "RS485-WATERING-AIO",
+  "watering_due": true,
+  "watering_started": true,
+  "soil_rs485_ok": true,
+  "soil_moisture_percent": 42.1,
+  "soil_temperature_c": 21.5,
+  "soil_ec_us_cm": 820,
+  "soil_ph": 6.5,
+  "par_ok": true,
+  "par_umol_m2_s": 1234.0
+}
+```
+
 ## 測定値 DB 定義
 
-ENV/SOI/WTR の測定値は、固定カラムだけに押し込まず、測定項目定義と時系列測定値を縦持ちで保存する。
+ENV/SOI/WTR/WRS の測定値は、固定カラムだけに押し込まず、測定項目定義と時系列測定値を縦持ちで保存する。
 
 `sensor_measurement_definitions`:
 
@@ -207,7 +249,7 @@ ENV/SOI/WTR の測定値は、固定カラムだけに押し込まず、測定�
 - `source`
 - `payload`
 
-初期定義には、土壌水分、地温、EC、pH、N/P/K、PAR、将来の日射量を含める。
+初期定義には、土壌水分、地温、EC、pH、N/P/K、PAR、将来の日射量を含める。WRS は ENV と同じ RS485 土壌・光測定値を扱い、灌水実行の status 項目も持つ。
 
 ## OTA
 
@@ -220,3 +262,4 @@ SOI/ENV ともに firmware binary へ `INAS_FW_MANIFEST_V1` を埋め込む。�
 - Hub 側では `device_kind` で UI と status parser を切り替える。
 - `SOI` は土壌水分のみを扱う。12V が必要な土壌 EC/pH/NPK センサーは `ENV` 側で扱う。
 - `par_ok=false` / `soil_rs485_ok=false` の status は、センサー未接続、配線不良、レジスタ不一致、CRC エラー、タイムアウトを示す。
+- 灌水出力と RS485 土壌/PAR/日射センサーを 1 台にまとめる場合は `WRS` として扱う。

@@ -36,8 +36,8 @@ knowledge changes its fixed hardware and payload contract.
 | Role | Responsibility | Example |
 |---|---|---|
 | Environment sensor device | Observes broad environment values used for decisions | `ENV` with PAR/PPFD, air temperature, humidity, soil EC/pH/NPK |
-| Soil feedback device | Measures the moisture response at the irrigation target | `SOI`, WTR built-in soil moisture, or another colocated probe |
-| Irrigation instruction device | Turns the water source on and off | WTR output, SwitchBot Plug Mini controlling an AC/DC adapter or pump |
+| Soil feedback device | Measures the moisture response at the irrigation target | `SOI`, WTR built-in soil moisture, WRS RS485 soil sensor, or another colocated probe |
+| Irrigation instruction device | Turns the water source on and off | WTR/WRS output, SwitchBot Plug Mini controlling an AC/DC adapter or pump |
 | Device hub | Compares context and measurements, decides, commands, verifies, logs | Local hub policy and action plans |
 
 For strawberry drip cultivation, the irrigation instruction device should be
@@ -145,7 +145,9 @@ explaining uncertainty second.
 ## Relation To Device Kinds
 
 `WTR` remains useful as an all-in-one personal watering device because it owns
-both irrigation output and local soil feedback. `SOI` and `ENV` support a more
+both irrigation output and local soil feedback. `WRS` is the RS485-first
+successor for installations that should add soil, PAR, and irradiance sensors on
+the same bus without changing pin assignments. `SOI` and `ENV` support a more
 modular direction where the hub composes dedicated sensor devices and external
 actuators into a crop system.
 

@@ -911,6 +911,8 @@ def _watering_state(payload):
 def _device_kind_label(device_kind):
     if device_kind == "WTR":
         return "水やり機"
+    if device_kind == "WRS":
+        return "RS485全部入り水やり機"
     if device_kind:
         return f"{device_kind} デバイス"
     return "種別未取得"
@@ -4058,7 +4060,7 @@ def _infer_device_role(record: dict | None):
         return "environment"
     if device_kind == "SOI":
         return "soil"
-    if device_kind == "WTR":
+    if device_kind in {"WTR", "WRS"}:
         return "watering"
     return "sensor"
 

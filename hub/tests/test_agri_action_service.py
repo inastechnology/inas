@@ -58,6 +58,23 @@ class AgriActionServiceTest(unittest.TestCase):
         self.assertFalse(fertigation["support"]["supported"])
         self.assertIn("今後実装", fertigation["support"]["reason"])
 
+    def test_wrs_device_supports_watering_candidate(self):
+        candidates = build_action_candidates(
+            {
+                "field": {
+                    "crop_profile": {"crop_name": "イチゴ"},
+                    "growth_targets": {"soil_moisture_percent": {"min": 40, "max": 70}},
+                    "control_policy": {"allowed_actions": ["watering"], "autonomy_level": "manual_approval"},
+                },
+                "devices": [{"device_id": "wrs-1", "record": {"device_kind": "WRS"}}],
+                "latest_sensor_values": [{"device_id": "wrs-1", "values": {"soil_moisture_percent": 30}}],
+            }
+        )
+
+        self.assertEqual(candidates[0]["action_type"], "watering")
+        self.assertTrue(candidates[0]["can_execute_now"])
+        self.assertIn("WTR/WRS", candidates[0]["support"]["reason"])
+
     def test_no_gap_builds_observation_candidate(self):
         candidates = build_action_candidates(
             {

@@ -6,6 +6,7 @@ Device firmware projects are organized by device type.
 client-devices/
   common/lib/ina-client-common/
   watering-device/
+  watering-rs485-device/
 ```
 
 ## Layering Policy

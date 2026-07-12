@@ -28,7 +28,7 @@ control, but a repeatable improvement loop: observe, interpret, propose an
 action, approve or execute it, evaluate the result, and feed the result back
 into the next decision.
 
-The only action currently executable from the hub is WTR irrigation. Liquid
+The only action currently executable from the hub is WTR/WRS irrigation. Liquid
 fertilizer control, misting/humidity control, image diagnosis, and external
 research data integration are future extensions.
 
@@ -41,6 +41,7 @@ research data integration are future extensions.
 | local hub | Flask UI/API, MQTT subscribe/publish, OTA HTTP firmware delivery, scheduler, weather recording, storage integration |
 | MQTT broker | Device status, runtime config, OTA offer/status, and irrigation command transport |
 | WTR | All-in-one watering device for small installations. Handles irrigation, soil moisture, RS485 sensors, and switched 12V sensor power |
+| WRS | RS485-first all-in-one watering device. Handles irrigation and treats RS485 soil/PAR/irradiance sensors as the primary sensor bus |
 | SOI | Battery-powered soil moisture node |
 | ENV | 12V RS485 environmental sensor hub |
 | Turso/libSQL | Shared database boundary for the Cloud app option and future sync |
@@ -95,18 +96,27 @@ device's function changes materially, create a separate project and a separate
 | device_kind | Project | Role | Power assumption |
 |---|---|---|---|
 | `WTR` | `client-devices/watering-device` | Small-scale all-in-one watering device. Irrigation, soil moisture, RS485, and switched 12V sensor power | 12V system. ESP32S3 is powered after 12V -> 5V conversion |
+| `WRS` | `client-devices/watering-rs485-device` | RS485-first all-in-one watering device. Irrigation output plus RS485 soil, PAR, and irradiance sensors on one bus | 12V system. ESP32S3 is powered after 12V -> 5V conversion |
 | `SOI` | `client-devices/soil-sensor-device` | Soil moisture node placed at multiple soil points | 18650 battery |
 | `ENV` | `client-devices/environment-sensor-device` | RS485 Modbus environmental and soil sensor hub | 12V |
 
 WTR remains important as the personal all-in-one device for building operating
-experience. SOI and ENV implement the direction of separating data collection
-devices from action devices.
+experience. WRS is the stronger all-in-one direction: it keeps the irrigation
+outputs local to the device and makes RS485 the sensor expansion boundary. SOI
+and ENV implement the direction of separating data collection devices from
+action devices.
 
 Crop-specific systems such as strawberry drip cultivation are hub-orchestrated
 compositions, not new monolithic device types. An irrigation actuator such as a
 plug or pump switch should be paired with a soil moisture feedback sensor at
 the same bed, ridge, or representative point so the hub can verify that
 irrigation actually increased root-zone moisture.
+
+WRS is intentionally composable at the RS485 layer. PAR, irradiance, soil
+moisture, EC, pH, and NPK sensors should be added as Modbus devices with unique
+slave IDs on the same bus. A missing sensor is represented by timeout or
+`*_ok=false`, not by changing XIAO pin assignments or creating a new wiring
+variant.
 
 Related documents:
 
@@ -131,7 +141,7 @@ Field data defines which crop and area a measurement should affect.
 For a small field, one ENV device can represent the whole field. Split into
 sections, ridges, beds, or points only when crop differences, sunlight, drainage,
 or field size require it. `device_placements` defines which field unit each ENV,
-SOI, WTR, or camera represents.
+SOI, WTR, WRS, or camera represents.
 
 Field settings should support crop name, cultivar, growth stage, sowing date,
 transplanting date, target harvest date, cultivation method, soil/media, plant

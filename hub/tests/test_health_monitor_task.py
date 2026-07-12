@@ -17,7 +17,7 @@ os.environ.setdefault("MQTT_BROKER_USERNAME", "")
 os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
-from ina_device_hub.health_monitor_task import HealthMonitorTask  # noqa: E402
+from ina_device_hub.health_monitor_task import HealthMonitorTask, _is_watering_device  # noqa: E402
 
 
 class FakeDeviceRepository:
@@ -108,6 +108,9 @@ class HealthMonitorTaskTest(unittest.TestCase):
 
         self.assertEqual(len(self.notification_service.alerts), 1)
         self.assertEqual(self.notification_service.alerts[0][0], "watering_missing")
+
+    def test_wrs_is_treated_as_watering_device(self):
+        self.assertTrue(_is_watering_device({"device_kind": "WRS"}))
 
 
 if __name__ == "__main__":

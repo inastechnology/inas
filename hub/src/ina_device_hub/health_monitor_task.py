@@ -11,6 +11,9 @@ from ina_device_hub.general_log import logger
 from ina_device_hub.setting import setting
 
 
+WATERING_DEVICE_KINDS = {"WTR", "WRS"}
+
+
 class HealthMonitorTask:
     def __init__(self, notification_service=None):
         self.settings = setting().get("health_monitor") or {}
@@ -200,7 +203,7 @@ class HealthMonitorTask:
 
 
 def _is_watering_device(record: dict):
-    if record.get("device_kind") == "WTR":
+    if record.get("device_kind") in WATERING_DEVICE_KINDS:
         return True
     config = record.get("runtime_config") or record.get("config") or {}
     return bool(config.get("schedules"))
