@@ -1,0 +1,354 @@
+# ina-device-hub
+
+ina-device-hub は、MQTT で受信したセンサーデータやカメラ画像を集約し、ローカル／クラウドへ保存・連携する
+軽量な IoT ハブです（Turso / S3 互換ストレージ対応、Flask による簡易 Web 表示、タイムラプス等）。
+
+hub と client device を横断した全体仕様は `../docs/SYSTEM_SPECIFICATION.md` を参照してください。Cloudflare、デバイス種別、圃場データ、OTA の関係を図付きでまとめています。
+
+なにができるか（要点）
+
+- デバイスからのデータ受信（MQTT）と加工
+- `farm/{device_id}/telemetry` テレメトリの受信と保存
+- デバイスごとの設定配信（MQTT request/reply/push）
+- 画像／音声のローカル保存と S3 互換ストレージへのアップロード
+- ローカル DB（Turso/libsql）との統合
+- タイムラプス生成・スケジューリング（APScheduler）
+- タイムラプス画像からの mp4 生成と Instagram Reel 自動投稿
+- 簡易 Web 表示（Flask）
+
+クイックスタート
+
+1. rye を導入（未導入の場合）: https://rye.astral.sh/guide/installation/
+
+2. 依存を同期
+
+```bash
+rye sync
+```
+
+3. 環境変数を用意（`.default.env` があればコピー）
+
+```bash
+cp .default.env .env
+# 編集: .env の値を実運用に合わせて更新してください
+```
+
+4. 必要なら DB を作成
+
+```bash
+rye run db:create
+```
+
+5. ローカルで起動（開発）
+
+```bash
+rye run serve
+# デフォルト: http://localhost:39151
+```
+
+systemd による自動起動（推奨）
+
+このリポジトリにはテンプレートユニット `systemd/inas-device-hub@.service` と
+インストーラースクリプト `scripts/install_service.sh` が含まれます。インストーラーの主な動作は次の通りです。
+
+- リポジトリを指定ディレクトリへコピー（既定: `/home/<user>/ina-device-hub`）
+- インストール実行者（`sudo` で実行した場合は元のユーザー）をサービス実行ユーザーに設定
+- `.default.env` を `.env` にコピー（無ければ簡易テンプレートを作成）
+- `systemd/inas-device-hub@.service` を `/etc/systemd/system/` に配置し、
+  テンプレート内の `@@INAS_HUB_DIR@@` と `@@INAS_HUB_USER@@` をターゲットのパス・ユーザーに置換
+- Cloudflare Tunnel 設定がある場合は `systemd/inas-cloudflare-tunnel.service` も配置・有効化
+- `inas-device-hub@main` を有効化・起動
+
+インストール例（sudo）
+
+```bash
+sudo ./scripts/install_service.sh
+
+# --user と --target-dir で上書き可能。--user は既存ユーザーを指定してください。
+sudo ./scripts/install_service.sh --user mysvcuser --target-dir /opt/ina-device-hub
+
+# Cloudflare Tunnel も systemd 管理にする場合
+sudo ./scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
+```
+
+サービス確認
+
+```bash
+systemctl status inas-device-hub@main
+
+journalctl -u inas-device-hub@main -f
+```
+
+運用スクリプト
+
+```bash
+sudo ./scripts/hub_service.sh start
+sudo ./scripts/hub_service.sh restart
+./scripts/hub_service.sh status
+./scripts/hub_service.sh logs
+```
+
+Cloudflare hosted option は 2 種類あります。
+
+- Tunnel 版: デバイス側で local hub を起動し、Cloudflare Access + Tunnel で公開します。
+- Cloud app 版: Cloudflare Workers + Hono + Turso で管理 API / UI を動かします。実装方針と現在の範囲は `doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` を参照してください。
+
+Tunnel 版のネットワーク構成図は `doc/NETWORK_ARCHITECTURE.md` を参照してください。
+
+hub の管理 UI は、営農者が水やり状況・土壌水分・起動履歴を先に確認できる admin panel 風の構成にしています。UI 改善方針は `doc/HUB_ADMIN_UX_IMPLEMENTATION.md` を参照してください。
+
+圃場画面では、作物名、品種、生育段階、栽培方式、土壌・培地、目標レンジ、制御方針、参考情報を登録できます。圃場内の区画・畝・測点も任意で定義でき、ENV/SOI/WTR/WRS/カメラなどのデバイスを「圃場全体」「区画」「畝」「測点」に紐づけられます。これらを前提条件として、hub は最新センサー値との差から灌水・液肥・噴霧などの判断候補を作ります。現時点で hub から制御できるのは WTR/WRS の灌水のみで、液肥と噴霧は将来デバイス向けの候補として記録します。改善ループの仕様は `doc/AGRI_IMPROVEMENT_LOOP.md` を参照してください。
+
+実データがない開発環境では、サンプルの WTR デバイスと履歴を使って UI/UX を確認できます。次のコマンドは Flask の web UI だけを起動し、MQTT やデバイス接続は開始しません。
+
+```bash
+python scripts/run_admin_demo_server.py
+```
+
+起動後に `http://127.0.0.1:39251/demo/mqtt-devices` を開きます。一覧カードで灌水・土壌水分・次回起床のサマリを確認し、カードを選ぶと水やり機詳細へ遷移します。詳細では Plotly で灌水推移と土壌水分推移を確認でき、表示期間は直近3日、2週間、1か月、全期間、カスタムから選べます。デモページ上の操作は保存されません。実データの管理画面は通常通り `/mqtt-devices` です。
+
+Tunnel 版を使う場合は、`.env` に固定したい Cloudflare account / hostname、許可 email、ユーザー側で発行した `CLOUDFLARE_ACCESS_API_TOKEN` を設定してから、次のスクリプトを実行します。
+
+AI Agent に環境構築や Cloudflare hosted option のセットアップを依頼する場合は、先に `doc/AI_AGENT_ENVIRONMENT_SETUP.md` を読ませてください。`.env` を正として扱うこと、secret を出力しないこと、Cloudflare resource を idempotent script で作成・再利用することを前提にしています。
+
+```bash
+# Access / Tunnel / DNS を構築し、必要なら cloudflared を hub/.data/bin に入れる
+bash scripts/cloudflare_hosted_setup.sh --install-cloudflared
+
+# local hub と tunnel をまとめて foreground 起動する
+bash scripts/cloudflare_hosted_up.sh --install-cloudflared
+```
+
+setup は再実行可能です。`.env` に保存済みの ID を優先して既存 resource を再利用し、同名 resource が複数ある場合や、同じ hostname に別用途の DNS record がある場合は自動上書きせず停止します。
+
+`cloudflare_hosted_up.sh` は通常の `rye run serve` と同じ local hub 起動条件を使います。`WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` が書き込み可能で、MQTT broker など `.env` の接続先へ到達できる必要があります。local hub が起動直後または実行中に終了した場合は、Cloudflare Tunnel も停止します。Tunnel はデバイス側で起動するため、Worker cloud app の確認と混同しないでください。
+
+Cloud app 版の開発確認:
+
+```bash
+cd cloudflare
+npm install
+npm test
+npm run typecheck
+```
+
+許可 email の追加・削除、tunnel 単体起動は次で行います。
+
+```bash
+python3 scripts/cloudflare_access_setup.py add user@example.com
+python3 scripts/cloudflare_access_setup.py remove user@example.com
+bash scripts/cloudflare_tunnel_start.sh
+bash scripts/cloudflare_tunnel_daemon.sh --install-cloudflared start
+bash scripts/cloudflare_tunnel_daemon.sh status
+```
+
+Cloudflare の Error 1033 が出る場合は、DNS / Access ではなく Tunnel connector が動いていない可能性が高いです。まず `bash scripts/cloudflare_tunnel_daemon.sh status` で `cloudflared` の常駐状態を確認してください。
+
+Git 管理外ローカルファイルの引っ越し
+
+`.env`、デバイス一覧 JSON、`data/`、`logs/` など Git 管理外のローカルファイルは、次のコマンドで zip に退避・復元できます。`.env` には secrets が含まれるため、zip は非公開の経路で共有してください。
+
+```bash
+rye run local-files list
+rye run local-files export-zip /tmp/ina-device-hub-local-files.zip
+rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --overwrite
+```
+
+実行時の `WORK_DIR`（既定: `~/.ina-device-hub`）も含める場合は `--include-work-dir` を付けます。
+
+```bash
+rye run local-files export-zip /tmp/ina-device-hub-local-files.zip --include-work-dir
+rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --include-work-dir --overwrite
+```
+
+旧デバイスのストレージを新デバイスにマウントして直接コピーできる場合は、`move-device` で repository 配下のローカル設定と `WORK_DIR` をまとめて移せます。
+
+```bash
+rye run local-files move-device \
+  --source-dir /mnt/old-device/path/to/ina-device-hub \
+  --target-dir /path/to/ina-device-hub \
+  --source-work-dir /mnt/old-device/path/to/.ina-device-hub \
+  --target-work-dir /path/to/.ina-device-hub \
+  --overwrite
+```
+
+実行前確認だけなら `--dry-run` を付けます。`WORK_DIR` を移さない場合は `--no-work-dir` を指定してください。
+
+手動でテンプレートを配置する場合
+
+```bash
+sudo ./scripts/install_service.sh --target-dir "$PWD"
+sudo systemctl daemon-reload
+sudo systemctl enable --now inas-device-hub@main
+```
+
+開発ワークフロー（短く）
+
+- フォーマット
+
+```bash
+rye run format
+```
+
+- リント
+
+```bash
+rye run lint
+```
+
+主要ファイル（概要）
+
+- `pyproject.toml` — 依存と rye スクリプト
+- `src/ina_device_hub/` — アプリ本体（`setting.py`, `hub_mqtt_client.py`, `camera_connector.py` など）
+- `data/instagram_caption_prompt.txt` — Instagram 投稿文生成プロンプトのテンプレート
+- `doc/AI_AGENT_ENVIRONMENT_SETUP.md` — AI Agent 向け環境構築・Cloudflare setup 手順
+- `doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` — Cloudflare Workers cloud app の実装方針
+- `doc/CLOUDFLARE_HOSTED_OPTION.md` — Cloudflare hosted option の実装方針
+- `cloudflare/` — Cloudflare Workers + Hono + Turso の cloud app 実装
+- `systemd/inas-device-hub@.service` — systemd テンプレートユニット
+- `scripts/install_service.sh` — systemd インストールスクリプト
+
+主要な環境変数（要約）
+
+詳細は `src/ina_device_hub/setting.py` を参照してください。主に次が必須です:
+
+- TURSO_DATABASE_URL, TURSO_AUTH_TOKEN
+- S3_ENDPOINT_URL, S3_BUCKET_NAME, S3_BUCKET_REGION, S3_ACCESS_KEY, S3_SECRET_KEY
+- MQTT_BROKER_URL, MQTT_BROKER_PORT, MQTT_BROKER_USERNAME, MQTT_BROKER_PASSWORD
+- TIMELAPSE_INTERVAL
+- WEATHER_RECORD_ENABLED, WEATHER_RECORD_INTERVAL_SECONDS
+- WEATHER_PROVIDER, WEATHER_LATITUDE, WEATHER_LONGITUDE, WEATHER_TIMEZONE, WEATHER_BACKFILL_DAYS
+- WEATHER_OPEN_METEO_ARCHIVE_URL
+- WEATHER_FORECAST_URL, WEATHER_AREA_NAME, WEATHER_OFFICE_NAME, WEATHER_FORECAST_TITLE
+- DEVICE_CONFIG_DEFAULT_NTP_SERVER, DEVICE_CONFIG_DEFAULT_TIMEZONE_OFFSET_SEC, DEVICE_CONFIG_DEFAULT_MOISTURE_THRESHOLD
+
+Instagram 自動投稿を使う場合は、追加で次を設定してください。
+
+- S3_TMP_ENDPOINT_URL, S3_TMP_BUCKET_NAME, S3_TMP_BUCKET_REGION, S3_TMP_ACCESS_KEY, S3_TMP_SECRET_KEY
+- S3_TMP_BASE_URL
+- INSTAGRAM_USER_ID, INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_CAMERA_ID
+- INSTAGRAM_SENSOR_ID, INSTAGRAM_PLANT_POSITION_PROMPT, INSTAGRAM_ADMIN_USERNAME
+- INSTAGRAM_WEATHER_FORECAST_URL, INSTAGRAM_WEATHER_AREA_NAME
+- INSTAGRAM_WEATHER_OFFICE_NAME, INSTAGRAM_WEATHER_FORECAST_TITLE
+- AI_ENABLED, AI_AGENT_SCHEDULE_START
+- AI_IMAGE_ANALYZE_API_KEY, AI_IMAGE_ANALYZE_BASE_URL, AI_IMAGE_ANALYZE_MODEL
+- AI_TEXT_ANALYZE_API_KEY, AI_TEXT_ANALYZE_BASE_URL, AI_TEXT_ANALYZE_MODEL
+
+Instagram 自動投稿フロー
+
+- `TIMELAPSE_INTERVAL` ごとに RTSP から静止画を取得し、S3 とローカルの `timelapse_frames/` に保存します。
+- `WEATHER_RECORD_INTERVAL_SECONDS` ごとに Open-Meteo から指定緯度経度の日別気象データを取得し、`WORK_DIR/weather_records.jsonl` に生育気象ログとして追記します。
+- `AI_AGENT_SCHEDULE_START` の時刻になると、通常日は前回投稿以降、日曜は直近7日分の静止画から mp4 を生成します。
+- 生成した動画と代表画像を `S3_TMP_*` にアップロードし、公開 URL を作成します。
+- AI に代表画像、タイムラプス動画 URL、センサースナップショット、前回投稿時に保存した広域天気予報、`INSTAGRAM_PLANT_POSITION_PROMPT` を渡して投稿文を生成します。
+- 投稿完了後、次回投稿用に `INSTAGRAM_WEATHER_FORECAST_URL` の JMA feed から `INSTAGRAM_WEATHER_OFFICE_NAME` と `INSTAGRAM_WEATHER_FORECAST_TITLE` に一致する最新 XML を選び、`INSTAGRAM_WEATHER_AREA_NAME` の天気予報を状態ファイルに保存します。
+- Instagram Graph API を使って Reel を投稿します。
+
+注意:
+
+- Instagram 投稿には公開アクセス可能な `S3_TMP_BASE_URL` が必要です。非公開バケット URL では投稿できません。
+- `INSTAGRAM_CAMERA_ID` は `.camera_device_list.json` に登録済みのカメラ ID を指定してください。
+- `INSTAGRAM_SENSOR_ID` を設定すると、最新センサーデータを投稿文生成に含めます。
+- `INSTAGRAM_ADMIN_USERNAME` は指示コメントとして扱う Instagram ユーザー名です。その他ユーザーのコメントは一般話題のみ参照し、セキュリティ関連話題は無視します。
+- Instagram 投稿用の天気予報はArea単位の天気と降水確率だけを投稿文生成に含めます。観測地点名、観測所コード、住所、地点気温は含めません。
+- `weather_records.jsonl` は1行1 JSONの追記ログです。Open-Meteo の日別データは `source.type=reanalysis` として、`daily_summaries` に日別の降水量、降雨時間、日照時間、日射量、ET0、最高/最低気温を保持します。
+- 投稿文テンプレートを変更する場合は `data/instagram_caption_prompt.txt` を編集してください（必須プレースホルダーが欠けた場合は安全のため内蔵テンプレートにフォールバックします）。
+
+カメラ RTSP 設定
+
+`.camera_device_list.json` の各カメラには `camera_type` を指定できます。未指定時は既存互換の `tapo` として扱います。
+
+```json
+{
+  "INACD-example": {
+    "id": "INACD-example",
+    "name": "garden",
+    "camera_type": "reolink",
+    "ip_address": "192.168.1.84",
+    "username": "admin",
+    "password": "password",
+    "channel": 1,
+    "stream": "main",
+    "timelapse": true
+  }
+}
+```
+
+- `tapo`: `rtsp://<user>:<password>@<ip_address>/stream1`
+- `reolink`: `rtsp://<user>:<password>@<ip_address>/Preview_<channel>_<stream>`
+- `rtsp_path` を指定すると、種別ごとの既定パスより優先します。
+
+貢献
+
+PR・Issue を歓迎します。作業前に依存を同期し、`rye run format` と `rye run lint` を実行してください。
+
+デバイス設定配信
+
+- デバイスは `/<device_id>/kinds/config/request` へ publish します。
+- Hub は `/<device_id>/kinds/config/reply` へ設定 JSON を返します。
+- 即時反映が必要な場合は `/<device_id>/kinds/config/push` に同じ JSON を publish できます。
+- 設定は `WORK_DIR/.device_configs.json` に保存されます。
+
+Farm Telemetry 受信
+
+- Hub は `farm/+/telemetry` を購読します。
+- payload は JSON として解釈し、`device_id` ごとの最新値を保存します。
+- `soil_moisture_*`, `soil_temp_c`, `battery_v`, `rssi`, `timestamp` は `latest_sensor_data.extra.telemetry` に保持します。
+- `soil_temp_c` は既存の温度グラフ互換のため `latest_sensor_data.temp` にも反映します。
+- `null` を含む payload を許容します。欠損値があっても受信処理が落ちない前提です。
+- デバイス詳細画面では最終受信時刻、電圧しきい値、未着時間に基づく簡易監視表示を出します。
+
+Sensor Measurements
+
+- MQTT device status から抽出できる測定値は `sensor_measurements` に縦持ちで保存します。
+- 測定項目の表示名、単位、対応 device_kind は `sensor_measurement_definitions` に定義します。
+- 初期定義には `SOI` / `WTR` の土壌水分、`ENV` の PAR、土壌水分、地温、EC、pH、N/P/K、将来の日射量を含みます。
+- `latest_sensor_data` は既存互換として残し、ENV の多項目測定は `sensor_measurements` を正とします。
+
+ローカル API
+
+- `GET /local/api/device-configs`
+- `GET /local/api/device-configs/<device_id>`
+- `PUT /local/api/device-configs/<device_id>`
+- `POST /local/api/device-configs/<device_id>/push`
+
+`PUT /local/api/device-configs/<device_id>?push=true` に設定 JSON を送ると、保存後に `push` まで実行します。
+
+設定 JSON 例
+
+```json
+{
+  "ntp_server": "my_device.local",
+  "timezone_offset_sec": 32400,
+  "moisture_threshold": 35,
+  "schedules": [
+    {
+      "hour": 6,
+      "minute": 30,
+      "duration_sec": 20,
+      "channel_mask": 1
+    },
+    {
+      "hour": 18,
+      "minute": 0,
+      "duration_sec": 30,
+      "channel_mask": 3
+    }
+  ]
+}
+```
+
+NTP サーバ運用
+
+- NTP サーバは MQTT Hub と同じ PC 上で、アプリとは別の OS サービスとして動かしてください。
+- `ntp_server` には、ファームから名前解決できるホスト名または固定 IP を設定してください。
+- ローカルネットワークから UDP 123 で到達できる必要があります。
+- Hub 自体は `ntp_server` の値を配信するだけなので、実際の NTP 提供は `chronyd` や `ntpd` のような既存サービスで構成する前提です。
+
+ライセンス
+
+MIT ライセンス（`LICENSE` を参照）
+
+---
+
+必要であれば、Raspberry Pi 固有のセットアップ手順や systemd の環境ファイル対応を README に追記します。

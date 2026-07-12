@@ -2,6 +2,17 @@
 
 This repository contains the INAS hub services and client device firmware.
 
+## Documentation
+
+Start with [INAS System Specification](docs/SYSTEM_SPECIFICATION.md) for the cross-project
+architecture, device roles, field data model, OTA flow, and Cloudflare hosted
+options. The draw.io source for the system diagrams is
+[docs/assets/inas_system_diagrams.drawio](docs/assets/inas_system_diagrams.drawio).
+Documentation writing and localization rules are defined in
+[docs/DOCUMENTATION_GUIDE.md](docs/DOCUMENTATION_GUIDE.md).
+Japanese documentation is stored under `jp/` directories, such as
+[docs/jp/SYSTEM_SPECIFICATION.md](docs/jp/SYSTEM_SPECIFICATION.md).
+
 ## Client Device Layout
 
 Client firmware projects live under `client-devices/`.

@@ -64,6 +64,7 @@ class DeviceConfigService:
                     "modbus_function": 4,
                     "start_register": 0,
                 },
+                "power_settle_ms": 800,
             },
             "env_calibration": {
                 "mode": "normal",

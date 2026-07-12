@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#475569"/></marker></defs>
+<rect width="100%" height="100%" fill="#f8fafc"/>
+<text x="60" y="62" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0f172a">圃場・区画・デバイス配置モデル</text>
+<line x1="370" y1="190" x2="470" y2="155" stroke="#0284c7" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="330" y="142" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="420" y="164" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#0284c7">任意で分割</text>
+<line x1="600" y1="210" x2="600" y2="270" stroke="#16a34a" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="510" y="210" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="600" y="232" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#16a34a">必要なら細分化</text>
+<line x1="600" y1="380" x2="600" y2="440" stroke="#d97706" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="510" y="380" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="600" y="402" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#d97706">測点</text>
+<line x1="370" y1="190" x2="870" y2="180" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="530" y="155" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="620" y="177" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#7c3aed">代表環境値</text>
+<line x1="730" y1="325" x2="870" y2="370" stroke="#dc2626" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="710" y="317" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="800" y="339" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#dc2626">土壌水分</text>
+<line x1="600" y1="380" x2="990" y2="500" stroke="#65a30d" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="705" y="410" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="795" y="432" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#65a30d">灌水対象</text>
+<line x1="370" y1="190" x2="1180" y2="215" stroke="#475569" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="685" y="172" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="775" y="194" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#475569">画像観察</text>
+<line x1="990" y1="240" x2="1310" y2="390" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1060" y="285" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1150" y="307" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#7c3aed">環境</text>
+<line x1="1110" y1="370" x2="1180" y2="465" stroke="#dc2626" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1055" y="387" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1145" y="409" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#dc2626">土壌</text>
+<line x1="1110" y1="560" x2="1180" y2="465" stroke="#65a30d" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1055" y="482" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1145" y="504" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#65a30d">作業結果</text>
+<line x1="1300" y1="270" x2="1310" y2="390" stroke="#475569" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1215" y="300" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1305" y="322" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#475569">画像</text>
+<rect x="100" y="120" width="270" height="140" rx="12" fill="#f8fafc" stroke="#475569" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="235" y="159">圃場</tspan><tspan x="235" y="185">作物・品種</tspan><tspan x="235" y="211">栽培方式</tspan><tspan x="235" y="237">目標レンジ</tspan></text>
+<rect x="470" y="100" width="260" height="110" rx="12" fill="#e0f2fe" stroke="#0284c7" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="600" y="150">区画</tspan><tspan x="600" y="176">作物や条件が違う単位</tspan></text>
+<rect x="470" y="270" width="260" height="110" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="600" y="320">畝 / ベッド</tspan><tspan x="600" y="346">水分・灌水対象の単位</tspan></text>
+<rect x="470" y="440" width="260" height="110" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="600" y="490">測点</tspan><tspan x="600" y="516">特定地点の代表値</tspan></text>
+<rect x="870" y="120" width="240" height="120" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="990" y="149">ENV</tspan><tspan x="990" y="175">圃場全体または区画</tspan><tspan x="990" y="201">気温・湿度・日射</tspan><tspan x="990" y="227">EC/pH/NPK</tspan></text>
+<rect x="870" y="310" width="240" height="120" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="990" y="352">SOI</tspan><tspan x="990" y="378">畝 / 測点</tspan><tspan x="990" y="404">土壌水分</tspan></text>
+<rect x="870" y="500" width="240" height="120" rx="12" fill="#ecfccb" stroke="#65a30d" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="990" y="542">WTR/WRS</tspan><tspan x="990" y="568">区画 / 畝</tspan><tspan x="990" y="594">灌水実行</tspan></text>
+<rect x="1180" y="160" width="240" height="110" rx="12" fill="#e2e8f0" stroke="#475569" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1300" y="197">カメラ</tspan><tspan x="1300" y="223">圃場全体 / 区画</tspan><tspan x="1300" y="249">画像観察</tspan></text>
+<rect x="1180" y="390" width="260" height="150" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1310" y="434">生育フィードバック</tspan><tspan x="1310" y="460">測定値 + 作物前提</tspan><tspan x="1310" y="486">作業記録 + 画像</tspan><tspan x="1310" y="512">外部情報</tspan></text>
+<rect x="70" y="870" width="1460" height="88" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="96" y="900" font-family="Arial, sans-serif" font-size="17" fill="#334155">- 小規模では ENV は圃場に 1 台でよい。圃場差・作物差が大きい場合だけ区画や畝へ細分化する。</text>
+<text x="96" y="924" font-family="Arial, sans-serif" font-size="17" fill="#334155">- device_placements が、どの測定値をどの作物・区画の判断に使うかを決める。</text>
+</svg>

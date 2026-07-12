@@ -1,24 +1,19 @@
-# sensor_data_queue (src/ina_device_hub/sensor_data_queue.py)
+# Sensor Data Queue
 
-## 目的
+Japanese version:
 
-- MQTT 受信データをプロセス間/スレッド間で安全にやり取りするためのスレッドセーフなキューラッパー。
+- [jp/sensor_data_queue.md](jp/sensor_data_queue.md)
 
-## 公開 API
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class SensorDataQueue
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - put(data) -> None
-  - get(timeout=None) -> Any
-  - empty() -> bool
-  - task_done() -> None
+## Scope
 
-- インスタンス `sensor_data_queue` がモジュールで生成されている。
+This file describes the hub module or component named `sensor_data_queue`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-## 実装のポイント
+## Update Guidance
 
-- 内部は `queue.Queue` と `threading.Lock` を用いており、`put` はロックで保護される。
-
-## 注意点
-
-- `get` のタイムアウトはデフォルト None（ブロッキング）。ワーカ側は例外処理（queue.Empty）を行っているため問題は少ないが、スケーラビリティの観点からバックプレッシャ制御を検討。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

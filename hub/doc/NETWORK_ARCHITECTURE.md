@@ -1,20 +1,39 @@
-# INA Device Hub ネットワーク構成
+# INA Device Hub Network Architecture
 
-この図は、Cloudflare Tunnel 版の運用構成を示します。Cloudflare Workers で hub UI をホストするのではなく、Cloudflare Access + Tunnel を入口にして、デバイス側で起動している local hub HTTP server へ転送します。
+Japanese version:
 
-![INA Device Hub network architecture](assets/ina-device-hub-network.png)
+- [jp/NETWORK_ARCHITECTURE.md](jp/NETWORK_ARCHITECTURE.md)
 
-## 接続の読み方
+The current Tunnel operating model does not host the hub UI on Cloudflare
+Workers. Cloudflare Access and Cloudflare Tunnel act as the authenticated entry
+point, and traffic is forwarded to the local hub HTTP server running on the
+device-side site.
 
-- 青: 手元 PC から Cloudflare Access / Tunnel を通って、デバイス側 hub UI/API に到達する管理画面経路。
-- 紫: MQTT broker を使う制御経路。Hub からデバイスへの retained OTA offer と、デバイスから Hub への OTA status を扱い、firmware binary 本体は MQTT で送らない。OTA request / reply は旧 firmware 互換用途のみ。
-- 緑: OTA firmware binary の HTTP download 経路。デバイスは hub HTTP server の `/firmware/<device_kind>/<version>/firmware.bin` から取得する。
-- 黄: OTA offer URL の生成経路。`FIRMWARE_BASE_URL` があれば優先し、未設定なら `FIRMWARE_HOSTNAME`、OS `HOSTNAME`、OS hostname と `FIRMWARE_PORT` / `HUB_HTTP_PORT` から `http://...:39151` を組み立てる。
+For the current cross-project diagram, see:
 
-## 重要な前提
+- [../../docs/SYSTEM_SPECIFICATION.md](../../docs/SYSTEM_SPECIFICATION.md)
+- [../../docs/assets/inas_system_architecture.svg](../../docs/assets/inas_system_architecture.svg)
 
-- Tunnel はデバイス側で起動する。この PC では起動しない。
-- `CLOUDFLARE_TUNNEL_ORIGIN_URL` の既定は `http://localhost:39151`。
-- Cloudflare Access の public hostname は UI 用の HTTPS/認証付き入口であり、現状の OTA firmware download URL には使わない。
-- 現状の device firmware は OTA download で `http://` のみ受け付ける。HTTPS はデバイス側に証明書検証を入れてから有効化する。
-- Cloudflare Workers は現仕様では hub UI 配信に使わない。Cloud app 版は別の hosted 管理アプリとして扱う。
+## Paths
+
+- UI/API path: administrator browser -> Cloudflare Access -> Cloudflare Tunnel
+  -> local hub `http://localhost:39151`.
+- MQTT path: local hub and devices exchange status, config, irrigation control,
+  and OTA offer/status through the MQTT broker.
+- OTA binary path: devices download `firmware.bin` from the local hub HTTP
+  endpoint `/firmware/<device_kind>/<version>/firmware.bin`.
+- OTA URL generation path: the hub uses `FIRMWARE_BASE_URL` if set; otherwise it
+  builds an HTTP URL from `FIRMWARE_HOSTNAME`, OS `HOSTNAME`, or hostname plus
+  `FIRMWARE_PORT` / `HUB_HTTP_PORT`.
+
+## Important Assumptions
+
+- The Tunnel connector runs on the device side. Do not start it from a separate
+  development PC unless that PC is the intended origin.
+- `CLOUDFLARE_TUNNEL_ORIGIN_URL` defaults to `http://localhost:39151`.
+- Cloudflare Access public hostnames are for authenticated hub UI/API access.
+  They are not used for current OTA firmware download URLs.
+- Current firmware accepts only `http://` OTA download URLs. HTTPS OTA requires
+  device-side certificate validation first.
+- Cloudflare Workers are a separate Cloud app option. They are not required for
+  the Tunnel path.

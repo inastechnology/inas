@@ -311,9 +311,7 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         "off_sec": _optional_int(watering_pattern, "off_sec", 0, 0, 3600, "watering_pattern.off_sec"),
         "repeat_count": _optional_int(watering_pattern, "repeat_count", 0, 0, 20, "watering_pattern.repeat_count"),
     }
-    if normalized_watering_pattern["enabled"] and (
-        normalized_watering_pattern["on_sec"] <= 0 or normalized_watering_pattern["repeat_count"] <= 0
-    ):
+    if normalized_watering_pattern["enabled"] and (normalized_watering_pattern["on_sec"] <= 0 or normalized_watering_pattern["repeat_count"] <= 0):
         raise DeviceConfigValidationError("enabled watering_pattern requires on_sec and repeat_count")
 
     soil_calibration = config.get("soil_calibration", {})
@@ -365,6 +363,7 @@ def validate_device_config(config: dict):  # noqa: PLR0915
             "modbus_function": _optional_int(env_soil, "modbus_function", 4, 3, 4, "env_sensors.soil.modbus_function"),
             "start_register": _optional_int(env_soil, "start_register", 0, 0, 65535, "env_sensors.soil.start_register"),
         },
+        "power_settle_ms": _optional_int(env_sensors, "power_settle_ms", 800, 0, 30000, "env_sensors.power_settle_ms"),
     }
 
     env_metric_keys = (

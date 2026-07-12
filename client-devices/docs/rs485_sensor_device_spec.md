@@ -1,59 +1,80 @@
 # RS485 Sensor Device Specification
 
-## 目的
+Japanese version:
 
-INAS のセンサー系デバイスを、測定専用デバイスとして `WTR` から分離する。土壌水分だけを低消費電力で測るデバイスは `SOI`、12V 電源が必要な RS485 センサー群は `ENV` とし、各 `device_kind` ごとに接続センサー、ピン割当、MQTT payload を固定する。
+- [jp/rs485_sensor_device_spec.md](jp/rs485_sensor_device_spec.md)
 
-`capabilities` による可変構成は採用しない。デバイスの機能が変わる場合は、別プロジェクトと別 `device_kind` を作成する。
+## Purpose
 
-## デバイス種別
+INAS separates measurement-focused devices from WTR. `SOI` measures soil
+moisture with low power consumption. `ENV` handles 12V RS485 sensors. Each
+`device_kind` has fixed sensor connections, pin assignments, and MQTT payload
+schema.
 
-| device_kind | プロジェクト | 役割 |
+INAS does not use a highly dynamic `capabilities` model for these devices. If
+the product behavior changes, create a separate firmware project and a separate
+`device_kind`.
+
+For XIAO ESP32S3 pin diagrams, see [pin_assignments.md](pin_assignments.md).
+
+## Device Kinds
+
+| device_kind | Project | Role |
 |---|---|---|
-| `SOI` | `soil-sensor-device` | 18650 バッテリー前提で土壌水分センサーを読む |
-| `ENV` | `environment-sensor-device` | 12V 電源前提で RS485 Modbus センサーを読む |
-| `WTR` | `watering-device` | 小規模向け統合水やり機 |
-| `WRS` | `watering-rs485-device` | RS485 前提の統合水やり機 |
+| `SOI` | `soil-sensor-device` | Battery-powered soil moisture node |
+| `ENV` | `environment-sensor-device` | 12V RS485 Modbus sensor hub |
+| `WTR` | `watering-device` | Small-scale integrated watering device |
+| `WRS` | `watering-rs485-device` | RS485-first integrated watering device |
 
-## SOI ハードウェア前提
+## SOI Hardware Assumptions
 
-`SOI` は土壌に複数設置する低消費電力ノードとする。現状は土壌水分センサーのみを接続対象にし、RS485 センサーや 12V センサーは接続しない。
+`SOI` is a low-power node placed in soil. It currently supports only an analog
+soil moisture sensor. It does not support RS485 sensors or 12V sensors.
 
-| 信号 | XIAO ピン | 用途 |
+| Signal | XIAO pin | Purpose |
 |---|---|---|
-| Soil moisture analog | `A0` | 土壌水分センサー ADC |
+| Soil moisture analog | `A0` | Soil moisture ADC |
 
-土壌水分センサーは起床時だけ測定し、測定後は deep sleep に戻る。土壌水分のキャリブレーションは初回設置時に Hub からユーザ主導で行う。firmware build flag は未校正時の初期値としてだけ使う。
+The sensor is sampled after wake, and the device returns to deep sleep after
+publishing status. First calibration is user-driven from the Hub. Firmware build
+flags are only initial values before calibration.
 
-初期値:
+Initial values:
 
 - dry raw: `3200`
 - wet raw: `1500`
 - sample count: `20`
 - sample interval: `40 ms`
 
-## SOI 土壌水分キャリブレーション
+## SOI Soil Moisture Calibration
 
-SOI は runtime config の `soil_calibration` で校正状態を受け取る。Hub UI では日本語の操作として表示し、通常運用では変数名を利用者に見せない。
+SOI receives calibration state through runtime config `soil_calibration`. The
+Hub UI should present farmer-friendly operation names and avoid exposing raw
+variable names in the primary workflow.
 
-キャリブレーションモード:
+Calibration modes:
 
-| mode | 用途 |
+| mode | Purpose |
 |---|---|
-| `normal` | 通常測定 |
-| `capture_dry` | 現在の raw 値を乾いた状態として記録 |
-| `capture_wet` | 現在の raw 値を湿った状態として記録 |
-| `reset` | 未校正状態に戻す |
+| `normal` | Normal measurement |
+| `capture_dry` | Save the current raw value as the dry reference |
+| `capture_wet` | Save the current raw value as the wet reference |
+| `reset` | Return to an uncalibrated state |
 
-初回設置手順:
+Initial setup:
 
-1. センサーを乾いた基準状態に置き、Hub から「乾いた状態を記録」を送る。
-2. 次回起床時、SOI は ADC 平均値を `dry_raw` として保存する。
-3. センサーを湿った基準状態に置き、Hub から「湿った状態を記録」を送る。
-4. 次回起床時、SOI は ADC 平均値を `wet_raw` として保存する。
-5. `dry_raw - wet_raw >= min_delta_raw` を満たしたら `calibrated=true` になり、以後は校正済みの値で percent を算出する。
+1. Put the sensor in the dry reference condition and send `capture_dry` from the
+   Hub.
+2. On the next wake, SOI stores the averaged ADC value as `dry_raw`.
+3. Put the sensor in the wet reference condition and send `capture_wet`.
+4. On the next wake, SOI stores the averaged ADC value as `wet_raw`.
+5. If `dry_raw - wet_raw >= min_delta_raw`, SOI marks the calibration as valid
+   and calculates percent from calibrated values afterwards.
 
-手動設定も許可する。Hub から `dry_raw`、`wet_raw`、`calibrated` を直接設定でき、センサーや現地環境に合わせて `sample_count` と `sample_interval_ms` を調整できる。`request_id` は同じ記録要求を重複処理しないために使う。`normal` 以外の校正モードでは `request_id` を必須にする。
+Manual setup is allowed. The Hub can directly set `dry_raw`, `wet_raw`, and
+`calibrated`, and can tune `sample_count` and `sample_interval_ms`. `request_id`
+prevents duplicate handling of one-shot calibration commands. Non-`normal`
+modes require `request_id`.
 
 SOI status payload:
 
@@ -74,35 +95,39 @@ SOI status payload:
 }
 ```
 
-## ENV ハードウェア前提
+## ENV Hardware Assumptions
 
-対象ボードは当面 `seeed_xiao_esp32s3` とする。RS485 は ESP32-S3 の UART を RS485 トランシーバに接続して使用する。
+The target board is currently `seeed_xiao_esp32s3`. RS485 uses an ESP32-S3 UART
+connected to an RS485 transceiver.
 
-| 信号 | XIAO ピン | GPIO | 用途 |
+| Signal | XIAO pin | GPIO | Purpose |
 |---|---:|---:|---|
 | RS485 TX | `D6` | `GPIO43` | UART TX |
 | RS485 RX | `D7` | `GPIO44` | UART RX |
-| RS485 DE/RE | `D4` | `GPIO5` | 送受信方向制御 |
+| RS485 DE/RE | `D4` | `GPIO5` | Transmit/receive direction control |
 
-RS485 トランシーバは 3.3V ロジック対応品を使う。例: MAX3485, SP3485, SN65HVD 系。
+Use a 3.3V logic-compatible RS485 transceiver, such as MAX3485, SP3485, or
+SN65HVD-series parts.
 
-`ENV` は 12V 電源を前提にする。PAR センサー、日射センサー、EC/pH/NPK など、センサー本体に 12V が必要なものは `ENV` 側に接続する。
+`ENV` assumes a 12V power source. PAR sensors, irradiance sensors, EC/pH/NPK
+sensors, and similar 12V sensors belong on ENV.
 
-## ENV soil RS485 センサー仕様
+## ENV Soil RS485 Sensor
 
-想定センサーは TH-EC-PH-NPK 系の 7in1 RS485 Modbus 土壌センサー。
+The expected sensor family is a TH-EC-PH-NPK style 7-in-1 RS485 Modbus soil
+sensor.
 
-測定対象:
+Measurements:
 
-- 土壌水分
-- 土壌温度
+- Soil moisture
+- Soil temperature
 - EC
 - pH
-- 窒素 N
-- リン P
-- カリウム K
+- Nitrogen N
+- Phosphorus P
+- Potassium K
 
-初期実装の仮 register map:
+Initial provisional register map:
 
 | offset | payload field | scale |
 |---:|---|---:|
@@ -114,9 +139,13 @@ RS485 トランシーバは 3.3V ロジック対応品を使う。例: MAX3485, 
 | 5 | `soil_p_mg_kg` | register |
 | 6 | `soil_k_mg_kg` | register |
 
-この register map は製品マニュアル確認前の仮定である。実機導入時に、センサー付属の Modbus register table に合わせて `platformio.ini` と firmware の変換処理を調整する。
+This register map is provisional until the product manual is confirmed. Adjust
+`platformio.ini` and firmware conversion logic to the real Modbus register table
+for the actual sensor.
 
-ComWinTop 系の公開サンプルでは、水分・温度・EC は `baud=4800`, slave `0x01`, function code `0x04`, register `0x0000` から `U_WORD` で読んでいる。ただし pH/NPK register は別途マニュアル確認が必要。
+Public ComWinTop-style examples read moisture, temperature, and EC with
+`baud=4800`, slave `0x01`, function code `0x04`, and register `0x0000` as
+`U_WORD`. pH and NPK registers still need manual confirmation.
 
 ENV soil RS485 status payload:
 
@@ -137,33 +166,40 @@ ENV soil RS485 status payload:
 }
 ```
 
-## ENV キャリブレーション
+## ENV Calibration
 
-ENV は runtime config の `env_sensors` と `env_calibration` を受け取る。`env_sensors` は RS485 の slave id、function code、register を指定し、`env_calibration` は測定項目ごとの `scale`、`offset`、`calibrated` を保持する。
+ENV receives runtime config through `env_sensors` and `env_calibration`.
+`env_sensors` configures RS485 slave id, function code, and register.
+`env_calibration` stores per-metric `scale`, `offset`, and `calibrated`.
 
-キャリブレーションモード:
+Calibration modes:
 
-| mode | 用途 |
+| mode | Purpose |
 |---|---|
-| `normal` | 通常測定 |
-| `capture_reference` | 現在値を基準値に合わせるよう offset を保存 |
-| `reset` | 未校正状態に戻す |
+| `normal` | Normal measurement |
+| `capture_reference` | Save an offset that aligns the current value to a known reference |
+| `reset` | Return to an uncalibrated state |
 
-初回設置手順:
+Initial setup:
 
-1. PAR、EC、pH などの校正対象を選ぶ。
-2. 既知の基準値を Hub に入力する。例: pH 標準液、EC 標準液、別測定器で確認した光量。
-3. `capture_reference` を送る。
-4. 次回起床時、ENV は現在測定値と基準値の差を offset として保存する。
-5. 必要であれば詳細設定で `scale` と `offset` を手動調整する。
+1. Select the target metric, such as PAR, EC, or pH.
+2. Enter a known reference value in the Hub, such as a pH standard solution, EC
+   standard solution, or a value measured by another trusted light meter.
+3. Send `capture_reference`.
+4. On the next wake, ENV stores the offset between the current measurement and
+   the reference value.
+5. If needed, manually tune `scale` and `offset` in detail settings.
 
-この方式は一点補正である。pH や EC の厳密な二点校正、センサー本体の Modbus 校正コマンドが必要な場合は、製品マニュアル確認後に専用 mode を追加する。
+This is a one-point correction. For strict two-point pH/EC calibration or
+sensor-native Modbus calibration commands, add dedicated modes after confirming
+the product manual.
 
-## ENV light センサー仕様
+## ENV Light Sensor
 
-想定センサーは 0-2500 umol/m2/s 範囲の太陽活性放射線センサーで、RS485 Modbus 接続とする。
+The expected light sensor is an RS485 Modbus PAR sensor with a range around
+0-2500 umol/m2/s.
 
-初期実装の仮 register map:
+Initial provisional register map:
 
 | register | payload field | scale |
 |---:|---|---:|
@@ -182,30 +218,37 @@ ENV status payload:
 }
 ```
 
-## WRS ハードウェア前提
+## WRS Hardware Assumptions
 
-`WRS` は RS485 前提の水やり全部入りデバイスである。WTR と同じく灌水出力をローカルに持つが、土壌水分の主フィードバックをアナログ ADC ではなく RS485 bus 上のセンサーに置く。
+`WRS` is the RS485-first all-in-one watering device. It keeps WTR-style local
+irrigation outputs, but treats the RS485 bus as the primary sensor expansion
+point instead of relying on analog soil moisture as the main feedback path.
 
-初期 pin assignment は WTR と同じ灌水出力・RS485 配線を使い、筐体や配線を流用できるようにする。
+The initial pin assignment should match WTR for irrigation output and RS485 so
+that enclosure and wiring work can be reused:
 
-| 信号 | XIAO ピン | GPIO | 用途 |
+| Signal | XIAO pin | GPIO | Purpose |
 |---|---:|---:|---|
-| Valve MOSFET | `D2` | `GPIO3` | 灌水ライン 1 |
-| Pump MOSFET | `D3` | `GPIO4` | 灌水中のポンプ出力 |
-| RS485 DE/RE | `D4` | `GPIO5` | 送受信方向制御 |
+| Valve MOSFET | `D2` | `GPIO3` | Irrigation line 1 |
+| Pump MOSFET | `D3` | `GPIO4` | Pump output while irrigation is active |
+| RS485 DE/RE | `D4` | `GPIO5` | Transmit/receive direction control |
 | RS485 TX | `D6` | `GPIO43` | UART TX |
 | RS485 RX | `D7` | `GPIO44` | UART RX |
-| 12V sensor power MOSFET | `D8` | `GPIO7` | RS485 センサー向け 12V branch のみを switch する |
+| 12V sensor power MOSFET | `D8` | `GPIO7` | Switches only the 12V branch going to RS485 sensors |
 
-アナログ土壌水分 ADC は未使用または診断用予約としてよい。センサーを増やすたびに新しい pin assignment を作らない。RS485 bus 上にセンサーを追加し、各センサーへ一意の Modbus slave ID を割り当てる。未接続センサーは timeout、CRC failure、no response 後に `*_ok=false` として報告する。
+The analog soil moisture ADC pin may remain unused or reserved for diagnostics.
+Do not create a new pin assignment every time a sensor is added. Add sensors on
+the RS485 bus, assign each sensor a unique Modbus slave ID, and report missing
+sensors as `*_ok=false` after timeout, CRC failure, or no response.
 
-初期 WRS センサー群:
+Initial WRS sensor groups:
 
-- RS485 PAR センサー: `par_umol_m2_s`。
-- RS485 土壌センサー: 土壌水分、地温、EC、pH、N/P/K。
-- 任意の RS485 日射センサー: `solar_radiation_w_m2`。
+- RS485 PAR sensor, for `par_umol_m2_s`.
+- RS485 soil sensor, for moisture, temperature, EC, pH, and N/P/K.
+- Optional RS485 irradiance sensor, for `solar_radiation_w_m2`.
 
-WRS status は ENV/WTR と同じ metric 名を使い、hub が別 schema を持たずに縦持ち保存できるようにする。
+WRS status should use the same metric names as ENV and WTR so the hub can store
+measurements vertically without a separate schema:
 
 ```json
 {
@@ -223,18 +266,19 @@ WRS status は ENV/WTR と同じ metric 名を使い、hub が別 schema を持�
 }
 ```
 
-## 測定値 DB 定義
+## Measurement DB Definition
 
-ENV/SOI/WTR/WRS の測定値は、固定カラムだけに押し込まず、測定項目定義と時系列測定値を縦持ちで保存する。
+ENV/SOI/WTR/WRS measurements are stored as vertical time-series records rather than
+only fixed columns.
 
 `sensor_measurement_definitions`:
 
-- `metric`: `soil_ec_us_cm` などの測定項目 ID
-- `display_name`: UI 表示名
-- `unit`: 単位
+- `metric`: metric id such as `soil_ec_us_cm`
+- `display_name`: UI display name
+- `unit`: unit
 - `category`: `soil` / `light`
-- `device_kinds`: 対応 device_kind の JSON
-- `value_type`: `float` など
+- `device_kinds`: JSON list of supported device kinds
+- `value_type`: value type such as `float`
 
 `sensor_measurements`:
 
@@ -249,17 +293,21 @@ ENV/SOI/WTR/WRS の測定値は、固定カラムだけに押し込まず、測�
 - `source`
 - `payload`
 
-初期定義には、土壌水分、地温、EC、pH、N/P/K、PAR、将来の日射量を含める。WRS は ENV と同じ RS485 土壌・光測定値を扱い、灌水実行の status 項目も持つ。
+Initial definitions include soil moisture, soil temperature, EC, pH, N/P/K, PAR,
+and future irradiance metrics. WRS supports the same RS485 soil and light
+metrics as ENV while also supporting irrigation action fields.
 
 ## OTA
 
-SOI/ENV ともに firmware binary へ `INAS_FW_MANIFEST_V1` を埋め込む。生成後は必ず `make check-firmware` で Hub upload 用 manifest を検査する。
+SOI and ENV firmware binaries embed `INAS_FW_MANIFEST_V1`. After build, run
+`make check-firmware` before uploading firmware to the Hub.
 
-## 運用ルール
+## Operational Rules
 
-- `device_kind` ごとに接続センサーと payload schema を固定する。
-- センサー型番や register map が大きく変わる場合は、新しい device project を作る。
-- Hub 側では `device_kind` で UI と status parser を切り替える。
-- `SOI` は土壌水分のみを扱う。12V が必要な土壌 EC/pH/NPK センサーは `ENV` 側で扱う。
-- `par_ok=false` / `soil_rs485_ok=false` の status は、センサー未接続、配線不良、レジスタ不一致、CRC エラー、タイムアウトを示す。
-- 灌水出力と RS485 土壌/PAR/日射センサーを 1 台にまとめる場合は `WRS` として扱う。
+- Sensor connections and payload schemas are fixed per `device_kind`.
+- Use a new device project and new `device_kind` for materially different
+  hardware behavior.
+- Use `WRS` when irrigation output and RS485 soil/PAR/irradiance sensors belong
+  to one stronger all-in-one device.
+- Keep user-facing UI terms farmer-friendly; reserve raw variable names and JSON
+  for detail screens.

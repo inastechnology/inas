@@ -1,27 +1,19 @@
-# setting (src/ina_device_hub/setting.py)
+# Setting
 
-## 目的
+Japanese version:
 
-- 環境変数や `.env` を読み込み、アプリケーションの設定とワークディレクトリを提供するユーティリティ。デフォルト設定と永続化メソッドを持つ。
+- [jp/setting.md](jp/setting.md)
 
-## 主要クラス / 関数
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class Setting
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - __init__(path: str | None = None)
-  - load() / save()
-  - get(key) -> Any
-  - set(key, value) -> None
-  - get_work_dir() -> str
+## Scope
 
-- function setting() -> Setting
-  - モジュールレベルのシングルトンを返す。
+This file describes the hub module or component named `setting`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-## 依存
+## Update Guidance
 
-- python-dotenv（`.env` 読み込みに使用）
-
-## 注意点
-
-- `.env` に必須の環境変数（TURSO_DATABASE_URL 等）が未設定だとプロセスが exit する実装がある。デプロイ環境での env 管理が必須。
-- `SETTING_FILE_PATH` のデフォルトは `~/.ina-device-hub/config.json`。複数インスタンス運用時は競合やパスの上書きに注意すること。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#475569"/></marker></defs>
+<rect width="100%" height="100%" fill="#f8fafc"/>
+<text x="60" y="62" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0f172a">Field And Device Placement Model</text>
+<line x1="370" y1="190" x2="470" y2="155" stroke="#0284c7" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="330" y="142" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="420" y="164" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#0284c7">optional split</text>
+<line x1="600" y1="210" x2="600" y2="270" stroke="#16a34a" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="510" y="210" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="600" y="232" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#16a34a">split as needed</text>
+<line x1="600" y1="380" x2="600" y2="440" stroke="#d97706" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="510" y="380" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="600" y="402" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#d97706">measurement point</text>
+<line x1="370" y1="190" x2="870" y2="180" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="530" y="155" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="620" y="177" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#7c3aed">representative environment</text>
+<line x1="730" y1="325" x2="870" y2="370" stroke="#dc2626" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="710" y="317" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="800" y="339" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#dc2626">soil moisture</text>
+<line x1="600" y1="380" x2="990" y2="500" stroke="#65a30d" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="705" y="410" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="795" y="432" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#65a30d">irrigation target</text>
+<line x1="370" y1="190" x2="1180" y2="215" stroke="#475569" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="685" y="172" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="775" y="194" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#475569">image observation</text>
+<line x1="990" y1="240" x2="1310" y2="390" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1060" y="285" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1150" y="307" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#7c3aed">environment</text>
+<line x1="1110" y1="370" x2="1180" y2="465" stroke="#dc2626" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1055" y="387" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1145" y="409" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#dc2626">soil</text>
+<line x1="1110" y1="560" x2="1180" y2="465" stroke="#65a30d" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1055" y="482" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1145" y="504" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#65a30d">work result</text>
+<line x1="1300" y1="270" x2="1310" y2="390" stroke="#475569" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1215" y="300" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1305" y="322" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#475569">image</text>
+<rect x="100" y="120" width="270" height="140" rx="12" fill="#f8fafc" stroke="#475569" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="235" y="159">Field</tspan><tspan x="235" y="185">crop, cultivar</tspan><tspan x="235" y="211">cultivation method</tspan><tspan x="235" y="237">target ranges</tspan></text>
+<rect x="470" y="100" width="260" height="110" rx="12" fill="#e0f2fe" stroke="#0284c7" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="600" y="150">Section</tspan><tspan x="600" y="176">crop or condition unit</tspan></text>
+<rect x="470" y="270" width="260" height="110" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="600" y="307">Ridge / bed</tspan><tspan x="600" y="333">soil moisture and</tspan><tspan x="600" y="359">irrigation unit</tspan></text>
+<rect x="470" y="440" width="260" height="110" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="600" y="477">Point</tspan><tspan x="600" y="503">specific representative</tspan><tspan x="600" y="529">measurement</tspan></text>
+<rect x="870" y="120" width="240" height="120" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="990" y="149">ENV</tspan><tspan x="990" y="175">field or section</tspan><tspan x="990" y="201">temp, humidity, light</tspan><tspan x="990" y="227">EC/pH/NPK</tspan></text>
+<rect x="870" y="310" width="240" height="120" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="990" y="352">SOI</tspan><tspan x="990" y="378">ridge / point</tspan><tspan x="990" y="404">soil moisture</tspan></text>
+<rect x="870" y="500" width="240" height="120" rx="12" fill="#ecfccb" stroke="#65a30d" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="990" y="542">WTR/WRS</tspan><tspan x="990" y="568">section / ridge</tspan><tspan x="990" y="594">irrigation action</tspan></text>
+<rect x="1180" y="160" width="240" height="110" rx="12" fill="#e2e8f0" stroke="#475569" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1300" y="197">Camera</tspan><tspan x="1300" y="223">field / section</tspan><tspan x="1300" y="249">image observation</tspan></text>
+<rect x="1180" y="390" width="260" height="150" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1310" y="434">Growth feedback</tspan><tspan x="1310" y="460">measurements + crop context</tspan><tspan x="1310" y="486">work log + images</tspan><tspan x="1310" y="512">external data</tspan></text>
+<rect x="70" y="870" width="1460" height="88" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="96" y="900" font-family="Arial, sans-serif" font-size="17" fill="#334155">- One ENV device can represent a small field. Split only when field, crop, sunlight, or drainage differences require it.</text>
+<text x="96" y="924" font-family="Arial, sans-serif" font-size="17" fill="#334155">- device_placements decide which measurements affect which crop or field unit.</text>
+</svg>

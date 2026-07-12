@@ -1,37 +1,19 @@
-# data_processor (src/ina_device_hub/data_processor.py)
+# Data Processor
 
-## 目的
+Japanese version:
 
-- MQTT 等から受信したセンサデータ（status, image, audio）を処理し、永続化や画像組立て等を行うバックグラウンドワーカ。
+- [jp/data_processor.md](jp/data_processor.md)
 
-## 主要クラス / メソッド
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class DataProcessor
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - __init__(db_connector: InaDBConnector = None)
-    - SensorDataQueue、SensorDeviceRepository、SensorDataRepository、SensorImageRepogitory を初期化する。
+## Scope
 
-  - start() -> None
-    - スレッドで `process()` を開始する。
+This file describes the hub module or component named `data_processor`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-  - process() -> None
-    - キューからメッセージを取り出し、種類に応じて処理メソッドを呼ぶ無限ループ。
+## Update Guidance
 
-  - process_sensor_data(device_id, kind, payload, seqId) -> None
-    - payload を JSON として解析し、最新データを DB に保存する。
-
-  - process_sensor_image(device_id, kind, payload, seqId) -> None
-    - まず画像メタ（JSON）を受け取り、続くバイナリ断片を組み立てて完全な画像を保存する。
-
-  - process_sensor_audio(...)
-    - TODO: 未実装（プレースホルダあり）。
-
-## 依存
-
-- SensorDataQueue、sensor_* リポジトリ、InaDBConnector、general_log、setting
-
-## 注意点
-
-- payload が bytes の場合のデコードは UTF-8 を前提としているため、エンコーディング不一致に注意。
-- 画像/音声の組立てはメモリ上で行われるため、大きなファイルで OOM の恐れがある。必要なら一時ファイル化を検討。
-- エラー時の可観測性（ログ・メトリクス・アラート）を整備すると運用が楽になる。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

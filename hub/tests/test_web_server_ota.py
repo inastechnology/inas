@@ -7,6 +7,7 @@ from datetime import timedelta, timezone
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("LOCAL_STORAGE_BASE_DIR", tempfile.mkdtemp())
 os.environ.setdefault("FIRMWARE_BASE_URL", "http://127.0.0.1:39151")
+os.environ["FIRMWARE_HOSTNAME"] = ""
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
 os.environ.setdefault("TURSO_AUTH_TOKEN", "x")
 os.environ.setdefault("S3_ENDPOINT_URL", "x")
@@ -24,11 +25,20 @@ from ina_device_hub import web_server  # noqa: E402
 from ina_device_hub.device_config_repository import DeviceConfigRepository  # noqa: E402
 from ina_device_hub.device_config_service import DeviceConfigService  # noqa: E402
 from ina_device_hub.ota_update_service import FirmwareArtifactRepository, OTAUpdateService  # noqa: E402
+from ina_device_hub.setting import setting  # noqa: E402
 
 
 class WebServerOTATest(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
+        self.original_firmware_settings = dict(setting().settings.get("firmware") or {})
+        setting().settings["firmware"] = {
+            **self.original_firmware_settings,
+            "base_url": "http://127.0.0.1:39151",
+            "hostname": "",
+            "port": 39151,
+            "root_dir": os.path.join(self.tmp_dir.name, "firmware"),
+        }
 
         self.device_repository = DeviceConfigRepository()
         self.device_repository.device_config_path = os.path.join(self.tmp_dir.name, ".device_configs.json")
@@ -52,6 +62,7 @@ class WebServerOTATest(unittest.TestCase):
         self.client = web_server.app.test_client()
 
     def tearDown(self):
+        setting().settings["firmware"] = self.original_firmware_settings
         web_server.device_config_service = self.original_device_config_service
         web_server.ota_update_service = self.original_ota_update_service
         web_server.list_device_events = self.original_list_device_events
@@ -200,7 +211,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("土壌水分推移", html)
         self.assertNotIn("Plotly.newPlot", html)
         self.assertIn("灌水推移を読み込み中", html)
-        self.assertIn(f'"/local/api/mqtt-devices/"', html)
+        self.assertIn('"/local/api/mqtt-devices/"', html)
         self.assertIn("直近3日", html)
         self.assertIn("2週間", html)
         self.assertIn("1か月", html)

@@ -1,32 +1,19 @@
-# camera_device_repository (src/ina_device_hub/camera_device_repository.py)
+# Camera Device Repository
 
-## 目的
+Japanese version:
 
-- カメラデバイス情報をローカル JSON ファイルに保存・読み書きする軽量リポジトリ。
+- [jp/camera_device_repository.md](jp/camera_device_repository.md)
 
-## 公開 API
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class CameraDeviceRepository
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - load() / save()
-  - get(key) -> dict | None
-  - add(device_id: str = None, info: dict = {}) -> None
-  - remove(device_id) -> None
-  - get_all() -> dict
-  - clear() -> None
+## Scope
 
-- function camera_device_repository() -> CameraDeviceRepository（シングルトン）
+This file describes the hub module or component named `camera_device_repository`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-## 引数/戻り値の要点
+## Update Guidance
 
-- `add` は device_id が None の場合に UUID ベースの ID を生成して登録する。
-- 永続化先は `setting().get_work_dir() + '/.camera_device_list.json'`。
-
-## 依存
-
-- `ina_device_hub.setting`
-
-## 注意点
-
-- JSON ファイルを直接上書きするため、並行アクセスや破損時のリカバリロジックはほとんどない（運用環境ではロックやトランザクションを検討）。
-- `info` のデフォルト引数にミュータブルな `{}` が使われているため呼び出し側で意図せぬ共有が発生する可能性がある（推奨修正: None をデフォルトにする）。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

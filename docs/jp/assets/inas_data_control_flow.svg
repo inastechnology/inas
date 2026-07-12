@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+<defs><marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M2,2 L10,6 L2,10 Z" fill="#475569"/></marker></defs>
+<rect width="100%" height="100%" fill="#f8fafc"/>
+<text x="60" y="62" font-family="Arial, sans-serif" font-size="36" font-weight="700" fill="#0f172a">観測から制御までの流れ</text>
+<line x1="260" y1="215" x2="330" y2="215" stroke="#d97706" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="205" y="185" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="295" y="207" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#d97706">publish</text>
+<line x1="540" y1="215" x2="610" y2="215" stroke="#d97706" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="485" y="185" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="575" y="207" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#d97706">subscribe</text>
+<line x1="840" y1="215" x2="930" y2="165" stroke="#0284c7" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="795" y="160" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="885" y="182" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#0284c7">時系列表示</text>
+<line x1="1160" y1="355" x2="1220" y2="295" stroke="#65a30d" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1100" y="295" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1190" y="317" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#65a30d">目標との差分</text>
+<line x1="840" y1="215" x2="1220" y2="295" stroke="#16a34a" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="940" y="225" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1030" y="247" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#16a34a">最新測定値</text>
+<line x1="1345" y1="360" x2="1345" y2="470" stroke="#4f46e5" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1255" y="385" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1345" y="407" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#4f46e5">保存・評価</text>
+<line x1="1220" y1="525" x2="1130" y2="610" stroke="#4f46e5" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1085" y="537" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="1175" y="559" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#4f46e5">承認済み操作</text>
+<line x1="870" y1="610" x2="750" y2="605" stroke="#d97706" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="720" y="577" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="810" y="599" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#d97706">MQTT 制御</text>
+<line x1="520" y1="605" x2="410" y2="565" stroke="#dc2626" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="375" y="555" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="465" y="577" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#dc2626">水やり結果</text>
+<line x1="295" y1="510" x2="165" y2="260" stroke="#16a34a" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="140" y="355" width="180" height="34" rx="8" fill="#f8fafc" fill-opacity="0.92"/>
+<text x="230" y="377" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#16a34a">改善ループ</text>
+<rect x="70" y="170" width="190" height="90" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="165" y="210">1. 起床</tspan><tspan x="165" y="236">センサー取得</tspan></text>
+<rect x="330" y="160" width="210" height="110" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="435" y="210">2. MQTT status</tspan><tspan x="435" y="236">測定値・起動履歴</tspan></text>
+<rect x="610" y="150" width="230" height="130" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="725" y="197">3. hub 正規化</tspan><tspan x="725" y="223">sensor_measurements</tspan><tspan x="725" y="249">イベント保存</tspan></text>
+<rect x="930" y="110" width="230" height="110" rx="12" fill="#e0f2fe" stroke="#0284c7" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1045" y="147">4. UI 表示</tspan><tspan x="1045" y="173">グラフ・カード</tspan><tspan x="1045" y="199">履歴</tspan></text>
+<rect x="930" y="290" width="230" height="130" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1045" y="337">5. 圃場前提</tspan><tspan x="1045" y="363">作物・品種</tspan><tspan x="1045" y="389">目標レンジ</tspan></text>
+<rect x="1220" y="230" width="250" height="130" rx="12" fill="#ecfccb" stroke="#65a30d" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1345" y="277">6. 判断候補</tspan><tspan x="1345" y="303">灌水・液肥・噴霧</tspan><tspan x="1345" y="329">現状は灌水のみ実行</tspan></text>
+<rect x="1220" y="470" width="250" height="110" rx="12" fill="#e0e7ff" stroke="#4f46e5" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1345" y="507">7. 承認 / 記録</tspan><tspan x="1345" y="533">action_plans</tspan><tspan x="1345" y="559">人間評価</tspan></text>
+<rect x="870" y="550" width="260" height="120" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1000" y="592">8. device config</tspan><tspan x="1000" y="618">または灌水指示</tspan><tspan x="1000" y="644">MQTT publish</tspan></text>
+<rect x="520" y="540" width="230" height="130" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="635" y="587">9. 実行</tspan><tspan x="635" y="613">WTR/WRS ポンプ</tspan><tspan x="635" y="639">バルブ制御</tspan></text>
+<rect x="180" y="510" width="230" height="110" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="295" y="560">10. 結果観測</tspan><tspan x="295" y="586">次回起床で評価</tspan></text>
+<rect x="70" y="870" width="1460" height="88" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+<text x="96" y="900" font-family="Arial, sans-serif" font-size="17" fill="#334155">- 営農者向け UI は変数名ではなく、水やり日時、土壌水分、起動状態、次の判断候補を先に見せる。</text>
+<text x="96" y="924" font-family="Arial, sans-serif" font-size="17" fill="#334155">- ENV/SOI/WTR/WRS の測定値は縦持ちの sensor_measurements に寄せ、device_kind ごとの固定 payload を正規化する。</text>
+</svg>

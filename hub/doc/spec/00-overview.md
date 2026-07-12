@@ -1,28 +1,19 @@
-# プロジェクト概要
+# Hub Specification Overview
 
-このディレクトリは `src/ina_device_hub` の各モジュールについての軽量仕様書を格納します。目的は保守性向上と外部参照用の簡易 API ドキュメントを提供することです。
+Japanese version:
 
-## 含まれるファイル（要約）
+- [jp/00-overview.md](jp/00-overview.md)
 
-- camera_connector.md
-- camera_device_repository.md
-- data_processor.md
-- general_log.md
-- hub_mqtt_client.md
-- ina_db_connector.md
-- location_repository.md
-- sensor_data_queue.md
-- sensor_data_repository.md
-- sensor_device_repository.md
-- sensor_image_repogitory.md
-- serve.md
-- setting.md
-- storage_connector.md
-- timelapse_task.md
-- utils.md
-- web_server.md
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-## 作成方針
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-- 各ファイルは目的・公開 API（関数/クラス）・主要引数/戻り値・依存・注意点を含みます。
-- 実装の詳細ではなく、取り扱いに必要な情報を短くまとめます。
+## Scope
+
+This file describes the hub module or component named `00-overview`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
+
+## Update Guidance
+
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

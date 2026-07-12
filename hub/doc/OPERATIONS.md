@@ -1,196 +1,151 @@
-# 運用ガイド — ina-device-hub
+# Operations Guide
 
-短い説明
+Japanese version:
 
-この文書は `ina-device-hub` を本番または現場デバイスで運用するための手順と運用上の注意をまとめたものです。インストール手順や systemd 管理、ログ/監視、バックアップ、トラブルシュート、更新手順を含みます。
+- [jp/OPERATIONS.md](jp/OPERATIONS.md)
 
-対象読者
-r
-- デバイス運用者、SRE、現場エンジニア
+## Local Hub
 
-前提
-
-- Linux（systemd）環境
-- sudo 権限
-- リポジトリがデバイス上にクローン済みであること（またはインストールスクリプトをリポジトリから実行できること）
-
-目次
-
-- クイックデプロイ
-- systemd 管理
-- 環境変数とシークレット管理
-- DB とストレージのバックアップ
-- ログと監視
-- トラブルシュート（よくある原因と対処）
-- 更新とロールバック
-- 定期メンテナンス
-
-クイックデプロイ
-
-1. 依存を同期
+Start in development:
 
 ```bash
-rye sync
+rye run serve
 ```
 
-2. 環境ファイルを配置（リポジトリに ` .default.env` があればコピー）
+Default URL:
 
-```bash
-cp .default.env .env
-# 必要に応じて編集
+```text
+http://localhost:39151
 ```
 
-3. systemd のインストールスクリプトでデプロイ（sudo）
+## systemd
+
+Install:
 
 ```bash
 sudo ./scripts/install_service.sh
 ```
 
-オプションで `--user` / `--target-dir` を指定できます。`--user` は既存ユーザーを指定してください。スクリプトは unit template の `@@INAS_HUB_DIR@@` / `@@INAS_HUB_USER@@` を対象環境の値に置換して `/etc/systemd/system/` に配置し、`inas-device-hub@main` を有効化・起動します。Cloudflare Tunnel を systemd 管理にする場合は `--enable-cloudflare-tunnel` を付けます。
-
-systemd 管理
-
-主要コマンド
+Install with a custom target:
 
 ```bash
-# ステータス確認
+sudo ./scripts/install_service.sh --user mysvcuser --target-dir /opt/ina-device-hub
+```
+
+Enable Cloudflare Tunnel service support:
+
+```bash
+sudo ./scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
+```
+
+Check:
+
+```bash
 systemctl status inas-device-hub@main
-systemctl status inas-cloudflare-tunnel
-
-# ログ確認（フォロー）
 journalctl -u inas-device-hub@main -f
-journalctl -u inas-cloudflare-tunnel -f
-
-# 再起動 / 再読み込み
-sudo systemctl restart inas-device-hub@main
-sudo systemctl restart inas-cloudflare-tunnel
-sudo systemctl daemon-reload
 ```
 
-テンプレート変更時
-
-1. `/etc/systemd/system/inas-device-hub@.service` を編集
-2. `sudo systemctl daemon-reload`
-3. `sudo systemctl restart inas-device-hub@main`
-
-環境変数とシークレット管理
-
-- 機密情報は `./.env` に保存します。ファイルパーミッションは最低でも `600` にしてください。
+Helper:
 
 ```bash
-chmod 600 /path/to/ina-device-hub/.env
+sudo ./scripts/hub_service.sh start
+sudo ./scripts/hub_service.sh restart
+./scripts/hub_service.sh status
+./scripts/hub_service.sh logs
 ```
 
-- 必須キー（抜粋、詳細は `src/ina_device_hub/setting.py` を参照）:
-  - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
-  - `S3_ENDPOINT_URL`, `S3_BUCKET_NAME`, `S3_BUCKET_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
-  - `MQTT_BROKER_URL`, `MQTT_BROKER_PORT`, `MQTT_BROKER_USERNAME`, `MQTT_BROKER_PASSWORD`
-  - `TIMELAPSE_INTERVAL`
+## Cloudflare Tunnel
 
-- 本番では Vault（HashiCorp / cloud provider KMS）や AWS Secrets Manager 等により配布し、デバイス側で `.env` を生成する運用が推奨されます。
-
-DB とストレージのバックアップ
-
-ローカル DB
-
-- アプリは `WORK_DIR`（デフォルト `~/.ina-device-hub`）下に `ina.db` を置いている可能性があります（`setting.py` を確認）。簡易バックアップ:
+Provision:
 
 ```bash
-# stop service
-sudo systemctl stop inas-device-hub@main
-
-# copy database
-cp ~/.ina-device-hub/ina.db /var/backups/ina-device-hub/ina.db.$(date +%F-%T)
-
-# restart
-sudo systemctl start inas-device-hub@main
+bash scripts/cloudflare_hosted_setup.sh --install-cloudflared
 ```
 
-※ Turso（リモート）を利用している場合は Turso の CLI/エクスポート機能を使用してください。
-
-オブジェクトストレージ（S3 互換）
-
-- バケットのバージョニングを有効にし、重要データは定期的に別のロケーションへコピーしてください。例: `aws s3 sync` 互換ツールで定期バックアップ。
-
-ログと監視
-
-- systemd ジャーナルを基本とし、外部監視を追加することを推奨します（Prometheus node_exporter + alertmanager など）。
-- ログローテーション: 大量の画像やメディアを扱う場合、ローカル保存領域が肥大化します。`logrotate` ではなく、メディア保存ディレクトリを定期に古いファイルから削除するジョブを用意してください。
-
-例: 30 日より古い画像を削除する cron スクリプト
+Run local hub and tunnel together:
 
 ```bash
-# /usr/local/bin/inas-cleanup.sh
-find /path/to/storage -type f -mtime +30 -delete
-
-# crontab (root またはサービス実行ユーザー)
-0 3 * * * /usr/local/bin/inas-cleanup.sh
+bash scripts/cloudflare_hosted_up.sh --install-cloudflared
 ```
 
-トラブルシュート（よくある原因と対処）
-
-- サービスが起動しない
-  - `journalctl -u inas-device-hub@main -b` を確認。多くは `.env` の未設定やパーミッション、`serve.sh` の実行権限不足。
-  - `sudo chmod +x /path/to/ina-device-hub/serve.sh` を確認。
-
-- MQTT 接続できない
-  - ブローカー情報（URL/PORT/ユーザー/パスワード）を `.env` で確認。
-  - ネットワーク（ファイアウォール、DNS）が ブローカーへ到達できるか `nc` / `telnet` で確認。
-
-- ストレージへアップロード失敗
-  - S3 エンドポイント・認証情報を確認。バケット名やリージョンが正しいかも確認。
-
-- DB エラー
-  - ローカル DB ファイルのロックや破損。バックアップから復元して起動確認。
-
-更新とロールバック
-
-更新手順（簡易）
-
-1. リポジトリを pull するか、管理サーバから最新ファイルを rsync する
+Run tunnel only:
 
 ```bash
-cd /path/to/ina-device-hub
-git pull origin main
-# or from central server: rsync -a ...
+bash scripts/cloudflare_tunnel_start.sh
 ```
 
-2. 必要なら依存を再同期
+Daemon helper:
 
 ```bash
-rye sync
+bash scripts/cloudflare_tunnel_daemon.sh --install-cloudflared start
+bash scripts/cloudflare_tunnel_daemon.sh status
+bash scripts/cloudflare_tunnel_daemon.sh logs
 ```
 
-3. systemd インストールを再実行（ユニット差分を反映）
+Cloudflare Error 1033 usually means the Tunnel connector is stopped or cannot
+reach the local origin.
+
+## Allowed Emails
 
 ```bash
-sudo ./scripts/install_service.sh --target-dir /path/to/ina-device-hub
+python3 scripts/cloudflare_access_setup.py list
+python3 scripts/cloudflare_access_setup.py add user@example.com
+python3 scripts/cloudflare_access_setup.py remove user@example.com
+python3 scripts/cloudflare_access_setup.py apply allowed_emails.txt --yes
 ```
 
-4. サービス再起動
+Removing an email from the Access group may not revoke existing sessions
+immediately. For urgent removal, revoke active Cloudflare Access sessions as
+well.
+
+## Local File Migration
 
 ```bash
-sudo systemctl restart inas-device-hub@main
-sudo systemctl restart inas-cloudflare-tunnel
+rye run local-files list
+rye run local-files export-zip /tmp/ina-device-hub-local-files.zip
+rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --overwrite
 ```
 
-ロールバック
+Include `WORK_DIR`:
 
-- 新バージョン適用前に必ず DB と重要ファイルのバックアップを取得してください（上記参照）。問題があればバックアップを戻し、以前のリリースタグに戻してサービスを再起動します。
+```bash
+rye run local-files export-zip /tmp/ina-device-hub-local-files.zip --include-work-dir
+rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --include-work-dir --overwrite
+```
 
-定期メンテナンス項目
+Move from an old device:
 
-- ディスク使用量チェック（`df -h`）
-- ローカルストレージの古いファイル削除
-- セキュリティアップデート適用（OS レベル）
-- 依存ライブラリの定期更新（テストを経て適用）
+```bash
+rye run local-files move-device \
+  --source-dir /mnt/old-device/path/to/ina-device-hub \
+  --target-dir /path/to/ina-device-hub \
+  --source-work-dir /mnt/old-device/path/to/.ina-device-hub \
+  --target-work-dir /path/to/.ina-device-hub \
+  --overwrite
+```
 
-セキュリティの注意
+## OTA Operations
 
-- `.env` を公開リポジトリへ入れない。Secrets をコミットしないこと。
-- サービス実行ユーザーは最小権限にする。
-- S3 認証キーは必要最小限の権限にする（書き込み対象バケットに限定）。
+1. Build firmware in the device project.
+2. Run `make check-firmware`.
+3. Upload/register the firmware from the hub UI.
+4. Verify artifact size, sha256, and generated HTTP URL.
+5. Offer the target firmware through MQTT.
+6. Watch OTA status.
 
-最後に
+Firmware binaries are delivered by local hub HTTP, not by MQTT.
 
-このガイドは基本的な運用をカバーします。運用環境（ネットワーク、クラウドプロバイダ、監視基盤）に合わせて手順を調整してください。追加したい手順や自動化（Ansible/Cloud-init / Mender など）を伝えていただければ、具体的なプレイブックやスクリプトを作成します。
+## NTP
+
+If devices need an explicit NTP server, run it as an OS service on the local
+network. The hub only distributes the `ntp_server` value; it does not provide an
+NTP server itself.
+
+## Routine Checks
+
+- Local hub service is active.
+- MQTT broker is reachable.
+- `WORK_DIR` and local storage are writable.
+- Cloudflare Tunnel connector is running when remote access is expected.
+- OTA firmware URLs are reachable by devices over HTTP.
+- Secrets are not present in logs or committed files.

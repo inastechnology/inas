@@ -1,25 +1,19 @@
-# timelapse_task (src/ina_device_hub/timelapse_task.py)
+# Timelapse Task
 
-## 目的
+Japanese version:
 
-- 定期的にカメラから静止画を取得してストレージへ保存するバックグラウンドタスク（apscheduler を利用）。
+- [jp/timelapse_task.md](jp/timelapse_task.md)
 
-## 主要クラス / メソッド
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class TimelapseTask
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - start() -> None
-  - stop() -> None
-  - __routin() -> None（定期実行ジョブ）
-  - get_img_key(device_id) -> str
+## Scope
 
-- function timelapse_task() -> TimelapseTask（シングルトン）
+This file describes the hub module or component named `timelapse_task`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-## 依存
+## Update Guidance
 
-- `apscheduler.schedulers.background.BlockingScheduler`, `camera_connector`, `storage_connector`, `setting`, `general_log`
-
-## 注意点
-
-- `routin_scheduler` は `BlockingScheduler` を使用しており、別スレッドで start() する設計。`scheduler.shutdown` の呼び出しが `()` なしで記述されている箇所があるので修正が必要（現状はメソッド参照になっている）。
-- ジョブ実行中のエラー処理や重複実行防止は `max_instances=1` でカバーしている。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

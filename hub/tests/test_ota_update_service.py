@@ -7,6 +7,7 @@ from unittest.mock import call, patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("FIRMWARE_BASE_URL", "http://127.0.0.1:39151")
+os.environ["FIRMWARE_HOSTNAME"] = ""
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
 os.environ.setdefault("TURSO_AUTH_TOKEN", "x")
 os.environ.setdefault("S3_ENDPOINT_URL", "x")
@@ -21,7 +22,7 @@ os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
 from ina_device_hub.device_config_repository import DeviceConfigRepository  # noqa: E402
-from ina_device_hub.ota_update_service import FirmwareArtifactRepository, OTA_UPDATE_REPLY_RETRY_DELAYS_SEC, OTAUpdateService  # noqa: E402
+from ina_device_hub.ota_update_service import OTA_UPDATE_REPLY_RETRY_DELAYS_SEC, FirmwareArtifactRepository, OTAUpdateService  # noqa: E402
 from ina_device_hub.setting import setting  # noqa: E402
 
 
@@ -41,6 +42,14 @@ class _MqttClient:
 class OTAUpdateServiceTest(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
+        self.original_firmware_settings = dict(setting().settings.get("firmware") or {})
+        setting().settings["firmware"] = {
+            **self.original_firmware_settings,
+            "base_url": "http://127.0.0.1:39151",
+            "hostname": "",
+            "port": 39151,
+            "root_dir": os.path.join(self.tmp_dir.name, "firmware"),
+        }
         self.repository = DeviceConfigRepository()
         self.repository.device_config_path = os.path.join(self.tmp_dir.name, ".device_configs.json")
         self.repository.device_configs = {}
@@ -54,6 +63,7 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.service.attach_mqtt_client(self.mqtt_client)
 
     def tearDown(self):
+        setting().settings["firmware"] = self.original_firmware_settings
         self.tmp_dir.cleanup()
 
     def test_active_device_with_target_and_artifact_receives_update_offer(self):

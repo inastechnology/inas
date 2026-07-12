@@ -2,11 +2,21 @@
 
 Device firmware projects are organized by device type.
 
+For the cross-project system specification, including the hub, Cloudflare,
+field data, and OTA, see
+[../docs/SYSTEM_SPECIFICATION.md](../docs/SYSTEM_SPECIFICATION.md).
+Device-specific XIAO ESP32S3 pin assignments are documented in
+[docs/pin_assignments.md](docs/pin_assignments.md).
+Japanese versions are stored under `jp/` directories at the same hierarchy
+level, such as [docs/jp/pin_assignments.md](docs/jp/pin_assignments.md).
+
 ```text
 client-devices/
   common/lib/ina-client-common/
-  watering-device/
-  watering-rs485-device/
+  watering-device/              # WTR
+  watering-rs485-device/        # WRS design stub
+  soil-sensor-device/           # SOI
+  environment-sensor-device/    # ENV
 ```
 
 ## Layering Policy

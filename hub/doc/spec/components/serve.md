@@ -1,15 +1,19 @@
-# serve (src/ina_device_hub/serve.py)
+# Serve
 
-## 目的
+Japanese version:
 
-- アプリケーションのエントリポイント。DataProcessor、HubMQTTClient、TimelapseTask、Flask サーバを起動するランナー。
+- [jp/serve.md](jp/serve.md)
 
-## 公開関数
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- run() -> None
-  - 各コンポーネントを初期化しサービスを起動する。
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-## 注意点
+## Scope
 
-- `run()` はブロッキングで Flask サーバを `flask_run()` で起動するため、起動順や例外ハンドリングの責務を明確にする必要がある。
-- サービス起動時のログ出力やプロセス監視（systemd ユニット化は `systemd/inas-device-hub@.service` がある）を考慮すること。
+This file describes the hub module or component named `serve`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
+
+## Update Guidance
+
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

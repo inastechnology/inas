@@ -2009,6 +2009,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                       <label for="env-soil-start-register">土壌 Start Register</label>
                       <input id="env-soil-start-register" type="number" min="0" max="65535" step="1">
                     </div>
+                    <div class="config-field">
+                      <label for="env-power-settle-ms">12V 電源待ち ms</label>
+                      <input id="env-power-settle-ms" type="number" min="0" max="30000" step="100">
+                    </div>
                   </div>
                   <div class="config-toolbar">
                     <label class="switch-row" for="env-cal-par-calibrated"><input id="env-cal-par-calibrated" type="checkbox"> 光 校正済み</label>
@@ -2729,6 +2733,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (envSoilFunction) envSoilFunction.value = String(Number.isInteger(envSoil.modbus_function) ? envSoil.modbus_function : 4);
             const envSoilStartRegister = document.getElementById("env-soil-start-register");
             if (envSoilStartRegister) envSoilStartRegister.value = String(Number.isInteger(envSoil.start_register) ? envSoil.start_register : 0);
+            const envPowerSettleMs = document.getElementById("env-power-settle-ms");
+            if (envPowerSettleMs) envPowerSettleMs.value = String(Number.isInteger(envSensors.power_settle_ms) ? envSensors.power_settle_ms : 800);
 
             const envCalibration = config.env_calibration || {};
             const envCalibrationMode = document.getElementById("env-calibration-mode");
@@ -2828,6 +2834,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 modbus_function: Number(document.getElementById("env-soil-function").value),
                 start_register: Number(document.getElementById("env-soil-start-register").value),
               },
+              power_settle_ms: Number(document.getElementById("env-power-settle-ms").value),
             };
             return {
               ntp_server: document.getElementById("ntp-server").value.trim() || "pool.ntp.org",
@@ -3151,7 +3158,6 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         is_detail_page=is_detail_page,
         list_path=list_path,
     )
-
 
 
 # ==========================================
@@ -3900,11 +3906,7 @@ def _area_type_from_text(value: str):
 def _parse_device_placements_form(form):
     placements = []
     indexes = sorted(
-        {
-            key.rsplit("_", 1)[-1]
-            for key in form.keys()
-            if key.startswith("placement_device_id_") and key.rsplit("_", 1)[-1].isdigit()
-        },
+        {key.rsplit("_", 1)[-1] for key in form.keys() if key.startswith("placement_device_id_") and key.rsplit("_", 1)[-1].isdigit()},
         key=int,
     )
     for index in indexes:
@@ -4220,29 +4222,35 @@ def _add_field_event_markers(fig, field_events):
 def _build_field_timeline(status_events: list, field_events: list, notes: list):
     timeline = []
     for event in status_events:
-        timeline.append({
-            "kind": "device_status",
-            "at": event.get("received_at"),
-            "title": event.get("summary"),
-            "body": event.get("device_id"),
-        })
+        timeline.append(
+            {
+                "kind": "device_status",
+                "at": event.get("received_at"),
+                "title": event.get("summary"),
+                "body": event.get("device_id"),
+            }
+        )
     for event in field_events:
         amount = ""
         if event.get("amount"):
             amount = f" {event.get('amount')}{event.get('unit') or ''}"
-        timeline.append({
-            "kind": event.get("event_type") or "field_event",
-            "at": event.get("occurred_at") or event.get("created_at"),
-            "title": f"{event.get('title') or event.get('event_type')}{amount}",
-            "body": event.get("description") or event.get("human_evaluation") or "",
-        })
+        timeline.append(
+            {
+                "kind": event.get("event_type") or "field_event",
+                "at": event.get("occurred_at") or event.get("created_at"),
+                "title": f"{event.get('title') or event.get('event_type')}{amount}",
+                "body": event.get("description") or event.get("human_evaluation") or "",
+            }
+        )
     for note in notes:
-        timeline.append({
-            "kind": note.get("category") or "note",
-            "at": note.get("created_at"),
-            "title": note.get("text"),
-            "body": note.get("human_evaluation") or "",
-        })
+        timeline.append(
+            {
+                "kind": note.get("category") or "note",
+                "at": note.get("created_at"),
+                "title": note.get("text"),
+                "body": note.get("human_evaluation") or "",
+            }
+        )
     return sorted(timeline, key=lambda item: item.get("at") or "", reverse=True)
 
 

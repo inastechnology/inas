@@ -1,26 +1,19 @@
-# location_repository (src/ina_device_hub/location_repository.py)
+# Location Repository
 
-## 目的
+Japanese version:
 
-- 位置情報（ロケーション）データをローカル JSON ファイルで管理するリポジトリ。
+- [jp/location_repository.md](jp/location_repository.md)
 
-## 公開 API
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class LocationRepository
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - load() / save()
-  - get(key) -> dict | None
-  - add(device_id, info: dict) -> None
-  - remove(device_id) -> None
-  - get_all() -> dict
-  - clear() -> None
+## Scope
 
-- function location_repository() -> LocationRepository（シングルトン）
+This file describes the hub module or component named `location_repository`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-## 依存
+## Update Guidance
 
-- `ina_device_hub.setting`
-
-## 注意点
-
-- `camera_device_repository` と同様にファイルベースで単純実装。並行アクセスとデータ整合性に注意。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

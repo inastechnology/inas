@@ -329,6 +329,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                 "env_sensors": {
                     "par": {"enabled": True, "modbus_slave_id": 3, "modbus_function": 4, "register": 10},
                     "soil": {"enabled": True, "modbus_slave_id": 4, "modbus_function": 3, "start_register": 20},
+                    "power_settle_ms": 1500,
                 },
                 "env_calibration": {
                     "mode": "capture_reference",
@@ -344,6 +345,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
 
         self.assertTrue(config["env_sensors"]["soil"]["enabled"])
         self.assertEqual(config["env_sensors"]["par"]["modbus_slave_id"], 3)
+        self.assertEqual(config["env_sensors"]["power_settle_ms"], 1500)
         self.assertEqual(config["env_calibration"]["mode"], "capture_reference")
         self.assertEqual(config["env_calibration"]["request_id"], "env-cal-001")
         self.assertEqual(config["env_calibration"]["target"], "soil_ph")
@@ -358,6 +360,17 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                     "timezone_offset_sec": 32400,
                     "moisture_threshold": 40,
                     "env_calibration": {"mode": "capture_reference", "target": "soil_ph", "reference_value": 6.86},
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "env_sensors": {"power_settle_ms": 30001},
                     "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
                 }
             )

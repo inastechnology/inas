@@ -1,91 +1,79 @@
-# 作物前提データと改善ループ
+# Crop Context And Agricultural Improvement Loop
 
-このドキュメントは、hub を単なるデバイス管理画面ではなく、作物・栽培条件・観察データをもとに科学的なアクションへ変換するための方針をまとめる。
+Japanese version:
 
-## 目的
+- [jp/AGRI_IMPROVEMENT_LOOP.md](jp/AGRI_IMPROVEMENT_LOOP.md)
 
-- 作物名、品種、生育段階、栽培方式、土壌・培地、株数などの周辺データを圃場に紐づける。
-- センサー値、天気、画像、作業記録、人間の評価を同じ文脈で扱う。
-- 目標レンジとの差分から、灌水・液肥・噴霧などの候補アクションを作る。
-- 実施前の仮説、実施結果、人間の評価を残し、次の目標レンジや制御方針に反映する。
+## Purpose
 
-現時点で hub から制御可能なアクションは WTR の灌水のみ。液肥と噴霧は、圃場データモデルと判断候補には入れるが、対応デバイスが追加されるまで自動実行しない。
+The hub should not be only a device management screen. It should connect crop
+context, field conditions, sensor data, images, work logs, and human evaluation
+so that observations can become better agricultural actions.
 
-## データモデル
+Current executable action:
 
-圃場データは `WORK_DIR/.fields.json` に保存する。既存の `crop` と `stage` は互換用に残し、詳細は次の構造へ正規化する。
+- WTR/WRS irrigation.
 
-- `crop_profile`: 作物名、品種、生育段階、播種日、定植日、収穫目標日
-- `growth_targets`: 土壌水分、土壌EC、土壌pH、湿度、光量の目標レンジ
-- `cultivation_context`: 栽培方式、土質、培地、ハウス情報、マルチ、潅水方式、水源、面積、株数、メモ
-- `control_policy`: 目的、自動化レベル、許可アクション、灌水上限、安全メモ
-- `knowledge_context`: 調べたい研究テーマ、参考URL、画像観察の観点、知識メモ
-- `areas`: 圃場内の区画、ベッド、畝、ゾーン、測点
-- `device_placements`: ENV/SOI/WTR/カメラなどの設置先。圃場全体、区画、畝、測点のどれを代表する値かを示す。
-- `action_plans`: 提案・承認・実施・評価されたアクション仮説の履歴
+Future candidate actions:
 
-## 圃場内の監視単位
+- Liquid fertilizer.
+- Misting or humidity control.
+- Image-assisted crop state evaluation.
+- External research data references.
 
-小規模な圃場では、ENV は圃場全体を代表する環境センサーとして1台でよい。圃場が大きい、作物が複数ある、日当たりや水はけが違う場合は、区画・畝・測点を分けて登録する。
+## Field Data Model
 
-- `field`: 圃場全体。ENV、広域カメラ、圃場全体の天気・環境値に使う。
-- `section`: 区画。作物や栽培条件が違う単位に使う。
-- `ridge` / `bed`: 畝・ベッド。SOI の土壌水分やWTRの灌水対象を明確にしたい場合に使う。
-- `point`: 測点。特定地点の土壌水分、EC、pH、日射などを代表値として扱う場合に使う。
+Field data is stored under `WORK_DIR/.fields.json`. Legacy `crop` and `stage`
+fields remain for compatibility, while detailed data is normalized into:
 
-デバイスの紐づけ先は、どの作物の生育フィードバックに使うかを決める。例えば、ENV を圃場全体、SOI を「1番畝」、WTR を「A区画」に紐づけると、土壌水分の不足判断は1番畝の状態として解釈し、気温・湿度・日射は圃場全体の参考値として扱う。
+- `crop_profile`: crop name, cultivar, growth stage, sowing date, transplant
+  date, target harvest date.
+- `growth_targets`: target ranges for soil moisture, EC, pH, humidity, and
+  light.
+- `cultivation_context`: cultivation method, soil/media, house information,
+  mulch, irrigation method, water source, area, plant count, notes.
+- `control_policy`: objective, automation level, allowed actions, irrigation
+  limits, safety notes.
+- `knowledge_context`: research topics, reference URLs, image observation
+  points, knowledge notes.
+- `areas`: sections, beds, ridges, zones, or measurement points.
+- `device_placements`: links devices to field, section, ridge/bed, or point.
+- `action_plans`: proposed, approved, executed, and evaluated actions.
 
-## 改善ループ
+## Field Units
 
-1. 観察する
-   - WTR/SOI/ENV のセンサー値、起床履歴、画像、天気、作業イベントを集める。
-   - ENV/SOI の正規化済み測定値は `sensor_measurements` に保存し、圃場判断の最新値として参照する。
+- `field`: whole field. Good for ENV, wide cameras, and broad weather context.
+- `section`: area with different crop or cultivation conditions.
+- `ridge` / `bed`: useful for soil moisture and irrigation target mapping.
+- `point`: specific measurement point.
 
-2. 前提をそろえる
-   - 作物名、品種、生育段階、栽培方式、土壌・培地、株数を圃場設定に入れる。
-   - 作物や栽培方式ごとに、土壌水分、EC、pH、湿度、光量の目標レンジを設定する。
+One ENV device can represent a small field. Split into smaller units only when
+field size, crop differences, sunlight, or drainage makes it necessary.
 
-3. 差分を解釈する
-   - `agri_action_service` が最新値と目標レンジを比較する。
-   - 土壌水分が下限未満なら灌水候補を作る。
-   - 土壌ECが下限未満なら液肥候補を作る。ただし実行は将来対応。
-   - 湿度が下限未満なら噴霧候補を作る。ただし実行は将来対応。
+## Improvement Loop
 
-4. アクションを記録する
-   - UI の「次の判断候補」から、候補を `action_plans` に保存する。
-   - 保存時に、作物・生育段階・栽培条件・現在値・目標レンジ・期待効果・リスクを一緒に残す。
+1. Observe: collect WTR/WRS/SOI/ENV measurements, wake history, images, weather, and
+   work events.
+2. Align context: record crop, cultivar, growth stage, cultivation method, soil
+   or media, and plant count.
+3. Interpret gaps: compare latest values with target ranges.
+4. Record action candidates: keep expected effect, risk, target, and context.
+5. Execute and evaluate: store work result and human evaluation.
+6. Feed back: adjust target ranges, timing, or control policy.
 
-5. 実施と評価を残す
-   - 灌水、液肥、噴霧、追肥、遮光、収穫などの作業は圃場イベントとして記録する。
-   - 実施後の人間評価をメモ・イベント・振り返りに残す。
-   - LLM 振り返りは、前提条件、目標との差、センサー値、画像、作業、評価を分けて扱う。
+## Automation Levels
 
-6. 次に反映する
-   - 効果が弱い、過剰、タイミングが遅いなどの評価をもとに、目標レンジや制御方針を見直す。
-   - 将来は研究データ、過去の自家データ、画像診断、天気以外の外部情報を候補生成に追加する。
+- `observe_only`: observe and record only.
+- `suggest_only`: show and record candidates; no execution.
+- `manual_approval`: execute only after human approval.
+- `auto`: execute when safety conditions pass. Use with irrigation limits and
+  minimum intervals.
 
-## 自動化レベル
+## External Information
 
-- `observe_only`: 観察と記録のみ。制御候補を実行しない。
-- `suggest_only`: 候補を表示・記録する。実行は人間が別途行う。
-- `manual_approval`: 実行可能な候補を人間が承認してから制御する。
-- `auto`: 安全条件を満たす候補を自動制御する。現時点では慎重に扱い、灌水上限と間隔を必ず設定する。
+The hub currently records weather information. Future external context can
+include crop research data, pest/disease warnings, leaf color or wilt
+observation from images, and field-specific historical patterns.
 
-## 外部情報の扱い
-
-現在 hub が定期取得している外部情報は Open-Meteo の日別気象データと JMA 予報である。今後の候補として次を想定する。
-
-- 作物別の生育適温、EC、pH、湿度、日射、積算温度などの公開研究データ
-- 病害虫警戒情報、花粉・黄砂などの広域環境情報
-- 画像から見た葉色、萎れ、病斑、節間、開花・着果の状態
-- 自家圃場の過去データから見た、効果のあった灌水・液肥・噴霧パターン
-
-外部情報は命令として扱わず、必ず出典、適用条件、信頼度、人間の確認結果を残す。自動制御に使う前に、圃場ごとの実測と評価で検証する。
-
-## 実装状況
-
-- 圃場UIで作物前提データ、目標レンジ、制御方針、外部知識メモ、圃場内の監視単位、デバイス設置先を入力できる。
-- `/local/api/fields/<field_id>` は圃場設定と `action_candidates` を返す。
-- `/local/api/fields/<field_id>/action-plans` でアクション仮説を保存できる。
-- `agri_action_service` は土壌水分、土壌EC、湿度の下限差分から候補を作る。
-- WTR の灌水は実行可能候補として扱う。液肥・噴霧は将来デバイスが必要な候補として扱う。
+External information is not a direct command. Store source, assumptions,
+confidence, and human review before using it for automation.

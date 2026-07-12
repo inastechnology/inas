@@ -12,7 +12,8 @@
 #define TAG "app_runtime_config"
 #define APP_RUNTIME_CONFIG_FILE "/.runtime_config"
 #define APP_RUNTIME_CONFIG_STORE_MAGIC 0x52544346UL
-#define APP_RUNTIME_CONFIG_STORE_VERSION 4
+#define APP_RUNTIME_CONFIG_STORE_VERSION 5
+#define APP_RUNTIME_CONFIG_STORE_VERSION_V4 4
 #define APP_RUNTIME_CONFIG_STORE_VERSION_V3 3
 #define APP_RUNTIME_CONFIG_STORE_VERSION_V2 2
 #define APP_RUNTIME_CONFIG_STORE_VERSION_V1 1
@@ -73,6 +74,22 @@ typedef struct
 
 typedef struct
 {
+    bool valid;
+    bool received_from_mqtt;
+    char ntp_server[256];
+    int32_t timezone_offset_sec;
+    uint8_t moisture_threshold;
+    bool force_watering;
+    uint8_t schedule_count;
+    bool debug_log_on_wake;
+    uint32_t ota_check_interval_sec;
+    app_watering_pattern_config_t watering_pattern;
+    app_soil_calibration_config_t soil_calibration;
+    app_schedule_entry_t schedules[APP_RUNTIME_MAX_SCHEDULES];
+} app_runtime_config_v4_t;
+
+typedef struct
+{
     uint32_t magic;
     uint16_t version;
     uint16_t config_size;
@@ -107,12 +124,38 @@ typedef struct
     uint32_t crc32;
 } app_runtime_config_store_v3_t;
 
+typedef struct
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t config_size;
+    app_runtime_config_v4_t config;
+    uint32_t crc32;
+} app_runtime_config_store_v4_t;
+
 static_assert(offsetof(app_runtime_config_v1_t, schedules) == 268,
               "Unexpected app_runtime_config_v1_t layout; check migration");
 static_assert(offsetof(app_runtime_config_v2_t, schedules) == 272,
               "Unexpected app_runtime_config_v2_t layout; check migration");
 static_assert(offsetof(app_runtime_config_v3_t, schedules) > offsetof(app_runtime_config_v3_t, ota_check_interval_sec),
               "Unexpected app_runtime_config_v3_t layout; check migration");
+static_assert(offsetof(app_runtime_config_v4_t, schedules) > offsetof(app_runtime_config_v4_t, ota_check_interval_sec),
+              "Unexpected app_runtime_config_v4_t layout; check migration");
+
+static void app_runtime_config_copy_string(char *dest, size_t dest_size, const char *src)
+{
+    if (dest == nullptr || dest_size == 0)
+    {
+        return;
+    }
+    if (src == nullptr)
+    {
+        dest[0] = '\0';
+        return;
+    }
+    strncpy(dest, src, dest_size - 1);
+    dest[dest_size - 1] = '\0';
+}
 
 static app_watering_pattern_config_t app_runtime_config_default_watering_pattern()
 {
@@ -135,6 +178,143 @@ static app_soil_calibration_config_t app_runtime_config_default_soil_calibration
     calibration.min_delta_raw = 80;
     calibration.drift_tolerance_raw = 120;
     return calibration;
+}
+
+static app_env_metric_calibration_t app_runtime_config_default_env_metric_calibration(float scale = 1.0f)
+{
+    app_env_metric_calibration_t calibration = {};
+    calibration.calibrated = false;
+    calibration.scale = scale;
+    calibration.offset = 0.0f;
+    return calibration;
+}
+
+static app_env_calibration_config_t app_runtime_config_default_env_calibration()
+{
+    app_env_calibration_config_t calibration = {};
+    app_runtime_config_copy_string(calibration.mode, sizeof(calibration.mode), APP_ENV_CALIBRATION_MODE_NORMAL);
+    app_runtime_config_copy_string(calibration.target, sizeof(calibration.target), APP_ENV_METRIC_PAR);
+    calibration.reference_value = 0.0f;
+    calibration.par_umol_m2_s = app_runtime_config_default_env_metric_calibration();
+    calibration.soil_moisture_percent = app_runtime_config_default_env_metric_calibration();
+    calibration.soil_temperature_c = app_runtime_config_default_env_metric_calibration();
+    calibration.soil_ec_us_cm = app_runtime_config_default_env_metric_calibration();
+    calibration.soil_ph = app_runtime_config_default_env_metric_calibration();
+    calibration.soil_n_mg_kg = app_runtime_config_default_env_metric_calibration();
+    calibration.soil_p_mg_kg = app_runtime_config_default_env_metric_calibration();
+    calibration.soil_k_mg_kg = app_runtime_config_default_env_metric_calibration();
+    return calibration;
+}
+
+static app_env_sensor_config_t app_runtime_config_default_env_sensors()
+{
+    app_env_sensor_config_t sensors = {};
+    sensors.par.enabled = APP_ENV_PAR_ENABLED;
+    sensors.par.modbus_slave_id = APP_ENV_PAR_MODBUS_SLAVE_ID;
+    sensors.par.modbus_function = APP_ENV_PAR_MODBUS_FUNCTION;
+    sensors.par.register_address = APP_ENV_PAR_REGISTER;
+    sensors.soil.enabled = APP_ENV_SOIL_RS485_ENABLED;
+    sensors.soil.modbus_slave_id = APP_ENV_SOIL_MODBUS_SLAVE_ID;
+    sensors.soil.modbus_function = APP_ENV_SOIL_MODBUS_FUNCTION;
+    sensors.soil.start_register = APP_ENV_SOIL_MODBUS_START_REGISTER;
+    sensors.power_settle_ms = APP_SENSOR_12V_POWER_SETTLE_MS;
+    return sensors;
+}
+
+static bool app_runtime_config_env_calibration_mode_is_valid(const char *mode)
+{
+    return mode != nullptr &&
+           (strcmp(mode, APP_ENV_CALIBRATION_MODE_NORMAL) == 0 ||
+            strcmp(mode, APP_ENV_CALIBRATION_MODE_CAPTURE_REFERENCE) == 0 ||
+            strcmp(mode, APP_ENV_CALIBRATION_MODE_RESET) == 0);
+}
+
+bool app_runtime_config_env_metric_is_supported(const char *metric)
+{
+    return metric != nullptr &&
+           (strcmp(metric, APP_ENV_METRIC_PAR) == 0 ||
+            strcmp(metric, APP_ENV_METRIC_SOIL_MOISTURE) == 0 ||
+            strcmp(metric, APP_ENV_METRIC_SOIL_TEMPERATURE) == 0 ||
+            strcmp(metric, APP_ENV_METRIC_SOIL_EC) == 0 ||
+            strcmp(metric, APP_ENV_METRIC_SOIL_PH) == 0 ||
+            strcmp(metric, APP_ENV_METRIC_SOIL_N) == 0 ||
+            strcmp(metric, APP_ENV_METRIC_SOIL_P) == 0 ||
+            strcmp(metric, APP_ENV_METRIC_SOIL_K) == 0);
+}
+
+static app_env_metric_calibration_t *app_runtime_config_mutable_env_metric_calibration(app_env_calibration_config_t &calibration,
+                                                                                       const char *metric)
+{
+    if (metric == nullptr)
+    {
+        return nullptr;
+    }
+    if (strcmp(metric, APP_ENV_METRIC_PAR) == 0)
+    {
+        return &calibration.par_umol_m2_s;
+    }
+    if (strcmp(metric, APP_ENV_METRIC_SOIL_MOISTURE) == 0)
+    {
+        return &calibration.soil_moisture_percent;
+    }
+    if (strcmp(metric, APP_ENV_METRIC_SOIL_TEMPERATURE) == 0)
+    {
+        return &calibration.soil_temperature_c;
+    }
+    if (strcmp(metric, APP_ENV_METRIC_SOIL_EC) == 0)
+    {
+        return &calibration.soil_ec_us_cm;
+    }
+    if (strcmp(metric, APP_ENV_METRIC_SOIL_PH) == 0)
+    {
+        return &calibration.soil_ph;
+    }
+    if (strcmp(metric, APP_ENV_METRIC_SOIL_N) == 0)
+    {
+        return &calibration.soil_n_mg_kg;
+    }
+    if (strcmp(metric, APP_ENV_METRIC_SOIL_P) == 0)
+    {
+        return &calibration.soil_p_mg_kg;
+    }
+    if (strcmp(metric, APP_ENV_METRIC_SOIL_K) == 0)
+    {
+        return &calibration.soil_k_mg_kg;
+    }
+    return nullptr;
+}
+
+const app_env_metric_calibration_t &app_runtime_config_env_metric_calibration(const app_runtime_config_t &config,
+                                                                              const char *metric)
+{
+    static app_env_metric_calibration_t fallback = {false, 1.0f, 0.0f};
+    app_env_metric_calibration_t *calibration = app_runtime_config_mutable_env_metric_calibration(
+        const_cast<app_env_calibration_config_t &>(config.env_calibration),
+        metric);
+    return calibration != nullptr ? *calibration : fallback;
+}
+
+static void app_runtime_config_parse_env_metric_calibration(JsonObjectConst parent,
+                                                            const char *metric,
+                                                            app_env_metric_calibration_t &calibration)
+{
+    if (!parent[metric].is<JsonObjectConst>())
+    {
+        return;
+    }
+    JsonObjectConst metric_json = parent[metric].as<JsonObjectConst>();
+    if (metric_json["calibrated"].is<bool>())
+    {
+        calibration.calibrated = metric_json["calibrated"].as<bool>();
+    }
+    if (metric_json["scale"].is<float>() || metric_json["scale"].is<int>())
+    {
+        calibration.scale = constrain(metric_json["scale"].as<float>(), 0.0001f, 100000.0f);
+    }
+    if (metric_json["offset"].is<float>() || metric_json["offset"].is<int>())
+    {
+        calibration.offset = constrain(metric_json["offset"].as<float>(), -100000.0f, 100000.0f);
+    }
 }
 
 static uint32_t app_runtime_config_sanitize_ota_check_interval(uint32_t interval_sec)
@@ -224,6 +404,8 @@ static app_runtime_config_t app_runtime_config_from_v2(const app_runtime_config_
     current.ota_check_interval_sec = app_runtime_config_sanitize_ota_check_interval(legacy.ota_check_interval_sec);
     current.watering_pattern = app_runtime_config_default_watering_pattern();
     current.soil_calibration = app_runtime_config_default_soil_calibration();
+    current.env_sensors = app_runtime_config_default_env_sensors();
+    current.env_calibration = app_runtime_config_default_env_calibration();
     app_runtime_config_copy_legacy_schedules(current.schedules, legacy.schedules);
     return current;
 }
@@ -243,7 +425,30 @@ static app_runtime_config_t app_runtime_config_from_v3(const app_runtime_config_
     current.ota_check_interval_sec = app_runtime_config_sanitize_ota_check_interval(legacy.ota_check_interval_sec);
     current.watering_pattern = legacy.watering_pattern;
     current.soil_calibration = legacy.soil_calibration;
+    current.env_sensors = app_runtime_config_default_env_sensors();
+    current.env_calibration = app_runtime_config_default_env_calibration();
     app_runtime_config_copy_legacy_schedules(current.schedules, legacy.schedules);
+    return current;
+}
+
+static app_runtime_config_t app_runtime_config_from_v4(const app_runtime_config_v4_t &legacy)
+{
+    app_runtime_config_t current = {};
+    current.valid = legacy.valid;
+    current.received_from_mqtt = legacy.received_from_mqtt;
+    strncpy(current.ntp_server, legacy.ntp_server, sizeof(current.ntp_server) - 1);
+    current.ntp_server[sizeof(current.ntp_server) - 1] = '\0';
+    current.timezone_offset_sec = legacy.timezone_offset_sec;
+    current.moisture_threshold = legacy.moisture_threshold;
+    current.force_watering = legacy.force_watering;
+    current.schedule_count = legacy.schedule_count;
+    current.debug_log_on_wake = legacy.debug_log_on_wake;
+    current.ota_check_interval_sec = app_runtime_config_sanitize_ota_check_interval(legacy.ota_check_interval_sec);
+    current.watering_pattern = legacy.watering_pattern;
+    current.soil_calibration = legacy.soil_calibration;
+    current.env_sensors = app_runtime_config_default_env_sensors();
+    current.env_calibration = app_runtime_config_default_env_calibration();
+    memcpy(current.schedules, legacy.schedules, sizeof(current.schedules));
     return current;
 }
 
@@ -375,6 +580,8 @@ void app_runtime_config_init()
     s_runtime_config.ota_check_interval_sec = APP_RUNTIME_DEFAULT_OTA_CHECK_INTERVAL_SEC;
     s_runtime_config.watering_pattern = app_runtime_config_default_watering_pattern();
     s_runtime_config.soil_calibration = app_runtime_config_default_soil_calibration();
+    s_runtime_config.env_sensors = app_runtime_config_default_env_sensors();
+    s_runtime_config.env_calibration = app_runtime_config_default_env_calibration();
 
     if (app_runtime_config_load_saved())
     {
@@ -476,6 +683,74 @@ bool app_runtime_config_apply_json(const uint8_t *payload, size_t length)
             Serial.println("Ignoring invalid soil_calibration dry/wet raw values");
             next.soil_calibration = app_runtime_config_default_soil_calibration();
         }
+    }
+
+    next.env_sensors = app_runtime_config_default_env_sensors();
+    if (doc["env_sensors"].is<JsonObjectConst>())
+    {
+        JsonObjectConst env_sensors = doc["env_sensors"].as<JsonObjectConst>();
+        if (env_sensors["par"].is<JsonObjectConst>())
+        {
+            JsonObjectConst par = env_sensors["par"].as<JsonObjectConst>();
+            next.env_sensors.par.enabled = par["enabled"] | next.env_sensors.par.enabled;
+            next.env_sensors.par.modbus_slave_id = static_cast<uint8_t>(constrain(par["modbus_slave_id"] | next.env_sensors.par.modbus_slave_id, 1, 247));
+            next.env_sensors.par.modbus_function = static_cast<uint8_t>(constrain(par["modbus_function"] | next.env_sensors.par.modbus_function, 3, 4));
+            next.env_sensors.par.register_address = static_cast<uint16_t>(constrain(par["register"] | next.env_sensors.par.register_address, 0, 65535));
+        }
+        if (env_sensors["soil"].is<JsonObjectConst>())
+        {
+            JsonObjectConst soil = env_sensors["soil"].as<JsonObjectConst>();
+            next.env_sensors.soil.enabled = soil["enabled"] | next.env_sensors.soil.enabled;
+            next.env_sensors.soil.modbus_slave_id = static_cast<uint8_t>(constrain(soil["modbus_slave_id"] | next.env_sensors.soil.modbus_slave_id, 1, 247));
+            next.env_sensors.soil.modbus_function = static_cast<uint8_t>(constrain(soil["modbus_function"] | next.env_sensors.soil.modbus_function, 3, 4));
+            next.env_sensors.soil.start_register = static_cast<uint16_t>(constrain(soil["start_register"] | next.env_sensors.soil.start_register, 0, 65535));
+        }
+        long power_settle_ms = env_sensors["power_settle_ms"] | static_cast<long>(next.env_sensors.power_settle_ms);
+        next.env_sensors.power_settle_ms = static_cast<uint32_t>(constrain(power_settle_ms, 0L, 30000L));
+    }
+
+    next.env_calibration = app_runtime_config_default_env_calibration();
+    if (doc["env_calibration"].is<JsonObjectConst>())
+    {
+        JsonObjectConst calibration_json = doc["env_calibration"].as<JsonObjectConst>();
+        app_env_calibration_config_t calibration = next.env_calibration;
+
+        const char *mode = calibration_json["mode"] | calibration.mode;
+        if (app_runtime_config_env_calibration_mode_is_valid(mode))
+        {
+            app_runtime_config_copy_string(calibration.mode, sizeof(calibration.mode), mode);
+        }
+
+        app_runtime_config_copy_string(calibration.request_id,
+                                       sizeof(calibration.request_id),
+                                       calibration_json["request_id"] | calibration.request_id);
+
+        const char *target = calibration_json["target"] | calibration.target;
+        if (app_runtime_config_env_metric_is_supported(target))
+        {
+            app_runtime_config_copy_string(calibration.target, sizeof(calibration.target), target);
+        }
+
+        if (calibration_json["reference_value"].is<float>() || calibration_json["reference_value"].is<int>())
+        {
+            calibration.reference_value = constrain(calibration_json["reference_value"].as<float>(), -100000.0f, 100000.0f);
+        }
+
+        app_runtime_config_parse_env_metric_calibration(calibration_json, APP_ENV_METRIC_PAR, calibration.par_umol_m2_s);
+        app_runtime_config_parse_env_metric_calibration(calibration_json, APP_ENV_METRIC_SOIL_MOISTURE, calibration.soil_moisture_percent);
+        app_runtime_config_parse_env_metric_calibration(calibration_json, APP_ENV_METRIC_SOIL_TEMPERATURE, calibration.soil_temperature_c);
+        app_runtime_config_parse_env_metric_calibration(calibration_json, APP_ENV_METRIC_SOIL_EC, calibration.soil_ec_us_cm);
+        app_runtime_config_parse_env_metric_calibration(calibration_json, APP_ENV_METRIC_SOIL_PH, calibration.soil_ph);
+        app_runtime_config_parse_env_metric_calibration(calibration_json, APP_ENV_METRIC_SOIL_N, calibration.soil_n_mg_kg);
+        app_runtime_config_parse_env_metric_calibration(calibration_json, APP_ENV_METRIC_SOIL_P, calibration.soil_p_mg_kg);
+        app_runtime_config_parse_env_metric_calibration(calibration_json, APP_ENV_METRIC_SOIL_K, calibration.soil_k_mg_kg);
+
+        if (strcmp(calibration.mode, APP_ENV_CALIBRATION_MODE_RESET) == 0)
+        {
+            calibration = app_runtime_config_default_env_calibration();
+        }
+
+        next.env_calibration = calibration;
     }
 
     const JsonArrayConst schedules = doc["schedules"].as<JsonArrayConst>();
@@ -723,6 +998,45 @@ bool app_runtime_config_load_saved()
         return true;
     }
 
+    if (header.version == APP_RUNTIME_CONFIG_STORE_VERSION_V4 &&
+        header.config_size == sizeof(app_runtime_config_v4_t))
+    {
+        app_runtime_config_store_v4_t store = {};
+        file.seek(0);
+        const size_t read_size = file.read(reinterpret_cast<uint8_t *>(&store), sizeof(store));
+        file.close();
+
+        if (read_size != sizeof(store))
+        {
+            Serial.printf("Saved runtime config v4 size mismatch: %u/%u\n",
+                          static_cast<unsigned int>(read_size),
+                          static_cast<unsigned int>(sizeof(store)));
+            return false;
+        }
+
+        const uint32_t expected_crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
+                                                       sizeof(store) - sizeof(store.crc32));
+        if (store.crc32 != expected_crc32)
+        {
+            Serial.printf("Saved runtime config v4 CRC mismatch actual=0x%08X expected=0x%08X\n",
+                          store.crc32,
+                          expected_crc32);
+            return false;
+        }
+
+        app_runtime_config_t migrated = app_runtime_config_from_v4(store.config);
+        migrated.received_from_mqtt = false;
+        if (!app_runtime_config_content_is_valid(migrated))
+        {
+            Serial.println("Saved runtime config v4 content is invalid");
+            return false;
+        }
+
+        s_runtime_config = migrated;
+        app_runtime_config_save_current();
+        return true;
+    }
+
     if (header.version != APP_RUNTIME_CONFIG_STORE_VERSION ||
         header.config_size != sizeof(app_runtime_config_t))
     {
@@ -813,6 +1127,38 @@ bool app_runtime_config_update_soil_calibration(uint16_t dry_raw, uint16_t wet_r
     }
     s_runtime_config.soil_calibration.dry_raw = dry_raw;
     s_runtime_config.soil_calibration.wet_raw = wet_raw;
+    return app_runtime_config_save_current();
+}
+
+bool app_runtime_config_update_env_metric_calibration(const char *metric,
+                                                      float scale,
+                                                      float offset,
+                                                      bool calibrated,
+                                                      const char *last_request_id)
+{
+    app_env_metric_calibration_t *metric_calibration = app_runtime_config_mutable_env_metric_calibration(
+        s_runtime_config.env_calibration,
+        metric);
+    if (metric_calibration == nullptr)
+    {
+        return false;
+    }
+
+    metric_calibration->scale = constrain(scale, 0.0001f, 100000.0f);
+    metric_calibration->offset = constrain(offset, -100000.0f, 100000.0f);
+    metric_calibration->calibrated = calibrated;
+    app_runtime_config_copy_string(s_runtime_config.env_calibration.mode,
+                                   sizeof(s_runtime_config.env_calibration.mode),
+                                   APP_ENV_CALIBRATION_MODE_NORMAL);
+    app_runtime_config_copy_string(s_runtime_config.env_calibration.request_id,
+                                   sizeof(s_runtime_config.env_calibration.request_id),
+                                   "");
+    if (last_request_id != nullptr)
+    {
+        app_runtime_config_copy_string(s_runtime_config.env_calibration.last_request_id,
+                                       sizeof(s_runtime_config.env_calibration.last_request_id),
+                                       last_request_id);
+    }
     return app_runtime_config_save_current();
 }
 

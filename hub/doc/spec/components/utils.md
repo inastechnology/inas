@@ -1,20 +1,19 @@
-# utils (src/ina_device_hub/utils.py)
+# Utils
 
-## 目的
+Japanese version:
 
-- グラフ作成などプロジェクト横断的に使われるユーティリティ関数を提供する。
+- [jp/utils.md](jp/utils.md)
 
-## 公開 API
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class Utils
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - static create_latest_aggregated_graph_as_html(device_id, latest_aggregated_data) -> str | None
-    - Plotly を使って温度/tds のグラフを HTML の div（埋め込み用）で返す。
+## Scope
 
-## 依存
+This file describes the hub module or component named `utils`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-- `plotly` ライブラリ
+## Update Guidance
 
-## 注意点
-
-- Plotly の出力はサイズが大きくなる可能性があるため、大規模データや高頻度更新では別の可視化戦略を検討。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

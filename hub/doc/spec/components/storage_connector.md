@@ -1,25 +1,19 @@
-# storage_connector (src/ina_device_hub/storage_connector.py)
+# Storage Connector
 
-## 目的
+Japanese version:
 
-- S3 互換ストレージ（boto3）とローカルストレージのラッパー。ファイルの保存・取得を提供する。
+- [jp/storage_connector.md](jp/storage_connector.md)
 
-## 主要 API
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class StorageConnector
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - save_to_cloud(file_key, fileBytes, content_type="image/jpeg") -> str | None
-  - save_to_local(file_key, fileBytes) -> str
-  - fetch_from_cloud_as_bytes(file_full_key) -> bytes | None
-  - get_file_dir(file_key) / get_file_path(file_key) -> str
+## Scope
 
-- function storage_connector() -> StorageConnector（シングルトン）
+This file describes the hub module or component named `storage_connector`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-## 依存
+## Update Guidance
 
-- `boto3`, `ina_device_hub.setting`, `ina_device_hub.general_log`
-
-## 注意点
-
-- `save_to_cloud`/`fetch_from_cloud_as_bytes` はバケット名を `setting().get('storage_bucket')` から取得する。マルチテナント対応は TODO コメントあり。
-- ローカルへの保存はファイルシステム上のパスを生成して直接書き込む。アクセス権やディスク容量に注意。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

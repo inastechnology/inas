@@ -60,6 +60,35 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
         self.assertEqual(by_metric["soil_ph"]["raw_value"], 65.0)
         self.assertFalse(by_metric["soil_ec_us_cm"]["payload"]["calibrated"])
 
+    def test_extract_wtr_rs485_measurements_from_status_payload(self):
+        measurements = extract_measurements_from_status(
+            "INADS-wtr",
+            {
+                "seq": 12,
+                "device_kind": "WTR",
+                "sensor_12v_power_requested": True,
+                "sensor_12v_power_configured": True,
+                "par_ok": True,
+                "par_umol_m2_s": 700.0,
+                "raw_par": 700,
+                "soil_rs485_ok": True,
+                "soil_temperature_c": 20.1,
+                "soil_ec_us_cm": 640.0,
+                "soil_ph": 6.4,
+                "raw_soil_temperature": 201,
+                "raw_soil_ec": 640,
+                "raw_soil_ph": 64,
+                "env_par_calibrated": False,
+                "env_soil_calibrated": True,
+            },
+            "2026-07-12T05:00:00+00:00",
+        )
+
+        by_metric = {item["metric"]: item for item in measurements}
+        self.assertEqual(by_metric["soil_ec_us_cm"]["device_kind"], "WTR")
+        self.assertEqual(by_metric["soil_temperature_c"]["raw_value"], 201.0)
+        self.assertTrue(by_metric["soil_ph"]["payload"]["calibrated"])
+
     def test_extract_wrs_rs485_measurements_from_status_payload(self):
         measurements = extract_measurements_from_status(
             "INADS-wrs",
@@ -92,7 +121,9 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
         definitions = repository.list_definitions()
         by_metric = {item["metric"]: item for item in definitions}
         self.assertIn("soil_ec_us_cm", by_metric)
+        self.assertIn("WTR", by_metric["soil_ec_us_cm"]["device_kinds"])
         self.assertIn("WRS", by_metric["soil_ec_us_cm"]["device_kinds"])
+        self.assertIn("WTR", by_metric["par_umol_m2_s"]["device_kinds"])
         self.assertIn("WRS", by_metric["par_umol_m2_s"]["device_kinds"])
 
         recorded = repository.record_status_measurements(

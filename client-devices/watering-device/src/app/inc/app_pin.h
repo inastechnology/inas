@@ -6,11 +6,14 @@
 // Port definitions
 // ================================================================
 
-// temperature sensor
+// Legacy temperature sensor. Not used by the current WTR cycle.
 #define TEMP_SENSOR_PIN A0
 
-// TDS sensor
+// Legacy TDS sensor. Not used by the current WTR cycle.
 #define TDS_SENSOR_PIN A1
+
+// Soil moisture sensor
+#define SOIL_SENSOR_PIN A5
 
 // Valve control
 #define VALVE_PIN D2

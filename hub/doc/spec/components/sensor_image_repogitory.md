@@ -1,26 +1,19 @@
-# sensor_image_repogitory (src/ina_device_hub/sensor_image_repogitory.py)
+# Sensor Image Repogitory
 
-## 目的
+Japanese version:
 
-- センサーカメラから保存された画像をクラウド（S3 互換）へアップロードし、DB にメタ情報を登録／取得する。
+- [jp/sensor_image_repogitory.md](jp/sensor_image_repogitory.md)
 
-## 主要 API
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class SensorImageRepogitory(db_connector: InaDBConnector)
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - save(device_id, imageBytes) -> None
-    - ストレージへアップロードし、DB に `insert_sensor_image_data` を呼ぶ。
+## Scope
 
-  - fetch_latest(device_id, limit: int = 1) -> list[dict]
-  - fetch_from_cloud_as_bytes(image_path) -> bytes | None
-  - get_image_dir(device_id) / get_image_path(device_id) -> str
+This file describes the hub module or component named `sensor_image_repogitory`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-- function sensor_image_repogitory(db_connector: InaDBConnector = None) -> SensorImageRepogitory（シングルトン）
+## Update Guidance
 
-## 依存
-
-- `boto3`, `storage_connector`, `InaDBConnector`, `setting`, `general_log`
-
-## 注意点
-
-- `save` はクラウド保存後に DB 登録を行う。ネットワーク障害時の再試行やローカル保存フォールバックが必要な場合は拡張を検討。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

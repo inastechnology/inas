@@ -1,23 +1,19 @@
-# web_server (src/ina_device_hub/web_server.py)
+# Web Server
 
-## 目的
+Japanese version:
 
-- Flask を用いたローカル管理 UI と API を提供するモジュール。デバイス一覧、カメラプレビュー、画像取得等のエンドポイントを持つ。
+- [jp/web_server.md](jp/web_server.md)
 
-## 主要エンドポイント（抜粋）
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- GET / : ダッシュボード（devices, cameras, locations）
-- GET /devices/<device_id> : デバイス詳細とグラフ
-- GET /devices/<device_id>/latest_image : 最新画像の一覧（テンプレート `image_page.html` を使用）
-- GET /local/api/images/<path:image_path> : 画像をバイトで返す
-- GET /local/api/camera/<device_id>/video_feed : MJPEG ストリーム（camera_connector.generate_frames を利用）
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-## 依存
+## Scope
 
-- Flask
-- sensor_* リポジトリ、camera_connector、storage_connector、utils
+This file describes the hub module or component named `web_server`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-## 注意点
+## Update Guidance
 
-- テンプレートは簡易 inline 実装で拡張性が低い。将来的に Jinja テンプレートファイルへ分離することを推奨。
-- エンドポイントは認証なしで動作するためローカル限定で運用するか、認証レイヤの追加を推奨。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

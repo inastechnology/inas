@@ -1,0 +1,125 @@
+# ESP32S3 配線表
+
+このドキュメントは、Seeed XIAO ESP32S3 を使う INAS device の製造向け配線表である。基板画像つきのピン割当は [pin_assignments.md](pin_assignments.md) を参照する。
+
+## 共通ルール
+
+- ESP32S3 の GPIO は 3.3V logic として扱う。RS485 transceiver は MAX3485、SP3485、SN65HVD 系など 3.3V logic 対応品を使う。
+- XIAO の `VBUS` には 5V regulated output を入れる。12V を XIAO に直接入れない。
+- ESP32S3 GND、RS485 transceiver GND、12V センサー GND、ポンプ/バルブ電源 GND、DCDC GND は device 内の GND point で共通化する。
+- センサー電源 MOSFET で切るのは RS485 センサーへ向かう 12V 分岐だけ。ESP32S3 本体電源をこの switch の後段に置かない。
+- 同じ RS485 bus 上の Modbus slave ID は重複させない。
+- 任意センサーの未接続は timeout または `*_ok=false` として扱う。センサー構成ごとに XIAO pin assignment を変えない。
+
+## 線色の目安
+
+| 信号種別 | 推奨色 | 備考 |
+|---|---|---|
+| 12V input / switched 12V | 赤 | 常時 12V と switched 12V をラベルで区別する |
+| 5V regulated output | 橙 | DCDC output から XIAO `VBUS` |
+| 3.3V sensor power | 紫 | SOI の analog sensor 用 |
+| GND / 0V | 黒 | 共通 GND |
+| RS485 A / D+ | 黄 | RS485 B とツイストする |
+| RS485 B / D- | 緑 | RS485 A とツイストする |
+| UART TX / RX / DE | 青 / 白 / 灰 | 筐体内の短い配線 |
+| MOSFET gate | 青 | XIAO からの内部 signal |
+| Analog signal | 白 | ポンプ/バルブ配線から離す |
+
+## WTR
+
+水やり全部入りデバイス。WTR は灌水制御、analog 土壌水分、任意の RS485 センサーを扱う。
+
+| XIAO pin | GPIO | 接続先 | 外部端子 | 線材 | 検査 |
+|---|---:|---|---|---|---|
+| `VBUS` | - | 5V DCDC output | Power `5V_OUT` | 橙 22-24 AWG | XIAO 接続前に 4.75-5.25V |
+| `GND` | - | device GND | Power `GND` | 黒 20-24 AWG | 12V negative、RS485 GND と導通 |
+| `D2` | `GPIO3` | valve MOSFET gate | Valve output channel 1 | 青 24-26 AWG | valve command 時に gate が変化 |
+| `D3` | `GPIO4` | pump MOSFET gate | Pump output | 青 24-26 AWG | valve active 中に pump output が ON |
+| `A5` / `D5` | `GPIO6` | analog soil moisture signal | Soil analog `SIG` | 白 24-26 AWG | 乾湿基準で ADC が変化 |
+| `D4` | `GPIO5` | RS485 transceiver DE/RE | internal RS485 driver | 灰 24-26 AWG | Modbus TX 時に direction pin が変化 |
+| `D6` | `GPIO43` | RS485 transceiver DI | internal RS485 TX | 青 24-26 AWG | request 時に UART TX が出る |
+| `D7` | `GPIO44` | RS485 transceiver RO | internal RS485 RX | 白 24-26 AWG | response 時に UART RX が入る |
+| `D8` | `GPIO7` | 12V sensor power MOSFET gate | RS485 sensor power switch | 青 24-26 AWG | sensor read 中だけ switched 12V が出る |
+| `BOOT` | `GPIO0` | setup AP button | enclosure service button | 2 線 signal | active-low、3.3V へ短絡なし |
+| `USER_LED` | `GPIO21` | board LED | internal only | - | firmware status LED が動作 |
+
+外部端子:
+
+| 端子 | 接続先 | 備考 |
+|---|---|---|
+| `12V_IN+` | 12V supply positive | 可能なら device 前段に fuse |
+| `12V_IN-` | 12V supply negative | common ground |
+| `VALVE+` / `VALVE-` | solenoid valve または valve driver | 電圧・電流定格を合わせる |
+| `PUMP+` / `PUMP-` | pump または pump relay/MOSFET output | MOSFET 定格を超えない |
+| `RS485_A` / `RS485_B` | sensor bus A/B | 全センサー無応答なら A/B を疑う |
+| `RS485_GND` | sensor bus ground | 圃場配線の安定化に必須 |
+| `SENSOR_12V_SW+` | switched sensor 12V | sensor branch のみ |
+| `SOIL_SIG` / `SOIL_3V3` / `SOIL_GND` | analog soil moisture sensor | RS485 土壌センサー利用時は任意 |
+
+## WRS
+
+RS485 前提の水やり全部入りデバイス。WRS は WTR の灌水出力と RS485 配線を流用する。analog soil pin は明示的に使う build でない限り診断用予約とする。
+
+| XIAO pin | GPIO | 接続先 | 外部端子 | 線材 | 検査 |
+|---|---:|---|---|---|---|
+| `VBUS` | - | 5V DCDC output | Power `5V_OUT` | 橙 22-24 AWG | XIAO 接続前に 4.75-5.25V |
+| `GND` | - | device GND | Power `GND` | 黒 20-24 AWG | 12V negative、RS485 GND と導通 |
+| `D2` | `GPIO3` | valve MOSFET gate | Valve output channel 1 | 青 24-26 AWG | valve command 時に gate が変化 |
+| `D3` | `GPIO4` | pump MOSFET gate | Pump output | 青 24-26 AWG | valve active 中に pump output が ON |
+| `A5` / `D5` | `GPIO6` | reserved diagnostic analog input | internal test pad | 白 24-26 AWG | 明示仕様がなければ未接続 |
+| `D4` | `GPIO5` | RS485 transceiver DE/RE | internal RS485 driver | 灰 24-26 AWG | Modbus TX 時に direction pin が変化 |
+| `D6` | `GPIO43` | RS485 transceiver DI | internal RS485 TX | 青 24-26 AWG | request 時に UART TX が出る |
+| `D7` | `GPIO44` | RS485 transceiver RO | internal RS485 RX | 白 24-26 AWG | response 時に UART RX が入る |
+| `D8` | `GPIO7` | 12V sensor power MOSFET gate | RS485 sensor power switch | 青 24-26 AWG | sensor read 中だけ switched 12V が出る |
+| `BOOT` | `GPIO0` | setup AP button | enclosure service button | 2 線 signal | active-low、3.3V へ短絡なし |
+| `USER_LED` | `GPIO21` | board LED | internal only | - | firmware status LED が動作 |
+
+外部端子:
+
+| 端子 | 接続先 | 備考 |
+|---|---|---|
+| `12V_IN+` / `12V_IN-` | 12V supply | pump、valve、RS485、5V DCDC と GND 共通 |
+| `VALVE+` / `VALVE-` | solenoid valve または valve driver | 灌水 output |
+| `PUMP+` / `PUMP-` | pump または pump driver | 灌水中に active |
+| `RS485_A` / `RS485_B` | soil、PAR、日射センサー | sensor ごとに一意の Modbus slave ID |
+| `RS485_GND` | sensor bus ground | 長い配線では必須 |
+| `SENSOR_12V_SW+` | RS485 sensor 12V branch | sensor branch のみ。ESP32S3 電源ではない |
+
+## ENV
+
+12V 電源前提の RS485 環境センサーハブ。
+
+| XIAO pin | GPIO | 接続先 | 外部端子 | 線材 | 検査 |
+|---|---:|---|---|---|---|
+| `VBUS` | - | 5V DCDC output | Power `5V_OUT` | 橙 22-24 AWG | XIAO 接続前に 4.75-5.25V |
+| `GND` | - | device GND | Power `GND` | 黒 20-24 AWG | 12V negative、RS485 GND と導通 |
+| `D4` | `GPIO5` | RS485 transceiver DE/RE | internal RS485 driver | 灰 24-26 AWG | Modbus TX 時に direction pin が変化 |
+| `D6` | `GPIO43` | RS485 transceiver DI | internal RS485 TX | 青 24-26 AWG | request 時に UART TX が出る |
+| `D7` | `GPIO44` | RS485 transceiver RO | internal RS485 RX | 白 24-26 AWG | response 時に UART RX が入る |
+| `BOOT` | `GPIO0` | setup AP button | enclosure service button | 2 線 signal | active-low、3.3V へ短絡なし |
+| `USER_LED` | `GPIO21` | board LED | internal only | - | firmware status LED が動作 |
+
+外部端子:
+
+| 端子 | 接続先 | 備考 |
+|---|---|---|
+| `12V_IN+` / `12V_IN-` | 12V supply | sensors と 5V DCDC を供給 |
+| `RS485_A` / `RS485_B` | PAR、soil、EC/pH/NPK、日射センサー | sensor ごとに一意の Modbus slave ID |
+| `RS485_GND` | sensor bus ground | 圃場配線の安定化に必須 |
+| `SENSOR_12V+` | sensor 12V supply | future switch がない限り常時 12V |
+
+## SOI
+
+18650 バッテリー前提の土壌水分専用ノード。
+
+| XIAO pin | GPIO | 接続先 | 外部端子 | 線材 | 検査 |
+|---|---:|---|---|---|---|
+| `BAT+` | - | protected 18650 positive | battery holder `+` | 赤 22-24 AWG | battery 挿入前に極性確認 |
+| `BAT-` | - | battery negative | battery holder `-` | 黒 22-24 AWG | sensor GND と共通 |
+| `3.3V-OUT` | - | analog soil sensor VCC | soil sensor `VCC` | 紫 24-26 AWG | 3.3V のみ |
+| `GND` | - | sensor ground | soil sensor `GND` | 黒 24-26 AWG | battery negative と導通 |
+| `A0` / `D0` | `GPIO1` | analog soil sensor signal | soil sensor `SIG` | 白 24-26 AWG | 乾湿基準で ADC が変化 |
+| `BOOT` | `GPIO0` | setup AP button | enclosure service button | 2 線 signal | active-low、3.3V へ短絡なし |
+| `USER_LED` | `GPIO21` | board LED | internal only | - | firmware status LED が動作 |
+
+SOI に 12V RS485 センサーを接続しない。12V または RS485 Modbus が必要なセンサーは ENV または WRS で扱う。

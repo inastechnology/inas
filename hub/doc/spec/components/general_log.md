@@ -1,23 +1,19 @@
-# general_log (src/ina_device_hub/general_log.py)
+# General Log
 
-## 目的
+Japanese version:
 
-- ローテーティングファイルハンドラと標準出力（自動フラッシュ）を設定したロガーを提供するユーティリティ。
+- [jp/general_log.md](jp/general_log.md)
 
-## 公開 API
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- function get_rotate_file_logger(name: str, log_file: str) -> Logger
-  - 指定名/ファイル名でロガーを作成して返す。
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-- variable logger: Logger
-  - `get_rotate_file_logger("general", "general.log")` による共有インスタンス。
+## Scope
 
-## 依存
+This file describes the hub module or component named `general_log`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-- Python 標準の `logging`, `logging.handlers.RotatingFileHandler`
-- `ina_device_hub.setting`
+## Update Guidance
 
-## 注意点
-
-- `RotatingFileHandler` の設定でログ最大サイズとバックアップ数が大きめ（10MB、バックアップ100）。必要に応じて調整推奨。
-- stdout ハンドラは常に DEBUG レベルでフラッシュするため本番ではログレベル調整を検討。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.

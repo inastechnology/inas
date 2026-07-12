@@ -4,8 +4,6 @@
 #include "app_debug_log.h"
 #include "app_pin.h"
 
-#define SOIL_SENSOR_PIN A2 // Example GPIO pin for soil moisture sensor
-
 static const uint8_t kWateringPins[] = {
     VALVE_PIN,
     PUMP_PIN,

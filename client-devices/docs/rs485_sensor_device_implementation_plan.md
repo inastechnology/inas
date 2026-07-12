@@ -1,139 +1,148 @@
 # RS485 Sensor Device Implementation Plan
 
-## 方針
+Japanese version:
 
-`SOI` と `ENV` は測定専用デバイスとして実装する。ただし電源要件が異なるため、`SOI` は 18650 バッテリー前提の土壌水分専用、`ENV` は 12V 電源前提の RS485 センサーハブとして分ける。
+- [jp/rs485_sensor_device_implementation_plan.md](jp/rs485_sensor_device_implementation_plan.md)
 
-RS485 Modbus RTU の低レベル処理は共通ライブラリに置き、`ENV` は register map と status payload だけを持つ。`SOI` は現状の接続制約に合わせて ADC 土壌水分センサーのみを読む。
+## Direction
 
-## 実装ステップ
+`SOI` and `ENV` are measurement-focused devices, but their power requirements
+are different. `SOI` is a battery-powered soil moisture node. `ENV` is a
+12V-powered RS485 sensor hub.
 
-1. 新規デバイス scaffold
-   - `client-devices/scripts/create_device_project.py` で `soil-sensor-device` / `SOI` を生成する。
-   - 同じく `environment-sensor-device` / `ENV` を生成する。
+Low-level RS485 Modbus RTU handling belongs in the shared library. `ENV` owns
+the register maps and status payload conversion. `SOI` reads only an analog soil
+moisture sensor for now.
 
-2. SOI firmware
-   - 起床時に `A0` の土壌水分センサーを読む。
-   - raw ADC 値を dry/wet キャリブレーションで 0-100% に変換する。
-   - `soil_calibration.mode` で `capture_dry` / `capture_wet` / `reset` を受け取り、ユーザ主導の初回キャリブレーションを行う。
-   - `dry_raw`、`wet_raw`、`min_delta_raw`、`sample_count`、`sample_interval_ms` は runtime config で調整できるようにする。
-   - キャリブレーション値は LittleFS に保存し、deep sleep 後も保持する。
-   - 初期 sleep interval は 900 秒。
+## Implementation Steps
 
-3. RS485/Modbus 共通 HAL
-   - `hal_rs485_modbus_init()` で UART と DE/RE ピンを初期化する。
-   - `hal_rs485_modbus_read_registers()` で Modbus function `0x03` / `0x04` を読む。
-   - CRC16、slave id、function code、byte count を検証する。
-   - timeout や CRC 不一致は `false` で返し、status payload では `par_ok=false` / `soil_rs485_ok=false` にする。
+1. Device scaffolding
+   - Generate `soil-sensor-device` / `SOI` with
+     `client-devices/scripts/create_device_project.py`.
+   - Generate `environment-sensor-device` / `ENV` with the same script.
 
-4. ENV firmware
-   - 起床時に PAR register を読む。
-   - 12V が必要な EC/pH/NPK 土壌センサーは `APP_ENV_SOIL_RS485_ENABLED=1` の時だけ読む。
-   - `par_umol_m2_s`、soil RS485 values、raw register を MQTT status に含める。
-   - `env_sensors` で PAR/土壌 RS485 の slave id、function、register を変更できるようにする。
-   - `env_calibration` で測定項目ごとの `scale`、`offset`、`calibrated` を保持する。
-   - `capture_reference` では既知の基準値と現在値の差を offset として LittleFS に保存する。
-   - 初期 sleep interval は 300 秒。
+2. SOI application
+   - Read the soil moisture sensor on `A0` after wake.
+   - Convert raw ADC values to 0-100% using dry/wet calibration.
+   - Support user-driven first calibration through `soil_calibration.mode`:
+     `capture_dry`, `capture_wet`, and `reset`.
+   - Keep `dry_raw`, `wet_raw`, `min_delta_raw`, `sample_count`, and
+     `sample_interval_ms` adjustable through runtime config.
+   - Persist calibration values in LittleFS across deep sleep.
+   - Start with a 900-second sleep interval.
 
-5. DB / Hub
-   - `sensor_measurement_definitions` に測定項目、表示名、単位、対応 device_kind を定義する。
-   - `sensor_measurements` に ENV/SOI/WTR の測定値を縦持ちで保存する。
-   - ENV status 受信時に `par_umol_m2_s`、土壌水分、地温、EC、pH、N/P/K を測定値へ正規化する。
-   - DB 書き込みに失敗しても MQTT status 記録は継続する。
+3. Shared RS485/Modbus HAL
+   - Initialize UART and DE/RE pin with `hal_rs485_modbus_init()`.
+   - Read Modbus function `0x03` / `0x04` registers with
+     `hal_rs485_modbus_read_registers()`.
+   - Validate CRC16, slave id, function code, and byte count.
+   - Return `false` on timeout or CRC mismatch, and expose failures in status
+     payloads such as `par_ok=false` or `soil_rs485_ok=false`.
 
-6. ビルド検証
-   - `make build`
-   - `make check-firmware`
+4. ENV application
+   - Read the PAR register after wake.
+   - Read 12V EC/pH/NPK soil sensors only when
+     `APP_ENV_SOIL_RS485_ENABLED=1`.
+   - Include `par_umol_m2_s`, soil RS485 values, and raw registers in MQTT
+     status.
+   - Make PAR and soil RS485 slave id, function, and register configurable
+     through `env_sensors`.
+   - Store per-metric `scale`, `offset`, and `calibrated` values in
+     `env_calibration`.
+   - In `capture_reference`, persist the offset between a known reference value
+     and the current measurement to LittleFS.
+   - Start with a 300-second sleep interval.
 
-## 未確定事項
+5. Hub support
+   - Define metrics, display names, units, and supported device kinds in
+     `sensor_measurement_definitions`.
+   - Store ENV/SOI/WTR/WRS measurements vertically in `sensor_measurements`.
+   - Normalize ENV status fields such as `par_umol_m2_s`, soil moisture, soil
+     temperature, EC, pH, N/P/K into measurements.
+   - Continue MQTT status logging even if measurement DB writes fail.
 
-現時点でセンサーの正式な Modbus register table がないため、register map は仮実装である。実機マニュアル入手後、以下を確認する。
+6. Build verification
+   - Build `soil-sensor-device`.
+   - Build `environment-sensor-device`.
+   - Run firmware manifest checks.
+   - Run focused hub tests for measurement normalization and config handling.
 
-- slave id 初期値
-- baud rate
-- parity / stop bits
-- function code (`0x03` or `0x04`)
-- register address
-- scale
-- signed / unsigned
-- 16-bit / 32-bit
-- NPK の単位
-- PAR センサーの単位と scale
+## Unknowns
 
-## 変更しやすい箇所
+The official Modbus register tables for the selected sensors are not confirmed
+yet. After obtaining the real manuals, verify:
 
-SOI `platformio.ini` の build flags は未校正時の初期値:
+- Default slave id
+- Baud rate
+- Function code
+- Start register
+- Register count
+- Signedness
+- Scale factors
+- NPK units
+- PAR sensor unit and scale
+
+## Tunable Areas
+
+SOI `platformio.ini` build flags are only initial values before calibration:
 
 ```ini
 -D APP_SOI_MOISTURE_PIN=A0
--D APP_SOI_MOISTURE_DRY_RAW=3200
--D APP_SOI_MOISTURE_WET_RAW=1500
--D APP_SOI_MOISTURE_SAMPLE_COUNT=20
--D APP_SOI_MOISTURE_SAMPLE_INTERVAL_MS=40
+-D APP_SOI_DRY_RAW=3200
+-D APP_SOI_WET_RAW=1500
+-D APP_SOI_SAMPLE_COUNT=20
+-D APP_SOI_SAMPLE_INTERVAL_MS=40
 ```
 
-運用中の SOI キャリブレーション値は Hub の runtime config で更新する:
+Runtime SOI calibration is updated from Hub runtime config:
 
 ```json
 {
   "soil_calibration": {
-    "mode": "capture_dry",
-    "request_id": "cal-20260712-001",
-    "calibrated": false,
+    "mode": "normal",
     "dry_raw": 3200,
     "wet_raw": 1500,
-    "min_delta_raw": 80,
+    "min_delta_raw": 200,
     "sample_count": 20,
-    "sample_interval_ms": 40
+    "sample_interval_ms": 40,
+    "calibrated": false,
+    "request_id": ""
   }
 }
 ```
 
-Hub UI では「通常」「乾いた状態を記録」「湿った状態を記録」「未校正に戻す」として表示する。詳細設定では手動の乾燥値・湿潤値・測定回数・測定間隔を編集できる。
-`normal` 以外の mode は一回限りのコマンドとして扱い、Hub は保存時に `request_id` を付与する。SOI は同じ `request_id` を二重処理せず、処理後はローカル設定を `normal` に戻す。
-
-ENV build flags は未受信時の初期値:
+ENV build flags are initial values used before runtime config is received:
 
 ```ini
--D APP_RS485_UART_NUM=1
--D APP_RS485_TX_PIN=43
--D APP_RS485_RX_PIN=44
--D APP_RS485_DE_PIN=5
--D APP_RS485_BAUD=4800
--D APP_ENV_PAR_ENABLED=1
+-D APP_ENV_RS485_TX_PIN=43
+-D APP_ENV_RS485_RX_PIN=44
+-D APP_ENV_RS485_DE_RE_PIN=5
 -D APP_ENV_PAR_MODBUS_SLAVE_ID=1
--D APP_ENV_PAR_MODBUS_FUNCTION=3
 -D APP_ENV_PAR_REGISTER=0
--D APP_ENV_PAR_SCALE=1.0f
--D APP_ENV_SOIL_RS485_ENABLED=0
--D APP_ENV_SOIL_MODBUS_SLAVE_ID=2
--D APP_ENV_SOIL_MODBUS_FUNCTION=4
--D APP_ENV_SOIL_MODBUS_START_REGISTER=0
+-D APP_ENV_PAR_SCALE=1
 ```
 
-運用中の ENV 設定は Hub の runtime config で更新する:
+Runtime ENV settings are updated from Hub runtime config:
 
 ```json
 {
   "env_sensors": {
-    "par": {"enabled": true, "modbus_slave_id": 1, "modbus_function": 3, "register": 0},
-    "soil": {"enabled": true, "modbus_slave_id": 2, "modbus_function": 4, "start_register": 0}
+    "par": { "enabled": true, "slave_id": 1, "function": 4, "register": 0, "count": 1 },
+    "soil_rs485": { "enabled": true, "slave_id": 2, "function": 4, "register": 0, "count": 7 }
   },
   "env_calibration": {
-    "mode": "capture_reference",
-    "request_id": "env-cal-20260712-001",
-    "target": "soil_ph",
-    "reference_value": 6.86,
-    "soil_ph": {"calibrated": false, "scale": 1.0, "offset": 0.0}
+    "par_umol_m2_s": { "scale": 1.0, "offset": 0.0, "calibrated": false },
+    "soil_ec_us_cm": { "scale": 1.0, "offset": 0.0, "calibrated": false },
+    "soil_ph": { "scale": 1.0, "offset": 0.0, "calibrated": false }
   }
 }
 ```
 
-## リスク
+## Risks
 
-- RS485 トランシーバが 5V 専用の場合、ESP32-S3 の GPIO を破損する可能性がある。
-- センサー電源が別系統の場合、GND 共通化が必要。
-- 長距離配線では終端抵抗とバイアス抵抗が必要になる場合がある。
-- register map がセンサー販売ページと実機ロットで異なる可能性がある。
-- ENV の RS485 bus で複数センサーを使う場合、slave id の重複を避ける必要がある。
-- SOI の土壌水分 percent は dry/wet raw キャリブレーションに強く依存する。
+- A 5V-only RS485 transceiver can damage ESP32-S3 GPIO.
+- A separate sensor power domain still requires a common GND.
+- Long RS485 wiring may require termination and bias resistors.
+- Register maps may differ by vendor listing or production lot.
+- Multiple sensors on one ENV RS485 bus must not share the same slave id.
+- SOI soil moisture percent depends strongly on dry/wet raw calibration.

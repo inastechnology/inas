@@ -1,22 +1,19 @@
-# sensor_device_repository (src/ina_device_hub/sensor_device_repository.py)
+# Sensor Device Repository
 
-## 目的
+Japanese version:
 
-- センサー（デバイス）一覧をローカル JSON ファイルで管理するリポジトリ。
+- [jp/sensor_device_repository.md](jp/sensor_device_repository.md)
 
-## 公開 API
+This document follows the repository documentation language policy: the default document is English and the Japanese version is stored under the sibling `jp/` directory at the same hierarchy level.
 
-- class SensorDeviceRepository
+The Japanese version currently contains the detailed legacy content. Keep this English file as the stable entry point and move details here as English text when the module specification is updated.
 
-  - load() / save()
-  - get(key) -> dict | None
-  - add(device_id, info: dict) -> None
-  - remove(device_id) -> None
-  - get_all() -> dict
-  - clear() -> None
+## Scope
 
-- function sensor_device_repository() -> SensorDeviceRepository（シングルトン）
+This file describes the hub module or component named `sensor_device_repository`. Use it to record purpose, public APIs, dependencies, operational notes, and test expectations.
 
-## 注意点
+## Update Guidance
 
-- `camera_device_repository` と同様の実装上の注意（ミュータブル引数、並行アクセス、データ破損）。
+- Keep implementation-specific details aligned with `src/ina_device_hub`.
+- Keep examples and commands executable from the hub project unless stated otherwise.
+- When adding Japanese details, put them in the linked `jp/` document or update both versions together.
