@@ -39,6 +39,9 @@ device kind or product name.
 - Pin selection belongs in `platformio.ini`, a small device App constant block,
   or a focused pin map helper. Pin selection alone is not enough reason to
   create a new HAL layer.
+- A hardware-only variant belongs to pin maps, build flags, BOM, and wiring
+  profiles. Do not create a new firmware project or `device_kind` when the
+  device still owns the same behavior and status/config payload.
 
 ## App Rules
 
@@ -94,6 +97,18 @@ create a new device HAL wrapper.
 
 `WRS` must not define a `hal_wrs` wrapper unless WRS later gains a concrete
 hardware primitive that cannot be expressed by existing HAL modules.
+
+## WTR Hardware Profiles
+
+`WTR` may have multiple hardware profiles. A 12V pump/valve build and a small
+low-voltage or battery-assisted watering build are both WTR when they keep the
+same product contract: local irrigation output, local soil moisture feedback,
+and WTR status/config semantics.
+
+Represent hardware profile differences with pin assignment, terminal labels,
+BOM, and manufacturing instructions. Use `hal_power_switch` for the switched
+output regardless of whether the installer connects a pump, valve, relay, or
+low-voltage driver input.
 
 ## Review Checklist
 

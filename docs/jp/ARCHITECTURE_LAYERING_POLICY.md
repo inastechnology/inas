@@ -26,6 +26,7 @@
 - hub は system をオーケストレーションする。device は固定 `device_kind` contract に従って測定または実行を担当する。
 - イチゴ点滴栽培のような作物別 system は、device と hub policy の composition である。H/W contract 自体が変わらない限り、作物別巨大 firmware device は作らない。
 - `device_kind` は H/W role と payload contract を固定する。material に変わる場合は、新しい firmware project と `device_kind` を作る。
+- 電源電圧、MOSFET 定格、筐体、WTR build が小型低電圧負荷を駆動するかどうかのような H/W だけの差異は、payload contract や hub 挙動が変わらない限り、既存 `device_kind` 内の H/W profile として扱う。
 - 再利用可能な mechanism は common layer に置く。例: MQTT transport、OTA、RS485 bus handling、Modbus frame handling、GPIO-switched power、storage repositories、Cloudflare provisioning helper。
 - 製品判断は reusable mechanism の上に置く。例: いつ灌水するか、どの threshold を使うか、feedback 欠落をどう扱うか、営農者向け UI wording。
 - 既存下位 layer の呼び出しを製品名で束ねるだけの wrapper layer は追加しない。wrapper は rename ではなく、実 boundary を追加する場合だけ作る。
@@ -48,6 +49,7 @@
 - product behavior を表す組み合わせは device App から common HAL を compose してよい。
 - protocol driver は bus/register protocol を変換し、power rail 制御や product decision を持たない。
 - WRS は `hal_power_switch`、`hal_rs485_bus`、`hal_rs485_sensor_protocol` を使う。実 H/W primitive が増えない限り、`hal_wrs` wrapper は再導入しない。
+- battery 駆動や低電圧負荷向けの水やり build は、WTR と同じく local irrigation output と local soil moisture feedback を持つなら WTR の H/W profile として扱う。その H/W 差だけで新しい `device_kind` は作らない。
 
 ## Data / UI ルール
 

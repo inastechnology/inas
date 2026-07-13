@@ -12,8 +12,10 @@ the Seeed XIAO ESP32S3. For board image previews, see
 
 - Keep ESP32S3 logic at 3.3V. Use a 3.3V-compatible RS485 transceiver such as
   MAX3485, SP3485, or SN65HVD-series parts.
-- Feed XIAO `VBUS` from a regulated 5V output. Do not feed 12V directly into the
-  XIAO board.
+- For 12V-powered devices, feed XIAO `VBUS` from a regulated 5V output. Do not
+  feed 12V directly into the XIAO board.
+- For battery-powered profiles, connect the protected cell to `BAT+` / `BAT-`
+  and keep external sensor and output wiring within the documented profile.
 - Tie ESP32S3 GND, RS485 transceiver GND, 12V sensor GND, pump/valve supply GND,
   and DC/DC converter GND together at the device ground point.
 - Switch only the RS485 sensor 12V branch with the sensor power MOSFET. Do not
@@ -28,7 +30,7 @@ the Seeed XIAO ESP32S3. For board image previews, see
 |---|---|---|
 | 12V input / switched 12V | Red | Label switched 12V separately from always-on 12V |
 | 5V regulated output | Orange | DC/DC output to XIAO `VBUS` |
-| 3.3V sensor power | Violet | SOI analog sensor only |
+| 3.3V sensor power | Violet | SOI and low-voltage WTR profile analog sensor only |
 | GND / 0V | Black | Common ground |
 | RS485 A / D+ | Yellow | Keep twisted with RS485 B |
 | RS485 B / D- | Green | Keep twisted with RS485 A |
@@ -67,6 +69,25 @@ External terminals:
 | `RS485_GND` | Sensor bus ground | Required for stable field wiring |
 | `SENSOR_12V_SW+` | Switched sensor 12V | Sensor power branch only |
 | `SOIL_SIG` / `SOIL_3V3` / `SOIL_GND` | Analog soil moisture sensor | Optional when RS485 soil sensor is used |
+
+### WTR Low-Voltage Hardware Profile
+
+Use this profile when the device still behaves as WTR but the irrigation load
+is a small low-voltage pump, valve driver input, or relay input instead of a 12V
+field output. Keep `APP_DEVICE_KIND="WTR"` and keep the WTR firmware pin
+contract.
+
+| XIAO pin | GPIO | Connect to | External terminal | Wire | Inspection |
+|---|---:|---|---|---|---|
+| `BAT+` or `VBUS` | - | Approved battery or regulated input | Power input | Red/Orange 22-24 AWG | Voltage within XIAO input limits |
+| `GND` | - | Device ground | `GND` terminal | Black 22-24 AWG | Common with sensor and output GND |
+| `D2` | `GPIO3` | WTR valve/irrigation enable MOSFET gate | `IRR1` or driver enable | Blue 24-26 AWG | Gate changes when WTR irrigation channel is active |
+| `D3` | `GPIO4` | WTR pump/output MOSFET gate | `IRR2` or pump output | Blue 24-26 AWG | Output follows WTR watering behavior |
+| `A5` / `D5` | `GPIO6` | Analog soil moisture signal | Soil analog `SIG` | White 24-26 AWG | ADC changes between dry and wet reference |
+
+Leave RS485 and `D8` sensor power unpopulated if the low-voltage profile does
+not use RS485 sensors. Do not move the analog soil sensor to `A0`; that is the
+SOI pin contract, not WTR.
 
 ## WRS
 

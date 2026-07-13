@@ -21,7 +21,9 @@ specific pin and terminal tables are in
 1. Confirm the device kind and open the matching wiring table.
 2. Attach wire labels before terminating cables.
 3. Wire power input and GND first.
-4. Verify 12V input and 5V output before inserting the XIAO ESP32S3.
+4. Verify 12V input and 5V output before inserting the XIAO ESP32S3 on 12V
+   devices. On `SOI`, verify battery polarity and 3.3V sensor power. For a
+   battery-powered WTR hardware profile, follow the approved WTR profile checks.
 5. Wire internal GPIO signals.
 6. Wire external terminals.
 7. Check continuity and shorts before powering the device.
@@ -47,6 +49,10 @@ specific pin and terminal tables are in
 - Use strain relief at enclosure entry.
 - Test with water disconnected or in a controlled container before field use.
 
+For a low-voltage WTR hardware profile, use the WTR output pins and terminal
+labels from the approved profile. Do not invent a separate pin assignment only
+because the load voltage is different.
+
 ## Analog Soil Sensor Wiring
 
 - Use `A0` for `SOI`.
@@ -63,6 +69,7 @@ specific pin and terminal tables are in
 | GND | Common across device and sensors |
 | RS485 A/B | Not shorted, twisted pair used |
 | Pump / valve | Off at boot, on only during command |
+| WTR profile output | Off at boot, on only during command |
 | Sensor 12V switch | Off during sleep, on during RS485 read for WTR/WRS |
 | BOOT button | Pulls GPIO0 low only when pressed |
 

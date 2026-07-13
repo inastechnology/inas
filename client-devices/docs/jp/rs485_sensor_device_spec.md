@@ -2,7 +2,7 @@
 
 ## 目的
 
-INAS のセンサー系デバイスを、測定専用デバイスとして `WTR` から分離する。土壌水分だけを低消費電力で測るデバイスは `SOI`、12V 電源が必要な RS485 センサー群は `ENV` とし、各 `device_kind` ごとに接続センサー、ピン割当、MQTT payload を固定する。
+INAS のセンサー系デバイスを、測定専用デバイスとして `WTR` から分離する。土壌水分だけを低消費電力で測るデバイスは `SOI`、12V 電源が必要な RS485 センサー群は `ENV` とし、各 `device_kind` ごとに接続センサー、ピン割当、MQTT payload を固定する。WTR と同じ責務を持つ低電圧水やり build は WTR の H/W profile であり、別の sensor device kind ではない。
 
 `capabilities` による可変構成は採用しない。デバイスの機能が変わる場合は、別プロジェクトと別 `device_kind` を作成する。
 
@@ -251,11 +251,11 @@ ENV/SOI/WTR/WRS の測定値は、固定カラムだけに押し込まず、測�
 - `source`
 - `payload`
 
-初期定義には、土壌水分、地温、EC、pH、N/P/K、PAR、将来の日射量を含める。WRS は ENV と同じ RS485 土壌・光量系 metric を持ち、さらに灌水 action field を持つ。
+初期定義には、土壌水分、地温、EC、pH、N/P/K、PAR、将来の日射量を含める。SOI は analog `soil_moisture_percent` を提供する。WRS は ENV と同じ RS485 土壌・光量系 metric を持ち、さらに灌水 action field を持つ。
 
 ## OTA
 
-SOI/ENV ともに firmware binary へ `INAS_FW_MANIFEST_V1` を埋め込む。生成後は必ず `make check-firmware` で Hub upload 用 manifest を検査する。
+SOI、ENV、WTR、WRS は firmware binary へ `INAS_FW_MANIFEST_V1` を埋め込む。生成後は必ず `make check-firmware` で Hub upload 用 manifest を検査する。
 
 ## 運用ルール
 
@@ -263,5 +263,6 @@ SOI/ENV ともに firmware binary へ `INAS_FW_MANIFEST_V1` を埋め込む。�
 - センサー型番や register map が大きく変わる場合は、新しい device project を作る。
 - Hub 側では `device_kind` で UI と status parser を切り替える。
 - 灌水出力と RS485 土壌/PAR/日射センサーを一つの強い全部入りデバイスにまとめる場合は `WRS` を使う。
+- 土壌フィードバックと小型低電圧 output を 1 台に持たせ、WTR と同じ挙動を保つ場合は WTR の H/W profile として扱う。
 - `SOI` は土壌水分のみを扱う。12V が必要な土壌 EC/pH/NPK センサーは `ENV` 側で扱う。
 - `par_ok=false` / `soil_rs485_ok=false` の status は、センサー未接続、配線不良、レジスタ不一致、CRC エラー、タイムアウトを示す。

@@ -23,7 +23,10 @@ It applies to `WTR`, `WRS`, `ENV`, and `SOI`.
 - Do not modify AC mains wiring inside an INAS custom device enclosure.
 - Use only DC low-voltage wiring inside the device enclosure unless a qualified
   electrical worker has reviewed the design.
-- Confirm 12V and 5V rails before plugging in the XIAO ESP32S3.
+- Confirm 12V and 5V rails before plugging in the XIAO ESP32S3 on 12V
+  devices. For `SOI`, confirm battery polarity and the 3.3V sensor rail. For
+  a battery-powered WTR hardware profile, follow the approved WTR profile power
+  checks.
 - Disconnect power before soldering, crimping, or changing terminals.
 - Use fusing or current limiting appropriate for the pump, valve, and cable.
 
@@ -33,10 +36,14 @@ It applies to `WTR`, `WRS`, `ENV`, and `SOI`.
    firmware build ID, operator, and inspector.
 2. Inspect all parts for visible damage, wrong voltage rating, loose connectors,
    or missing terminal labels.
-3. Mount the 12V input terminal, DC/DC converter, XIAO ESP32S3 carrier,
-   MOSFET/driver board, RS485 transceiver, and external terminals.
-4. Wire power first: `12V_IN`, 5V DC/DC output, XIAO `VBUS`, and common GND.
-5. Verify voltage rails without the XIAO board installed.
+3. Mount only the modules required by the target device kind: 12V input,
+   DC/DC, MOSFET/driver, RS485 transceiver, XIAO carrier, battery holder, and
+   external terminals as applicable.
+4. Wire power first. For 12V devices, wire `12V_IN`, 5V DC/DC output, XIAO
+   `VBUS`, and common GND. For `SOI`, wire the protected 18650 holder and
+   common GND. For a battery-powered WTR hardware profile, follow the approved
+   WTR profile wiring table.
+5. Verify voltage rails or battery polarity without the XIAO board installed.
 6. Install the XIAO board and wire signal lines according to the wiring table.
 7. Wire external terminals: pump, valve, RS485 A/B/GND, sensor 12V, analog soil
    sensor, and battery holder as applicable.
@@ -52,7 +59,7 @@ It applies to `WTR`, `WRS`, `ENV`, and `SOI`.
 | 5V rail | 4.75-5.25V at XIAO `VBUS` |
 | GND continuity | XIAO GND, RS485 GND, 12V negative, and DC/DC GND are common |
 | No 12V on GPIO | No XIAO GPIO has 12V |
-| MOSFET off state | Pump, valve, and switched sensor 12V are off at boot |
+| MOSFET off state | Pump, valve, WTR profile outputs, and switched sensor power are off at boot |
 | RS485 A/B | A/B are not shorted to each other or to power |
 | SOI battery polarity | `BAT+` and `BAT-` match holder labels |
 
@@ -82,7 +89,7 @@ Do not ship a unit when:
 
 - 12V appears on any XIAO GPIO.
 - GND is not common across required terminals.
-- Pump or valve output is stuck on.
+- Pump, valve, or WTR profile output is stuck on.
 - RS485 bus is shorted.
 - Device kind in firmware does not match the device label.
 

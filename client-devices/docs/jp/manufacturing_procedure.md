@@ -14,7 +14,7 @@
 
 - INAS の自作 device enclosure 内で AC mains 配線を改造しない。
 - 有資格者の確認がない限り、device enclosure 内は DC 低電圧配線だけにする。
-- XIAO ESP32S3 を接続する前に 12V rail と 5V rail を確認する。
+- 12V device では XIAO ESP32S3 を接続する前に 12V rail と 5V rail を確認する。`SOI` では battery 極性と 3.3V sensor rail を確認する。battery 駆動の WTR H/W profile では、承認済み WTR profile の電源検査に従う。
 - soldering、crimp、端子変更の前に必ず電源を外す。
 - pump、valve、cable に合った fuse または current limit を入れる。
 
@@ -22,9 +22,9 @@
 
 1. lot ID、日付、device kind、firmware version、firmware build ID、作業者、検査者を製造記録に作る。
 2. 部品の破損、電圧定格違い、connector 緩み、端子ラベル不足を確認する。
-3. 12V input 端子、DCDC、XIAO ESP32S3 carrier、MOSFET/driver board、RS485 transceiver、外部端子を固定する。
-4. まず電源を配線する。`12V_IN`、5V DCDC output、XIAO `VBUS`、common GND を接続する。
-5. XIAO board 未装着の状態で voltage rail を測定する。
+3. device kind に必要な module だけを固定する。12V input、DCDC、MOSFET/driver board、RS485 transceiver、XIAO ESP32S3 carrier、battery holder、外部端子を対象に応じて選ぶ。
+4. まず電源を配線する。12V device では `12V_IN`、5V DCDC output、XIAO `VBUS`、common GND を接続する。`SOI` では protected 18650 holder と common GND を接続する。battery 駆動の WTR H/W profile では、承認済み WTR profile の配線表に従う。
+5. XIAO board 未装着の状態で voltage rail または battery 極性を測定する。
 6. XIAO board を装着し、配線表どおりに signal line を接続する。
 7. device kind に応じて pump、valve、RS485 A/B/GND、sensor 12V、analog soil sensor、battery holder を外部端子へ配線する。
 8. enclosure を閉じる前に terminal label と device label を貼る。
@@ -39,7 +39,7 @@
 | 5V rail | XIAO `VBUS` で 4.75-5.25V |
 | GND 導通 | XIAO GND、RS485 GND、12V negative、DCDC GND が共通 |
 | GPIO への 12V 混入 | XIAO GPIO に 12V が出ていない |
-| MOSFET off state | boot 時に pump、valve、switched sensor 12V が OFF |
+| MOSFET off state | boot 時に pump、valve、WTR profile output、switched sensor power が OFF |
 | RS485 A/B | A/B 間、A/B と電源間に short がない |
 | SOI battery 極性 | `BAT+` と `BAT-` が holder label と一致 |
 
@@ -69,7 +69,7 @@ device と一緒に次を残す。
 
 - XIAO GPIO に 12V が出ている。
 - 必要な GND が共通化されていない。
-- pump または valve output が ON 固着している。
+- pump、valve、または WTR profile output が ON 固着している。
 - RS485 bus が short している。
 - firmware の device kind と device label が一致しない。
 

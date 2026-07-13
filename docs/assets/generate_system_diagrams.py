@@ -94,7 +94,7 @@ PAGES: tuple[Page, ...] = (
             Box("candidate", 1220, 230, 250, 130, "6. Action candidates\nirrigation,\nfertilizer, misting\nonly irrigation now", "#ecfccb", "#65a30d"),
             Box("approval", 1220, 470, 250, 110, "7. Approval / log\naction_plans\nhuman evaluation", "#e0e7ff", "#4f46e5"),
             Box("command", 870, 550, 260, 120, "8. Device config\nor irrigation command\nMQTT publish", "#fef3c7", "#d97706"),
-            Box("actuate", 520, 540, 230, 130, "9. Actuate\nWTR/WRS pump\nvalve control", "#fee2e2", "#dc2626"),
+            Box("actuate", 520, 540, 230, 130, "9. Actuate\nWTR/WRS\nwatering control", "#fee2e2", "#dc2626"),
             Box("feedback", 180, 510, 230, 110, "10. Observe result\nevaluate on\nnext wake", "#dcfce7", "#16a34a"),
         ),
         arrows=(

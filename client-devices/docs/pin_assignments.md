@@ -43,7 +43,8 @@ and regenerate.
 ## WTR
 
 All-in-one watering device. WTR handles irrigation control, soil moisture ADC,
-RS485 sensors, and a MOSFET-switched 12V branch for RS485 sensors.
+RS485 sensors, and a MOSFET-switched sensor power branch. Hardware profiles may
+change supply voltage or load rating, but they keep the same WTR pin contract.
 
 ![WTR pin assignment](xiao_esp32s3_pin_assignment_wtr.svg)
 
@@ -62,6 +63,10 @@ RS485 sensors, and a MOSFET-switched 12V branch for RS485 sensors.
 
 Do not place ESP32S3 board power behind the `D8` switch. `D8` switches only the
 12V branch feeding external RS485 sensors.
+
+For a low-voltage WTR hardware profile, keep `A5/D5` for analog soil moisture
+and keep `D2`/`D3` as WTR irrigation outputs. Do not move the sensor to `A0` or
+create another device kind only for voltage or MOSFET rating differences.
 
 ## ENV
 

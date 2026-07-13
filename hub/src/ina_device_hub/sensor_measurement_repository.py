@@ -94,7 +94,7 @@ _DEFINITION_BY_METRIC = {definition["metric"]: definition for definition in SENS
 _STATUS_METRICS = {
     "par_umol_m2_s": {"ok_key": "par_ok", "raw_key": "raw_par"},
     "solar_radiation_w_m2": {"ok_key": "solar_radiation_ok", "raw_key": "raw_solar_radiation"},
-    "soil_moisture_percent": {"ok_key": "soil_rs485_ok", "raw_key": "raw_soil_moisture"},
+    "soil_moisture_percent": {"ok_keys": ("soil_moisture_ok", "soil_rs485_ok"), "raw_key": "raw_soil_moisture"},
     "soil_temperature_c": {"ok_key": "soil_rs485_ok", "raw_key": "raw_soil_temperature"},
     "soil_ec_us_cm": {"ok_key": "soil_rs485_ok", "raw_key": "raw_soil_ec"},
     "soil_ph": {"ok_key": "soil_rs485_ok", "raw_key": "raw_soil_ph"},
@@ -136,8 +136,9 @@ def extract_measurements_from_status(device_id: str, status: dict, measured_at: 
     device_kind = status.get("device_kind")
     result = []
     for metric, options in _STATUS_METRICS.items():
-        ok_key = options["ok_key"]
-        if ok_key in status and status.get(ok_key) is not True:
+        ok_keys = options.get("ok_keys") or (options["ok_key"],)
+        present_ok_keys = [key for key in ok_keys if key in status]
+        if present_ok_keys and not any(status.get(key) is True for key in present_ok_keys):
             continue
         value = _safe_number(status.get(metric))
         if value is None:
@@ -166,6 +167,8 @@ def extract_measurements_from_status(device_id: str, status: dict, measured_at: 
 def _metric_calibrated(status: dict, metric: str):
     if metric == "par_umol_m2_s":
         return status.get("env_par_calibrated")
+    if metric == "soil_moisture_percent" and "soil_calibration_calibrated" in status:
+        return status.get("soil_calibration_calibrated")
     if metric.startswith("soil_"):
         return status.get("env_soil_calibrated")
     return None

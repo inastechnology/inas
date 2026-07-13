@@ -26,6 +26,7 @@
 - 既存 HAL に委譲するだけ、または pin 名を言い換えるだけの `hal_<device_kind>` wrapper は作らない。
 - HAL に MQTT topic、status JSON field、runtime config parsing、schedule decision、作物・製品 policy を入れない。
 - pin selection は `platformio.ini`、device App の小さな constant block、または focused pin map helper に置く。pin selection だけでは新しい HAL layer を作る理由にならない。
+- H/W だけの variant は pin map、build flag、BOM、配線 profile に置く。同じ挙動と status/config payload を持つなら、新しい firmware project や `device_kind` は作らない。
 
 ## App ルール
 
@@ -63,6 +64,12 @@ device App は、どの sensor を有効化するか、sensor rail に電源を�
 - 灌水 policy、schedule handling、sensor power sequencing、MQTT status field は `app_wrs_runtime_config` と `app.cpp`。
 
 WRS が既存 HAL で表現できない具体的な H/W primitive を持つまでは、`hal_wrs` wrapper を定義しない。
+
+## WTR H/W profile
+
+`WTR` は複数の H/W profile を持ってよい。12V pump/valve build と、小型低電圧または battery 補助の水やり build は、local irrigation output、local soil moisture feedback、WTR status/config semantics を保つ限り同じ WTR である。
+
+H/W profile の差は pin assignment、端子 label、BOM、製造要領で表現する。installer が pump、valve、relay、低電圧 driver input のどれを接続しても、switched output は `hal_power_switch` で表現する。
 
 ## レビュー時チェックリスト
 

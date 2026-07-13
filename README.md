@@ -26,6 +26,9 @@ client-devices/
     lib/
       ina-client-common/      # Shared PlatformIO library
   watering-device/            # Watering device firmware, device kind: WTR
+  watering-rs485-device/      # RS485 watering device firmware, device kind: WRS
+  soil-sensor-device/         # Soil sensor device firmware, device kind: SOI
+  environment-sensor-device/  # Environment sensor device firmware, device kind: ENV
 ```
 
 Each device project owns its device-specific App layer, such as sensors,

@@ -6,7 +6,7 @@
 
 1. 作物、圃場、区画、畝、ベッド、測点の名称を確認する。
 2. hub 上の device placement scope を決める。field、section、ridge/bed、point のいずれか。
-3. 電源を確認する。`WTR`、`WRS`、`ENV` は 12V DC、`SOI` は充電済み 18650 battery。
+3. 電源を確認する。標準 `WTR`、`WRS`、`ENV` は 12V DC、`SOI` は充電済み 18650 battery、WTR H/W profile は承認済み電源。
 4. setup AP、Wi-Fi、MQTT 到達性を確認する。
 5. sensor 設置位置と Modbus slave ID 予定を記録する。
 6. 水源、pump 方向、valve 方向、安全な排水を確認する。
@@ -25,7 +25,7 @@
 |---|---|
 | `SOI` | 畝・ベッド内の root-zone 代表測点 |
 | `ENV` | 圃場全体または区画の代表環境点 |
-| `WTR` | pump/valve と灌水対象の近く |
+| `WTR` | pump/valve と灌水対象の近く。local soil feedback と低電圧出力を同居させる WTR H/W profile は畝・ベッド・自動給水鉢にも配置できる |
 | `WRS` | 灌水出力配線の近く。同じ RS485 bus に soil/PAR/日射 sensor を接続 |
 
 イチゴ点滴栽培では、drip line の影響を受ける root-zone 近くに土壌フィードバックを置く。pump runtime だけで灌水成功を判断しない。
@@ -39,7 +39,7 @@
 5. 最新 status payload が hub に届くことを確認する。
 6. RS485 sensor は、期待する sensor ごとに `*_ok=true` を確認する。
 7. 任意 sensor の未接続は、pin assignment を変えずに `*_ok=false` と表示されることを確認する。
-8. `WTR` と `WRS` は短時間の manual irrigation test を行う。
+8. `WTR`、`WRS` は短時間の manual irrigation または output test を行う。
 9. 灌水後に土壌水分が増えることを確認する。増えない場合は理由を記録する。
 10. 設置メモ、写真、sensor ID、Modbus slave ID を保存する。
 

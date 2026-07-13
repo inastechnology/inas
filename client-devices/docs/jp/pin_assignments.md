@@ -34,7 +34,7 @@ SVG previews:
 
 ## WTR
 
-水やり全部入りデバイス。潅水制御、土壌水分 ADC、RS485 センサー、RS485 センサー用 12V 電源 MOSFET を持つ。
+水やり全部入りデバイス。潅水制御、土壌水分 ADC、RS485 センサー、RS485 センサー用電源 MOSFET を持つ。H/W profile によって電源電圧や負荷定格が変わっても、WTR の pin contract は維持する。
 
 ![WTR pin assignment](xiao_esp32s3_pin_assignment_wtr.svg)
 
@@ -52,6 +52,8 @@ SVG previews:
 | 設定 AP | `BOOT` | `GPIO0` | active-low |
 
 `D8` の後段に ESP32S3 本体電源を置かない。`D8` で切る対象は RS485 センサーの 12V 分岐だけ。
+
+低電圧 WTR H/W profile でも、analog soil moisture は `A5/D5`、灌水出力は `D2`/`D3` の WTR pin contract を使う。電圧や MOSFET 定格の違いだけで sensor を `A0` へ移したり、別 device kind を作ったりしない。
 
 ## ENV
 

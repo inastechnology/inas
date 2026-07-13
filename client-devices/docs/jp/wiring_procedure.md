@@ -15,7 +15,7 @@
 1. device kind を確認し、対応する配線表を開く。
 2. cable を圧着する前に wire label を付ける。
 3. power input と GND を先に配線する。
-4. XIAO ESP32S3 を挿す前に 12V input と 5V output を測る。
+4. 12V device では XIAO ESP32S3 を挿す前に 12V input と 5V output を測る。`SOI` では battery 極性と 3.3V sensor power を確認する。battery 駆動の WTR H/W profile では、承認済み WTR profile の検査に従う。
 5. 内部 GPIO signal を配線する。
 6. 外部端子を配線する。
 7. 通電前に continuity と short を確認する。
@@ -40,6 +40,8 @@
 - enclosure 引き込み部には strain relief を入れる。
 - 圃場投入前に、水を外した状態または管理できる container 内で動作試験する。
 
+低電圧 WTR H/W profile では、承認済み profile の WTR output pin と端子 label を使う。負荷電圧が違うだけで別 pin assignment を作らない。
+
 ## Analog Soil Sensor 配線
 
 - `SOI` は `A0` を使う。
@@ -56,6 +58,7 @@
 | GND | device と sensors で共通 |
 | RS485 A/B | short なし、twisted pair 使用 |
 | pump / valve | boot 時 OFF、command 時のみ ON |
+| WTR profile output | boot 時 OFF、command 時のみ ON |
 | sensor 12V switch | sleep 中 OFF、WTR/WRS の RS485 read 中 ON |
 | BOOT button | 押下時だけ GPIO0 を Low にする |
 

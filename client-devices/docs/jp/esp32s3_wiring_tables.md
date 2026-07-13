@@ -5,7 +5,8 @@
 ## 共通ルール
 
 - ESP32S3 の GPIO は 3.3V logic として扱う。RS485 transceiver は MAX3485、SP3485、SN65HVD 系など 3.3V logic 対応品を使う。
-- XIAO の `VBUS` には 5V regulated output を入れる。12V を XIAO に直接入れない。
+- 12V 電源 device では、XIAO の `VBUS` に 5V regulated output を入れる。12V を XIAO に直接入れない。
+- battery 駆動 profile では、protected cell を `BAT+` / `BAT-` に接続し、外部 sensor と output wiring は対象 profile の範囲に収める。
 - ESP32S3 GND、RS485 transceiver GND、12V センサー GND、ポンプ/バルブ電源 GND、DCDC GND は device 内の GND point で共通化する。
 - センサー電源 MOSFET で切るのは RS485 センサーへ向かう 12V 分岐だけ。ESP32S3 本体電源をこの switch の後段に置かない。
 - 同じ RS485 bus 上の Modbus slave ID は重複させない。
@@ -17,7 +18,7 @@
 |---|---|---|
 | 12V input / switched 12V | 赤 | 常時 12V と switched 12V をラベルで区別する |
 | 5V regulated output | 橙 | DCDC output から XIAO `VBUS` |
-| 3.3V sensor power | 紫 | SOI の analog sensor 用 |
+| 3.3V sensor power | 紫 | SOI と低電圧 WTR profile の analog sensor 用 |
 | GND / 0V | 黒 | 共通 GND |
 | RS485 A / D+ | 黄 | RS485 B とツイストする |
 | RS485 B / D- | 緑 | RS485 A とツイストする |
@@ -55,6 +56,20 @@
 | `RS485_GND` | sensor bus ground | 圃場配線の安定化に必須 |
 | `SENSOR_12V_SW+` | switched sensor 12V | sensor branch のみ |
 | `SOIL_SIG` / `SOIL_3V3` / `SOIL_GND` | analog soil moisture sensor | RS485 土壌センサー利用時は任意 |
+
+### WTR 低電圧 H/W profile
+
+device の責務が WTR のまま、小型低電圧 pump、valve driver input、relay input などを駆動する場合の profile。`APP_DEVICE_KIND="WTR"` と WTR firmware の pin contract を維持する。
+
+| XIAO pin | GPIO | 接続先 | 外部端子 | 線材 | 検査 |
+|---|---:|---|---|---|---|
+| `BAT+` または `VBUS` | - | 承認済み battery または regulated input | power input | 赤/橙 22-24 AWG | XIAO の入力範囲内 |
+| `GND` | - | device ground | `GND` terminal | 黒 22-24 AWG | sensor/output GND と共通 |
+| `D2` | `GPIO3` | WTR valve/irrigation enable MOSFET gate | `IRR1` または driver enable | 青 24-26 AWG | WTR irrigation channel active 時に gate が変化 |
+| `D3` | `GPIO4` | WTR pump/output MOSFET gate | `IRR2` または pump output | 青 24-26 AWG | WTR watering behavior に追従 |
+| `A5` / `D5` | `GPIO6` | analog soil moisture signal | Soil analog `SIG` | 白 24-26 AWG | 乾湿基準で ADC が変化 |
+
+低電圧 profile で RS485 sensor を使わない場合、RS485 と `D8` sensor power は未実装でよい。analog soil sensor を `A0` へ移さない。`A0` は SOI の pin contract であり、WTR ではない。
 
 ## WRS
 

@@ -92,11 +92,14 @@ Related documents:
 Sensor connections and payload schemas are fixed per `device_kind`. INAS does
 not use a highly dynamic `capabilities` model for product behavior. When a
 device's function changes materially, create a separate project and a separate
-`device_kind`.
+`device_kind`. Hardware-only differences, such as supply voltage, MOSFET size,
+terminal labels, enclosure, or low-voltage load selection, are hardware
+profiles inside an existing `device_kind` when the hub behavior and payload
+contract stay the same.
 
 | device_kind | Project | Role | Power assumption |
 |---|---|---|---|
-| `WTR` | `client-devices/watering-device` | Small-scale all-in-one watering device. Irrigation, soil moisture, RS485, and switched 12V sensor power | 12V system. ESP32S3 is powered after 12V -> 5V conversion |
+| `WTR` | `client-devices/watering-device` | Small-scale all-in-one watering device. Irrigation, soil moisture, RS485, and switched sensor power | Default 12V system with 12V -> 5V conversion. Documented low-voltage hardware profiles remain WTR when the payload contract stays the same |
 | `WRS` | `client-devices/watering-rs485-device` | RS485-first all-in-one watering device. Irrigation output plus RS485 soil, PAR, and irradiance sensors on one bus | 12V system. ESP32S3 is powered after 12V -> 5V conversion |
 | `SOI` | `client-devices/soil-sensor-device` | Soil moisture node placed at multiple soil points | 18650 battery |
 | `ENV` | `client-devices/environment-sensor-device` | RS485 Modbus environmental and soil sensor hub | 12V |
@@ -105,7 +108,9 @@ WTR remains important as the personal all-in-one device for building operating
 experience. WRS is the stronger all-in-one direction: it keeps the irrigation
 outputs local to the device and makes RS485 the sensor expansion boundary. SOI
 and ENV implement the direction of separating data collection devices from
-action devices.
+action devices. If a small independent watering node has the same local
+irrigation-plus-soil-feedback behavior as WTR, define it as a WTR hardware
+profile rather than a new device kind.
 
 Crop-specific systems such as strawberry drip cultivation are hub-orchestrated
 compositions, not new monolithic device types. An irrigation actuator such as a

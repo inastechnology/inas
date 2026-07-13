@@ -9,7 +9,8 @@ Japanese version:
 INAS separates measurement-focused devices from WTR. `SOI` measures soil
 moisture with low power consumption. `ENV` handles 12V RS485 sensors. Each
 `device_kind` has fixed sensor connections, pin assignments, and MQTT payload
-schema.
+schema. A low-voltage watering build that still performs the WTR role remains a
+WTR hardware profile, not a separate sensor device kind.
 
 INAS does not use a highly dynamic `capabilities` model for these devices. If
 the product behavior changes, create a separate firmware project and a separate
@@ -268,8 +269,8 @@ measurements vertically without a separate schema:
 
 ## Measurement DB Definition
 
-ENV/SOI/WTR/WRS measurements are stored as vertical time-series records rather than
-only fixed columns.
+ENV/SOI/WTR/WRS measurements are stored as vertical time-series records
+rather than only fixed columns.
 
 `sensor_measurement_definitions`:
 
@@ -294,12 +295,13 @@ only fixed columns.
 - `payload`
 
 Initial definitions include soil moisture, soil temperature, EC, pH, N/P/K, PAR,
-and future irradiance metrics. WRS supports the same RS485 soil and light
-metrics as ENV while also supporting irrigation action fields.
+and future irradiance metrics. SOI contributes analog
+`soil_moisture_percent`. WRS supports the same RS485 soil and light metrics as
+ENV while also supporting irrigation action fields.
 
 ## OTA
 
-SOI and ENV firmware binaries embed `INAS_FW_MANIFEST_V1`. After build, run
+SOI, ENV, WTR, and WRS firmware binaries embed `INAS_FW_MANIFEST_V1`. After build, run
 `make check-firmware` before uploading firmware to the Hub.
 
 ## Operational Rules
@@ -309,5 +311,7 @@ SOI and ENV firmware binaries embed `INAS_FW_MANIFEST_V1`. After build, run
   hardware behavior.
 - Use `WRS` when irrigation output and RS485 soil/PAR/irradiance sensors belong
   to one stronger all-in-one device.
+- Treat a low-voltage watering node as a WTR hardware profile when it keeps the
+  WTR behavior and payload contract.
 - Keep user-facing UI terms farmer-friendly; reserve raw variable names and JSON
   for detail screens.

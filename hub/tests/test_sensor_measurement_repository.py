@@ -114,6 +114,26 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
         self.assertEqual(by_metric["soil_ec_us_cm"]["value"], 710.0)
         self.assertEqual(by_metric["par_umol_m2_s"]["raw_value"], 810.0)
 
+    def test_extract_soi_analog_soil_moisture_from_status_payload(self):
+        measurements = extract_measurements_from_status(
+            "INADS-soi",
+            {
+                "seq": 14,
+                "device_kind": "SOI",
+                "soil_moisture_ok": True,
+                "soil_moisture_percent": 33,
+                "raw_soil_moisture": 2810,
+                "soil_calibration_calibrated": True,
+            },
+            "2026-07-12T05:00:00+00:00",
+        )
+
+        self.assertEqual(len(measurements), 1)
+        self.assertEqual(measurements[0]["metric"], "soil_moisture_percent")
+        self.assertEqual(measurements[0]["device_kind"], "SOI")
+        self.assertEqual(measurements[0]["raw_value"], 2810.0)
+        self.assertTrue(measurements[0]["payload"]["calibrated"])
+
     def test_repository_creates_definitions_and_writes_measurements(self):
         connector = InaDBConnector()
         repository = SensorMeasurementRepository(connector)
@@ -121,6 +141,7 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
         definitions = repository.list_definitions()
         by_metric = {item["metric"]: item for item in definitions}
         self.assertIn("soil_ec_us_cm", by_metric)
+        self.assertIn("SOI", by_metric["soil_moisture_percent"]["device_kinds"])
         self.assertIn("WTR", by_metric["soil_ec_us_cm"]["device_kinds"])
         self.assertIn("WRS", by_metric["soil_ec_us_cm"]["device_kinds"])
         self.assertIn("WTR", by_metric["par_umol_m2_s"]["device_kinds"])

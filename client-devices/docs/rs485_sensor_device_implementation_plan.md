@@ -60,7 +60,8 @@ Layer boundaries follow [firmware_layering_policy.md](firmware_layering_policy.m
 5. Hub support
    - Define metrics, display names, units, and supported device kinds in
      `sensor_measurement_definitions`.
-   - Store ENV/SOI/WTR/WRS measurements vertically in `sensor_measurements`.
+   - Store ENV/SOI/WTR/WRS measurements vertically in
+     `sensor_measurements`.
    - Normalize ENV status fields such as `par_umol_m2_s`, soil moisture, soil
      temperature, EC, pH, N/P/K into measurements.
    - Continue MQTT status logging even if measurement DB writes fail.

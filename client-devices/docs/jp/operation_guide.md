@@ -8,7 +8,7 @@
 - `network_connected`、wake history、battery または supply voltage、RSSI を確認する。
 - 接続予定の sensor について `*_ok` flag を確認する。
 - threshold や schedule を変更する前に灌水履歴を確認する。
-- `WTR` と `WRS` は、灌水後に土壌水分が反応しているか確認する。
+- `WTR`、`WRS` は、灌水または output activation 後に土壌水分が反応しているか確認する。
 
 ## Calibration
 
@@ -28,6 +28,7 @@ calibration record には日付、作業者、reference value、device の観測
 - 灌水対象に近い soil moisture feedback を使う。
 - 灌水後に水分が増えない場合は automation を停止する。
 - pump runtime は action record であり、根域に水が届いた証明ではない。
+- 低電圧 WTR H/W profile では、接続した負荷、MOSFET、flyback protection、水路を確認するまで automation を無効にする。
 
 ## RS485 Sensor 運用
 

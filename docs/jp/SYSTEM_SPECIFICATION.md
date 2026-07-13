@@ -71,16 +71,16 @@ INAS は、小規模な営農者が水やり、土壌状態、環境状態、作
 
 ## デバイス種別
 
-device kind ごとに接続センサーと payload schema を固定する。`capabilities` で過度に可変にせず、機能が変わる場合は別プロジェクトと別 `device_kind` を作る。
+device kind ごとに接続センサーと payload schema を固定する。`capabilities` で過度に可変にせず、機能が変わる場合は別プロジェクトと別 `device_kind` を作る。電源電圧、MOSFET 容量、端子ラベル、筐体、低電圧負荷の選定のような H/W だけの差異は、hub の挙動と payload contract が同じなら既存 `device_kind` の H/W profile として扱う。
 
 | device_kind | プロジェクト | 主用途 | 電源前提 |
 |---|---|---|---|
-| `WTR` | `client-devices/watering-device` | 小規模向け全部入り水やり機。灌水制御、土壌水分、RS485、12V センサー電源 MOSFET | 12V 系を前提。ESP32S3 は 12V -> 5V DCDC 後に給電 |
+| `WTR` | `client-devices/watering-device` | 小規模向け全部入り水やり機。灌水制御、土壌水分、RS485、センサー電源 MOSFET | 既定は 12V 系で、ESP32S3 は 12V -> 5V DCDC 後に給電。payload contract が同じ低電圧 H/W profile も WTR として扱う |
 | `WRS` | `client-devices/watering-rs485-device` | RS485 前提の全部入り水やり機。灌水出力と RS485 土壌/PAR/日射センサーを同一 bus で扱う | 12V 系を前提。ESP32S3 は 12V -> 5V DCDC 後に給電 |
 | `SOI` | `client-devices/soil-sensor-device` | 土壌に複数設置する土壌水分専用ノード | 18650 バッテリー |
 | `ENV` | `client-devices/environment-sensor-device` | RS485 Modbus の環境・土壌複合センサー、日射/PAR センサー | 12V |
 
-WTR は個人用の全部入りデバイスとして実績を積むために残す。WRS はよりマッチョな全部入りの方向で、灌水出力はデバイス内に持ち、センサー拡張境界を RS485 bus に固定する。SOI/ENV は、データ取得デバイスとアクションデバイスを分ける方針の実装である。
+WTR は個人用の全部入りデバイスとして実績を積むために残す。WRS はよりマッチョな全部入りの方向で、灌水出力はデバイス内に持ち、センサー拡張境界を RS485 bus に固定する。SOI/ENV は、データ取得デバイスとアクションデバイスを分ける方針の実装である。土壌フィードバックと低電圧の水やり出力を同じ小型ノードに置く場合も、WTR と同じ local irrigation + soil feedback の責務なら WTR の H/W profile として扱い、新しい device kind は作らない。
 
 イチゴ点滴栽培のような作物別システムは、新しい巨大な単一デバイスではなく、hub が複数デバイスを束ねる構成として扱う。プラグやポンプスイッチのような灌水アクチュエータは、同じベッド、畝、または代表測点の土壌水分センサーとペアにし、灌水によって根域水分が実際に増えたかを hub が検証できるようにする。
 

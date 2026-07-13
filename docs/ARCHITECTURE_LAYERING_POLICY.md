@@ -36,6 +36,10 @@ orchestration. Reusable boundaries belong to common layers.
   device unless the hardware contract itself changes.
 - A `device_kind` fixes the hardware role and payload contract. If that contract
   changes materially, create a new firmware project and `device_kind`.
+- Hardware-only variants, such as supply voltage, MOSFET rating, enclosure, or
+  whether a WTR build drives a small low-voltage load, are hardware profiles
+  inside the existing `device_kind` unless the payload contract or hub behavior
+  changes.
 - Reusable mechanisms belong in common layers. Examples: MQTT transport, OTA,
   RS485 bus handling, Modbus frame handling, GPIO-switched power, storage
   repositories, and Cloudflare provisioning helpers.
@@ -74,6 +78,9 @@ In short:
 - WRS uses `hal_power_switch`, `hal_rs485_bus`, and
   `hal_rs485_sensor_protocol`; it must not reintroduce a `hal_wrs` wrapper
   unless a real new hardware primitive appears.
+- A battery or low-voltage watering build is a WTR hardware profile when it
+  still performs the WTR role: local irrigation output plus local soil moisture
+  feedback. Do not create a new `device_kind` for that hardware-only difference.
 
 ## Data And UI Rules
 

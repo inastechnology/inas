@@ -37,7 +37,7 @@ knowledge changes its fixed hardware and payload contract.
 |---|---|---|
 | Environment sensor device | Observes broad environment values used for decisions | `ENV` with PAR/PPFD, air temperature, humidity, soil EC/pH/NPK |
 | Soil feedback device | Measures the moisture response at the irrigation target | `SOI`, WTR built-in soil moisture, WRS RS485 soil sensor, or another colocated probe |
-| Irrigation instruction device | Turns the water source on and off | WTR/WRS output, SwitchBot Plug Mini controlling an AC/DC adapter or pump |
+| Irrigation instruction device | Turns the water source on and off | WTR/WRS output, WTR low-voltage hardware profile output, SwitchBot Plug Mini controlling an AC/DC adapter or pump |
 | Device hub | Compares context and measurements, decides, commands, verifies, logs | Local hub policy and action plans |
 
 For strawberry drip cultivation, the irrigation instruction device should be
@@ -147,13 +147,16 @@ explaining uncertainty second.
 `WTR` remains useful as an all-in-one personal watering device because it owns
 both irrigation output and local soil feedback. `WRS` is the RS485-first
 successor for installations that should add soil, PAR, and irradiance sensors on
-the same bus without changing pin assignments. `SOI` and `ENV` support a more
-modular direction where the hub composes dedicated sensor devices and external
-actuators into a crop system.
+the same bus without changing pin assignments. Small low-voltage watering nodes
+where soil feedback and an output live together should stay WTR hardware
+profiles when their hub behavior and payload contract are still WTR. `SOI` and
+`ENV` support a more modular direction where the hub composes dedicated sensor
+devices and external actuators into a crop system.
 
-Do not create a new device kind only because the crop is strawberry. Create a
-new device kind when the hardware contract, payload schema, or power model
-changes materially.
+Do not create a new device kind only because the crop is strawberry or because
+the WTR hardware uses a different voltage or MOSFET rating. Create a new device
+kind when the hardware role, payload schema, or hub behavior changes
+materially.
 
 Related documents:
 

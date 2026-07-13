@@ -49,7 +49,7 @@
 <rect x="870" y="550" width="260" height="120" rx="12" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
 <text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="1000" y="592">8. Device config</tspan><tspan x="1000" y="618">or irrigation command</tspan><tspan x="1000" y="644">MQTT publish</tspan></text>
 <rect x="520" y="540" width="230" height="130" rx="12" fill="#fee2e2" stroke="#dc2626" stroke-width="3"/>
-<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="635" y="587">9. Actuate</tspan><tspan x="635" y="613">WTR/WRS pump</tspan><tspan x="635" y="639">valve control</tspan></text>
+<text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="635" y="587">9. Actuate</tspan><tspan x="635" y="613">WTR/WRS</tspan><tspan x="635" y="639">watering control</tspan></text>
 <rect x="180" y="510" width="230" height="110" rx="12" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
 <text text-anchor="middle" font-family="Arial, sans-serif" font-size="20" font-weight="700" fill="#0f172a"><tspan x="295" y="547">10. Observe result</tspan><tspan x="295" y="573">evaluate on</tspan><tspan x="295" y="599">next wake</tspan></text>
 <rect x="70" y="870" width="1460" height="88" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>

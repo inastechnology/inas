@@ -12,7 +12,8 @@ This guide explains routine operation after installation.
 - Check `network_connected`, wake history, battery or supply voltage, and RSSI.
 - Check `*_ok` flags for sensors expected to be connected.
 - Review irrigation history before changing thresholds or schedules.
-- For `WTR` and `WRS`, confirm soil moisture response after irrigation.
+- For `WTR` and `WRS`, confirm soil moisture response after irrigation or
+  output activation.
 
 ## Calibration
 
@@ -34,6 +35,8 @@ device value.
 - Stop automation if moisture does not increase after watering.
 - Treat pump runtime as an action record, not proof that water reached the root
   zone.
+- For a low-voltage WTR hardware profile, keep automation disabled until the
+  load, MOSFET, flyback protection, and water path are verified.
 
 ## RS485 Sensor Operation
 
