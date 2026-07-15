@@ -86,6 +86,8 @@ WTR は個人用の全部入りデバイスとして実績を積むために残�
 
 WRS は RS485 層でコンポーサブルにする。PAR、日射、土壌水分、EC、pH、NPK などは同じ bus 上の Modbus device として追加し、slave id を重複させない。未接続センサーは timeout または `*_ok=false` として表現し、XIAO の pin assignment を変更したり配線 variant を増やしたりしない。
 
+MOSFET で切り替える出力は、runtime config の出力台帳として名前を管理する。`mosfet_switches` は安定した `switch_id`、営農者向けの `name`、物理 `terminal`、任意の `controlled_load`、灌水予約で使う `channel_mask` を紐づける。hub は「イチゴ点滴ライン A」のように表示できるが、firmware は汎用の電気出力を制御するだけでよい。
+
 関連仕様:
 
 - [client-devices/docs/jp/rs485_sensor_device_spec.md](../../client-devices/docs/jp/rs485_sensor_device_spec.md)
@@ -109,7 +111,9 @@ WRS は RS485 層でコンポーサブルにする。PAR、日射、土壌水分
 
 小規模な圃場では ENV は圃場に 1 台でよい。圃場差、日当たり、水はけ、作物差が大きい場合だけ区画や畝へ細分化する。`device_placements` は、ENV/SOI/WTR/WRS/カメラなどのデータをどの圃場単位に紐づけるかを表す。
 
-圃場設定には、作物名、品種、生育段階、播種日、定植日、収穫目標、栽培方式、土壌/培地、株数、目標レンジ、制御方針、参考 URL、観察メモを登録できるようにする。
+圃場は最初に、名前、都道府県、市区町村、町名・地区、屋外/ハウス内/屋内などの設置環境を基本情報として登録する。新規作成時にはデバイスや圃場内配置を設定しない。
+
+作成後の栽培設定には、作物名、品種、生育段階、播種日、定植日、収穫目標、栽培方式、土壌/培地、株数、目標レンジ、制御方針、参考 URL、観察メモを登録できるようにする。生育段階と栽培方式は定義済み候補から選択し、作物と品種は自由入力と候補提示を併用する。
 
 ## データモデル
 
@@ -122,6 +126,7 @@ WRS は RS485 層でコンポーサブルにする。PAR、日射、土壌水分
 | device status / events | 起床、測定、灌水、OTA、エラーなどの履歴 |
 | sensor_measurement_definitions | `soil_moisture_percent`、`soil_ec_us_cm`、`par_umol_m2_s` などの測定項目定義 |
 | sensor_measurements | device_id、device_kind、measured_at、metric、value、unit、quality、raw payload |
+| field location | 圃場名、都道府県、市区町村、町名・地区、設置環境 |
 | field profiles | 作物、品種、生育段階、栽培方式、目標レンジ、制御方針 |
 | device_placements | デバイスを圃場全体、区画、畝、測点へ紐づける |
 | action_plans | 判断候補、承認、実施、評価の履歴 |

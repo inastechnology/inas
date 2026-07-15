@@ -35,6 +35,12 @@ class FieldRepositoryTest(unittest.TestCase):
             None,
             {
                 "name": "南ハウス",
+                "location": {
+                    "prefecture": "長野県",
+                    "municipality": "伊那市",
+                    "locality": "西箕輪",
+                    "environment_type": "greenhouse",
+                },
                 "crop_profile": {
                     "crop_name": "トマト",
                     "cultivar": "アイコ",
@@ -70,6 +76,9 @@ class FieldRepositoryTest(unittest.TestCase):
         )
 
         self.assertEqual(field["crop"], "トマト")
+        self.assertEqual(field["location"]["prefecture"], "長野県")
+        self.assertEqual(field["location"]["municipality"], "伊那市")
+        self.assertEqual(field["location"]["environment_type"], "greenhouse")
         self.assertEqual(field["stage"], "開花")
         self.assertEqual(field["crop_profile"]["cultivar"], "アイコ")
         self.assertEqual(field["growth_targets"]["soil_moisture_percent"]["min"], 42.0)
@@ -82,6 +91,52 @@ class FieldRepositoryTest(unittest.TestCase):
         self.assertEqual(field["control_policy"]["autonomy_level"], "manual_approval")
         self.assertEqual(field["control_policy"]["allowed_actions"], ["watering", "fertigation"])
         self.assertEqual(field["knowledge_context"]["research_queries"], ["トマト 開花期 EC"])
+
+    def test_invalid_field_environment_is_normalized_to_unset(self):
+        field = self.repository.upsert(
+            None,
+            {"name": "環境テスト", "location": {"prefecture": "長野県", "environment_type": "unknown"}},
+        )
+
+        self.assertEqual(field["location"]["environment_type"], "")
+
+    def test_search_filters_and_paginates_fields(self):
+        for index in range(5):
+            self.repository.upsert(
+                f"ina-{index}",
+                {
+                    "name": f"伊那圃場 {index}",
+                    "location": {
+                        "prefecture": "長野県",
+                        "municipality": "伊那市",
+                        "environment_type": "outdoor" if index < 4 else "greenhouse",
+                    },
+                },
+            )
+        self.repository.upsert(
+            "matsumoto",
+            {
+                "name": "松本ハウス",
+                "location": {"prefecture": "長野県", "municipality": "松本市", "environment_type": "greenhouse"},
+            },
+        )
+
+        first = self.repository.search(query="伊那", prefecture="長野県", environment_type="outdoor", page=1, page_size=2)
+        second = self.repository.search(query="伊那", prefecture="長野県", environment_type="outdoor", page=2, page_size=2)
+
+        self.assertEqual(first["total"], 4)
+        self.assertEqual(first["page_count"], 2)
+        self.assertEqual([field["id"] for field in first["items"]], ["ina-0", "ina-1"])
+        self.assertEqual([field["id"] for field in second["items"]], ["ina-2", "ina-3"])
+
+    def test_search_clamps_page_and_page_size(self):
+        self.repository.upsert("field-1", {"name": "北圃場"})
+
+        result = self.repository.search(page=999, page_size=1000)
+
+        self.assertEqual(result["page"], 1)
+        self.assertEqual(result["page_size"], 100)
+        self.assertEqual(result["items"][0]["id"], "field-1")
 
     def test_add_action_plan_records_scientific_action_hypothesis(self):
         field = self.repository.upsert(None, {"name": "北畑", "crop": "ナス", "stage": "活着"})
@@ -103,6 +158,31 @@ class FieldRepositoryTest(unittest.TestCase):
         self.assertEqual(plan["action_type"], "watering")
         self.assertEqual(stored["action_plans"][0]["title"], "土壌水分低下のため灌水")
         self.assertEqual(stored["action_plans"][0]["preconditions"]["crop_name"], "ナス")
+
+    def test_add_event_normalizes_multiple_manual_record_values(self):
+        field = self.repository.upsert(None, {"name": "手入力圃場"})
+
+        event = self.repository.add_event(
+            field["id"],
+            {
+                "event_type": "daily_record",
+                "occurred_at": "2026-07-18T07:15",
+                "target_placement_id": "pot-a",
+                "target_name": "鉢A",
+                "record_values": [
+                    {"key": "watering_duration_min", "value": "15"},
+                    {"key": "soil_ec_us_cm", "value": "820.5"},
+                ],
+            },
+        )
+
+        self.assertEqual(event["record_values"][0]["label"], "潅水時間")
+        self.assertEqual(event["record_values"][0]["value"], 15)
+        self.assertEqual(event["record_values"][1]["value"], 820.5)
+        self.assertEqual(event["target_name"], "鉢A")
+
+        with self.assertRaisesRegex(ValueError, "unsupported record item"):
+            self.repository.add_event(field["id"], {"record_values": [{"key": "unknown", "value": "1"}]})
 
 
 if __name__ == "__main__":

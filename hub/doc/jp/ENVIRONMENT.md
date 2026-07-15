@@ -18,7 +18,7 @@ chmod 600 .env
 - `LANGUAGE` (任意) — ロケール/言語指定。例: `en`。
 - `WORK_DIR` (任意) — アプリの作業ディレクトリ。例: `~/.ina-device-hub`。
 - `LOCAL_STORAGE_BASE_DIR` (任意) — 画像などを保存するローカルディレクトリ。例: `/mnt/storage/ina`。
-- `HUB_HTTP_HOST` (任意) — local hub HTTP server の bind address。既定: `0.0.0.0`。
+- `HUB_HTTP_HOST` (任意) — local hub HTTP server の bind address。既定: `0.0.0.0`。Cloudflare hosted option の起動scriptは、Tunnelを経由しないLANからの認証回避を防ぐため `127.0.0.1` へ強制する。
 - `HUB_HTTP_PORT` (任意) — local hub HTTP server の port。既定: `39151`。
 
 ## Turso (ローカル/リモート DB)
@@ -31,6 +31,8 @@ chmod 600 .env
 
 ※ `setting.py` は `TURSO_DATABASE_URL` と `TURSO_AUTH_TOKEN` が未設定だと起動を停止します。必ず設定してください。
 
+Hubは起動時にTursoのlocal replicaを同期し、計測用schemaと指標定義を準備してからHTTP受付を開始する。起動後は`TURSO_SYNC_INTERVAL`をlibSQL clientへ渡し、HTTP要求とは独立してlocal replicaを周期同期する。Hubからの書き込みはcommit後にも同期する。起動同期に失敗した場合は初回ページ表示で待たせるのではなく、起動失敗として運用監視へ通知する。確認サーバは実環境のTurso URLを継承せず、`HUB_DEMO_WORK_DIR`配下のローカルlibSQLを使用する。
+
 ## S3 / オブジェクトストレージ（メイン）
 
 - `S3_ENDPOINT_URL` (必須) — S3 互換 API のエンドポイント。例: `https://s3.amazonaws.com` や `https://s3.example.com`。
@@ -40,6 +42,8 @@ chmod 600 .env
 - `S3_SECRET_KEY` (必須) — S3 用シークレットキー。
 
 取得方法: 使用するストレージプロバイダ（AWS S3、DigitalOcean Spaces、Cloudflare R2 など）の管理コンソールでアクセスキーを発行してください。
+
+栽培記録画像をCloudflare R2へ保存する場合、メインバケットは非公開とし、`r2.dev` URLやcustom domainを有効にしません。ブラウザはAccessで保護されたHubの画像APIを介して取得します。`S3_TMP_BASE_URL` はInstagram等の外部配信用であり、栽培記録画像には使いません。
 
 ## S3_TMP（テンポラリ / 一時保存用ストレージ）
 
@@ -148,6 +152,7 @@ Cloudflare hosted option を使う場合だけ設定します。値の source of
 - `CLOUDFLARE_ACCESS_POLICY_NAME` — Access allow policy 名。既定: `inas-hub-allow-email-group`。
 - `CLOUDFLARE_ACCESS_SESSION_DURATION` — Access session duration。初期値は `4h` 程度を推奨します。
 - `CLOUDFLARE_ACCESS_ALLOWED_EMAILS` — 初期 provision 時に group へ入れる email のカンマ区切り一覧。以後は `scripts/cloudflare_access_setup.py add/remove/apply` で管理できます。
+- `CLOUDFLARE_ACCESS_ALLOWED_EMAIL_DOMAINS` — 会社メールドメインのカンマ区切り一覧。ドメイン全体を許可する場合のみ設定し、組織IdPでメール所有と在籍を確認する。
 - `CLOUDFLARE_TUNNEL_NAME` — Cloudflare Tunnel 名。既定: `inas-hub`。
 - `CLOUDFLARE_TUNNEL_ID` — 作成された Tunnel ID。`scripts/cloudflare_tunnel_setup.sh --write-env` が出力します。
 - `CLOUDFLARE_TUNNEL_HOSTNAME` — Tunnel の DNS route hostname。通常は `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME` と同じです。

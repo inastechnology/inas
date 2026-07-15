@@ -1,9 +1,11 @@
 import copy
 import json
+import math
 import os
 import uuid
 from datetime import UTC, datetime
 
+from ina_device_hub.field_record_catalog import normalize_field_record_values
 from ina_device_hub.setting import setting
 
 MAX_FIELD_NOTES = 1000
@@ -13,6 +15,8 @@ MAX_FIELD_ACTION_PLANS = 500
 VALID_FIELD_AREA_TYPES = {"section", "bed", "ridge", "zone", "point", "other"}
 VALID_DEVICE_SCOPE_TYPES = {"field", "section", "bed", "ridge", "zone", "point", "other"}
 VALID_DEVICE_ROLES = {"environment", "soil", "watering", "camera", "actuator", "sensor", "other"}
+VALID_FIELD_ENVIRONMENT_TYPES = {"", "outdoor", "greenhouse", "indoor", "semi_outdoor", "other"}
+VALID_RECORD_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
 def _utc_now():
@@ -62,6 +66,41 @@ def _clean_bool(value, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _clean_rating(value):
+    if value in (None, ""):
+        return None
+    rating = _clean_int(value, -1)
+    if rating not in {1, 2, 3, 4, 5}:
+        raise FieldValidationError("rating must be between 1 and 5")
+    return rating
+
+
+def _clean_attachments(values):
+    if not isinstance(values, list):
+        return []
+    attachments = []
+    for value in values[:5]:
+        if not isinstance(value, dict):
+            continue
+        attachment_id = _clean_string(value.get("id"))
+        object_key = _clean_string(value.get("object_key"))
+        content_type = _clean_string(value.get("content_type"))
+        if not attachment_id or not object_key.startswith("field-records/") or content_type not in VALID_RECORD_IMAGE_TYPES:
+            continue
+        attachments.append(
+            {
+                "id": attachment_id,
+                "storage": "r2",
+                "object_key": object_key,
+                "content_type": content_type,
+                "size_bytes": max(0, _clean_int(value.get("size_bytes"))),
+                "original_filename": _clean_string(value.get("original_filename"))[:180],
+                "url": _clean_string(value.get("url")),
+            }
+        )
+    return attachments
+
+
 def _clean_range(value, default_min=None, default_max=None):
     value = value if isinstance(value, dict) else {}
     return {
@@ -103,6 +142,47 @@ class FieldRepository:
     def list(self):
         return [copy.deepcopy(field) for field in sorted(self.fields.values(), key=lambda item: item.get("name") or item.get("id"))]
 
+    def search(self, *, query="", prefecture="", environment_type="", page=1, page_size=24):
+        query = _clean_string(query).casefold()[:120]
+        prefecture = _clean_string(prefecture)[:40]
+        environment_type = _clean_string(environment_type)[:40]
+        page = max(1, _clean_int(page, 1))
+        page_size = min(100, max(1, _clean_int(page_size, 24)))
+
+        matches = []
+        for field in self.fields.values():
+            location = _clean_dict(field.get("location"))
+            if prefecture and location.get("prefecture") != prefecture:
+                continue
+            if environment_type and location.get("environment_type") != environment_type:
+                continue
+            if query:
+                haystack = "\n".join(
+                    _clean_string(value)
+                    for value in (
+                        field.get("name"),
+                        location.get("prefecture"),
+                        location.get("municipality"),
+                        location.get("locality"),
+                    )
+                ).casefold()
+                if query not in haystack:
+                    continue
+            matches.append(field)
+
+        matches.sort(key=lambda item: ((item.get("name") or item.get("id") or "").casefold(), item.get("id") or ""))
+        total = len(matches)
+        page_count = max(1, math.ceil(total / page_size))
+        page = min(page, page_count)
+        start = (page - 1) * page_size
+        return {
+            "items": [copy.deepcopy(field) for field in matches[start : start + page_size]],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "page_count": page_count,
+        }
+
     def get(self, field_id: str):
         record = self.fields.get(field_id)
         return copy.deepcopy(_normalize_field(field_id, record)) if record else None
@@ -118,6 +198,7 @@ class FieldRepository:
         if not name:
             raise FieldValidationError("name is required")
         record["name"] = name
+        record["location"] = _normalize_field_location({**_clean_dict(record.get("location")), **_clean_dict(data.get("location"))})
         record["crop_profile"] = _normalize_crop_profile(
             {
                 **_clean_dict(record.get("crop_profile")),
@@ -129,15 +210,11 @@ class FieldRepository:
         )
         record["crop"] = record["crop_profile"]["crop_name"]
         record["stage"] = record["crop_profile"]["growth_stage"]
-        record["growth_targets"] = _normalize_growth_targets(
-            {**_clean_dict(record.get("growth_targets")), **_clean_dict(data.get("growth_targets"))}
-        )
+        record["growth_targets"] = _normalize_growth_targets({**_clean_dict(record.get("growth_targets")), **_clean_dict(data.get("growth_targets"))})
         record["cultivation_context"] = _normalize_cultivation_context(
             {**_clean_dict(record.get("cultivation_context")), **_clean_dict(data.get("cultivation_context"))}
         )
-        record["control_policy"] = _normalize_control_policy(
-            {**_clean_dict(record.get("control_policy")), **_clean_dict(data.get("control_policy"))}
-        )
+        record["control_policy"] = _normalize_control_policy({**_clean_dict(record.get("control_policy")), **_clean_dict(data.get("control_policy"))})
         record["knowledge_context"] = _normalize_knowledge_context(
             {**_clean_dict(record.get("knowledge_context")), **_clean_dict(data.get("knowledge_context"))}
         )
@@ -182,6 +259,8 @@ class FieldRepository:
             "text": text,
             "tags": _clean_string_list(data.get("tags")),
             "human_evaluation": _clean_string(data.get("human_evaluation")),
+            "rating": _clean_rating(data.get("rating")),
+            "attachments": _clean_attachments(data.get("attachments")),
         }
         notes = list(record.get("notes") or [])
         notes.append(note)
@@ -195,6 +274,10 @@ class FieldRepository:
         record = self._get_existing(field_id)
         event_type = _clean_string(data.get("event_type"), "observation")
         occurred_at = _clean_string(data.get("occurred_at")) or _utc_now()
+        try:
+            record_values = normalize_field_record_values(data.get("record_values"))
+        except ValueError as exc:
+            raise FieldValidationError(str(exc)) from exc
         event = {
             "id": str(uuid.uuid4()),
             "created_at": _utc_now(),
@@ -202,10 +285,16 @@ class FieldRepository:
             "event_type": event_type,
             "title": _clean_string(data.get("title"), event_type),
             "description": _clean_string(data.get("description")),
+            "target_placement_id": _clean_string(data.get("target_placement_id")),
+            "target_name": _clean_string(data.get("target_name")),
+            "record_values": record_values,
             "amount": _clean_string(data.get("amount")),
             "unit": _clean_string(data.get("unit")),
             "device_id": _clean_string(data.get("device_id")),
             "human_evaluation": _clean_string(data.get("human_evaluation")),
+            "rating": _clean_rating(data.get("rating")),
+            "attachments": _clean_attachments(data.get("attachments")),
+            "source_work_log_id": _clean_string(data.get("source_work_log_id")),
             "tags": _clean_string_list(data.get("tags")),
         }
         events = list(record.get("events") or [])
@@ -224,6 +313,7 @@ class FieldRepository:
             "period_start": _clean_string(data.get("period_start")),
             "period_end": _clean_string(data.get("period_end")),
             "human_evaluation": _clean_string(data.get("human_evaluation")),
+            "rating": _clean_rating(data.get("rating")),
             "llm_reflection": _clean_string(data.get("llm_reflection")),
             "context_snapshot": data.get("context_snapshot") if isinstance(data.get("context_snapshot"), dict) else {},
         }
@@ -259,6 +349,7 @@ class FieldRepository:
             "control_payload": _clean_dict(data.get("control_payload")),
             "source": _clean_string(data.get("source"), "human"),
             "human_evaluation": _clean_string(data.get("human_evaluation")),
+            "rating": _clean_rating(data.get("rating")),
             "tags": _clean_string_list(data.get("tags")),
         }
         plans = list(record.get("action_plans") or [])
@@ -280,6 +371,7 @@ def _new_field(field_id: str, now: str):
     return {
         "id": field_id,
         "name": "",
+        "location": _normalize_field_location({}),
         "crop": "",
         "stage": "",
         "crop_profile": _normalize_crop_profile({}),
@@ -306,6 +398,7 @@ def _normalize_field(field_id: str, record: dict):
     normalized = _new_field(field_id, record.get("created_at") or now)
     normalized.update(record)
     normalized["id"] = field_id
+    normalized["location"] = _normalize_field_location(normalized.get("location"))
     normalized["crop_profile"] = _normalize_crop_profile(normalized.get("crop_profile"), normalized)
     normalized["crop"] = normalized["crop_profile"]["crop_name"]
     normalized["stage"] = normalized["crop_profile"]["growth_stage"]
@@ -328,6 +421,19 @@ def _normalize_field(field_id: str, record: dict):
     normalized["reflections"] = list(normalized.get("reflections") or [])[-MAX_FIELD_REFLECTIONS:]
     normalized["updated_at"] = normalized.get("updated_at") or now
     return normalized
+
+
+def _normalize_field_location(value):
+    value = _clean_dict(value)
+    environment_type = _clean_string(value.get("environment_type"))
+    if environment_type not in VALID_FIELD_ENVIRONMENT_TYPES:
+        environment_type = ""
+    return {
+        "prefecture": _clean_string(value.get("prefecture")),
+        "municipality": _clean_string(value.get("municipality")),
+        "locality": _clean_string(value.get("locality")),
+        "environment_type": environment_type,
+    }
 
 
 def _normalize_crop_profile(value, legacy_record=None):

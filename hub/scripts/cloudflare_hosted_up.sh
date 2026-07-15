@@ -106,7 +106,7 @@ if [[ "$NO_HUB" != "true" ]]; then
   echo "Starting local hub..."
   (
     cd "$REPO_ROOT"
-    ./serve.sh
+    HUB_HTTP_HOST=127.0.0.1 ./serve.sh
   ) &
   hub_pid="$!"
   hub_startup_wait_seconds="${CLOUDFLARE_HOSTED_HUB_STARTUP_WAIT_SECONDS:-}"

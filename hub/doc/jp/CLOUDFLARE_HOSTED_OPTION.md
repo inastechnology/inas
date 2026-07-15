@@ -13,7 +13,8 @@
 - デフォルト: 現行どおり local hub で操作する。
 - オプション: Cloudflare Workers + Hono + Turso で hosted 管理 API / UI を提供する。
 - 認証認可: Cloudflare Access を入口に置き、Worker 側でも Access JWT を検証する。
-- 許可ユーザー管理: Cloudflare Access の rule group を許可 email の source of truth とし、ローカル/CI のスクリプトから追加・削除する。
+- 許可ユーザー管理: Cloudflare Access の rule group を許可 email または会社 email domain の source of truth とし、ローカル/CI のスクリプトから管理する。
+- テナンシー: 会社ごとに独立した Hub、Access application、Tunnel、R2 バケットを構築する。1環境内では認証済み社員が同じデータを共有する。
 
 ## 2. 目的
 
@@ -41,7 +42,9 @@
 - Cloudflare Access は self-hosted application の前段に置ける。Access application は deny by default で、Allow policy に一致した user だけがアクセスできる。
 - Access JWT は `Cf-Access-Jwt-Assertion` header で origin / Worker に渡る。Worker 側では `jose` の JWKS 検証で `issuer` と `audience` を確認する。
 - Access rule group は email selector を含められ、API token 権限 `Access: Organizations, Identity Providers, and Groups Write` で `/accounts/$ACCOUNT_ID/access/groups` を作成・更新できる。
+- Access policy は exact email と email domain で認証済み identity を制限できる。self-hosted application にパスを指定しなければ hostname 全体が保護対象となる。
 - Access の policy / application session が有効な間は既存 token が残る。email 削除後の即時遮断が必要な場合は、session duration を短くするだけでなく、Access の session revoke 運用も併用する。
+- R2 バケットは初期状態で非公開であり、`r2.dev` または custom domain を明示的に有効化した場合だけ HTTP 公開される。
 - 環境変数名は日本版環境で使用している `hub/.env` を正とする。Turso 接続も Worker 固有名へ置き換えず、既存の `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` を使う。
 
 参考:
@@ -51,7 +54,11 @@
 - Cloudflare Access self-hosted application: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/
 - Cloudflare Access JWT validation: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/
 - Cloudflare Access rule groups: https://developers.cloudflare.com/cloudflare-one/access-controls/policies/groups/
+- Cloudflare Access common policies: https://developers.cloudflare.com/cloudflare-one/access-controls/policies/common-policies/
+- Cloudflare Access application paths: https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/
 - Cloudflare Access session management: https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/
+- Cloudflare R2 public buckets: https://developers.cloudflare.com/r2/buckets/public-buckets/
+- Cloudflare R2 Wrangler commands: https://developers.cloudflare.com/r2/reference/wrangler-commands/
 - Cloudflare Tunnel API: https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/
 - Cloudflare Tunnel token: https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/subresources/token/
 - Cloudflare DNS records API: https://developers.cloudflare.com/api/resources/dns/subresources/records/
@@ -119,11 +126,16 @@ hub/
     migrations/
       0001_hosted_control_plane.sql
   scripts/
+    cloudflare_setup_common.py
     cloudflare_access_setup.py
-    cloudflare_tunnel_setup.sh
+    cloudflare_tunnel_setup.py
+    cloudflare_hosted_setup.sh
+    cloudflare_hosted_up.sh
 ```
 
 既存 Python 側は段階的に Turso schema へ合わせる。最初から Flask を置き換えない。
+
+`cloudflare_setup_common.py` は `.env` の読み書き、必須値検証、CLI共通例外だけを持つ。Access CLIとTunnel CLIは互いをimportせず、それぞれのCloudflare resource操作に専念する。
 
 ## 7. Environment Source of Truth
 
@@ -159,6 +171,7 @@ Cloudflare hosted option 用に追加するキーは、既存 `.env` に追記�
 - `CLOUDFLARE_ACCESS_POLICY_NAME`: Access policy 名。既定: `inas-hub-allow-email-group`
 - `CLOUDFLARE_ACCESS_SESSION_DURATION`: Access session duration。既定: `4h`
 - `CLOUDFLARE_ACCESS_ALLOWED_EMAILS`: 初期 provision 用の許可 email カンマ区切り
+- `CLOUDFLARE_ACCESS_ALLOWED_EMAIL_DOMAINS`: 初期 provision 用の許可会社 email domain カンマ区切り
 - `CLOUDFLARE_TUNNEL_NAME`: Tunnel 名。既定: `inas-hub`
 - `CLOUDFLARE_TUNNEL_ID`: 作成済み Tunnel ID
 - `CLOUDFLARE_TUNNEL_HOSTNAME`: Tunnel DNS route hostname
@@ -186,7 +199,7 @@ Cloudflare Zero Trust に `inas-hub-hosted` Access application を作成する�
 - public hostname: `hub.<domain>`。
 - session duration: 初期値は 4-8 時間を推奨。運用上もっと短くできる場合は 1 時間。
 - policy: `inas-hub-allowed-users` rule group に一致する user を Allow。
-- IdP: まず One-time PIN または既存 IdP。組織 IdP があるならそちらを優先。
+- IdP: 個別 email allowlist は One-time PIN または既存 IdP で利用できる。email domain 全体を許可するなら組織 IdP を優先し、組織が管理するアカウントであることを保証する。
 
 ### 8.2 Worker 側 JWT 検証
 
@@ -207,7 +220,7 @@ Worker env:
 
 ### 8.3 Application-level authorization
 
-Access の email allowlist は入口の認可とする。Worker では追加で role を持つ。
+Access の email/email domain allowlist は入口の認可とする。現行の1社1環境構成では、認証済みユーザーごとのレコード参照制限や R2 オブジェクト ACL は設けない。管理者/作業者の操作範囲を分ける段階で、Worker と local Hub の両方に role と `actor_email` 監査を追加する。
 
 初期 role:
 
@@ -251,6 +264,7 @@ script の実行環境にだけ設定する。Worker には置かない。
 - `CLOUDFLARE_ACCESS_APP_ID`
 - `CLOUDFLARE_ACCESS_POLICY_ID`
 - `CLOUDFLARE_ACCESS_ALLOWED_EMAILS`
+- `CLOUDFLARE_ACCESS_ALLOWED_EMAIL_DOMAINS`
 - `CLOUDFLARE_TUNNEL_NAME`
 - `CLOUDFLARE_TUNNEL_HOSTNAME`
 - `CLOUDFLARE_TUNNEL_ORIGIN_URL`
@@ -276,6 +290,13 @@ cd hub
 python3 scripts/cloudflare_access_setup.py --write-env provision \
   --email alice@example.com
 
+# 会社ドメイン全体を許可する場合
+python3 scripts/cloudflare_access_setup.py --write-env provision \
+  --email-domain example.com
+
+# hostname全体と許可policyに近道がないことを監査する
+python3 scripts/cloudflare_access_setup.py audit
+
 # 許可 email の確認・追加・削除
 python3 scripts/cloudflare_access_setup.py list
 python3 scripts/cloudflare_access_setup.py add bob@example.com
@@ -288,12 +309,14 @@ python3 scripts/cloudflare_access_setup.py apply ./allowed-emails.txt --yes
 動作仕様:
 
 - email は lowercase / trim / basic email validation を行う。
+- email domain は lowercase / trim / DNS名式の検証を行い、個別 email と同じ group で併用できる。
 - `add` は idempotent。既存 email は成功扱い。
 - `remove` は idempotent。存在しない email は成功扱い。
 - `apply` は file を正として Cloudflare rule group を置換する。実行前に差分を表示し、`--yes` がない場合は確認を要求する。
 - 更新前に group JSON の backup を `hub/.data/cloudflare-access-backups/` へ保存する。ただし token は保存しない。
 - `--write-env` を付けると、`CLOUDFLARE_ACCESS_TEAM_DOMAIN` / `CLOUDFLARE_ACCESS_POLICY_AUD` / `CLOUDFLARE_ACCESS_GROUP_ID` / `CLOUDFLARE_ACCESS_APP_ID` / `CLOUDFLARE_ACCESS_POLICY_ID` を `.env` に追記・更新する。
 - `wrangler` は Workers deploy 用に使う。Cloudflare Access application / policy / group は `wrangler` の管理対象ではないため、`scripts/cloudflare_access_setup.py` は Cloudflare Zero Trust API を直接呼ぶ。
+- `.env` の解析・引用・更新規則は `scripts/cloudflare_setup_common.py` を唯一の実装とし、Access/Tunnel間で重複させない。
 
 ### 9.4 active session の扱い
 
@@ -330,6 +353,7 @@ script の動作:
 - zone を hostname から自動探索し、`<tunnel-id>.cfargotunnel.com` への proxied CNAME を作成または更新する。
 - `cloudflared` がない場合は `--install-cloudflared` で `hub/.data/bin/cloudflared` にダウンロードする。
 - `cloudflare_hosted_up.sh` は local hub と tunnel を同時に起動し、Cloudflare 経由で local hub の機能を使える状態にする。
+- `cloudflare_hosted_up.sh` は Hub を `127.0.0.1` へ bind し、Access/Tunnel を経由しない LAN からの HTTP アクセスを受け付けない。
 - `cloudflare_hosted_up.sh` は local hub の起動直後の終了を検知したら tunnel を開始しない。実行中に local hub または tunnel のどちらかが終了した場合は、もう片方も停止する。
 
 `cloudflare_hosted_up.sh` は通常の local hub と同じ実行条件を前提にする。`WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` が書き込み可能で、MQTT broker など `.env` の接続先へ到達できる必要がある。
@@ -513,6 +537,17 @@ prefix は `/api`。既存 local API の `/local/api` は local hub 専用とし
 - destructive operation は POST/DELETE でも audit log と request id を必須にする。
 - `runtime-config` の schema validation は Python と TypeScript で同じ制約にする。共有 JSON Schema を置くか、TypeScript 側に最小 validator を実装する。
 
+R2 の栽培記録画像は非公開バケットへ保存し、ブラウザーに R2 URL を渡さない。認証済み Hub の `/local/api/fields/<field_id>/record-images/<attachment_id>` だけが S3 互換 API で読み出す。バケット作成後と定期監査で次を確認する。
+
+```bash
+npx wrangler r2 bucket dev-url get "$S3_BUCKET_NAME"
+npx wrangler r2 bucket domain list "$S3_BUCKET_NAME"
+```
+
+1つ目は `r2.dev` が disabled、2つ目は custom domain が0件であることを正とする。有効だった場合は `npx wrangler r2 bucket dev-url disable "$S3_BUCKET_NAME"` で無効化し、custom domain は Cloudflare 管理画面または Wrangler で解除する。
+
+Worker 版は将来の誤デプロイによる Access 回避を防ぐため、`wrangler.jsonc` で `workers_dev=false` と `preview_urls=false` を既定とする。Worker を利用する場合は、Access application で保護された custom domain/route を明示的に追加してからデプロイする。
+
 ## 14. 実装ステップ
 
 ### Phase 0: 方針確定
@@ -598,8 +633,7 @@ Manual:
 
 ## 16. Open Questions
 
-- Cloudflare Access IdP は One-time PIN で開始するか、組織 IdP を使うか。
+- 会社 email domain を一括許可する環境で、どの組織 IdP とアカウント失効フローを使うか。
 - hosted UI は API-first の簡素な画面から始めるか、既存 Flask UI と同等の画面を目指すか。
-- S3/R2 上の画像閲覧を hosted UI 初期対象に含めるか。
 - device config の source of truth をいつ `.device_configs.json` から Turso に切り替えるか。
 - 緊急 revoke を script から Cloudflare API で自動化するか、dashboard 運用にするか。

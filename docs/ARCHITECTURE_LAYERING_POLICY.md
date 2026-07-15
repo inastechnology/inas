@@ -46,6 +46,10 @@ orchestration. Reusable boundaries belong to common layers.
 - Product decisions belong above reusable mechanisms. Examples: when to water,
   what threshold to use, how to interpret missing feedback, and what UI wording
   a grower sees.
+- MOSFET output names and controlled-load descriptions are hub/device App
+  configuration metadata. The electrical primitive remains a power switch or
+  output channel; the HAL must not know whether the load is a pump, valve,
+  relay, sensor rail, or field-specific label.
 - Do not add wrapper layers whose only purpose is to group existing lower-level
   calls under a product name. A wrapper must introduce a real boundary, not just
   a rename.
@@ -88,6 +92,9 @@ In short:
   new fixed table column for every sensor unless the query model truly needs it.
 - UI should present farmer-facing language first. Raw payloads, register names,
   and debug fields belong in detail views.
+- Runtime config may carry display metadata such as `mosfet_switches` so the
+  hub can show "drip line A" instead of only `channel_mask=1`. That metadata is
+  not a firmware HAL contract.
 - Data placement is part of the model: field, section, ridge/bed, or point.
   Do not infer placement from device IDs or MQTT topics alone.
 

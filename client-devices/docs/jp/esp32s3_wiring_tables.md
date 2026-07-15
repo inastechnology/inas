@@ -11,6 +11,7 @@
 - センサー電源 MOSFET で切るのは RS485 センサーへ向かう 12V 分岐だけ。ESP32S3 本体電源をこの switch の後段に置かない。
 - 同じ RS485 bus 上の Modbus slave ID は重複させない。
 - 任意センサーの未接続は timeout または `*_ok=false` として扱う。センサー構成ごとに XIAO pin assignment を変えない。
+- MOSFET で切り替える出力は、hub runtime config の `mosfet_switches` 出力台帳へ記録する。組立時に貼る端子ラベルと、`terminal`、`channel_mask`、`name`、`controlled_load` を一致させる。
 
 ## 線色の目安
 
@@ -99,6 +100,27 @@ RS485 前提の水やり全部入りデバイス。WRS は汎用の灌水 1 系 
 | `RS485_A` / `RS485_B` | soil、PAR、日射センサー | sensor ごとに一意の Modbus slave ID |
 | `RS485_GND` | sensor bus ground | 長い配線では必須 |
 | `SENSOR_12V_SW+` | RS485 sensor 12V branch | sensor branch のみ。ESP32S3 電源ではない |
+
+### WRS + DFRobot SEN0641 配線
+
+| SEN0641 wire | WRS 接続先 | 確認 |
+|---|---|---|
+| brown / VCC | `SENSOR_12V_SW+` | sensor power ON 時に 12V、sleep 中は 0V |
+| black / GND | `RS485_GND` | WRS GND と導通 |
+| yellow / 485-A | `RS485_A` | A/B を twisted pair にする |
+| blue / 485-B | `RS485_B` | 全読取 timeout 時は A/B 表記を再確認 |
+
+SEN0641 は既定 `4800bps / slave 1 / function 0x03 / register 0x0000 / scale 1.0` とする。土壌センサーは既定 `slave 2` とし、同じ bus で ID を重複させない。
+
+5V MAX485 module を使う場合は 5V で給電し、MAX485 `RO` と XIAO `D7/GPIO44` の間に 3.3V level shifter を入れる。5V `RO` を XIAO へ直結しない。新規製造では 3.3V logic の MAX3485/SP3485/SN65HVD 系を優先する。
+
+推奨 `mosfet_switches` 出力台帳:
+
+| switch_id | name | terminal | channel_mask | controlled_load |
+|---|---|---|---:|---|
+| `irr1` | 灌水1系 | `IRR1+` / `IRR1-` | `1` | 灌水 1 系へ接続した現場負荷または driver |
+| `irr2` | 灌水2系 | `IRR2+` / `IRR2-` | `2` | 灌水 2 系へ接続した現場負荷または driver |
+| `sensor_power` | RS485センサー電源 | `SENSOR_12V_SW+` | `0` | RS485 センサー向け switched 12V 分岐 |
 
 ## ENV
 

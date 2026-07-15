@@ -1,13 +1,14 @@
 import json
 import os
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from functools import lru_cache
 from html import escape
 from pathlib import Path
+from urllib.parse import urlencode
 
 import plotly
-from flask import Flask, Response, jsonify, redirect, render_template, render_template_string, request, send_file
+from flask import Flask, Response, jsonify, redirect, render_template, render_template_string, request, send_file, stream_template
 from plotly import graph_objs as go
 from plotly.io import to_html
 
@@ -17,13 +18,40 @@ from ina_device_hub.camera_connector import camera_connector
 from ina_device_hub.device_config_repository import DeviceConfigValidationError, DeviceRecordValidationError
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.device_event_log import list_device_events
+from ina_device_hub.field_calendar_view import build_calendar_todo_items as _build_calendar_todo_items
+from ina_device_hub.field_layout_repository import (
+    FieldLayoutConflictError,
+    FieldLayoutValidationError,
+    field_layout_repository,
+)
+from ina_device_hub.field_record_calendar import (
+    build_field_record_calendar as _build_field_record_calendar,
+    record_month_start as _record_month_start,
+)
+from ina_device_hub.field_record_catalog import (
+    FIELD_RECORD_CATALOG,
+    FIELD_RECORD_CATALOG_BY_KEY,
+    FIELD_RECORD_CATEGORIES,
+    selected_record_catalog,
+)
+from ina_device_hub.field_record_media_service import (
+    FieldRecordMediaStorageError,
+    FieldRecordMediaValidationError,
+    field_record_media_service,
+)
 from ina_device_hub.field_repository import FieldValidationError, field_repository
+from ina_device_hub.field_status_dashboard import build_field_status_dashboard as _build_field_status_dashboard
 from ina_device_hub.location_repository import location_repository
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
+from ina_device_hub.plant_management_repository import (
+    PlantManagementNotFoundError,
+    PlantManagementValidationError,
+    plant_management_repository,
+)
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
 from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
-from ina_device_hub.sensor_measurement_repository import sensor_measurement_repository
+from ina_device_hub.sensor_measurement_repository import extract_measurements_from_status, sensor_measurement_repository
 from ina_device_hub.setting import setting
 from ina_device_hub.storage_connector import storage_connector
 from ina_device_hub.timelapse_media_service import timelapse_media_service
@@ -48,6 +76,127 @@ DEVICE_SCOPE_TYPE_LABELS = {
     "point": "測点",
     "other": "その他",
 }
+FIELD_ENVIRONMENT_TYPE_OPTIONS = (
+    ("outdoor", "屋外（露地）"),
+    ("greenhouse", "ハウス・温室内"),
+    ("indoor", "屋内"),
+    ("semi_outdoor", "半屋外"),
+    ("other", "その他"),
+)
+FIELD_ENVIRONMENT_TYPE_LABELS = dict(FIELD_ENVIRONMENT_TYPE_OPTIONS)
+FIELD_CATALOG_PAGE_SIZE = 18
+LAYOUT_PLACEMENT_LABELS = {
+    "greenhouse": "ハウス",
+    "open_field": "露地エリア",
+    "shade_area": "日陰エリア",
+    "ridge": "畝",
+    "tree": "植木",
+    "pot": "鉢",
+    "hydroponic_bed": "水耕ベッド",
+    "watering_device": "潅水設備",
+    "sensor": "センサー",
+    "irrigation_line": "ホース・配管（任意）",
+    "tank": "タンク",
+    "grow_light": "植物育成ライト",
+    "mister": "噴霧器",
+    "fan": "送風機",
+    "hvac": "空調",
+}
+LAYOUT_CULTIVATION_PRESETS = {"ridge", "tree", "pot", "hydroponic_bed"}
+FIELD_GROWTH_STAGE_OPTIONS = (
+    "未作付け",
+    "播種",
+    "発芽",
+    "育苗",
+    "定植",
+    "活着",
+    "栄養成長",
+    "開花",
+    "結実",
+    "果実肥大",
+    "成熟",
+    "収穫期",
+    "休眠",
+    "栽培終了",
+)
+FIELD_CULTIVATION_METHOD_OPTIONS = (
+    "露地栽培",
+    "ハウス栽培",
+    "鉢・プランター栽培",
+    "水耕栽培",
+    "養液土耕",
+    "培地栽培",
+    "屋内栽培",
+    "その他",
+)
+FIELD_CROP_CULTIVAR_SUGGESTIONS = {
+    "イチゴ": ["章姫", "紅ほっぺ", "とちおとめ", "よつぼし"],
+    "ブルーベリー": ["オニール", "ティフブルー", "ブライトウェル", "デューク"],
+    "トマト": ["桃太郎", "アイコ", "千果", "麗夏"],
+    "ミニトマト": ["アイコ", "千果", "オレンジ千果"],
+    "ナス": ["千両二号", "庄屋大長", "筑陽"],
+    "キュウリ": ["夏すずみ", "VR夏すずみ", "シャキット"],
+    "ピーマン": ["京波", "ニューエース", "こどもピーマン"],
+    "レタス": ["シスコ", "サウザー", "グリーンウェーブ"],
+    "ホウレンソウ": ["おかめ", "次郎丸", "弁天丸"],
+    "バジル": ["スイートバジル", "レモンバジル", "ホーリーバジル"],
+}
+JAPAN_PREFECTURES = (
+    "北海道",
+    "青森県",
+    "岩手県",
+    "宮城県",
+    "秋田県",
+    "山形県",
+    "福島県",
+    "茨城県",
+    "栃木県",
+    "群馬県",
+    "埼玉県",
+    "千葉県",
+    "東京都",
+    "神奈川県",
+    "新潟県",
+    "富山県",
+    "石川県",
+    "福井県",
+    "山梨県",
+    "長野県",
+    "岐阜県",
+    "静岡県",
+    "愛知県",
+    "三重県",
+    "滋賀県",
+    "京都府",
+    "大阪府",
+    "兵庫県",
+    "奈良県",
+    "和歌山県",
+    "鳥取県",
+    "島根県",
+    "岡山県",
+    "広島県",
+    "山口県",
+    "徳島県",
+    "香川県",
+    "愛媛県",
+    "高知県",
+    "福岡県",
+    "佐賀県",
+    "長崎県",
+    "熊本県",
+    "大分県",
+    "宮崎県",
+    "鹿児島県",
+    "沖縄県",
+)
+
+
+@app.route("/favicon.ico", methods=["GET"])
+def favicon():
+    return Response(status=204)
+
+
 DEVICE_ROLE_LABELS = {
     "environment": "環境センサー",
     "soil": "土壌センサー",
@@ -128,46 +277,7 @@ def _build_telemetry_monitoring(latest_sensor_data):
 
 @app.route("/", methods=["GET"])
 def index():
-    devices = sensor_device_repository().get_all()
-    locations = location_repository().get_all()
-    cameras = camera_connector().camera_device_repository.get_all()
-    template = """
-    <html>
-      <body>
-        <h1>INA Device Hub</h1>
-        <h2>Devices</h2>
-        <p><a href="/mqtt-devices">MQTT Devices</a></p>
-        <p><a href="/fields">Fields</a></p>
-        <ul>
-          {% for device_id, info in devices.items() %}
-          <li>
-            <a href="/devices/{{ info.id }}">{{ info.name }}</a>
-          </li>
-          {% endfor %}
-        </ul>
-        <h2>Cameras</h2>
-        <ul>
-          {% for device_id, info in cameras.items() %}
-          <li>
-            <a href="/camera/{{ info.id }}/preview">{{ info.name }}</a>
-          </li>
-          {% endfor %}
-        </ul>
-        <h2>Locations</h2>
-        <button type="button" onclick="location.href='/locations'">List</button>
-        <button type="button" onclick="location.href='/locations/add'">Add</button>
-        <ul>
-          {% for location, info in locations.items() %}
-          <li>
-            <a href="/locations/{{ info.id }}">{{ info.name }}</a>
-          </li>
-          {% endfor %}
-        </ul>
-      </body>
-    </html>
-    """
-
-    return render_template_string(template, devices=devices, locations=locations, cameras=cameras)
+    return _render_field_catalog(home_mode=True)
 
 
 @app.route("/devices/<device_id>", methods=["GET"])
@@ -512,14 +622,73 @@ def camera_images(device_id):
 
 def _build_mqtt_admin_view(devices, selected_device_id, selected_device, selected_statuses, selected_ota_statuses):
     now = datetime.now(UTC)
+    device_summaries = [
+        _build_device_summary(device_id, record, now) for device_id, record in sorted(devices.items(), key=lambda item: _device_sort_key(item[0], item[1]))
+    ]
     return {
-        "devices": [
-            _build_device_summary(device_id, record, now) for device_id, record in sorted(devices.items(), key=lambda item: _device_sort_key(item[0], item[1]))
-        ],
+        "devices": device_summaries,
+        "field_zones": _build_field_zones(device_summaries, selected_device_id),
         "selected": _build_selected_device_view(selected_device_id, selected_device, selected_statuses, selected_ota_statuses, now)
         if selected_device
         else None,
     }
+
+
+def _build_field_zones(device_summaries, selected_device_id):
+    groups = {}
+    for device in device_summaries:
+        location = device.get("location") or "場所未設定"
+        groups.setdefault(location, []).append(device)
+
+    zones = []
+    for location, devices in groups.items():
+        devices.sort(key=lambda item: str(item.get("name") or item.get("id") or ""))
+        primary = next((device for device in devices if device.get("id") == selected_device_id), devices[0])
+        rows = []
+        for device in devices:
+            rows.append(
+                {
+                    "id": device["id"],
+                    "name": device["name"],
+                    "kind_label": device["kind_label"],
+                    "watering": device["watering_label"],
+                    "soil": device["soil_moisture"],
+                    "last_seen_age": device["last_seen_age"],
+                    "class": _field_device_class(device),
+                    "selected": device["id"] == selected_device_id,
+                }
+            )
+        zone_class = _highest_priority_class(row["class"] for row in rows)
+        zones.append(
+            {
+                "name": location,
+                "primary_device_id": primary["id"],
+                "device_count": len(devices),
+                "class": zone_class,
+                "selected": any(row["selected"] for row in rows),
+                "rows": rows,
+                "empty_rows": list(range(max(0, 3 - len(rows)))),
+            }
+        )
+    zones.sort(key=lambda item: (0 if item["selected"] else 1, item["name"]))
+    return zones
+
+
+def _field_device_class(device):
+    if device.get("state_class") in {"danger", "warn"}:
+        return device["state_class"]
+    if device.get("watering_class") == "good":
+        return "good"
+    if device.get("watering_class") == "warn":
+        return "warn"
+    if device.get("soil_moisture") == "未取得" or device.get("last_seen_age") == "未取得":
+        return "muted"
+    return "ok"
+
+
+def _highest_priority_class(classes):
+    priority = {"danger": 0, "warn": 1, "good": 2, "ok": 3, "muted": 4}
+    return min(classes, key=lambda value: priority.get(value, 9), default="muted")
 
 
 def _format_firmware_artifacts_for_ui(firmware_artifacts):
@@ -628,15 +797,19 @@ def _build_device_summary(device_id, record, now):
 def _build_selected_device_view(device_id, record, statuses, ota_statuses, now):
     payload = _latest_status_payload(record)
     config = record.get("config") or {}
+    device_kind = record.get("device_kind") or payload.get("device_kind") or ""
+    watering = _watering_state(payload)
     return {
         "id": device_id,
         "title": record.get("name") or device_id,
         "location": record.get("location") or "場所未設定",
         "memo": record.get("memo") or "",
-        "kind_label": _device_kind_label(record.get("device_kind")),
+        "device_kind": device_kind,
+        "kind_label": _device_kind_label(device_kind),
+        "supports_irrigation": device_kind in {"WTR", "WRS"},
         "state_label": _device_state_label(record.get("state")),
         "state_class": _device_state_class(record.get("state")),
-        "watering": _watering_state(payload),
+        "watering": watering,
         "soil_moisture": _format_percent(payload.get("last_soil_moisture")),
         "threshold": _format_percent(payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")),
         "last_seen": _format_datetime(record.get("last_seen_at") or record.get("last_status_at")),
@@ -648,12 +821,236 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now):
         "ota_state": _ota_state_label(record.get("ota_state")),
         "ota_class": _ota_state_class(record.get("ota_state")),
         "ota_error": record.get("ota_error") or "",
-        "schedules": _format_schedules_for_ui(config.get("schedules") or []),
+        "summary_metrics": _build_device_summary_metrics(record, payload, now, watering),
+        "monitoring_charts": _build_device_monitoring_charts(device_kind, statuses),
+        "schedules": _format_schedules_for_ui(config.get("schedules") or [], config),
         "config_summary": _format_config_summary(config),
+        "installation": _build_device_installation_view(config, payload),
         "watering_history": _build_watering_history(statuses),
         "wake_history": _build_wake_history(statuses),
         "ota_history": _build_ota_history(ota_statuses),
     }
+
+
+def _build_device_summary_metrics(record, payload, now, watering):
+    device_kind = record.get("device_kind") or payload.get("device_kind") or ""
+    metrics = []
+
+    if device_kind in {"WTR", "WRS"}:
+        metrics.append(
+            {
+                "label": "潅水",
+                "value": watering["label"],
+                "class": watering["class"],
+                "hint": "最後のstatusから判断",
+            }
+        )
+
+    metric_specs = {
+        "WTR": (("土壌水分", ("last_soil_moisture", "soil_moisture_percent"), "%", 1),),
+        "WRS": (
+            ("土壌水分", ("soil_moisture_percent", "last_soil_moisture"), "%", 1),
+            ("土壌EC", ("soil_ec_us_cm",), "uS/cm", 0),
+            ("土壌pH", ("soil_ph",), "", 1),
+            ("PAR", ("par_umol_m2_s",), "umol/m2/s", 0),
+        ),
+        "ENV": (
+            ("気温", ("air_temperature_c",), "℃", 1),
+            ("湿度", ("air_humidity_percent",), "%", 1),
+            ("PAR", ("par_umol_m2_s",), "umol/m2/s", 0),
+        ),
+        "SOI": (
+            ("土壌水分", ("soil_moisture_percent", "last_soil_moisture"), "%", 1),
+            ("地温", ("soil_temperature_c",), "℃", 1),
+            ("土壌EC", ("soil_ec_us_cm",), "uS/cm", 0),
+            ("土壌pH", ("soil_ph",), "", 1),
+        ),
+        "PAR": (("PAR", ("par_umol_m2_s",), "umol/m2/s", 0),),
+    }
+    for label, aliases, unit, digits in metric_specs.get(device_kind, ()):
+        value = _first_numeric_value(payload, aliases)
+        metrics.append(
+            {
+                "label": label,
+                "value": _format_measurement_value(value, unit, digits),
+                "class": "",
+                "hint": "直近の計測値",
+            }
+        )
+
+    metrics.extend(
+        [
+            {
+                "label": "最終通信",
+                "value": _format_age(record.get("last_seen_at") or record.get("last_status_at"), now),
+                "class": "",
+                "hint": _format_datetime(record.get("last_seen_at") or record.get("last_status_at")),
+            },
+            {
+                "label": "ファームウェア",
+                "value": record.get("firmware_version") or "未取得",
+                "class": "",
+                "hint": f"更新目標 {record.get('target_firmware_version') or '設定なし'}",
+            },
+            {
+                "label": "更新状態",
+                "value": _ota_state_label(record.get("ota_state")),
+                "class": _ota_state_class(record.get("ota_state")),
+                "hint": record.get("ota_error") or "問題なし",
+            },
+        ]
+    )
+    return metrics
+
+
+def _first_numeric_value(payload, aliases):
+    for alias in aliases:
+        value = payload.get(alias)
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def _format_measurement_value(value, unit, digits):
+    if value is None:
+        return "未取得"
+    formatted = f"{float(value):.{digits}f}"
+    if digits == 0:
+        formatted = str(int(round(float(value))))
+    return f"{formatted} {unit}".strip()
+
+
+def _build_device_monitoring_charts(device_kind, statuses):
+    chart_specs = {
+        "WTR": (
+            ("watering", "潅水推移", "潅水に関する時系列データはまだありません。"),
+            ("soil_moisture", "土壌水分推移", "土壌水分の時系列データはまだありません。"),
+        ),
+        "WRS": (
+            ("watering", "潅水推移", "潅水に関する時系列データはまだありません。"),
+            ("soil_moisture", "土壌水分推移", "土壌水分の時系列データはまだありません。"),
+            ("soil_ec", "土壌EC推移", "土壌ECの時系列データはまだありません。"),
+            ("soil_ph", "土壌pH推移", "土壌pHの時系列データはまだありません。"),
+            ("par", "PAR推移", "PARの時系列データはまだありません。"),
+        ),
+        "ENV": (
+            ("air_temperature", "気温推移", "気温の時系列データはまだありません。"),
+            ("air_humidity", "湿度推移", "湿度の時系列データはまだありません。"),
+            ("par", "PAR推移", "PARの時系列データはまだありません。"),
+        ),
+        "SOI": (
+            ("soil_moisture", "土壌水分推移", "土壌水分の時系列データはまだありません。"),
+            ("soil_temperature", "地温推移", "地温の時系列データはまだありません。"),
+            ("soil_ec", "土壌EC推移", "土壌ECの時系列データはまだありません。"),
+            ("soil_ph", "土壌pH推移", "土壌pHの時系列データはまだありません。"),
+        ),
+        "PAR": (("par", "PAR推移", "PARの時系列データはまだありません。"),),
+    }
+    specs = chart_specs.get(device_kind)
+    if specs is None:
+        specs = tuple(_detected_device_chart_specs(statuses))
+    dom_ids = {
+        "watering": "watering-trend-chart",
+        "soil_moisture": "soil-moisture-chart",
+        "air_temperature": "air-temperature-chart",
+        "air_humidity": "air-humidity-chart",
+        "soil_temperature": "soil-temperature-chart",
+        "soil_ec": "soil-ec-chart",
+        "soil_ph": "soil-ph-chart",
+        "par": "par-chart",
+    }
+    return [
+        {
+            "kind": kind,
+            "title": title,
+            "empty_message": empty_message,
+            "dom_id": dom_ids[kind],
+        }
+        for kind, title, empty_message in specs
+    ]
+
+
+def _detected_device_chart_specs(statuses):
+    payloads = [entry.get("payload") for entry in statuses or [] if isinstance(entry, dict) and isinstance(entry.get("payload"), dict)]
+    candidates = (
+        ("air_temperature", "気温推移", "気温の時系列データはまだありません。", ("air_temperature_c",)),
+        ("air_humidity", "湿度推移", "湿度の時系列データはまだありません。", ("air_humidity_percent",)),
+        ("soil_moisture", "土壌水分推移", "土壌水分の時系列データはまだありません。", ("soil_moisture_percent", "last_soil_moisture")),
+        ("soil_temperature", "地温推移", "地温の時系列データはまだありません。", ("soil_temperature_c",)),
+        ("soil_ec", "土壌EC推移", "土壌ECの時系列データはまだありません。", ("soil_ec_us_cm",)),
+        ("soil_ph", "土壌pH推移", "土壌pHの時系列データはまだありません。", ("soil_ph",)),
+        ("par", "PAR推移", "PARの時系列データはまだありません。", ("par_umol_m2_s",)),
+    )
+    for kind, title, empty_message, aliases in candidates:
+        if any(_first_numeric_value(payload, aliases) is not None for payload in payloads):
+            yield kind, title, empty_message
+
+
+def _build_device_installation_view(config, payload):
+    config = config if isinstance(config, dict) else {}
+    payload = payload if isinstance(payload, dict) else {}
+    active_mask = payload.get("channel_mask") if payload.get("watering_started") is True and isinstance(payload.get("channel_mask"), int) else 0
+    lines = []
+    auxiliaries = []
+
+    for index, switch in enumerate(config.get("mosfet_switches") or []):
+        if not isinstance(switch, dict) or switch.get("enabled") is False:
+            continue
+        channel_mask = switch.get("channel_mask")
+        if not isinstance(channel_mask, int):
+            channel_mask = 0
+        name = switch.get("name") if isinstance(switch.get("name"), str) and switch.get("name").strip() else switch.get("switch_id") or f"SW {index + 1}"
+        item = {
+            "name": name,
+            "role": _mosfet_role_label(switch.get("role")),
+            "terminal": switch.get("terminal") or "端子未設定",
+            "controlled_load": switch.get("controlled_load") or "制御対象未設定",
+            "channel_mask": channel_mask,
+            "mask_label": f"mask {channel_mask}" if channel_mask > 0 else "予約対象外",
+            "class": "good" if channel_mask > 0 and active_mask & channel_mask else "ok",
+        }
+        if channel_mask > 0 and switch.get("role") != "sensor_power":
+            lines.append(item)
+        else:
+            item["class"] = "muted" if channel_mask == 0 else item["class"]
+            auxiliaries.append(item)
+
+    if not lines:
+        seen_masks = []
+        for schedule in config.get("schedules") or []:
+            if not isinstance(schedule, dict):
+                continue
+            channel_mask = schedule.get("channel_mask")
+            if isinstance(channel_mask, int) and channel_mask > 0 and channel_mask not in seen_masks:
+                seen_masks.append(channel_mask)
+        for channel_mask in seen_masks:
+            lines.append(
+                {
+                    "name": _format_channel_mask_for_config(channel_mask, config),
+                    "role": "灌水",
+                    "terminal": "端子未設定",
+                    "controlled_load": "制御対象未設定",
+                    "channel_mask": channel_mask,
+                    "mask_label": f"mask {channel_mask}",
+                    "class": "good" if active_mask & channel_mask else "ok",
+                }
+            )
+
+    return {
+        "lines": lines,
+        "auxiliaries": auxiliaries,
+        "line_count": len(lines),
+        "auxiliary_count": len(auxiliaries),
+        "active_mask": active_mask,
+    }
+
+
+def _mosfet_role_label(role):
+    return {
+        "irrigation": "灌水",
+        "sensor_power": "センサー電源",
+        "other": "その他",
+    }.get(role, str(role or "未分類"))
 
 
 def _latest_status_payload(record):
@@ -691,7 +1088,7 @@ def _build_watering_history(statuses, limit=8):
     return history
 
 
-def _build_watering_trend_chart(statuses, include_plotlyjs=False):
+def _build_watering_trend_chart(statuses, include_plotlyjs=False, *, deferred=False):
     points = _watering_trend_points(statuses)
     if not points:
         return None
@@ -726,7 +1123,7 @@ def _build_watering_trend_chart(statuses, include_plotlyjs=False):
     )
     _configure_time_axis(fig, points)
     fig.update_yaxes(rangemode="tozero")
-    return _plotly_div(fig, "watering-trend-chart", include_plotlyjs=include_plotlyjs)
+    return _plotly_div(fig, "watering-trend-chart", include_plotlyjs=include_plotlyjs, deferred=deferred)
 
 
 def _build_soil_moisture_chart(statuses, include_plotlyjs=False):
@@ -773,6 +1170,53 @@ def _build_soil_moisture_chart(statuses, include_plotlyjs=False):
     return _plotly_div(fig, "soil-moisture-chart", include_plotlyjs=include_plotlyjs)
 
 
+def _build_metric_trend_chart(statuses, *, aliases, title, unit, color, div_id, include_plotlyjs=False, y_range=None):
+    points = _metric_trend_points(statuses, aliases)
+    if not points:
+        return None
+
+    unit_suffix = f" {unit}" if unit else ""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=[point["time"] for point in points],
+            y=[point["value"] for point in points],
+            mode="lines+markers",
+            name=title,
+            line={"color": color, "width": 3},
+            marker={"size": 7},
+            hovertemplate=f"%{{x|%Y-%m-%d %H:%M}}<br>{title}: %{{y}}{unit_suffix}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=title,
+        height=360,
+        margin={"l": 64, "r": 24, "t": 48, "b": 48},
+        paper_bgcolor="#ffffff",
+        plot_bgcolor="#ffffff",
+        yaxis_title=f"{title}（{unit}）" if unit else title,
+        showlegend=False,
+    )
+    _configure_time_axis(fig, points)
+    if y_range:
+        fig.update_yaxes(range=list(y_range))
+    return _plotly_div(fig, div_id, include_plotlyjs=include_plotlyjs)
+
+
+def _metric_trend_points(statuses, aliases):
+    points = []
+    for entry in statuses or []:
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        received_at = _to_local_plot_time(entry.get("received_at")) if isinstance(entry, dict) else None
+        if received_at is None or not isinstance(payload, dict):
+            continue
+        value = _first_numeric_value(payload, aliases)
+        if value is None:
+            continue
+        points.append({"time": received_at, "value": value})
+    return points
+
+
 def _watering_trend_points(statuses):
     points = []
     for entry in statuses or []:
@@ -804,7 +1248,7 @@ def _soil_moisture_points(statuses):
         received_at = _to_local_plot_time(entry.get("received_at")) if isinstance(entry, dict) else None
         if received_at is None or not isinstance(payload, dict):
             continue
-        soil_moisture = payload.get("last_soil_moisture")
+        soil_moisture = _first_numeric_value(payload, ("soil_moisture_percent", "last_soil_moisture"))
         if not isinstance(soil_moisture, int | float):
             continue
         threshold = payload.get("threshold")
@@ -831,13 +1275,28 @@ def _configure_time_axis(fig, points):
     )
 
 
-def _plotly_div(fig, div_id, include_plotlyjs=False):
+def _plotly_div(fig, div_id, include_plotlyjs=False, *, deferred=False):
+    config = {"displaylogo": False, "responsive": True}
+    if deferred:
+        figure = fig.to_plotly_json()
+        payload = json.dumps(
+            {"data": figure["data"], "layout": figure["layout"], "config": config},
+            cls=plotly.utils.PlotlyJSONEncoder,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).replace("</", "<\\/")
+        safe_id = escape(div_id, quote=True)
+        return (
+            f'<div id="{safe_id}" class="plotly-deferred" data-plotly-deferred="true">'
+            '<p class="plotly-deferred-status">グラフを読み込んでいます</p></div>'
+            f'<script type="application/json" data-plotly-chart="{safe_id}">{payload}</script>'
+        )
     return to_html(
         fig,
         full_html=False,
         include_plotlyjs=include_plotlyjs,
         div_id=div_id,
-        config={"displaylogo": False, "responsive": True},
+        config=config,
     )
 
 
@@ -909,10 +1368,16 @@ def _watering_state(payload):
 
 
 def _device_kind_label(device_kind):
-    if device_kind == "WTR":
-        return "水やり機"
-    if device_kind == "WRS":
-        return "RS485全部入り水やり機"
+    labels = {
+        "WTR": "水やり機",
+        "WRS": "RS485全部入り水やり機",
+        "ENV": "環境センサー",
+        "SOI": "土壌センサー",
+        "PAR": "日射・PARセンサー",
+        "CAM": "カメラ",
+    }
+    if device_kind in labels:
+        return labels[device_kind]
     if device_kind:
         return f"{device_kind} デバイス"
     return "種別未取得"
@@ -968,7 +1433,7 @@ def _format_config_summary(config):
     }
 
 
-def _format_schedules_for_ui(schedules):
+def _format_schedules_for_ui(schedules, config=None):
     formatted = []
     for schedule in schedules:
         if not isinstance(schedule, dict):
@@ -982,10 +1447,33 @@ def _format_schedules_for_ui(schedules):
             {
                 "time": f"{hour:02d}:{minute:02d}",
                 "duration": _format_duration(duration_sec),
-                "channel": _format_channel_mask(schedule.get("channel_mask")),
+                "channel": _format_channel_mask_for_config(schedule.get("channel_mask"), config),
             }
         )
     return formatted
+
+
+def _format_channel_mask_for_config(channel_mask, config):
+    labels_by_mask = _mosfet_switch_labels_by_mask(config)
+    if labels_by_mask:
+        labels = [name for bit, name in labels_by_mask.items() if isinstance(channel_mask, int) and channel_mask & bit]
+        if labels:
+            return "・".join(labels)
+    return _format_channel_mask(channel_mask)
+
+
+def _mosfet_switch_labels_by_mask(config):
+    labels_by_mask = {}
+    if not isinstance(config, dict):
+        return labels_by_mask
+    for switch in config.get("mosfet_switches") or []:
+        if not isinstance(switch, dict) or switch.get("enabled") is False:
+            continue
+        channel_mask = switch.get("channel_mask")
+        name = switch.get("name")
+        if isinstance(channel_mask, int) and channel_mask > 0 and isinstance(name, str) and name.strip():
+            labels_by_mask[channel_mask] = name.strip()
+    return labels_by_mask
 
 
 def _format_channel_mask(channel_mask):
@@ -1192,6 +1680,26 @@ def _demo_mqtt_admin_page_data(selected_device_id=None):
                 "timezone_offset_sec": 32400,
                 "moisture_threshold": 40,
                 "force_watering": False,
+                "mosfet_switches": [
+                    {
+                        "switch_id": "irr1",
+                        "name": "高設ベッドA",
+                        "enabled": True,
+                        "role": "irrigation",
+                        "terminal": "IRR1",
+                        "channel_mask": 1,
+                        "controlled_load": "点滴チューブ A",
+                    },
+                    {
+                        "switch_id": "irr2",
+                        "name": "高設ベッドB",
+                        "enabled": True,
+                        "role": "irrigation",
+                        "terminal": "IRR2",
+                        "channel_mask": 2,
+                        "controlled_load": "点滴チューブ B",
+                    },
+                ],
                 "schedules": [
                     {"hour": 6, "minute": 30, "duration_sec": 90, "channel_mask": 1},
                     {"hour": 17, "minute": 45, "duration_sec": 60, "channel_mask": 3},
@@ -1214,6 +1722,26 @@ def _demo_mqtt_admin_page_data(selected_device_id=None):
                 "timezone_offset_sec": 32400,
                 "moisture_threshold": 35,
                 "force_watering": False,
+                "mosfet_switches": [
+                    {
+                        "switch_id": "irr1",
+                        "name": "南ハウス点滴A",
+                        "enabled": True,
+                        "role": "irrigation",
+                        "terminal": "IRR1",
+                        "channel_mask": 1,
+                        "controlled_load": "点滴チューブ A",
+                    },
+                    {
+                        "switch_id": "irr2",
+                        "name": "南ハウス点滴B",
+                        "enabled": True,
+                        "role": "irrigation",
+                        "terminal": "IRR2",
+                        "channel_mask": 2,
+                        "controlled_load": "点滴チューブ B",
+                    },
+                ],
                 "schedules": [{"hour": 7, "minute": 0, "duration_sec": 75, "channel_mask": 2}],
             },
             "firmware_version": "1.0.0",
@@ -1501,6 +2029,98 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             font-size: 14px;
           }
           .quick-actions a.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+          .field-section {
+            border: 1px solid #c7d7c5;
+            border-radius: 8px;
+            background: #f7faf6;
+            padding: 18px;
+            margin-bottom: 18px;
+          }
+          .field-head {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+          }
+          .field-head h2 { margin-bottom: 0; }
+          .field-map {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+          }
+          .field-zone {
+            position: relative;
+            display: grid;
+            gap: 10px;
+            min-height: 176px;
+            overflow: hidden;
+            border: 1px solid #adc7ad;
+            border-radius: 8px;
+            background: linear-gradient(180deg, #edf7ee 0%, #f8fafc 100%);
+            color: var(--text);
+            padding: 12px;
+          }
+          .field-zone:hover { text-decoration: none; border-color: #6b9f75; }
+          .field-zone[aria-current="true"] { border-color: var(--blue); box-shadow: inset 3px 0 0 var(--blue); }
+          .field-zone.warn { border-color: #d9a948; }
+          .field-zone.danger { border-color: #e11d48; }
+          .field-zone::before {
+            content: "";
+            position: absolute;
+            inset: 52px 12px 12px;
+            border-radius: 6px;
+            background: repeating-linear-gradient(90deg, rgba(22, 101, 52, .10) 0 2px, transparent 2px 22px);
+            pointer-events: none;
+          }
+          .field-zone > * { position: relative; }
+          .zone-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+          }
+          .zone-name { font-weight: 700; font-size: 16px; }
+          .ridge-stack { display: grid; gap: 6px; }
+          .ridge-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            min-height: 36px;
+            border: 1px solid rgba(148, 163, 184, .45);
+            border-left: 4px solid #64748b;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, .92);
+            padding: 7px 8px;
+          }
+          .ridge-row.good { border-left-color: var(--green); }
+          .ridge-row.ok { border-left-color: #0284c7; }
+          .ridge-row.warn { border-left-color: #d97706; }
+          .ridge-row.danger { border-left-color: #e11d48; }
+          .ridge-row.muted { border-left-color: #94a3b8; color: var(--muted); }
+          .ridge-row[aria-current="true"] { outline: 2px solid rgba(29, 78, 216, .35); }
+          .ridge-name {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-weight: 700;
+          }
+          .ridge-meta {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            color: var(--muted);
+            font-size: 12px;
+          }
+          .ridge-empty {
+            min-height: 28px;
+            border: 1px dashed rgba(100, 116, 139, .35);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, .42);
+          }
           .nav { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
           .nav a, button {
             border: 1px solid var(--line);
@@ -1535,6 +2155,94 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             padding: 18px;
             margin-bottom: 18px;
           }
+          .detail-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+          }
+          .detail-header h2 { margin-bottom: 4px; }
+          .detail-tabs {
+            display: grid;
+            gap: 14px;
+            margin-bottom: 18px;
+          }
+          .tab-list {
+            display: flex;
+            gap: 2px;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            overflow-x: auto;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, .96);
+            padding: 6px;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, .06);
+          }
+          .tab-button { flex: 0 0 auto; white-space: nowrap; }
+          .tab-button[aria-selected="true"] {
+            background: var(--blue);
+            border-color: var(--blue);
+            color: #fff;
+            font-weight: 700;
+          }
+          .tab-panel[hidden] { display: none; }
+          .tab-panel {
+            display: grid;
+            gap: 18px;
+          }
+          .device-field {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #adc7ad;
+            border-radius: 8px;
+            background: linear-gradient(180deg, #edf7ee 0%, #f8fafc 100%);
+            padding: 16px;
+          }
+          .device-field::before {
+            content: "";
+            position: absolute;
+            inset: 76px 16px 16px;
+            border-radius: 6px;
+            background: repeating-linear-gradient(90deg, rgba(22, 101, 52, .10) 0 2px, transparent 2px 24px);
+            pointer-events: none;
+          }
+          .device-field > * { position: relative; }
+          .device-field-grid {
+            display: grid;
+            grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr);
+            gap: 14px;
+            align-items: stretch;
+          }
+          .controller-node, .line-node {
+            border: 1px solid rgba(148, 163, 184, .55);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, .94);
+            padding: 12px;
+          }
+          .controller-node {
+            display: grid;
+            align-content: center;
+            min-height: 150px;
+            border-color: #64748b;
+          }
+          .line-stack { display: grid; gap: 10px; }
+          .line-node {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            border-left: 5px solid #0284c7;
+          }
+          .line-node.good { border-left-color: var(--green); }
+          .line-node.ok { border-left-color: #0284c7; }
+          .line-node.warn { border-left-color: #d97706; }
+          .line-node.muted { border-left-color: #94a3b8; color: var(--muted); }
+          .line-title { font-weight: 700; font-size: 15px; }
+          .line-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+          .line-mask { color: var(--muted); font-size: 12px; white-space: nowrap; }
+          .compact-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
           .device-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -1621,7 +2329,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             font-weight: 700;
           }
           .switch-row input { width: auto; }
-          .schedule-editor { display: grid; gap: 10px; }
+          .schedule-editor, .mosfet-switch-editor { display: grid; gap: 10px; }
           .schedule-row {
             display: grid;
             grid-template-columns: minmax(120px, .8fr) minmax(130px, .8fr) minmax(130px, .8fr) auto;
@@ -1632,8 +2340,39 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             padding: 12px;
             background: #fff;
           }
+          .mosfet-switch-row {
+            display: grid;
+            grid-template-columns: 92px minmax(120px, .8fr) minmax(150px, 1fr) minmax(120px, .8fr) minmax(110px, .7fr) minmax(180px, 1fr) auto;
+            gap: 10px;
+            align-items: end;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 12px;
+            background: #fff;
+          }
           .icon-button { min-width: 38px; }
           .chart-card { display: grid; gap: 10px; }
+          .device-chart-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+          }
+          .device-chart-heading h2 { margin: 0; }
+          .chart-settings-link {
+            display: inline-grid;
+            place-items: center;
+            width: 36px;
+            height: 36px;
+            flex: 0 0 36px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: #fff;
+            color: var(--text);
+            font-size: 19px;
+            text-decoration: none;
+          }
+          .chart-settings-link:hover, .chart-settings-link:focus-visible { border-color: var(--blue); color: var(--blue); }
           .range-controls {
             display: flex;
             flex-wrap: wrap;
@@ -1680,10 +2419,17 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .page { padding: 16px; }
             .topbar { display: block; }
             .nav { justify-content: flex-start; margin-top: 12px; }
+            .detail-header { display: block; }
+            .field-head { display: block; }
+            .device-field-grid { grid-template-columns: 1fr; }
+            .line-node { grid-template-columns: 1fr; }
             .section-grid { grid-template-columns: 1fr; }
             .tile-metrics { grid-template-columns: 1fr; }
             .list-row { grid-template-columns: 1fr; }
-            .schedule-row { grid-template-columns: 1fr; }
+            .ridge-row { grid-template-columns: 1fr; }
+            .ridge-meta { justify-content: flex-start; }
+            .schedule-row, .mosfet-switch-row { grid-template-columns: 1fr; }
+            .tab-list { margin-inline: -16px; border-radius: 0; padding-inline: 16px; }
           }
         </style>
       </head>
@@ -1695,16 +2441,17 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           </div>
           <div class="topbar">
             <div>
-              <h1>Hub 管理パネル</h1>
-              <p class="lead">水やり機の稼働、灌水、土壌水分、起動履歴を確認します。</p>
+              <h1>機器管理</h1>
+              <p class="lead">設置場所、計測値、稼働状態、設定、F/Wを機器ごとに確認します。</p>
             </div>
-            <nav class="nav" aria-label="管理リンク">
-              <a href="/">ホーム</a>
+            <nav class="nav" aria-label="ページ移動">
+              <a href="{{ list_path }}">機器一覧</a>
+              {% if demo_mode %}
+              <a href="/mqtt-devices">実データ</a>
+              {% else %}
               <a href="/demo/mqtt-devices">UI デモ</a>
-              <a href="/local/api/mqtt-devices">デバイス API</a>
-              <a href="/local/api/mqtt-events">イベント API</a>
-              <a href="/local/api/mqtt-connections">接続 API</a>
-              <a href="/local/api/firmware-artifacts">ファームウェア API</a>
+              {% endif %}
+              <a href="/">ホーム</a>
             </nav>
           </div>
           {% if demo_mode %}
@@ -1712,11 +2459,44 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           {% endif %}
           {% if is_detail_page %}
           <div id="action-result" class="result">{{ "デモモードです。操作しても保存されません。" if demo_mode else "操作結果がここに表示されます。" }}</div>
-          <div class="back-link"><a href="{{ list_path }}">水やり機一覧へ戻る</a></div>
-          <div class="quick-actions" aria-label="詳細ページ内の操作">
-            <a href="#ota-target" class="primary">OTA 更新対象</a>
-            <a href="#firmware-maintenance">ファームウェア保守</a>
-          </div>
+          <div class="back-link"><a href="{{ list_path }}">機器一覧へ戻る</a></div>
+          {% endif %}
+
+          {% if not is_detail_page and admin_view.field_zones %}
+          <section class="field-section" aria-label="圃場ビュー">
+            <div class="field-head">
+              <div>
+                <h2>圃場ビュー</h2>
+                <p class="lead">場所ごとに水やり機をまとめ、畝や点滴ラインの状態として確認します。</p>
+              </div>
+              <span class="badge muted">{{ admin_view.devices|length }} 台</span>
+            </div>
+            <div class="field-map">
+              {% for zone in admin_view.field_zones %}
+              <a class="field-zone {{ zone.class }}" href="{{ device_link_prefix }}{{ zone.primary_device_id }}" aria-current="{{ 'true' if zone.selected else 'false' }}">
+                <div class="zone-top">
+                  <span class="zone-name">{{ zone.name }}</span>
+                  <span class="badge {{ zone.class }}">{{ zone.device_count }} 台</span>
+                </div>
+                <div class="ridge-stack">
+                  {% for row in zone.rows %}
+                  <div class="ridge-row {{ row.class }}" aria-current="{{ 'true' if row.selected else 'false' }}">
+                    <span class="ridge-name">{{ row.name }}</span>
+                    <span class="ridge-meta">
+                      <span>{{ row.kind_label }}</span>
+                      <span>{{ row.soil }}</span>
+                      <span>{{ row.watering }}</span>
+                    </span>
+                  </div>
+                  {% endfor %}
+                  {% for _ in zone.empty_rows %}
+                  <div class="ridge-empty" aria-hidden="true"></div>
+                  {% endfor %}
+                </div>
+              </a>
+              {% endfor %}
+            </div>
+          </section>
           {% endif %}
 
           {% if not is_detail_page %}
@@ -1752,58 +2532,149 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           {% if is_detail_page and admin_view.selected %}
           {% set selected = admin_view.selected %}
           <section class="panel">
-            <h2>{{ selected.title }}</h2>
-            <p class="lead">{{ selected.kind_label }} / {{ selected.location }} / {{ selected.id }}</p>
-            {% if selected.memo %}<p>{{ selected.memo }}</p>{% endif %}
+            <div class="detail-header">
+              <div>
+                <h2>{{ selected.title }}</h2>
+                <p class="lead">{{ selected.kind_label }} / {{ selected.location }} / {{ selected.id }}</p>
+                {% if selected.memo %}<p>{{ selected.memo }}</p>{% endif %}
+              </div>
+              <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span>
+            </div>
             <div class="metrics">
+              {% for metric in selected.summary_metrics %}
               <div class="metric">
-                <span class="label">灌水</span>
-                <span class="value"><span class="badge {{ selected.watering.class }}">{{ selected.watering.label }}</span></span>
-                <div class="hint">最後の status から判断</div>
+                <span class="label">{{ metric.label }}</span>
+                <span class="value">{% if metric.class %}<span class="badge {{ metric.class }}">{{ metric.value }}</span>{% else %}{{ metric.value }}{% endif %}</span>
+                <div class="hint">{{ metric.hint }}</div>
               </div>
-              <div class="metric">
-                <span class="label">土壌水分</span>
-                <span class="value">{{ selected.soil_moisture }}</span>
-                <div class="hint">しきい値 {{ selected.threshold }}</div>
-              </div>
-              <div class="metric">
-                <span class="label">次回起床</span>
-                <span class="value">{{ selected.next_wake }}</span>
-                <div class="hint">sleep {{ selected.next_wake_detail }}</div>
-              </div>
-              <div class="metric">
-                <span class="label">最終通信</span>
-                <span class="value">{{ selected.last_seen_age }}</span>
-                <div class="hint">{{ selected.last_seen }}</div>
-              </div>
-              <div class="metric">
-                <span class="label">ファームウェア</span>
-                <span class="value">{{ selected.firmware }}</span>
-                <div class="hint">更新目標 {{ selected.target_firmware }}</div>
-              </div>
-              <div class="metric">
-                <span class="label">更新状態</span>
-                <span class="value"><span class="badge {{ selected.ota_class }}">{{ selected.ota_state }}</span></span>
-                <div class="hint">{{ selected.ota_error or "問題なし" }}</div>
-              </div>
+              {% endfor %}
             </div>
           </section>
 
+          <div class="detail-tabs">
+            <div class="tab-list" role="tablist" aria-label="機器詳細メニュー">
+              <button type="button" class="tab-button" data-tab-key="overview" data-tab-target="tab-overview" role="tab" aria-controls="tab-overview" aria-selected="true" tabindex="0">概要</button>
+              <button type="button" class="tab-button" data-tab-key="monitoring" data-tab-target="tab-monitoring" role="tab" aria-controls="tab-monitoring" aria-selected="false" tabindex="-1">計測・稼働</button>
+              <button type="button" class="tab-button" data-tab-key="settings" data-tab-target="tab-config" role="tab" aria-controls="tab-config" aria-selected="false" tabindex="-1">動作設定</button>
+              <button type="button" class="tab-button" data-tab-key="firmware" data-tab-target="tab-firmware" role="tab" aria-controls="tab-firmware" aria-selected="false" tabindex="-1">F/W更新</button>
+              <button type="button" class="tab-button" data-tab-key="diagnostics" data-tab-target="tab-diagnostics" role="tab" aria-controls="tab-diagnostics" aria-selected="false" tabindex="-1">履歴・診断</button>
+            </div>
+
+            <section id="tab-overview" class="tab-panel" role="tabpanel">
+              {% if selected.supports_irrigation %}
+              <section class="device-field" aria-label="選択デバイス設置ビュー">
+                <div class="field-head">
+                  <div>
+                    <h2>設置ビュー</h2>
+                    <p class="lead">{{ selected.location }} の中で、このデバイスが制御する灌水ラインと設備だけを表示します。</p>
+                  </div>
+                  <span class="badge muted">{{ selected.installation.line_count }} 灌水系</span>
+                </div>
+                <div class="device-field-grid">
+                  <div class="controller-node">
+                    <h3>{{ selected.title }}</h3>
+                    <div class="line-sub">{{ selected.kind_label }}</div>
+                    <div class="line-sub">最終通信: {{ selected.last_seen_age }}</div>
+                    <div class="line-sub">更新状態: {{ selected.ota_state }}</div>
+                  </div>
+                  <div class="line-stack">
+                    {% if selected.installation.lines %}
+                    {% for line in selected.installation.lines %}
+                    <div class="line-node {{ line.class }}">
+                      <div>
+                        <div class="line-title">{{ line.name }}</div>
+                        <div class="line-sub">{{ line.role }} / {{ line.terminal }} / {{ line.controlled_load }}</div>
+                      </div>
+                      <div class="line-mask">{{ line.mask_label }}</div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <div class="empty">灌水ラインがまだ設定されていません。</div>
+                    {% endif %}
+                    {% if selected.installation.auxiliaries %}
+                    {% for item in selected.installation.auxiliaries %}
+                    <div class="line-node {{ item.class }}">
+                      <div>
+                        <div class="line-title">{{ item.name }}</div>
+                        <div class="line-sub">{{ item.role }} / {{ item.terminal }} / {{ item.controlled_load }}</div>
+                      </div>
+                      <div class="line-mask">{{ item.mask_label }}</div>
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+                  </div>
+                </div>
+              </section>
+              {% else %}
+              <section class="panel">
+                <h2>設置情報</h2>
+                <div class="compact-grid">
+                  <div class="mini"><span>機器名</span><strong>{{ selected.title }}</strong></div>
+                  <div class="mini"><span>機器種別</span><strong>{{ selected.kind_label }}</strong></div>
+                  <div class="mini"><span>設置場所</span><strong>{{ selected.location }}</strong></div>
+                  <div class="mini"><span>機器ID</span><strong>{{ selected.id }}</strong></div>
+                </div>
+              </section>
+              {% endif %}
+
+              <div class="section-grid">
+                {% if selected.supports_irrigation %}
+                <section class="panel">
+                  <h2>灌水予約</h2>
+                  {% if selected.schedules %}
+                  <div class="schedule-grid">
+                    {% for schedule in selected.schedules %}
+                    <div class="schedule">
+                      <strong>{{ schedule.time }}</strong>
+                      <div class="line-sub">{{ schedule.duration }} / {{ schedule.channel }}</div>
+                    </div>
+                    {% endfor %}
+                  </div>
+                  {% else %}
+                  <div class="empty">灌水予約はまだありません。</div>
+                  {% endif %}
+                </section>
+                {% endif %}
+
+                <section class="panel">
+                  <h2>通信・F/W状態</h2>
+                  <div class="compact-grid">
+                    <div class="mini"><span>最終通信</span><strong>{{ selected.last_seen_age }}</strong></div>
+                    <div class="mini"><span>次回起動</span><strong>{{ selected.next_wake }}</strong></div>
+                    <div class="mini"><span>F/W</span><strong>{{ selected.firmware }}</strong></div>
+                    <div class="mini"><span>更新状態</span><strong>{{ selected.ota_state }}</strong></div>
+                  </div>
+                </section>
+              </div>
+            </section>
+
+            <section id="tab-config" class="tab-panel" role="tabpanel" hidden>
           <section class="panel">
-            <h2>水やり設定</h2>
+            <h2>機器情報</h2>
+            <form id="metadata-form">
+              <div class="form-grid">
+                <div><label for="metadata-name">表示名</label><input id="metadata-name" name="name" type="text" value="{{ selected_device.name or '' }}"></div>
+                <div><label for="metadata-location">場所</label><input id="metadata-location" name="location" type="text" value="{{ selected_device.location or '' }}"></div>
+                <div><label for="metadata-memo">メモ</label><input id="metadata-memo" name="memo" type="text" value="{{ selected_device.memo or '' }}"></div>
+              </div>
+              <div class="actions"><button type="submit" class="primary">表示情報を保存</button></div>
+            </form>
+          </section>
+          <section class="panel">
+            <h2>動作設定</h2>
             <form id="runtime-config-form" class="config-form">
               <div class="metrics">
-                <div class="metric">
+                <div class="metric"{% if not selected.supports_irrigation %} hidden{% endif %}>
                   <span class="label">灌水しきい値</span>
                   <span class="value"><span id="threshold-display">{{ selected.config_summary.threshold }}</span></span>
                   <div class="hint">この値以下を灌水判定に使います</div>
                 </div>
-                <div class="metric">
+                <div class="metric"{% if not selected.supports_irrigation %} hidden{% endif %}>
                   <span class="label">強制灌水</span>
                   <span class="value"><span id="force-display">{{ selected.config_summary.force }}</span></span>
                   <div class="hint">ON の場合、条件に関わらず予約時刻に灌水します</div>
                 </div>
-                <div class="metric">
+                <div class="metric"{% if not selected.supports_irrigation %} hidden{% endif %}>
                   <span class="label">予約数</span>
                   <span class="value"><span id="schedule-count-display">{{ selected.config_summary.schedule_count }}</span></span>
                   <div class="hint">最大 8 件まで登録できます</div>
@@ -1821,7 +2692,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </div>
 
               <div class="config-toolbar">
-                <div class="config-field">
+                <div class="config-field"{% if not selected.supports_irrigation %} hidden{% endif %}>
                   <label for="moisture-threshold">灌水しきい値</label>
                   <div class="threshold-control">
                     <input id="moisture-threshold" type="range" min="0" max="100" step="1">
@@ -1839,7 +2710,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <label for="ntp-server">NTP サーバー</label>
                   <input id="ntp-server" type="text" autocomplete="off">
                 </div>
-                <label class="switch-row" for="force-watering">
+                <label class="switch-row" for="force-watering"{% if not selected.supports_irrigation %} hidden{% endif %}>
                   <input id="force-watering" type="checkbox">
                   強制灌水
                 </label>
@@ -1859,7 +2730,15 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
               </div>
 
-              <div>
+              <div{% if not selected.supports_irrigation %} hidden{% endif %}>
+                <h3>MOSFET SW 管理</h3>
+                <div id="mosfet-switch-editor" class="mosfet-switch-editor"></div>
+                <div class="actions">
+                  <button type="button" id="add-mosfet-switch">＋ SW を追加</button>
+                </div>
+              </div>
+
+              <div{% if not selected.supports_irrigation %} hidden{% endif %}>
                 <h3>灌水予約</h3>
                 <div id="schedule-editor" class="schedule-editor"></div>
                 <div class="actions">
@@ -1867,7 +2746,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
               </div>
 
-              <div>
+              <div{% if not selected.supports_irrigation %} hidden{% endif %}>
                 <h3>分割灌水</h3>
                 <div class="config-toolbar">
                   <label class="switch-row" for="watering-pattern-enabled">
@@ -1889,7 +2768,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
               </div>
 
-              <div>
+              <div{% if selected.device_kind != "WTR" %} hidden{% endif %}>
                 <h3>土壌水分計 校正</h3>
                 <div class="config-toolbar">
                   <div class="config-field">
@@ -1944,7 +2823,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
               </div>
 
-              <div>
+              <div{% if selected.device_kind not in ["WRS", "ENV", "SOI", "PAR"] %} hidden{% endif %}>
                 <h3>環境センサー 校正</h3>
                 <div class="config-toolbar">
                   <label class="switch-row" for="env-par-enabled">
@@ -2050,12 +2929,19 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </div>
             </form>
           </section>
+            </section>
 
+            <section id="tab-monitoring" class="tab-panel" role="tabpanel" hidden>
+          {% if selected.monitoring_charts %}
           <div class="section-grid">
+            {% for chart in selected.monitoring_charts %}
             <section class="panel">
-              <h2>灌水推移</h2>
-              <div class="chart-card" data-chart-id="watering-trend-chart" data-chart-kind="watering">
-                <div class="range-controls" aria-label="灌水推移の表示期間">
+              <div class="device-chart-heading">
+                <h2>{{ selected.title }} / {{ chart.title }}</h2>
+                <a class="chart-settings-link" href="{{ device_link_prefix }}{{ selected.id }}?tab=settings" title="{{ selected.title }}の動作設定" aria-label="{{ selected.title }}の動作設定">&#9881;</a>
+              </div>
+              <div class="chart-card" data-chart-id="{{ chart.dom_id }}" data-chart-kind="{{ chart.kind }}" data-empty-message="{{ chart.empty_message }}">
+                <div class="range-controls" aria-label="{{ chart.title }}の表示期間">
                   <button type="button" data-range-days="3" class="active">直近3日</button>
                   <button type="button" data-range-days="14">2週間</button>
                   <button type="button" data-range-months="1">1か月</button>
@@ -2064,30 +2950,14 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <input type="date" data-range-end aria-label="終了日">
                   <button type="button" data-range-custom="true">カスタム</button>
                 </div>
-                <div class="chart-body">
-                  <div class="chart-loading">灌水推移を読み込み中...</div>
-                </div>
+                <div class="chart-body"><div class="chart-loading">{{ chart.title }}を読み込み中...</div></div>
               </div>
             </section>
-
-            <section class="panel">
-              <h2>土壌水分推移</h2>
-              <div class="chart-card" data-chart-id="soil-moisture-chart" data-chart-kind="soil_moisture">
-                <div class="range-controls" aria-label="土壌水分推移の表示期間">
-                  <button type="button" data-range-days="3" class="active">直近3日</button>
-                  <button type="button" data-range-days="14">2週間</button>
-                  <button type="button" data-range-months="1">1か月</button>
-                  <button type="button" data-range-all="true">全期間</button>
-                  <input type="date" data-range-start aria-label="開始日">
-                  <input type="date" data-range-end aria-label="終了日">
-                  <button type="button" data-range-custom="true">カスタム</button>
-                </div>
-                <div class="chart-body">
-                  <div class="chart-loading">土壌水分推移を読み込み中...</div>
-                </div>
-              </div>
-            </section>
+            {% endfor %}
           </div>
+          {% else %}
+          <div class="empty">この機器で表示できる計測・稼働グラフはまだありません。</div>
+          {% endif %}
 
           {% if selected.watering_history %}
           <details>
@@ -2111,8 +2981,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           </details>
           {% endif %}
 
-          <div class="section-grid">
-            <section class="panel">
+          <section class="panel">
               <h2>起動・通信履歴</h2>
               {% if selected.wake_history %}
               <div class="list">
@@ -2132,121 +3001,50 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               {% else %}
               <div class="empty">起動・通信履歴はまだありません。</div>
               {% endif %}
+          </section>
             </section>
 
-            <section class="panel">
-              <h2>ファームウェア更新</h2>
-              {% if selected.ota_history %}
-              <div class="list">
-                {% for item in selected.ota_history %}
-                <div class="list-row">
-                  <div class="list-time">{{ item.time }}</div>
-                  <div class="list-main">
-                    <span>{{ item.state }}</span>
-                    <span>{{ item.from_version }} → {{ item.to_version }}</span>
-                    {% if item.error %}<span class="badge danger">{{ item.error }}</span>{% endif %}
-                  </div>
-                </div>
+            <section id="tab-firmware" class="tab-panel" role="tabpanel" hidden>
+          <section id="ota-target" class="panel">
+            <h2>F/W更新</h2>
+            <div class="metrics">
+              <div class="metric"><span class="label">現在のF/W</span><span class="value">{{ selected.firmware }}</span><div class="hint">機器から取得</div></div>
+              <div class="metric"><span class="label">更新目標</span><span class="value">{{ selected.target_firmware }}</span><div class="hint">次回OTA確認時に適用</div></div>
+              <div class="metric"><span class="label">更新状態</span><span class="value"><span class="badge {{ selected.ota_class }}">{{ selected.ota_state }}</span></span><div class="hint">{{ selected.ota_error or "問題なし" }}</div></div>
+            </div>
+            <form id="firmware-target-form">
+              <label for="target-firmware-version">更新するF/Wバージョン</label>
+              <select id="target-firmware-version">
+                <option value="">設定なし</option>
+                {% for artifact in firmware_target_options %}
+                <option value="{{ artifact.version }}" {% if selected_device.target_firmware_version == artifact.version %}selected{% endif %}>{{ artifact.label }}</option>
                 {% endfor %}
+              </select>
+              <div class="actions">
+                <button type="submit" class="primary">更新対象に設定</button>
+                <button type="button" id="clear-firmware-target">更新対象を解除</button>
               </div>
-              {% else %}
-              <div class="empty">更新履歴はまだありません。</div>
-              {% endif %}
-            </section>
-          </div>
+            </form>
+          </section>
 
           <section class="panel">
-            <h2>詳細・保守</h2>
-            <details>
-              <summary>デバイスの承認・停止・基本情報</summary>
-              <div class="detail-body">
-                <div class="form-grid">
-                  <div>
-                    <h3>状態操作</h3>
-                    <p>現在: <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span></p>
-                    <label for="approved-by">承認者</label>
-                    <input id="approved-by" type="text" value="operator">
-                    <div class="actions">
-                      <button type="button" data-state-action="approve">承認する</button>
-                      <button type="button" data-state-action="disable">停止する</button>
-                      <button type="button" data-state-action="retire">廃止する</button>
-                    </div>
-                  </div>
-                  <form id="metadata-form">
-                    <h3>表示情報</h3>
-                    <label for="metadata-name">表示名</label>
-                    <input id="metadata-name" name="name" type="text" value="{{ selected_device.name or '' }}">
-                    <label for="metadata-location">場所</label>
-                    <input id="metadata-location" name="location" type="text" value="{{ selected_device.location or '' }}">
-                    <label for="metadata-memo">メモ</label>
-                    <input id="metadata-memo" name="memo" type="text" value="{{ selected_device.memo or '' }}">
-                    <div class="actions"><button type="submit" class="primary">保存</button></div>
-                  </form>
-                </div>
+            <h2>F/W更新履歴</h2>
+            {% if selected.ota_history %}
+            <div class="list">
+              {% for item in selected.ota_history %}
+              <div class="list-row">
+                <div class="list-time">{{ item.time }}</div>
+                <div class="list-main"><span>{{ item.state }}</span><span>{{ item.from_version }} → {{ item.to_version }}</span>{% if item.error %}<span class="badge danger">{{ item.error }}</span>{% endif %}</div>
               </div>
-            </details>
-
-            <details>
-              <summary>水やり設定 JSON</summary>
-              <div class="detail-body">
-                <textarea id="runtime-config-json">{{ format_json(selected_device.config) }}</textarea>
-                <div class="actions">
-                  <button type="button" id="apply-runtime-json">JSON をフォームに反映</button>
-                  <button type="button" id="save-runtime-json">JSON で保存</button>
-                  <button type="button" id="save-push-runtime-json" class="primary">JSON で保存して device に送信</button>
-                </div>
-              </div>
-            </details>
-
-            <details id="ota-target" open>
-              <summary>OTA 更新対象</summary>
-              <div class="detail-body">
-                <form id="firmware-target-form">
-                  <label for="target-firmware-version">更新したいバージョン</label>
-                  <select id="target-firmware-version">
-                    <option value="">設定なし</option>
-                    {% for artifact in firmware_target_options %}
-                    <option value="{{ artifact.version }}" {% if selected_device.target_firmware_version == artifact.version %}selected{% endif %}>{{ artifact.label }}</option>
-                    {% endfor %}
-                  </select>
-                  <div class="actions">
-                    <button type="submit" class="primary">更新対象に設定</button>
-                    <button type="button" id="clear-firmware-target">更新対象を解除</button>
-                  </div>
-                </form>
-              </div>
-            </details>
-
-            <details>
-              <summary>Status History / OTA Status History / MQTT Event History</summary>
-              <div class="detail-body">
-                <h3>Status History</h3>
-                <table>
-                  <thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead>
-                  <tbody>
-                    {% for status in selected_statuses | reverse %}
-                    <tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-                <h3>OTA Status History</h3>
-                <table>
-                  <thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead>
-                  <tbody>
-                    {% for status in selected_ota_statuses | reverse %}
-                    <tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-                <h3>接続履歴</h3>
-                {{ render_events(connection_events) | safe }}
-                <h3>MQTT Event History</h3>
-                {{ render_events(recent_events) | safe }}
-              </div>
-            </details>
+              {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty">更新履歴はまだありません。</div>
+            {% endif %}
           </section>
+
           <section id="firmware-maintenance" class="panel">
-            <h2>ファームウェア保守</h2>
+            <h2>F/Wファイル管理</h2>
             <details open>
               <summary>firmware.bin を登録する</summary>
               <div class="detail-body">
@@ -2310,6 +3108,53 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </div>
             </details>
           </section>
+            </section>
+
+            <section id="tab-diagnostics" class="tab-panel" role="tabpanel" hidden>
+          <section class="panel">
+            <h2>履歴・診断</h2>
+            <details open>
+              <summary>機器状態の管理</summary>
+              <div class="detail-body">
+                <p>現在: <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span></p>
+                <label for="approved-by">承認者</label>
+                <input id="approved-by" type="text" value="operator">
+                <div class="actions">
+                  <button type="button" data-state-action="approve">承認する</button>
+                  <button type="button" data-state-action="disable">停止する</button>
+                  <button type="button" data-state-action="retire">廃止する</button>
+                </div>
+              </div>
+            </details>
+
+            <details>
+              <summary>動作設定 JSON</summary>
+              <div class="detail-body">
+                <textarea id="runtime-config-json">{{ format_json(selected_device.config) }}</textarea>
+                <div class="actions">
+                  <button type="button" id="apply-runtime-json">JSON をフォームに反映</button>
+                  <button type="button" id="save-runtime-json">JSON で保存</button>
+                  <button type="button" id="save-push-runtime-json" class="primary">JSON で保存して device に送信</button>
+                </div>
+              </div>
+            </details>
+
+            <details>
+              <summary>Status / OTA / MQTT raw履歴</summary>
+              <div class="detail-body">
+                <h3>Status History</h3>
+                <table><thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead><tbody>{% for status in selected_statuses | reverse %}<tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>{% endfor %}</tbody></table>
+                <h3>OTA Status History</h3>
+                <table><thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead><tbody>{% for status in selected_ota_statuses | reverse %}<tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>{% endfor %}</tbody></table>
+                <h3>接続履歴</h3>
+                {{ render_events(connection_events) | safe }}
+                <h3>MQTT Event History</h3>
+                {{ render_events(recent_events) | safe }}
+              </div>
+            </details>
+          </section>
+            </section>
+          </div>
           {% endif %}
         </div>
 
@@ -2321,6 +3166,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           let plotlyLoadPromise = null;
           let pendingWorkCount = 0;
           let lastActionButton = null;
+          let currentMosfetSwitches = [];
 
           document.addEventListener("click", (event) => {
             const button = event.target.closest("button");
@@ -2368,6 +3214,49 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               delete button.dataset.idleText;
             }
           }
+
+          function activateDetailTab(targetId, updateUrl = true) {
+            const targetPanel = document.getElementById(targetId);
+            if (!targetPanel) return;
+            let activeKey = "overview";
+            document.querySelectorAll(".tab-button").forEach((button) => {
+              const selected = button.getAttribute("data-tab-target") === targetId;
+              button.setAttribute("aria-selected", selected ? "true" : "false");
+              button.setAttribute("tabindex", selected ? "0" : "-1");
+              if (selected) activeKey = button.getAttribute("data-tab-key") || "overview";
+            });
+            document.querySelectorAll(".tab-panel").forEach((panel) => {
+              panel.hidden = panel.id !== targetId;
+            });
+            if (updateUrl) {
+              const url = new URL(window.location.href);
+              if (activeKey === "overview") url.searchParams.delete("tab");
+              else url.searchParams.set("tab", activeKey);
+              window.history.replaceState({}, "", url);
+            }
+          }
+
+          const detailTabButtons = Array.from(document.querySelectorAll(".tab-button"));
+          detailTabButtons.forEach((button, index) => {
+            button.addEventListener("click", () => activateDetailTab(button.getAttribute("data-tab-target")));
+            button.addEventListener("keydown", (event) => {
+              let nextIndex = null;
+              if (event.key === "ArrowRight") nextIndex = (index + 1) % detailTabButtons.length;
+              if (event.key === "ArrowLeft") nextIndex = (index - 1 + detailTabButtons.length) % detailTabButtons.length;
+              if (event.key === "Home") nextIndex = 0;
+              if (event.key === "End") nextIndex = detailTabButtons.length - 1;
+              if (nextIndex === null) return;
+              event.preventDefault();
+              const nextButton = detailTabButtons[nextIndex];
+              activateDetailTab(nextButton.getAttribute("data-tab-target"));
+              nextButton.focus();
+            });
+          });
+          const requestedTab = new URL(window.location.href).searchParams.get("tab");
+          const tabAliases = { irrigation: "monitoring", config: "settings", maintenance: "diagnostics" };
+          const requestedKey = tabAliases[requestedTab] || requestedTab || "overview";
+          const requestedButton = detailTabButtons.find((button) => button.getAttribute("data-tab-key") === requestedKey);
+          if (requestedButton) activateDetailTab(requestedButton.getAttribute("data-tab-target"), false);
 
           async function requestJson(url, options, progressMessage) {
             const method = ((options || {}).method || "GET").toUpperCase();
@@ -2527,7 +3416,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 const html = charts[kind];
                 if (!body) return;
                 if (!html) {
-                  showChartEmpty(card, kind === "watering" ? "灌水に関する時系列データはまだありません。" : "土壌水分の時系列データはまだありません。");
+                  showChartEmpty(card, card.getAttribute("data-empty-message") || "時系列データはまだありません。");
                   return;
                 }
                 setHtmlAndRunScripts(body, html);
@@ -2624,13 +3513,134 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             });
           }
 
+          function defaultMosfetSwitches() {
+            return [
+              { switch_id: "irr1", name: "灌水1系", enabled: true, role: "irrigation", terminal: "IRR1", channel_mask: 1, controlled_load: "", notes: "" },
+              { switch_id: "irr2", name: "灌水2系", enabled: true, role: "irrigation", terminal: "IRR2", channel_mask: 2, controlled_load: "", notes: "" },
+              { switch_id: "sensor_power", name: "RS485センサー電源", enabled: true, role: "sensor_power", terminal: "SENSOR_12V_SW", channel_mask: 0, controlled_load: "RS485 sensor 12V branch", notes: "" },
+            ];
+          }
+
+          function normalizeMosfetSwitches(switches) {
+            const source = Array.isArray(switches) ? switches : defaultMosfetSwitches();
+            return source.slice(0, 16).map((sw, index) => ({
+              switch_id: String(sw.switch_id || "sw" + (index + 1)).trim(),
+              name: String(sw.name || sw.switch_id || "SW " + (index + 1)).trim(),
+              enabled: sw.enabled !== false,
+              role: String(sw.role || "").trim(),
+              terminal: String(sw.terminal || "").trim(),
+              channel_mask: Number.isInteger(sw.channel_mask) ? sw.channel_mask : 0,
+              controlled_load: String(sw.controlled_load || "").trim(),
+              notes: String(sw.notes || "").trim(),
+            }));
+          }
+
+          function channelLabel(channelMask) {
+            const names = currentMosfetSwitches
+              .filter((sw) => sw.enabled !== false && Number.isInteger(sw.channel_mask) && sw.channel_mask > 0 && (channelMask & sw.channel_mask))
+              .map((sw) => sw.name || sw.switch_id);
+            if (names.length) return names.join("・");
+            if (channelMask === 1) return "系統1";
+            if (channelMask === 2) return "系統2";
+            if (channelMask === 3) return "系統1・系統2";
+            return "mask " + String(channelMask);
+          }
+
+          function scheduleChannelOptions(selectedValue) {
+            const masks = [1, 2, 3];
+            currentMosfetSwitches.forEach((sw) => {
+              if (sw.enabled !== false && Number.isInteger(sw.channel_mask) && sw.channel_mask > 0 && !masks.includes(sw.channel_mask)) {
+                masks.push(sw.channel_mask);
+              }
+            });
+            if (Number.isInteger(selectedValue) && selectedValue > 0 && !masks.includes(selectedValue)) {
+              masks.push(selectedValue);
+            }
+            return masks.map((mask) => ({ value: mask, label: channelLabel(mask) }));
+          }
+
+          function setScheduleChannelOptions(select, selectedValue) {
+            if (!select) return;
+            const value = Number.isInteger(selectedValue) && selectedValue > 0 ? selectedValue : Number(select.value || 1);
+            select.innerHTML = "";
+            scheduleChannelOptions(value).forEach((option) => {
+              const element = document.createElement("option");
+              element.value = String(option.value);
+              element.textContent = option.label;
+              select.appendChild(element);
+            });
+            select.value = String(value);
+          }
+
+          function refreshScheduleChannelOptions() {
+            currentMosfetSwitches = collectMosfetSwitches();
+            document.querySelectorAll("[data-schedule-channel]").forEach((select) => {
+              setScheduleChannelOptions(select, Number(select.value || 1));
+            });
+          }
+
+          function createMosfetSwitchRow(sw) {
+            const row = document.createElement("div");
+            row.className = "mosfet-switch-row";
+            row.innerHTML = [
+              '<label class="switch-row"><input data-mosfet-enabled type="checkbox">有効</label>',
+              '<div><label>SW ID</label><input data-mosfet-id type="text" maxlength="32" required></div>',
+              '<div><label>表示名</label><input data-mosfet-name type="text" maxlength="64" required></div>',
+              '<div><label>役割</label><select data-mosfet-role><option value="irrigation">灌水</option><option value="sensor_power">センサー電源</option><option value="other">その他</option></select></div>',
+              '<div><label>端子</label><input data-mosfet-terminal type="text" maxlength="32"></div>',
+              '<div><label>制御対象</label><input data-mosfet-load type="text" maxlength="96"></div>',
+              '<div><label>mask</label><input data-mosfet-mask type="number" min="0" max="4294967295" step="1"></div>',
+              '<button type="button" class="icon-button" data-remove-mosfet-switch aria-label="SW を削除">－</button>',
+            ].join("");
+            row.querySelector("[data-mosfet-enabled]").checked = sw.enabled !== false;
+            row.querySelector("[data-mosfet-id]").value = sw.switch_id || "";
+            row.querySelector("[data-mosfet-name]").value = sw.name || "";
+            row.querySelector("[data-mosfet-role]").value = ["irrigation", "sensor_power", "other"].includes(sw.role) ? sw.role : "other";
+            row.querySelector("[data-mosfet-terminal]").value = sw.terminal || "";
+            row.querySelector("[data-mosfet-load]").value = sw.controlled_load || "";
+            row.querySelector("[data-mosfet-mask]").value = String(Number.isInteger(sw.channel_mask) ? sw.channel_mask : 0);
+            row.querySelector("[data-remove-mosfet-switch]").addEventListener("click", () => {
+              row.remove();
+              refreshScheduleChannelOptions();
+              refreshRuntimeConfigPreview();
+            });
+            row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", () => {
+              refreshScheduleChannelOptions();
+              refreshRuntimeConfigPreview();
+            }));
+            return row;
+          }
+
+          function renderMosfetSwitches(switches) {
+            const editor = document.getElementById("mosfet-switch-editor");
+            if (!editor) return;
+            editor.innerHTML = "";
+            currentMosfetSwitches = normalizeMosfetSwitches(switches);
+            currentMosfetSwitches.forEach((sw) => editor.appendChild(createMosfetSwitchRow(sw)));
+          }
+
+          function collectMosfetSwitches() {
+            const editor = document.getElementById("mosfet-switch-editor");
+            if (!editor) return currentMosfetSwitches;
+            return Array.from(editor.querySelectorAll(".mosfet-switch-row")).map((row) => ({
+              switch_id: row.querySelector("[data-mosfet-id]").value.trim(),
+              name: row.querySelector("[data-mosfet-name]").value.trim(),
+              enabled: row.querySelector("[data-mosfet-enabled]").checked,
+              role: row.querySelector("[data-mosfet-role]").value,
+              terminal: row.querySelector("[data-mosfet-terminal]").value.trim(),
+              channel_mask: Number(row.querySelector("[data-mosfet-mask]").value),
+              controlled_load: row.querySelector("[data-mosfet-load]").value.trim(),
+              notes: "",
+            }));
+          }
+
           function createScheduleRow(schedule) {
             const row = document.createElement("div");
             row.className = "schedule-row";
             row.innerHTML = [
               '<div><label>時刻</label><input data-schedule-time type="time" required></div>',
               '<div><label>灌水時間（秒）</label><input data-schedule-duration type="number" min="1" max="3600" step="1" required></div>',
-              '<div><label>系統</label><select data-schedule-channel><option value="1">系統1</option><option value="2">系統2</option><option value="3">系統1・系統2</option></select></div>',
+              '<div><label>系統</label><select data-schedule-channel></select></div>',
               '<div><label>頻度</label><select data-schedule-frequency-mode><option value="daily">毎日</option><option value="interval">日にちごと</option><option value="weekdays">曜日指定</option></select></div>',
               '<div data-frequency-panel="interval"><label>間隔</label><input data-schedule-interval-days type="number" min="1" max="31" step="1"></div>',
               '<div data-frequency-panel="interval"><label>開始日</label><input data-schedule-start-date type="date"></div>',
@@ -2640,7 +3650,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const frequency = scheduleFrequency(schedule || {});
             row.querySelector("[data-schedule-time]").value = scheduleToTime(schedule || {});
             row.querySelector("[data-schedule-duration]").value = String((schedule || {}).duration_sec || 1);
-            row.querySelector("[data-schedule-channel]").value = String((schedule || {}).channel_mask || 1);
+            setScheduleChannelOptions(row.querySelector("[data-schedule-channel]"), Number((schedule || {}).channel_mask || 1));
             row.querySelector("[data-schedule-frequency-mode]").value = frequency.mode;
             row.querySelector("[data-schedule-interval-days]").value = String(frequency.interval_days || 2);
             row.querySelector("[data-schedule-start-date]").value = frequency.start_date || todayDateString();
@@ -2752,6 +3762,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             setEnvMetricCalibration("soil_p_mg_kg", "env-cal-p", envCalibration);
             setEnvMetricCalibration("soil_k_mg_kg", "env-cal-k", envCalibration);
 
+            renderMosfetSwitches(config.mosfet_switches);
+
             const editor = document.getElementById("schedule-editor");
             if (editor) {
               editor.innerHTML = "";
@@ -2765,6 +3777,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const threshold = Number(document.getElementById("moisture-threshold-number").value);
             const timezoneOffset = Number(document.getElementById("timezone-offset").value);
             const otaCheckInterval = Number(document.getElementById("ota-check-interval").value);
+            const mosfetSwitches = collectMosfetSwitches();
             const schedules = Array.from(document.querySelectorAll("#schedule-editor .schedule-row")).map((row) => {
               const time = row.querySelector("[data-schedule-time]").value || "00:00";
               const parts = time.split(":");
@@ -2847,6 +3860,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               soil_calibration: soilCalibration,
               env_sensors: envSensors,
               env_calibration: envCalibration,
+              mosfet_switches: mosfetSwitches,
               schedules,
             };
           }
@@ -2955,6 +3969,30 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 return;
               }
               editor.appendChild(createScheduleRow({ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1, frequency: { mode: "daily" } }));
+              refreshRuntimeConfigPreview();
+            });
+          }
+          const addMosfetSwitchButton = document.getElementById("add-mosfet-switch");
+          if (addMosfetSwitchButton) {
+            addMosfetSwitchButton.addEventListener("click", () => {
+              const editor = document.getElementById("mosfet-switch-editor");
+              if (!editor) return;
+              if (editor.querySelectorAll(".mosfet-switch-row").length >= 16) {
+                showResult("MOSFET SW は最大 16 件です", false);
+                return;
+              }
+              const nextIndex = editor.querySelectorAll(".mosfet-switch-row").length + 1;
+              editor.appendChild(createMosfetSwitchRow({
+                switch_id: "sw" + nextIndex,
+                name: "SW " + nextIndex,
+                enabled: true,
+                role: "other",
+                terminal: "",
+                channel_mask: 0,
+                controlled_load: "",
+                notes: "",
+              }));
+              refreshScheduleChannelOptions();
               refreshRuntimeConfigPreview();
             });
           }
@@ -3163,84 +4201,174 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 # ==========================================
 # Field pages
 # ==========================================
+@app.route("/settings", methods=["GET", "POST"])
+@app.route("/settings/ai", methods=["GET", "POST"])
+def hub_settings_page():
+    current = dict(setting().get("ai") or {})
+    saved = False
+    if request.method == "POST":
+        next_settings = {
+            **current,
+            "enabled": request.form.get("enabled") == "on",
+            "text_analyze_base_url": request.form.get("text_analyze_base_url", "").strip(),
+            "text_analyze_model": request.form.get("text_analyze_model", "").strip(),
+            "image_analyze_base_url": request.form.get("image_analyze_base_url", "").strip(),
+            "image_analyze_model": request.form.get("image_analyze_model", "").strip(),
+        }
+        for key in ("text_analyze_api_key", "image_analyze_api_key"):
+            supplied = request.form.get(key, "").strip()
+            if supplied:
+                next_settings[key] = supplied
+        setting().set("ai", next_settings)
+        ai_content_service().reload_settings()
+        current = next_settings
+        saved = True
+    visible = {
+        **current,
+        "text_analyze_api_key": "",
+        "image_analyze_api_key": "",
+        "text_key_configured": bool(current.get("text_analyze_api_key")),
+        "image_key_configured": bool(current.get("image_analyze_api_key")),
+    }
+    return render_template("hub_settings.html", ai=visible, saved=saved)
+
+
+@app.route("/local/api/settings/ai/test", methods=["POST"])
+def test_hub_ai_settings_api():
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    channel = str(request_body.get("channel") or "text")
+    if channel not in {"text", "image"}:
+        return jsonify({"error": "channel must be text or image"}), 400
+    try:
+        result = ai_content_service().test_connection(
+            channel,
+            {
+                "api_key": str(request_body.get("api_key") or "").strip(),
+                "base_url": str(request_body.get("base_url") or "").strip(),
+                "model": str(request_body.get("model") or "").strip(),
+            },
+        )
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(result)
+
+
 @app.route("/fields", methods=["GET", "POST"])
 def fields_page():
     repo = field_repository()
     if request.method == "POST":
-        data = _field_form_data(request.form)
         try:
+            data = _field_create_form_data(request.form)
             field = repo.upsert(None, data)
         except FieldValidationError as exc:
             return jsonify({"error": str(exc)}), 400
         return redirect(f"/fields/{field['id']}")
 
-    fields = repo.list()
-    devices = device_config_service().get_all_records()
-    template = """
-    <html>
-      <head>
-        <title>Fields - INA Device Hub</title>
-        <style>
-          body { font-family: system-ui, sans-serif; margin: 24px; color: #1f2933; }
-          a { color: #0f766e; }
-          .layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; align-items: start; }
-          .field-list { display: grid; gap: 12px; }
-          .field-card, form { border: 1px solid #d8dee4; border-radius: 8px; padding: 16px; background: #fff; }
-          .meta { color: #667085; font-size: 13px; }
-          .summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-          .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: #e6f4f1; color: #0f766e; font-size: 12px; }
-          label { display: block; font-weight: 600; margin-top: 10px; }
-          input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
-          textarea { min-height: 72px; }
-          .check-row { display: flex; align-items: center; gap: 8px; font-weight: 500; }
-          .check-row input { width: auto; }
-          button { margin-top: 12px; padding: 8px 12px; border: 1px solid #0f766e; border-radius: 6px; background: #0f766e; color: white; cursor: pointer; }
-          code { background: #eef2f7; padding: 2px 4px; border-radius: 4px; }
-        </style>
-      </head>
-      <body>
-        <p><a href="/">Home</a> / Fields</p>
-        <h1>圃場</h1>
-        <div class="layout">
-          <section class="field-list">
-            {% for field in fields %}
-            <article class="field-card">
-              <h2><a href="/fields/{{ field.id }}">{{ field.name }}</a></h2>
-              <p class="meta">作物: {{ field.crop or '未設定' }}{% if field.crop_profile.cultivar %}（{{ field.crop_profile.cultivar }}）{% endif %} / ステージ: {{ field.stage or '未設定' }}</p>
-              <p class="meta">デバイス: {{ field.device_ids|length }} 件 / カメラ: {{ field.camera_device_ids|length }} 件 / メモ: {{ field.notes|length }} 件 / 振り返り: {{ field.reflections|length }} 件</p>
-              <div class="summary">
-                {% if field.areas %}<span class="pill">監視単位 {{ field.areas|length }}件</span>{% else %}<span class="pill">監視単位 圃場全体</span>{% endif %}
-                <span class="pill">土壌水分目標 {{ field.growth_targets.soil_moisture_percent.min }}-{{ field.growth_targets.soil_moisture_percent.max }}%</span>
-                {% for action in field.control_policy.allowed_actions %}<span class="pill">{{ {'watering':'灌水','fertigation':'液肥','misting':'噴霧'}.get(action, action) }}</span>{% endfor %}
-              </div>
-              {% if field.memo %}<p>{{ field.memo }}</p>{% endif %}
-            </article>
-            {% else %}
-            <p>圃場はまだありません。</p>
-            {% endfor %}
-          </section>
-          <form method="post">
-            <h2>圃場を追加</h2>
-            <label>名前</label><input name="name" required>
-            <label>作物</label><input name="crop" placeholder="例: トマト">
-            <label>品種</label><input name="cultivar" placeholder="例: ミニトマト、桃太郎">
-            <label>栽培ステージ</label><input name="stage" placeholder="例: 育苗、開花、収穫期">
-            <label>栽培方式</label><input name="cultivation_method" placeholder="例: 露地、ハウス、プランター">
-            <label>制御の目的</label><textarea name="objective" placeholder="例: 過湿を避けつつ土壌水分を安定させる"></textarea>
-            <label class="check-row"><input type="checkbox" name="allowed_actions" value="watering" checked> 灌水を判断候補に入れる</label>
-            <label class="check-row"><input type="checkbox" name="allowed_actions" value="fertigation"> 液肥を判断候補に入れる</label>
-            <label class="check-row"><input type="checkbox" name="allowed_actions" value="misting"> 噴霧を判断候補に入れる</label>
-            <label>MQTT device IDs</label><textarea name="device_ids" placeholder="1行に1つ、またはカンマ区切り"></textarea>
-            <label>Camera device IDs</label><textarea name="camera_device_ids" placeholder="timelapse camera ID など"></textarea>
-            <label>メモ</label><textarea name="memo"></textarea>
-            <button type="submit">追加</button>
-            <p class="meta">登録済みMQTTデバイス: {% for device_id in devices.keys() %}<code>{{ device_id }}</code> {% endfor %}</p>
-          </form>
-        </div>
-      </body>
-    </html>
-    """
-    return render_template_string(template, fields=fields, devices=devices)
+    return _render_field_catalog(home_mode=False)
+
+
+def _render_field_catalog(*, home_mode: bool):
+    query = request.args.get("q", "").strip()[:120]
+    prefecture = request.args.get("prefecture", "").strip()
+    environment_type = request.args.get("environment_type", "").strip()
+    if prefecture not in JAPAN_PREFECTURES:
+        prefecture = ""
+    if environment_type not in FIELD_ENVIRONMENT_TYPE_LABELS:
+        environment_type = ""
+    try:
+        requested_page = max(1, int(request.args.get("page", "1")))
+    except (TypeError, ValueError):
+        requested_page = 1
+
+    result = field_repository().search(
+        query=query,
+        prefecture=prefecture,
+        environment_type=environment_type,
+        page=requested_page,
+        page_size=FIELD_CATALOG_PAGE_SIZE,
+    )
+    fields = [_build_field_list_item(field) for field in result["items"]]
+    catalog_path = "/" if home_mode else "/fields"
+    page = result["page"]
+    page_count = result["page_count"]
+    first_page_link = max(1, min(page - 2, page_count - 4))
+    last_page_link = min(page_count, first_page_link + 4)
+    page_links = [
+        {
+            "page": page_number,
+            "current": page_number == page,
+            "url": _field_catalog_url(
+                catalog_path,
+                query=query,
+                prefecture=prefecture,
+                environment_type=environment_type,
+                page=page_number,
+            ),
+        }
+        for page_number in range(first_page_link, last_page_link + 1)
+    ]
+    result.update(
+        {
+            "range_start": (page - 1) * result["page_size"] + 1 if result["total"] else 0,
+            "range_end": min(page * result["page_size"], result["total"]),
+            "page_links": page_links,
+            "previous_url": (
+                _field_catalog_url(
+                    catalog_path,
+                    query=query,
+                    prefecture=prefecture,
+                    environment_type=environment_type,
+                    page=page - 1,
+                )
+                if page > 1
+                else ""
+            ),
+            "next_url": (
+                _field_catalog_url(
+                    catalog_path,
+                    query=query,
+                    prefecture=prefecture,
+                    environment_type=environment_type,
+                    page=page + 1,
+                )
+                if page < page_count
+                else ""
+            ),
+        }
+    )
+    return render_template(
+        "field_catalog.html",
+        page_title="圃場を選択" if home_mode else "圃場一覧",
+        home_mode=home_mode,
+        catalog_path=catalog_path,
+        catalog=result,
+        fields=fields,
+        filters={
+            "query": query,
+            "prefecture": prefecture,
+            "environment_type": environment_type,
+            "active": bool(query or prefecture or environment_type),
+        },
+        prefectures=JAPAN_PREFECTURES,
+        environment_options=FIELD_ENVIRONMENT_TYPE_OPTIONS,
+        environment_labels=FIELD_ENVIRONMENT_TYPE_LABELS,
+    )
+
+
+def _field_catalog_url(path: str, *, query: str, prefecture: str, environment_type: str, page: int):
+    parameters = {
+        key: value
+        for key, value in {
+            "q": query,
+            "prefecture": prefecture,
+            "environment_type": environment_type,
+            "page": page if page > 1 else "",
+        }.items()
+        if value not in ("", None)
+    }
+    return f"{path}?{urlencode(parameters)}" if parameters else path
 
 
 @app.route("/fields/<field_id>", methods=["GET", "POST"])
@@ -3251,368 +4379,415 @@ def field_detail_page(field_id):
         return jsonify({"error": "field not found"}), 404
 
     if request.method == "POST":
-        data = _field_form_data(request.form)
         try:
+            data = _field_create_form_data(request.form)
             repo.upsert(field_id, data)
         except FieldValidationError as exc:
             return jsonify({"error": str(exc)}), 400
-        return redirect(f"/fields/{field_id}")
+        return redirect(f"/fields/{field_id}#settings")
 
     compare_date = request.args.get("compare_date", "").strip()
-    context = _build_field_context(field, compare_date=compare_date)
-    template = """
-    <html>
-      <head>
-        <title>{{ field.name }} - INA Field</title>
-        <script src="/local/assets/plotly.min.js"></script>
-        <style>
-          body { font-family: system-ui, sans-serif; margin: 0; color: #1f2933; background: #f6f8fb; }
-          header { padding: 20px 28px; background: #fff; border-bottom: 1px solid #d8dee4; }
-          main { padding: 20px 28px 36px; display: grid; gap: 18px; }
-          a { color: #0f766e; }
-          h1, h2, h3 { margin: 0 0 10px; }
-          .meta { color: #667085; font-size: 13px; }
-          .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
-          .wide-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr); gap: 16px; align-items: start; }
-          section, article, form { border: 1px solid #d8dee4; border-radius: 8px; padding: 16px; background: #fff; }
-          .panel-flat { border: 0; padding: 0; background: transparent; }
-          .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-          .metric { display: grid; gap: 4px; padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fbfcfe; }
-          .metric span { color: #667085; font-size: 12px; }
-          .metric strong { font-size: 18px; }
-          .timeline { display: grid; gap: 10px; max-height: 620px; overflow: auto; }
-          .timeline article { padding: 12px; }
-          .tag { display: inline-block; padding: 2px 7px; border-radius: 999px; background: #e6f4f1; color: #0f766e; font-size: 12px; }
-          .tag.warn { background: #fff7ed; color: #c2410c; }
-          .tag.wait { background: #eef2ff; color: #3730a3; }
-          .candidate { display: grid; gap: 8px; }
-          .candidate + .candidate { margin-top: 12px; }
-          .detail-list { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 8px 12px; font-size: 14px; }
-          .detail-list dt { color: #667085; }
-          .detail-list dd { margin: 0; }
-          label { display: block; font-weight: 600; margin-top: 10px; }
-          input, textarea, select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
-          textarea { min-height: 84px; }
-          .check-row { display: flex; align-items: center; gap: 8px; font-weight: 500; }
-          .check-row input { width: auto; }
-          button { margin-top: 12px; padding: 8px 12px; border: 1px solid #0f766e; border-radius: 6px; background: #0f766e; color: white; cursor: pointer; }
-          img { max-width: 100%; border-radius: 6px; border: 1px solid #e5e7eb; background: #f8fafc; }
-          pre { white-space: pre-wrap; background: #f8fafc; padding: 12px; border-radius: 6px; }
-          .image-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-          .image-compare-three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-          .chart-box { min-height: 340px; }
-          @media (max-width: 900px) { .wide-grid, .image-compare, .image-compare-three { grid-template-columns: 1fr; } header, main { padding-left: 14px; padding-right: 14px; } }
-        </style>
-      </head>
-      <body>
-        <header>
-          <p class="meta"><a href="/fields">Fields</a> / {{ field.name }}</p>
-          <h1>{{ field.name }}</h1>
-          <p class="meta">作物: {{ field.crop or '未設定' }}{% if field.crop_profile.cultivar %}（{{ field.crop_profile.cultivar }}）{% endif %} / ステージ: {{ field.stage or '未設定' }} / MQTT: {{ field.device_ids|length }} / Camera: {{ field.camera_device_ids|length }}</p>
-          {% if field.memo %}<p>{{ field.memo }}</p>{% endif %}
-        </header>
-        <main>
-          <div class="grid">
-            <section>
-              <h2>最新センサー</h2>
-              <div class="metrics">
-                {% for item in context.latest_sensor_values %}
-                  {% for key, value in item["values"].items() %}
-                  <div class="metric"><span>{{ item.device_id }}{% if item.scope_label %} / {{ item.scope_label }}{% endif %}{% if item.crop_name %} / {{ item.crop_name }}{% endif %} / {{ metric_labels.get(key, key) }}</span><strong>{{ value }}</strong></div>
-                  {% endfor %}
-                {% else %}<p>センサー値はまだありません。</p>{% endfor %}
-              </div>
-            </section>
-            <section>
-              <h2>生育の前提</h2>
-              <dl class="detail-list">
-                <dt>作物</dt><dd>{{ field.crop or '未設定' }}{% if field.crop_profile.cultivar %} / {{ field.crop_profile.cultivar }}{% endif %}</dd>
-                <dt>生育段階</dt><dd>{{ field.stage or '未設定' }}</dd>
-                <dt>栽培方式</dt><dd>{{ field.cultivation_context.cultivation_method or '未設定' }}</dd>
-                <dt>土・培地</dt><dd>{{ field.cultivation_context.soil_type or field.cultivation_context.substrate or '未設定' }}</dd>
-                <dt>制御方針</dt><dd>{{ field.control_policy.objective }}</dd>
-                <dt>自動化</dt><dd>{{ {'observe_only':'観察のみ','suggest_only':'提案のみ','manual_approval':'承認して実行','auto':'自動実行'}.get(field.control_policy.autonomy_level, field.control_policy.autonomy_level) }}</dd>
-              </dl>
-              <div class="metrics" style="margin-top: 12px;">
-                <div class="metric"><span>土壌水分目標</span><strong>{{ field.growth_targets.soil_moisture_percent.min }}-{{ field.growth_targets.soil_moisture_percent.max }}%</strong></div>
-                {% if field.growth_targets.soil_ec_us_cm.min or field.growth_targets.soil_ec_us_cm.max %}<div class="metric"><span>土壌EC目標</span><strong>{{ field.growth_targets.soil_ec_us_cm.min or '-' }}-{{ field.growth_targets.soil_ec_us_cm.max or '-' }}</strong></div>{% endif %}
-                {% if field.growth_targets.soil_ph.min or field.growth_targets.soil_ph.max %}<div class="metric"><span>土壌pH目標</span><strong>{{ field.growth_targets.soil_ph.min or '-' }}-{{ field.growth_targets.soil_ph.max or '-' }}</strong></div>{% endif %}
-                {% if field.growth_targets.air_humidity_percent.min or field.growth_targets.air_humidity_percent.max %}<div class="metric"><span>湿度目標</span><strong>{{ field.growth_targets.air_humidity_percent.min or '-' }}-{{ field.growth_targets.air_humidity_percent.max or '-' }}%</strong></div>{% endif %}
-              </div>
-              <h3 style="margin-top: 14px;">監視単位</h3>
-              <dl class="detail-list">
-                {% if field.areas %}
-                  {% for area in field.areas %}
-                  <dt>{{ area_type_labels.get(area.area_type, area.area_type) }}</dt><dd>{{ area.name }}{% if area.crop_name %} / {{ area.crop_name }}{% endif %}{% if area.memo %} / {{ area.memo }}{% endif %}</dd>
-                  {% endfor %}
-                {% else %}
-                  <dt>圃場全体</dt><dd>区画・畝は未設定です。</dd>
-                {% endif %}
-              </dl>
-              <h3 style="margin-top: 14px;">デバイス設置先</h3>
-              <dl class="detail-list">
-                {% for placement in context.device_placement_rows %}
-                <dt>{{ placement.device_role_label }}</dt><dd>{{ placement.device_id }} / {{ placement.scope_label }}{% if placement.crop_name %} / {{ placement.crop_name }}{% endif %}</dd>
-                {% else %}
-                <dt>未設定</dt><dd>デバイスはまだ紐づいていません。</dd>
-                {% endfor %}
-              </dl>
-            </section>
-            <section>
-              <h2>画像比較</h2>
-              <form method="get" class="panel-flat">
-                <label>基準日</label>
-                <input type="date" name="compare_date" value="{{ context.compare_date }}">
-                <button type="submit">比較日を更新</button>
-              </form>
-              <div class="image-compare image-compare-three">
-                {% for group in context.image_compare_groups %}
-                <article class="panel-flat">
-                  <h3>{{ group.label }}</h3>
-                  <p class="meta">{{ group.date }}</p>
-                  {% if group.image %}
-                  <p class="meta">{{ group.image.device_id or group.image.camera_id }} / {{ group.image.created_at or group.image.captured_at }}</p>
-                  <img src="{{ group.image.url }}" alt="field image">
-                  {% else %}<p>画像なし</p>{% endif %}
-                </article>
-                {% endfor %}
-              </div>
-            </section>
-          </div>
-
-          <section>
-            <h2>次の判断候補</h2>
-            <div class="grid">
-              {% for candidate in context.action_candidates %}
-              <article class="candidate">
-                <p>
-                  <span class="tag">{{ candidate.action_label }}</span>
-                  {% if candidate.can_execute_now %}<span class="tag wait">承認後に実行可能</span>{% endif %}
-                  {% if not candidate.support.supported %}<span class="tag warn">制御デバイス未対応</span>{% endif %}
-                </p>
-                <h3>{{ candidate.title }}</h3>
-                <p>{{ candidate.scientific_reason }}</p>
-                <dl class="detail-list">
-                  <dt>根拠</dt><dd>{{ candidate.metric_label or '観察' }}{% if candidate.evidence.current_value is defined %}: {{ candidate.evidence.current_value }}{% endif %}</dd>
-                  <dt>期待する変化</dt><dd>{{ candidate.expected_effect }}</dd>
-                  <dt>注意点</dt><dd>{{ candidate.risk }}</dd>
-                  <dt>実行可否</dt><dd>{{ candidate.support.reason }}</dd>
-                </dl>
-                <form method="post" action="/fields/{{ field.id }}/action-plans" class="panel-flat">
-                  <input type="hidden" name="action_type" value="{{ candidate.action_type }}">
-                  <input type="hidden" name="status" value="proposed">
-                  <input type="hidden" name="title" value="{{ candidate.title }}">
-                  <input type="hidden" name="scientific_reason" value="{{ candidate.scientific_reason }}">
-                  <input type="hidden" name="expected_effect" value="{{ candidate.expected_effect }}">
-                  <input type="hidden" name="risk" value="{{ candidate.risk }}">
-                  <input type="hidden" name="source" value="{{ candidate.source }}">
-                  <input type="hidden" name="preconditions_json" value='{{ candidate.preconditions|tojson }}'>
-                  <input type="hidden" name="control_payload_json" value='{{ candidate.control_payload|tojson }}'>
-                  <label>人間の判断メモ</label><textarea name="human_evaluation" placeholder="採用する理由、見送る理由、確認したいこと"></textarea>
-                  <button type="submit">候補を記録する</button>
-                </form>
-              </article>
-              {% else %}<p>判断候補はまだありません。</p>{% endfor %}
-            </div>
-          </section>
-
-          <div class="wide-grid">
-            <section>
-              <h2>土壌水分推移</h2>
-              <div class="chart-box">{{ context.soil_moisture_chart|safe if context.soil_moisture_chart else '土壌水分グラフのデータはまだありません。' }}</div>
-            </section>
-            <section>
-              <h2>圃場イベント</h2>
-              <form method="post" action="/fields/{{ field.id }}/events">
-                <label>種類</label><select name="event_type"><option value="watering">潅水</option><option value="fertigation">液肥</option><option value="misting">噴霧</option><option value="fertilizer">追肥</option><option value="shade">遮光</option><option value="pest">病害虫</option><option value="harvest">収穫</option><option value="other">その他</option></select>
-                <label>時刻</label><input name="occurred_at" type="datetime-local">
-                <label>タイトル</label><input name="title" placeholder="例: 液肥追加、遮光ネット設置">
-                <div class="grid"><div><label>量</label><input name="amount" placeholder="例: 500"></div><div><label>単位</label><input name="unit" placeholder="例: ml, g"></div></div>
-                <label>対象デバイス</label><select name="device_id"><option value="">圃場全体</option>{% for placement in context.device_placement_rows %}<option value="{{ placement.device_id }}">{{ placement.device_id }} / {{ placement.scope_label }}</option>{% endfor %}</select>
-                <label>内容</label><textarea name="description"></textarea>
-                <label>人間の評価</label><textarea name="human_evaluation" placeholder="結果、効いた/効かなかった、次回見ること"></textarea>
-                <label>タグ</label><input name="tags" placeholder="カンマ区切り">
-                <button type="submit">イベントを記録</button>
-              </form>
-            </section>
-          </div>
-
-          <div class="wide-grid">
-            <section>
-              <h2>統合タイムライン</h2>
-              <div class="timeline">
-                {% for item in context.timeline %}
-                <article>
-                  <p class="meta">{{ item.at or '時刻なし' }} <span class="tag">{{ item.kind }}</span></p>
-                  <h3>{{ item.title }}</h3>
-                  {% if item.body %}<p>{{ item.body }}</p>{% endif %}
-                </article>
-                {% else %}<p>タイムラインはまだありません。</p>{% endfor %}
-              </div>
-            </section>
-            <section>
-              <h2>人間メモ</h2>
-              <form method="post" action="/fields/{{ field.id }}/notes">
-                <label>種別</label><select name="category"><option value="observation">観察</option><option value="work">作業</option><option value="fertilizer">施肥/液肥</option><option value="shade">遮光</option><option value="evaluation">評価</option></select>
-                <label>メモ</label><textarea name="text" required></textarea>
-                <label>人間の評価</label><textarea name="human_evaluation" placeholder="結果、良かった点、悪かった点、次回見ること"></textarea>
-                <label>タグ</label><input name="tags" placeholder="カンマ区切り">
-                <button type="submit">記録</button>
-              </form>
-            </section>
-          </div>
-
-          <section>
-            <h2>アクション計画の履歴</h2>
-            <div class="timeline">
-              {% for plan in field.action_plans|reverse %}
-              <article>
-                <p class="meta">{{ plan.created_at }} <span class="tag">{{ {'watering':'灌水','fertigation':'液肥','misting':'噴霧','observation':'観察','environment':'環境'}.get(plan.action_type, plan.action_type) }}</span> <span class="tag wait">{{ plan.status }}</span></p>
-                <h3>{{ plan.title }}</h3>
-                {% if plan.scientific_reason %}<p>{{ plan.scientific_reason }}</p>{% endif %}
-                {% if plan.expected_effect %}<p><strong>期待:</strong> {{ plan.expected_effect }}</p>{% endif %}
-                {% if plan.human_evaluation %}<p><strong>人間の判断:</strong> {{ plan.human_evaluation }}</p>{% endif %}
-              </article>
-              {% else %}<p>アクション計画はまだありません。</p>{% endfor %}
-            </div>
-          </section>
-
-          <section>
-            <h2>データと評価の振り返り</h2>
-            <form method="post" action="/fields/{{ field.id }}/reflections">
-              <div class="grid"><div><label>期間開始</label><input name="period_start" type="date"></div><div><label>期間終了</label><input name="period_end" type="date"></div></div>
-              <label>人間の評価</label><textarea name="human_evaluation" placeholder="この期間の結果、印象、作業の良し悪し"></textarea>
-              <button type="submit">LLM振り返りを生成して保存</button>
-            </form>
-            <div class="timeline">
-              {% for reflection in field.reflections|reverse %}
-              <article>
-                <p class="meta">{{ reflection.created_at }} / {{ reflection.period_start or '-' }} - {{ reflection.period_end or '-' }}</p>
-                {% if reflection.human_evaluation %}<h3>人間の評価</h3><pre>{{ reflection.human_evaluation }}</pre>{% endif %}
-                <h3>LLM振り返り</h3><pre>{{ reflection.llm_reflection }}</pre>
-              </article>
-              {% else %}<p>振り返りはまだありません。</p>{% endfor %}
-            </div>
-          </section>
-
-          <section>
-            <h2>圃場設定</h2>
-            <form method="post">
-              <label>名前</label><input name="name" value="{{ field.name }}" required>
-              <div class="grid">
-                <div><label>作物</label><input name="crop" value="{{ field.crop }}" placeholder="例: トマト"></div>
-                <div><label>品種</label><input name="cultivar" value="{{ field.crop_profile.cultivar }}" placeholder="例: 桃太郎、アイコ"></div>
-                <div><label>生育段階</label><input name="stage" value="{{ field.stage }}" placeholder="例: 育苗、開花、収穫期"></div>
-              </div>
-              <div class="grid">
-                <div><label>播種日</label><input type="date" name="seeding_date" value="{{ field.crop_profile.seeding_date }}"></div>
-                <div><label>定植日</label><input type="date" name="transplant_date" value="{{ field.crop_profile.transplant_date }}"></div>
-                <div><label>収穫目標日</label><input type="date" name="target_harvest_date" value="{{ field.crop_profile.target_harvest_date }}"></div>
-              </div>
-              <h3>栽培条件</h3>
-              <div class="grid">
-                <div><label>栽培方式</label><input name="cultivation_method" value="{{ field.cultivation_context.cultivation_method }}" placeholder="例: 露地、ハウス、プランター"></div>
-                <div><label>土質</label><input name="soil_type" value="{{ field.cultivation_context.soil_type }}" placeholder="例: 黒土、砂壌土"></div>
-                <div><label>培地</label><input name="substrate" value="{{ field.cultivation_context.substrate }}" placeholder="例: ココピート、培養土"></div>
-                <div><label>ハウス・設備</label><input name="greenhouse_type" value="{{ field.cultivation_context.greenhouse_type }}"></div>
-                <div><label>マルチ</label><input name="mulching" value="{{ field.cultivation_context.mulching }}"></div>
-                <div><label>潅水方式</label><input name="irrigation_method" value="{{ field.cultivation_context.irrigation_method }}" placeholder="例: 点滴、散水"></div>
-                <div><label>水源</label><input name="water_source" value="{{ field.cultivation_context.water_source }}"></div>
-                <div><label>面積 m2</label><input type="number" step="0.01" name="bed_area_m2" value="{{ field.cultivation_context.bed_area_m2 or '' }}"></div>
-                <div><label>株数</label><input type="number" name="plant_count" value="{{ field.cultivation_context.plant_count or '' }}"></div>
-              </div>
-              <label>栽培条件メモ</label><textarea name="cultivation_notes">{{ field.cultivation_context.notes }}</textarea>
-              <h3>圃場内の監視単位</h3>
-              <label>区画・畝・測点</label>
-              <textarea name="areas_text" placeholder="例: A区画,section,トマト,南側&#10;1番畝,ridge,トマト,SOI設置&#10;代表点,point,,ENVは圃場全体">{{ areas_text }}</textarea>
-              <p class="meta">1行に「名前,種類,作物,メモ」。種類は section=区画 / bed=ベッド / ridge=畝 / zone=ゾーン / point=測点 / other=その他。小規模なら空欄のままで圃場全体として扱います。</p>
-              <h3>目標レンジ</h3>
-              <div class="grid">
-                <div><label>土壌水分 下限%</label><input type="number" step="0.1" name="target_soil_moisture_min" value="{{ field.growth_targets.soil_moisture_percent.min or '' }}"></div>
-                <div><label>土壌水分 上限%</label><input type="number" step="0.1" name="target_soil_moisture_max" value="{{ field.growth_targets.soil_moisture_percent.max or '' }}"></div>
-                <div><label>土壌EC 下限</label><input type="number" step="0.1" name="target_soil_ec_min" value="{{ field.growth_targets.soil_ec_us_cm.min or '' }}"></div>
-                <div><label>土壌EC 上限</label><input type="number" step="0.1" name="target_soil_ec_max" value="{{ field.growth_targets.soil_ec_us_cm.max or '' }}"></div>
-                <div><label>土壌pH 下限</label><input type="number" step="0.1" name="target_soil_ph_min" value="{{ field.growth_targets.soil_ph.min or '' }}"></div>
-                <div><label>土壌pH 上限</label><input type="number" step="0.1" name="target_soil_ph_max" value="{{ field.growth_targets.soil_ph.max or '' }}"></div>
-                <div><label>湿度 下限%</label><input type="number" step="0.1" name="target_air_humidity_min" value="{{ field.growth_targets.air_humidity_percent.min or '' }}"></div>
-                <div><label>湿度 上限%</label><input type="number" step="0.1" name="target_air_humidity_max" value="{{ field.growth_targets.air_humidity_percent.max or '' }}"></div>
-                <div><label>光量 下限</label><input type="number" step="0.1" name="target_par_min" value="{{ field.growth_targets.par_umol_m2_s.min or '' }}"></div>
-                <div><label>光量 上限</label><input type="number" step="0.1" name="target_par_max" value="{{ field.growth_targets.par_umol_m2_s.max or '' }}"></div>
-              </div>
-              <h3>制御方針</h3>
-              <label>目的</label><textarea name="objective">{{ field.control_policy.objective }}</textarea>
-              <label>自動化レベル</label>
-              <select name="autonomy_level">
-                <option value="observe_only" {% if field.control_policy.autonomy_level == 'observe_only' %}selected{% endif %}>観察のみ</option>
-                <option value="suggest_only" {% if field.control_policy.autonomy_level == 'suggest_only' %}selected{% endif %}>提案のみ</option>
-                <option value="manual_approval" {% if field.control_policy.autonomy_level == 'manual_approval' %}selected{% endif %}>承認して実行</option>
-                <option value="auto" {% if field.control_policy.autonomy_level == 'auto' %}selected{% endif %}>自動実行</option>
-              </select>
-              <label class="check-row"><input type="checkbox" name="allowed_actions" value="watering" {% if 'watering' in field.control_policy.allowed_actions %}checked{% endif %}> 灌水</label>
-              <label class="check-row"><input type="checkbox" name="allowed_actions" value="fertigation" {% if 'fertigation' in field.control_policy.allowed_actions %}checked{% endif %}> 液肥</label>
-              <label class="check-row"><input type="checkbox" name="allowed_actions" value="misting" {% if 'misting' in field.control_policy.allowed_actions %}checked{% endif %}> 噴霧</label>
-              <div class="grid">
-                <div><label>1日の最大灌水秒数</label><input type="number" name="max_watering_sec_per_day" value="{{ field.control_policy.max_watering_sec_per_day or '' }}"></div>
-                <div><label>最小灌水間隔 分</label><input type="number" name="min_watering_interval_min" value="{{ field.control_policy.min_watering_interval_min or '' }}"></div>
-              </div>
-              <label>安全メモ</label><textarea name="safety_notes">{{ field.control_policy.safety_notes }}</textarea>
-              <h3>外部知識と画像観察</h3>
-              <label>調べたい研究・栽培テーマ</label><textarea name="research_queries" placeholder="1行に1テーマ">{{ field.knowledge_context.research_queries|join('\n') }}</textarea>
-              <label>参考URL</label><textarea name="external_reference_urls" placeholder="1行に1URL">{{ field.knowledge_context.external_reference_urls|join('\n') }}</textarea>
-              <label>画像を見るときの観点</label><textarea name="image_observation_prompt" placeholder="例: 葉色、萎れ、病斑、節間、開花数を見る">{{ field.knowledge_context.image_observation_prompt }}</textarea>
-              <label>知識メモ</label><textarea name="knowledge_notes">{{ field.knowledge_context.notes }}</textarea>
-              <label>MQTT device IDs</label><textarea name="device_ids">{{ field.device_ids|join('\n') }}</textarea>
-              <label>Camera device IDs</label><textarea name="camera_device_ids">{{ field.camera_device_ids|join('\n') }}</textarea>
-              <h3>デバイスの紐づけ先</h3>
-              <p class="meta">ENV は通常「圃場全体」、SOI は測点・畝、WTR は実際に水を入れる対象へ紐づけます。デバイスIDを追加した直後は保存後にここへ表示されます。</p>
-              {% for placement in context.device_placement_rows %}
-              <article class="panel-flat">
-                <h3>{{ placement.device_id }}</h3>
-                <p class="meta">{{ placement.device_role_label }} / 現在: {{ placement.scope_label }}{% if placement.crop_name %} / {{ placement.crop_name }}{% endif %}</p>
-                <input type="hidden" name="placement_device_id_{{ loop.index0 }}" value="{{ placement.device_id }}">
-                <input type="hidden" name="placement_device_role_{{ loop.index0 }}" value="{{ placement.device_role }}">
-                <div class="grid">
-                  <div>
-                    <label>設置先の範囲</label>
-                    <select name="placement_scope_type_{{ loop.index0 }}">
-                      {% for value, label in scope_type_labels.items() %}
-                      <option value="{{ value }}" {% if placement.scope_type == value %}selected{% endif %}>{{ label }}</option>
-                      {% endfor %}
-                    </select>
-                  </div>
-                  <div>
-                    <label>対象の区画・畝・測点</label>
-                    <select name="placement_area_id_{{ loop.index0 }}">
-                      <option value="">圃場全体</option>
-                      {% for area in field.areas %}
-                      <option value="{{ area.id }}" {% if placement.area_id == area.id %}selected{% endif %}>{{ area_type_labels.get(area.area_type, area.area_type) }}: {{ area.name }}</option>
-                      {% endfor %}
-                    </select>
-                  </div>
-                  <div><label>参考にする作物</label><input name="placement_crop_name_{{ loop.index0 }}" value="{{ placement.crop_name }}" placeholder="未設定なら区画または圃場の作物"></div>
-                  <div><label>設置メモ</label><input name="placement_memo_{{ loop.index0 }}" value="{{ placement.memo }}"></div>
-                </div>
-              </article>
-              {% else %}
-              <p>紐づけるデバイスはまだありません。</p>
-              {% endfor %}
-              <label>メモ</label><textarea name="memo">{{ field.memo }}</textarea>
-              <button type="submit">保存</button>
-            </form>
-          </section>
-        </main>
-      </body>
-    </html>
-    """
-    return render_template_string(
-        template,
-        field=field,
-        context=context,
-        metric_labels=METRIC_LABELS,
-        area_type_labels=FIELD_AREA_TYPE_LABELS,
-        scope_type_labels=DEVICE_SCOPE_TYPE_LABELS,
-        areas_text=_field_areas_text(field.get("areas") or []),
+    record_month = request.args.get("record_month", "").strip()
+    response = Response(
+        stream_template(
+            "field_detail.html",
+            field=field,
+            build_context=lambda: _build_field_context(
+                field,
+                compare_date=compare_date,
+                record_month=record_month,
+                include_automatic_measurements=False,
+            ),
+            build_deferred_context=lambda context: _build_field_deferred_context(field, context, record_month),
+            metric_labels=METRIC_LABELS,
+            prefectures=JAPAN_PREFECTURES,
+            environment_options=FIELD_ENVIRONMENT_TYPE_OPTIONS,
+            environment_labels=FIELD_ENVIRONMENT_TYPE_LABELS,
+        ),
+        mimetype="text/html",
     )
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/fields/<field_id>/layout", methods=["GET"])
+def field_layout_page(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    return render_template("field_layout.html", field=field)
+
+
+@app.route("/local/api/fields/<field_id>/layout", methods=["GET"])
+def get_field_layout_api(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    try:
+        layout = field_layout_repository().get(field_id, field_name=field.get("name", ""))
+    except FieldLayoutValidationError as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(layout)
+
+
+@app.route("/local/api/fields/<field_id>/layout", methods=["PUT"])
+def update_field_layout_api(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        layout = field_layout_repository().upsert(field_id, request_body, field_name=field.get("name", ""))
+    except FieldLayoutConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except FieldLayoutValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(layout)
+
+
+@app.route("/local/api/fields/<field_id>/layout/devices", methods=["GET"])
+def list_field_layout_devices_api(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+
+    records = device_config_service().get_all_records()
+    assignments = _layout_device_assignments()
+    field_device_ids = set(field.get("device_ids") or []) | set(field.get("camera_device_ids") or [])
+    device_ids = sorted(set(records) | field_device_ids)
+    devices = []
+    for device_id in device_ids:
+        assigned_field_id = assignments.get(device_id, "")
+        if assigned_field_id and assigned_field_id != field_id:
+            continue
+        record = records.get(device_id) or {}
+        config = record.get("config") if isinstance(record.get("config"), dict) else {}
+        last_status = record.get("last_status") if isinstance(record.get("last_status"), dict) else {}
+        resources = [
+            {
+                "resource_type": "mosfet_switch",
+                "resource_id": switch.get("switch_id", ""),
+                "name": switch.get("name") or switch.get("switch_id") or "MOSFET SW",
+            }
+            for switch in config.get("mosfet_switches", [])
+            if isinstance(switch, dict) and switch.get("enabled", True)
+        ]
+        device_kind = record.get("device_kind") or last_status.get("device_kind") or ""
+        devices.append(
+            {
+                "id": device_id,
+                "name": record.get("name") or device_id,
+                "device_kind": device_kind,
+                "kind_label": _device_kind_label(device_kind),
+                "group_label": _layout_device_group_label(device_kind),
+                "assigned_field_id": assigned_field_id,
+                "state": record.get("state") or "unknown",
+                "location": record.get("location") or "",
+                "resources": resources,
+            }
+        )
+    return jsonify(devices)
+
+
+def _layout_device_assignments():
+    repository = field_layout_repository()
+    assignments = {}
+    for assigned_field_id in repository.layouts:
+        try:
+            layout = repository.get(assigned_field_id)
+        except FieldLayoutValidationError:
+            continue
+        for space in layout.get("spaces", []):
+            for placement in space.get("placements", []):
+                device_id = (placement.get("binding") or {}).get("device_id")
+                if device_id:
+                    assignments[device_id] = assigned_field_id
+    return assignments
+
+
+def _layout_device_group_label(device_kind):
+    if device_kind in {"WTR", "WRS"}:
+        return "潅水デバイス"
+    if device_kind == "ENV":
+        return "環境センサー"
+    if device_kind == "SOI":
+        return "土壌センサー"
+    if device_kind == "PAR":
+        return "日射・PARセンサー"
+    if device_kind == "CAM":
+        return "カメラ"
+    return "その他デバイス"
+
+
+@app.route("/local/api/fields/<field_id>/plantings", methods=["GET"])
+def list_field_plantings_api(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    today = request.args.get("today", "").strip() or None
+    try:
+        return jsonify(plant_management_repository().field_bundle(field_id, today=today))
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/local/api/fields/<field_id>/plantings", methods=["POST"])
+def create_field_planting_api(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+
+    layout = field_layout_repository().get(field_id, field_name=field.get("name", ""))
+    space = next((item for item in layout["spaces"] if item["id"] == request_body.get("space_id")), None)
+    placement = next((item for item in (space or {}).get("placements", []) if item["id"] == request_body.get("placement_id")), None)
+    if space is None or placement is None:
+        return jsonify({"error": "planting placement was not found in the field layout"}), 400
+
+    repository = plant_management_repository()
+    planting_data = {
+        **request_body,
+        "placement_name": placement["name"],
+        "cultivation_method": request_body.get("cultivation_method") or (field.get("cultivation_context") or {}).get("cultivation_method", ""),
+    }
+    planting_data["conditions"] = {
+        **(request_body.get("conditions") if isinstance(request_body.get("conditions"), dict) else {}),
+        "region": "",
+    }
+    try:
+        planting = repository.create_planting(field_id, planting_data)
+        context = _build_plant_generation_context(field, layout, space, placement, planting)
+        context["planning"] = {
+            "start_date": planting["planted_on"],
+            "horizon_months": 12,
+            "notes": str(request_body.get("planning_notes") or "")[:2000],
+        }
+        guidance = repository.guidance_examples(planting["crop_name"])
+        generated = ai_content_service().generate_plant_calendar(context, guidance_examples=guidance)
+        planting = repository.update_planting(planting["id"], {"growth_targets": generated.get("growth_targets") or {}})
+        calendar = repository.create_calendar(
+            planting["id"],
+            generated["actions"],
+            generated.get("generation"),
+            care_profile=generated.get("care_profile"),
+            task_rules=generated.get("task_rules"),
+        )
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"planting": repository.get_planting(planting["id"]), "calendar": calendar}), 201
+
+
+@app.route("/local/api/plantings/<planting_id>", methods=["PATCH"])
+def update_planting_api(planting_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        planting = plant_management_repository().update_planting(planting_id, request_body)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(planting)
+
+
+@app.route("/local/api/plantings/<planting_id>/calendar/regenerate", methods=["POST"])
+def regenerate_plant_calendar_api(planting_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    repository = plant_management_repository()
+    planting = repository.get_planting(planting_id)
+    if planting is None:
+        return jsonify({"error": "planting not found"}), 404
+    field = field_repository().get(planting["field_id"])
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    layout = field_layout_repository().get(field["id"], field_name=field.get("name", ""))
+    space = next((item for item in layout["spaces"] if item["id"] == planting["space_id"]), None)
+    placement = next((item for item in (space or {}).get("placements", []) if item["id"] == planting["placement_id"]), None)
+    if space is None or placement is None:
+        return jsonify({"error": "planting placement was not found in the field layout"}), 400
+    context = _build_plant_generation_context(field, layout, space, placement, planting)
+    context["planning"] = {
+        "start_date": str(request_body.get("start_date") or date.today().isoformat()),
+        "horizon_months": 12,
+        "notes": str(request_body.get("planning_notes") or "")[:2000],
+    }
+    try:
+        guidance = repository.guidance_examples(planting["crop_name"])
+        generated = ai_content_service().generate_plant_calendar(context, guidance_examples=guidance)
+        repository.update_planting(planting_id, {"growth_targets": generated.get("growth_targets") or planting.get("growth_targets") or {}})
+        calendar = repository.replace_calendar(
+            planting_id,
+            generated["actions"],
+            generated.get("generation"),
+            care_profile=generated.get("care_profile"),
+            task_rules=generated.get("task_rules"),
+        )
+    except (PlantManagementNotFoundError, PlantManagementValidationError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"planting": repository.get_planting(planting_id), "calendar": calendar})
+
+
+@app.route("/local/api/plantings/<planting_id>/calendar/actions", methods=["POST"])
+def add_plant_calendar_action_api(planting_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        action = plant_management_repository().add_action(planting_id, request_body)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(action), 201
+
+
+@app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>", methods=["DELETE"])
+def delete_plant_calendar_action_api(planting_id, action_id):
+    try:
+        plant_management_repository().delete_action(planting_id, action_id)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return "", 204
+
+
+@app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>", methods=["PATCH"])
+def update_plant_calendar_action_api(planting_id, action_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    use_as_guidance = bool(request_body.pop("use_as_guidance", False))
+    try:
+        action = plant_management_repository().update_action(
+            planting_id,
+            action_id,
+            request_body,
+            use_as_guidance=use_as_guidance,
+        )
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(action)
+
+
+@app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>/complete", methods=["POST"])
+def complete_plant_calendar_action_api(planting_id, action_id):  # noqa: PLR0911
+    request_body = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be an object"}), 400
+    repository = plant_management_repository()
+    planting = repository.get_planting(planting_id)
+    if planting is None:
+        return jsonify({"error": "planting not found"}), 404
+    calendar_record = repository.get_calendar(planting_id)
+    completed_action = next((action for action in (calendar_record or {}).get("actions", []) if action.get("id") == action_id), None)
+    if not calendar_record or completed_action is None:
+        return jsonify({"error": "calendar action not found"}), 404
+    try:
+        rating = _record_rating(request_body.get("rating"))
+        performed_on = date.fromisoformat(str(request_body.get("performed_on") or "")).isoformat()
+        attachments = field_record_media_service().upload_images(
+            planting["field_id"],
+            performed_on,
+            request.files.getlist("images"),
+        )
+        work_log = repository.complete_action(
+            planting_id,
+            action_id,
+            performed_on,
+            request_body.get("note", ""),
+            rating=rating,
+            attachments=attachments,
+        )
+        field_repository().add_event(
+            work_log["field_id"],
+            {
+                "event_type": _plant_action_event_type(work_log["action_type"]),
+                "occurred_at": work_log["performed_on"],
+                "title": work_log["title"],
+                "description": work_log["note"],
+                "rating": work_log["rating"],
+                "attachments": work_log["attachments"],
+                "source_work_log_id": work_log["id"],
+                "tags": ["plant-calendar", work_log["action_type"], work_log["crop_name"]],
+            },
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc) or "performed_on must be YYYY-MM-DD"}), 400
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except (PlantManagementValidationError, FieldValidationError, FieldRecordMediaValidationError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except FieldRecordMediaStorageError as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    follow_up = {"actions": [], "decision_summary": "次回を自動生成しない作業です。", "source": "rule"}
+    appended_actions = []
+    task_rule = next(
+        (rule for rule in calendar_record.get("task_rules", []) if rule.get("rule_id") == completed_action.get("rule_id")),
+        None,
+    )
+    if task_rule:
+        current_calendar = repository.get_calendar(planting_id) or {}
+        follow_up_field = field_repository().get(planting["field_id"]) or {}
+        follow_up_context = {
+            "planting": repository.get_planting(planting_id) or planting,
+            "field": {
+                "id": follow_up_field.get("id"),
+                "location": follow_up_field.get("location", {}),
+            },
+            "care_profile": current_calendar.get("care_profile", {}),
+            "growth_targets": planting.get("growth_targets", {}),
+            "task_rule": task_rule,
+            "completed_action": completed_action,
+            "completion_event": work_log,
+            "planned_actions": [action for action in current_calendar.get("actions", []) if action.get("status") == "planned"],
+            "recent_work_logs": repository.recent_work_logs(planting_id, limit=12),
+        }
+        follow_up = ai_content_service().generate_follow_up_tasks(follow_up_context)
+        try:
+            appended_actions = repository.append_generated_actions(planting_id, follow_up.get("actions") or [])
+        except PlantManagementValidationError:
+            app.logger.exception("Failed to append generated follow-up tasks")
+    return jsonify({**work_log, "follow_up": {**follow_up, "actions": appended_actions}}), 201
+
+
+@app.route("/local/api/plantings/<planting_id>/questions", methods=["POST"])
+def ask_plant_question_api(planting_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    question = str(request_body.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+    repository = plant_management_repository()
+    planting = repository.get_planting(planting_id)
+    if planting is None:
+        return jsonify({"error": "planting not found"}), 404
+    calendar = repository.get_calendar(planting_id)
+    field = field_repository().get(planting["field_id"])
+    context = {
+        "field": field or {},
+        "planting": planting,
+        "calendar": calendar or {},
+        "suggestions": repository.list_suggestions(planting["field_id"]),
+    }
+    answer = ai_content_service().answer_plant_question(context, question)
+    try:
+        record = repository.record_question(planting_id, question, answer)
+    except (PlantManagementNotFoundError, PlantManagementValidationError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(record), 201
 
 
 @app.route("/fields/<field_id>/notes", methods=["POST"])
@@ -3624,34 +4799,77 @@ def add_field_note(field_id):
                 "category": request.form.get("category", "observation"),
                 "text": request.form.get("text", ""),
                 "human_evaluation": request.form.get("human_evaluation", ""),
+                "rating": _record_rating(request.form.get("rating")),
                 "tags": _split_lines_or_commas(request.form.get("tags", "")),
             },
         )
     except FieldValidationError as exc:
         return jsonify({"error": str(exc)}), 400
-    return redirect(f"/fields/{field_id}")
+    return redirect(f"/fields/{field_id}#records")
 
 
 @app.route("/fields/<field_id>/events", methods=["POST"])
 def add_field_event(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
     try:
+        occurred_at = request.form.get("occurred_at", "")
+        rating = _record_rating(request.form.get("rating"))
+        attachments = field_record_media_service().upload_images(field_id, occurred_at, request.files.getlist("images"))
+        record_values = _field_record_values_from_form(request.form)
+        target_placement_id = request.form.get("target_placement_id", "").strip()
+        target_name = _field_record_target_name(field_id, target_placement_id)
+        if request.form.get("event_type") == "daily_record" and not any((record_values, request.form.get("description", "").strip(), rating, attachments)):
+            raise FieldValidationError("記録項目、メモ、評価、画像のいずれかを入力してください")
         field_repository().add_event(
             field_id,
             {
                 "event_type": request.form.get("event_type", "observation"),
-                "occurred_at": request.form.get("occurred_at", ""),
-                "title": request.form.get("title", ""),
+                "occurred_at": occurred_at,
+                "title": request.form.get("title", "") or _field_record_title(record_values, target_name),
                 "description": request.form.get("description", ""),
+                "target_placement_id": target_placement_id,
+                "target_name": target_name,
+                "record_values": record_values,
                 "amount": request.form.get("amount", ""),
                 "unit": request.form.get("unit", ""),
                 "device_id": request.form.get("device_id", ""),
                 "human_evaluation": request.form.get("human_evaluation", ""),
+                "rating": rating,
+                "attachments": attachments,
                 "tags": _split_lines_or_commas(request.form.get("tags", "")),
             },
         )
-    except FieldValidationError as exc:
+    except (FieldValidationError, FieldRecordMediaValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
-    return redirect(f"/fields/{field_id}")
+    except FieldRecordMediaStorageError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return redirect(f"/fields/{field_id}#records")
+
+
+@app.route("/local/api/fields/<field_id>/record-images/<attachment_id>", methods=["GET"])
+def get_field_record_image_api(field_id, attachment_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    attachment = _find_field_record_attachment(field, attachment_id)
+    if attachment is None:
+        plant_bundle = plant_management_repository().field_bundle(field_id)
+        attachment = _find_attachment_in_records(plant_bundle.get("work_logs") or [], attachment_id)
+    if attachment is None:
+        return jsonify({"error": "record image not found"}), 404
+    try:
+        image_bytes = field_record_media_service().fetch_image(attachment)
+    except FieldRecordMediaValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except FieldRecordMediaStorageError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return Response(
+        image_bytes,
+        mimetype=attachment.get("content_type") or "application/octet-stream",
+        headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.route("/fields/<field_id>/action-plans", methods=["POST"])
@@ -3671,12 +4889,13 @@ def add_field_action_plan(field_id):
                 "control_payload": _json_form_payload("control_payload_json"),
                 "source": request.form.get("source", "human"),
                 "human_evaluation": request.form.get("human_evaluation", ""),
+                "rating": _record_rating(request.form.get("rating")),
                 "tags": _split_lines_or_commas(request.form.get("tags", "")),
             },
         )
     except FieldValidationError as exc:
         return jsonify({"error": str(exc)}), 400
-    return redirect(f"/fields/{field_id}")
+    return redirect(f"/fields/{field_id}#records")
 
 
 @app.route("/fields/<field_id>/reflections", methods=["POST"])
@@ -3701,12 +4920,31 @@ def add_field_reflection(field_id):
         )
     except FieldValidationError as exc:
         return jsonify({"error": str(exc)}), 400
-    return redirect(f"/fields/{field_id}")
+    return redirect(f"/fields/{field_id}#records")
 
 
 @app.route("/local/api/fields", methods=["GET"])
 def list_fields_api():
-    return jsonify(field_repository().list())
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+        page_size = int(request.args.get("page_size", "50"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "page and page_size must be integers"}), 400
+    prefecture = request.args.get("prefecture", "").strip()
+    environment_type = request.args.get("environment_type", "").strip()
+    if prefecture and prefecture not in JAPAN_PREFECTURES:
+        return jsonify({"error": "unsupported prefecture"}), 400
+    if environment_type and environment_type not in FIELD_ENVIRONMENT_TYPE_LABELS:
+        return jsonify({"error": "unsupported environment_type"}), 400
+    return jsonify(
+        field_repository().search(
+            query=request.args.get("q", ""),
+            prefecture=prefecture,
+            environment_type=environment_type,
+            page=page,
+            page_size=page_size,
+        )
+    )
 
 
 @app.route("/local/api/fields/<field_id>", methods=["GET"])
@@ -3755,13 +4993,41 @@ def add_field_note_api(field_id):
 
 @app.route("/local/api/fields/<field_id>/events", methods=["POST"])
 def add_field_event_api(field_id):
-    request_body = request.get_json(silent=True)
+    request_body = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     if not isinstance(request_body, dict):
-        return jsonify({"error": "request body must be a JSON object"}), 400
+        return jsonify({"error": "request body must be an object"}), 400
+    if field_repository().get(field_id) is None:
+        return jsonify({"error": "field not found"}), 404
     try:
+        if not request.is_json:
+            request_body["record_values"] = _field_record_values_from_form(request.form)
+        target_placement_id = str(request_body.get("target_placement_id") or "").strip()
+        request_body["target_placement_id"] = target_placement_id
+        request_body["target_name"] = _field_record_target_name(field_id, target_placement_id)
+        if not request_body.get("title") and request_body.get("event_type") == "daily_record":
+            request_body["title"] = _field_record_title(request_body.get("record_values") or [], request_body["target_name"])
+        request_body.pop("attachments", None)
+        request_body.pop("source_work_log_id", None)
+        request_body["rating"] = _record_rating(request_body.get("rating"))
+        request_body["attachments"] = field_record_media_service().upload_images(
+            field_id,
+            request_body.get("occurred_at", ""),
+            request.files.getlist("images"),
+        )
+        if request_body.get("event_type") == "daily_record" and not any(
+            (
+                request_body.get("record_values"),
+                str(request_body.get("description") or "").strip(),
+                request_body.get("rating"),
+                request_body.get("attachments"),
+            )
+        ):
+            raise FieldValidationError("記録項目、メモ、評価、画像のいずれかを入力してください")
         event = field_repository().add_event(field_id, request_body)
-    except FieldValidationError as exc:
+    except (FieldValidationError, FieldRecordMediaValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
+    except FieldRecordMediaStorageError as exc:
+        return jsonify({"error": str(exc)}), 502
     return jsonify(event), 201
 
 
@@ -3814,9 +5080,34 @@ def _split_lines_or_commas(value: str):
     return parts
 
 
+def _field_create_form_data(form):
+    location = {
+        "prefecture": form.get("prefecture", "").strip(),
+        "municipality": form.get("municipality", "").strip(),
+        "locality": form.get("locality", "").strip(),
+        "environment_type": form.get("environment_type", "").strip(),
+    }
+    if location["prefecture"] not in JAPAN_PREFECTURES:
+        raise FieldValidationError("prefecture is required")
+    if not location["municipality"]:
+        raise FieldValidationError("municipality is required")
+    if location["environment_type"] not in FIELD_ENVIRONMENT_TYPE_LABELS:
+        raise FieldValidationError("environment_type is required")
+    return {
+        "name": form.get("name", ""),
+        "location": location,
+    }
+
+
 def _field_form_data(form):
     return {
         "name": form.get("name", ""),
+        "location": {
+            "prefecture": form.get("prefecture", ""),
+            "municipality": form.get("municipality", ""),
+            "locality": form.get("locality", ""),
+            "environment_type": form.get("environment_type", ""),
+        },
         "crop": form.get("crop", ""),
         "stage": form.get("stage", ""),
         "memo": form.get("memo", ""),
@@ -3866,6 +5157,18 @@ def _field_form_data(form):
             "notes": form.get("knowledge_notes", ""),
         },
     }
+
+
+def _field_crop_suggestions(fields):
+    values = set(FIELD_CROP_CULTIVAR_SUGGESTIONS)
+    values.update(field.get("crop", "") for field in fields)
+    return sorted(value for value in values if value)
+
+
+def _field_cultivar_suggestions(fields):
+    values = {cultivar for cultivars in FIELD_CROP_CULTIVAR_SUGGESTIONS.values() for cultivar in cultivars}
+    values.update((field.get("crop_profile") or {}).get("cultivar", "") for field in fields)
+    return sorted(value for value in values if value)
 
 
 def _parse_field_areas_text(value: str):
@@ -3957,12 +5260,155 @@ def _json_form_payload(name: str):
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _build_field_context(field: dict, compare_date: str = ""):
+def _record_rating(value):
+    if value in (None, ""):
+        return None
+    try:
+        rating = int(value)
+    except (TypeError, ValueError) as exc:
+        raise FieldValidationError("rating must be between 1 and 5") from exc
+    if rating not in {1, 2, 3, 4, 5}:
+        raise FieldValidationError("rating must be between 1 and 5")
+    return rating
+
+
+def _field_record_values_from_form(form):
+    keys = form.getlist("record_item_key")
+    values = form.getlist("record_item_value")
+    if len(keys) != len(values):
+        raise FieldValidationError("記録項目を読み取れませんでした")
+    return [{"key": key, "value": value} for key, value in zip(keys, values) if key and value not in (None, "")]
+
+
+def _field_record_title(record_values, target_name=""):
+    summaries = []
+    for value in record_values[:2]:
+        definition = FIELD_RECORD_CATALOG_BY_KEY.get(value.get("key")) if isinstance(value, dict) else None
+        if definition is None or value.get("value") in (None, ""):
+            continue
+        summaries.append(f"{definition['label']} {value['value']}{definition['unit']}")
+    title = "、".join(summaries) or "圃場記録"
+    if target_name and target_name != "圃場全体":
+        return f"{target_name}: {title}"
+    return title
+
+
+def _field_record_values_summary(record_values):
+    parts = []
+    for value in record_values or []:
+        if not isinstance(value, dict) or value.get("value") in (None, ""):
+            continue
+        parts.append(f"{value.get('label') or value.get('key')} {value['value']}{value.get('unit') or ''}")
+    return " / ".join(parts)
+
+
+def _field_record_target_name(field_id: str, target_placement_id: str):
+    if not target_placement_id:
+        return "圃場全体"
+    field = field_repository().get(field_id)
+    if field is None:
+        raise FieldValidationError("field not found")
+    layout = field_layout_repository().get(field_id, field_name=field.get("name", ""))
+    target = next((item for item in _build_field_record_targets(layout) if item["id"] == target_placement_id), None)
+    if target is None:
+        raise FieldValidationError("記録対象が圃場にありません")
+    return target["label"]
+
+
+def _find_attachment_in_records(records: list, attachment_id: str):
+    for record in records:
+        for attachment in record.get("attachments") or []:
+            if attachment.get("id") == attachment_id:
+                return attachment
+    return None
+
+
+def _find_field_record_attachment(field: dict, attachment_id: str):
+    for record_type in ("events", "notes", "action_plans"):
+        attachment = _find_attachment_in_records(field.get(record_type) or [], attachment_id)
+        if attachment is not None:
+            return attachment
+    return None
+
+
+def _build_plant_generation_context(field, layout, space, placement, planting):
+    return {
+        "planting": planting,
+        "placement": {
+            "id": placement.get("id"),
+            "name": placement.get("name"),
+            "preset": placement.get("preset"),
+            "space_id": space.get("id"),
+            "space_name": space.get("name"),
+            "space_type": space.get("space_type"),
+            "grid_cell_size_m": (space.get("grid") or {}).get("cell_size_m"),
+        },
+        "field": {
+            "id": field.get("id"),
+            "name": field.get("name"),
+            "location": field.get("location") or {},
+            "crop_profile": field.get("crop_profile") or {},
+            "cultivation_context": field.get("cultivation_context") or {},
+            "growth_targets": field.get("growth_targets") or {},
+            "control_policy": field.get("control_policy") or {},
+        },
+        "layout": {
+            "space_type": space.get("space_type"),
+            "root_space_id": layout.get("root_space_id"),
+        },
+    }
+
+
+def _plant_action_event_type(action_type):
+    return {
+        "fertilization": "fertilizer",
+        "pest_control": "pest",
+        "harvest": "harvest",
+        "watering": "watering",
+    }.get(action_type, "other")
+
+
+def _build_field_list_item(field: dict):
+    item = dict(field)
+    layout = field_layout_repository().get(field["id"], field_name=field.get("name", ""))
+    plant_bundle = plant_management_repository().field_bundle(field["id"])
+    active_plantings = [planting for planting in plant_bundle["plantings"] if planting.get("status") == "active"]
+    placements = [placement for space in layout.get("spaces", []) for placement in space.get("placements", [])]
+    crop_labels = []
+    for planting in active_plantings:
+        label = " / ".join(value for value in (planting.get("crop_name"), planting.get("cultivar")) if value)
+        if label and label not in crop_labels:
+            crop_labels.append(label)
+    item["list_summary"] = {
+        "crop_labels": crop_labels,
+        "placement_count": len(placements),
+        "planting_count": len(active_plantings),
+        "device_count": len({(placement.get("binding") or {}).get("device_id") for placement in placements} - {None, ""}),
+        "record_count": len(field.get("events") or []) + len(plant_bundle.get("work_logs") or []),
+    }
+    return item
+
+
+def _build_field_context(
+    field: dict,
+    compare_date: str = "",
+    record_month: str = "",
+    *,
+    include_automatic_measurements: bool = True,
+):  # noqa: PLR0915
     compare_day = _field_compare_day(compare_date)
-    device_records = device_config_service().get_all_records()
-    device_ids = field.get("device_ids") or []
-    camera_ids = field.get("camera_device_ids") or []
-    placement_rows = _field_device_placement_rows(field, device_records)
+    layout = field_layout_repository().get(field["id"], field_name=field.get("name", ""))
+    device_records = _field_device_records(field, layout)
+    plant_bundle = plant_management_repository().field_bundle(field["id"])
+    active_plantings = [planting for planting in plant_bundle["plantings"] if planting.get("status") == "active"]
+    placement_rows = _layout_device_placement_rows(layout, device_records)
+    if placement_rows:
+        device_ids = list(dict.fromkeys(row["device_id"] for row in placement_rows if row["device_role"] != "camera"))
+        camera_ids = list(dict.fromkeys(row["device_id"] for row in placement_rows if row["device_role"] == "camera"))
+    else:
+        device_ids = field.get("device_ids") or []
+        camera_ids = field.get("camera_device_ids") or []
+        placement_rows = _legacy_root_device_placement_rows(field, device_records)
     devices = []
     latest_sensor_values = []
     recent_status_events = []
@@ -3986,10 +5432,18 @@ def _build_field_context(field: dict, compare_date: str = ""):
         recent_images.extend(_field_camera_images(camera_id, limit=2))
 
     image_compare_groups = _field_image_compare_groups(camera_ids, compare_day)
+    active_measurement_devices = {device_id: device_records[device_id] for device_id in device_ids if device_id in device_records}
+    automatic_record_measurements = (
+        _field_automatic_record_measurements(active_measurement_devices, placement_rows, record_month)
+        if include_automatic_measurements
+        else []
+    )
+    active_plantings = _build_active_planting_views(active_plantings, plant_bundle, automatic_record_measurements, layout)
 
     recent_status_events = sorted(recent_status_events, key=lambda item: item.get("received_at") or "", reverse=True)[:40]
     field_events = sorted(list(field.get("events") or []), key=lambda item: item.get("occurred_at") or item.get("created_at") or "", reverse=True)
     timeline = _build_field_timeline(recent_status_events, field_events, field.get("notes") or [])
+    growth_targets = _active_planting_growth_targets(active_plantings)
     field_snapshot = {
         key: field.get(key)
         for key in (
@@ -4007,6 +5461,21 @@ def _build_field_context(field: dict, compare_date: str = ""):
             "device_placements",
         )
     }
+    field_snapshot["growth_targets"] = growth_targets
+    field_snapshot["areas"] = []
+    field_snapshot["device_placements"] = placement_rows
+    field_snapshot["crop"] = ""
+    field_snapshot["stage"] = ""
+    field_snapshot["crop_profile"] = {}
+    if active_plantings:
+        primary_planting = active_plantings[0]
+        field_snapshot["crop"] = primary_planting.get("crop_name", "")
+        field_snapshot["stage"] = "栽培中"
+        field_snapshot["crop_profile"] = {
+            "crop_name": primary_planting.get("crop_name", ""),
+            "cultivar": primary_planting.get("cultivar", ""),
+            "growth_stage": "栽培中",
+        }
     context = {
         "generated_at": datetime.now(UTC).isoformat(),
         "field": field_snapshot,
@@ -4022,10 +5491,483 @@ def _build_field_context(field: dict, compare_date: str = ""):
         "compare_date": compare_day.strftime("%Y-%m-%d"),
         "image_compare": recent_images[:2],
         "image_compare_groups": image_compare_groups,
-        "soil_moisture_chart": _build_field_soil_moisture_chart(statuses_for_chart, field_events, include_plotlyjs=False) if statuses_for_chart else "",
+        "soil_moisture_chart": (
+            _build_field_soil_moisture_chart(statuses_for_chart, field_events, include_plotlyjs=False, deferred=True)
+            if statuses_for_chart
+            else ""
+        ),
+        "watering_chart": (
+            _build_watering_trend_chart(statuses_for_chart, include_plotlyjs=False, deferred=True)
+            if statuses_for_chart
+            else ""
+        ),
+        "monitoring_scopes": _build_monitoring_scopes(placement_rows, latest_sensor_values),
+        "layout": layout,
+        "layout_preview": _build_layout_preview(layout, active_plantings),
+        "installation_tree": _build_installation_tree(layout, device_records, active_plantings),
+        "plant_bundle": plant_bundle,
+        "active_plantings": active_plantings,
+        "record_calendar": _build_field_record_calendar(field, plant_bundle, record_month, automatic_record_measurements),
+        "record_catalog": [dict(item) for item in FIELD_RECORD_CATALOG],
+        "record_categories": FIELD_RECORD_CATEGORIES,
+        "recent_record_items": selected_record_catalog(field.get("events") or []),
+        "record_targets": _build_field_record_targets(layout),
+        "has_field_devices": bool(device_records),
     }
+    dashboard_field = {**field, "growth_targets": growth_targets}
+    context["dashboard"] = _build_field_status_dashboard(
+        dashboard_field,
+        latest_sensor_values,
+        active_plantings=active_plantings,
+    )
     context["action_candidates"] = build_action_candidates(context)
+    context["calendar_todo_items"] = _build_calendar_todo_items(field["id"], plant_bundle)
+    context["todo_count"] = len(context["calendar_todo_items"]) + len(context["action_candidates"])
     return context
+
+
+def _build_field_deferred_context(field: dict, primary_context: dict, record_month: str = ""):
+    layout = primary_context["layout"]
+    placement_rows = primary_context["device_placement_rows"]
+    plant_bundle = primary_context["plant_bundle"]
+    device_records = _field_device_records(field, layout)
+    active_measurement_devices = {
+        device_id: device_records[device_id]
+        for device_id in {
+            row.get("device_id")
+            for row in placement_rows
+            if row.get("device_role") != "camera"
+        }
+        - {None, ""}
+        if device_id in device_records
+    }
+    automatic_measurements = _field_automatic_record_measurements(active_measurement_devices, placement_rows, record_month)
+    active_plantings = [planting for planting in plant_bundle["plantings"] if planting.get("status") == "active"]
+    return {
+        "active_plantings": _build_active_planting_views(active_plantings, plant_bundle, automatic_measurements, layout),
+        "record_calendar": _build_field_record_calendar(field, plant_bundle, record_month, automatic_measurements),
+    }
+
+
+def _field_device_records(field: dict, layout: dict):
+    layout_device_ids = {(placement.get("binding") or {}).get("device_id") for space in layout.get("spaces", []) for placement in space.get("placements", [])}
+    relevant_device_ids = layout_device_ids | set(field.get("device_ids") or []) | set(field.get("camera_device_ids") or [])
+    config_service = device_config_service()
+    return {device_id: record for device_id in relevant_device_ids - {None, ""} if (record := config_service.find_record(device_id)) is not None}
+
+
+def _active_planting_growth_targets(active_plantings):
+    if len(active_plantings) != 1:
+        return {}
+    targets = active_plantings[0].get("growth_targets")
+    return targets if isinstance(targets, dict) else {}
+
+
+def _layout_device_placement_rows(layout: dict, device_records: dict):
+    placement_names = {
+        placement.get("id"): placement.get("name") or placement.get("id") for space in layout.get("spaces", []) for placement in space.get("placements", [])
+    }
+    rows = []
+    for space in layout.get("spaces", []):
+        scope_label = "圃場（屋外）" if space.get("id") == layout.get("root_space_id") else f"{space.get('name')}内"
+        for placement in space.get("placements", []):
+            binding = placement.get("binding") or {}
+            device_id = binding.get("device_id")
+            if not device_id:
+                continue
+            record = device_records.get(device_id)
+            role = "camera" if binding.get("resource_type") == "camera" else _infer_device_role(record)
+            target_ids = binding.get("target_placement_ids") or []
+            rows.append(
+                {
+                    "device_id": device_id,
+                    "device_name": (record or {}).get("name") or device_id,
+                    "device_role": role,
+                    "device_role_label": DEVICE_ROLE_LABELS.get(role, role),
+                    "scope_type": "layout",
+                    "scope_label": scope_label,
+                    "space_id": space.get("id"),
+                    "placement_id": placement.get("id"),
+                    "placement_name": placement.get("name"),
+                    "target_placement_ids": target_ids,
+                    "target_labels": [placement_names[target_id] for target_id in target_ids if target_id in placement_names],
+                    "resource_type": binding.get("resource_type") or "device",
+                    "resource_id": binding.get("resource_id") or "",
+                    "area": None,
+                    "crop_name": "",
+                    "memo": placement.get("memo") or "",
+                }
+            )
+    return rows
+
+
+def _build_installation_tree(layout: dict, device_records: dict, active_plantings: list):
+    spaces = {space.get("id"): space for space in layout.get("spaces", []) if space.get("id")}
+    root_space_id = layout.get("root_space_id")
+    root = spaces.get(root_space_id)
+    if root is None:
+        return []
+
+    placement_names = {
+        placement.get("id"): placement.get("name") or placement.get("id") for space in spaces.values() for placement in space.get("placements", [])
+    }
+    crop_labels = {
+        planting.get("placement_id"): " / ".join(value for value in (planting.get("crop_name"), planting.get("cultivar")) if value)
+        for planting in active_plantings
+        if planting.get("status") == "active"
+    }
+    rows = [
+        {
+            "id": root_space_id,
+            "depth": 0,
+            "kind": "field",
+            "label": root.get("name") or layout.get("name") or "圃場全体",
+            "detail": "圃場",
+            "relation": "",
+            "relation_kind": "",
+        }
+    ]
+    visited_spaces = {root_space_id}
+    watering_sources_by_target = _watering_sources_by_target(spaces.values())
+
+    def append_space(space_id: str, depth: int):
+        space = spaces.get(space_id)
+        if space is None:
+            return
+        placements = sorted(space.get("placements", []), key=lambda placement: (placement.get("z", 0), placement.get("name", "")))
+        for placement in placements:
+            preset = placement.get("preset") or ""
+            binding = placement.get("binding") or {}
+            child_space_id = placement.get("child_space_id") or ""
+            if child_space_id:
+                kind = "space"
+            elif binding:
+                kind = "device"
+            elif preset in LAYOUT_CULTIVATION_PRESETS:
+                kind = "cultivation"
+            else:
+                kind = "equipment"
+
+            detail_parts = [LAYOUT_PLACEMENT_LABELS.get(preset, preset or "配置物")]
+            crop_label = crop_labels.get(placement.get("id"))
+            if crop_label:
+                detail_parts.append(crop_label)
+            device_id = binding.get("device_id") or ""
+            if device_id:
+                record = device_records.get(device_id) or {}
+                detail_parts.append(record.get("name") or device_id)
+            target_labels = [placement_names[target_id] for target_id in binding.get("target_placement_ids", []) if target_id in placement_names]
+            watering_source_names = watering_sources_by_target.get(placement.get("id"), [])
+            if preset in LAYOUT_CULTIVATION_PRESETS:
+                relation = f"潅水: {'、'.join(watering_source_names)}" if watering_source_names else "手動潅水"
+                relation_kind = "watering" if watering_source_names else "manual"
+            else:
+                relation = f"対象: {'、'.join(target_labels)}" if target_labels else ""
+                relation_kind = "target" if target_labels else ""
+            rows.append(
+                {
+                    "id": placement.get("id"),
+                    "depth": depth,
+                    "kind": kind,
+                    "label": placement.get("name") or placement.get("id") or "配置物",
+                    "detail": " / ".join(detail_parts),
+                    "relation": relation,
+                    "relation_kind": relation_kind,
+                }
+            )
+
+            resource_type = binding.get("resource_type") or "device"
+            if device_id and resource_type != "device":
+                resource_id = binding.get("resource_id") or ""
+                rows.append(
+                    {
+                        "id": f"{placement.get('id')}-resource",
+                        "depth": depth + 1,
+                        "kind": "resource",
+                        "label": _layout_resource_name(device_records.get(device_id), resource_type, resource_id),
+                        "detail": f"{device_id} / {resource_type}",
+                        "relation": "",
+                        "relation_kind": "",
+                    }
+                )
+
+            if child_space_id and child_space_id not in visited_spaces:
+                visited_spaces.add(child_space_id)
+                append_space(child_space_id, depth + 1)
+
+    append_space(root_space_id, 1)
+    return rows
+
+
+def _watering_sources_by_target(spaces):
+    sources_by_target = {}
+    watering_devices = (placement for space in spaces for placement in space.get("placements", []) if placement.get("preset") == "watering_device")
+    for source in watering_devices:
+        for target_id in (source.get("binding") or {}).get("target_placement_ids", []):
+            sources_by_target.setdefault(target_id, []).append(source.get("name") or source.get("id"))
+    return sources_by_target
+
+
+def _layout_resource_name(record: dict | None, resource_type: str, resource_id: str):
+    if resource_type == "mosfet_switch":
+        config = record.get("config") if isinstance(record, dict) and isinstance(record.get("config"), dict) else {}
+        for switch in config.get("mosfet_switches", []):
+            if isinstance(switch, dict) and switch.get("switch_id") == resource_id:
+                return switch.get("name") or resource_id or "MOSFET SW"
+        return resource_id or "MOSFET SW"
+    return {
+        "sensor": "センサー機能",
+        "camera": "カメラ機能",
+    }.get(resource_type, resource_id or "デバイス機能")
+
+
+def _legacy_root_device_placement_rows(field: dict, device_records: dict):
+    rows = []
+    seen = set()
+    for device_id in field.get("device_ids") or []:
+        role = _infer_device_role(device_records.get(device_id))
+        row = _format_device_placement(device_id, role, None, [])
+        row["scope_label"] = "圃場（屋外）"
+        row["target_placement_ids"] = []
+        row["target_labels"] = []
+        rows.append(row)
+        seen.add(device_id)
+    for device_id in field.get("camera_device_ids") or []:
+        if device_id in seen:
+            continue
+        row = _format_device_placement(device_id, "camera", None, [])
+        row["scope_label"] = "圃場（屋外）"
+        row["target_placement_ids"] = []
+        row["target_labels"] = []
+        rows.append(row)
+    return rows
+
+
+def _build_layout_preview(layout: dict, active_plantings: list):
+    root = next((space for space in layout.get("spaces", []) if space.get("id") == layout.get("root_space_id")), None)
+    if root is None:
+        return {"columns": 1, "rows": 1, "placements": [], "updated_at": ""}
+    crops_by_placement = {
+        planting.get("placement_id"): " / ".join(value for value in (planting.get("crop_name"), planting.get("cultivar")) if value)
+        for planting in active_plantings
+    }
+    child_crop_counts = {}
+    for placement in root.get("placements", []):
+        child_space_id = placement.get("child_space_id")
+        if child_space_id:
+            child_crop_counts[child_space_id] = sum(planting.get("space_id") == child_space_id for planting in active_plantings)
+    columns = max(1, root.get("grid", {}).get("columns") or 1)
+    rows = max(1, root.get("grid", {}).get("rows") or 1)
+    preview_placements = []
+    for placement in root.get("placements", []):
+        crop_label = crops_by_placement.get(placement.get("id"), "")
+        child_count = child_crop_counts.get(placement.get("child_space_id"), 0)
+        preview_placements.append(
+            {
+                "id": placement.get("id"),
+                "name": placement.get("name"),
+                "preset": placement.get("preset"),
+                "left": round(placement.get("x", 0) / columns * 100, 3),
+                "top": round(placement.get("y", 0) / rows * 100, 3),
+                "width": round(max(placement.get("width", 1) / columns * 100, 2.2), 3),
+                "height": round(max(placement.get("height", 1) / rows * 100, 3.0), 3),
+                "subtitle": crop_label or (f"栽培場所 {child_count}件" if child_count else ""),
+                "bound": bool(placement.get("binding")),
+            }
+        )
+    return {
+        "columns": columns,
+        "rows": rows,
+        "placements": preview_placements,
+        "updated_at": layout.get("updated_at") or "",
+    }
+
+
+def _build_field_record_targets(layout: dict):
+    targets = [{"id": "", "label": "圃場全体", "preset": "field"}]
+    root_space_id = layout.get("root_space_id")
+    seen = set()
+    for space in layout.get("spaces") or []:
+        space_name = str(space.get("name") or "").strip()
+        for placement in space.get("placements") or []:
+            placement_id = str(placement.get("id") or "").strip()
+            preset = placement.get("preset")
+            if not placement_id or placement_id in seen or preset not in LAYOUT_CULTIVATION_PRESETS:
+                continue
+            placement_name = str(placement.get("name") or LAYOUT_PLACEMENT_LABELS.get(preset) or "栽培場所").strip()
+            label = placement_name if space.get("id") == root_space_id or not space_name else f"{space_name} / {placement_name}"
+            targets.append({"id": placement_id, "label": label, "preset": preset})
+            seen.add(placement_id)
+    return targets
+
+
+def _field_automatic_record_measurements(device_records: dict, placement_rows: list, month_value: str):
+    if not device_records:
+        return []
+    month_start = _record_month_start(month_value)
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    timezone = _local_timezone()
+    range_start = datetime(month_start.year, month_start.month, 1, tzinfo=timezone).astimezone(UTC).isoformat()
+    range_end = datetime(next_month.year, next_month.month, 1, tzinfo=timezone).astimezone(UTC).isoformat()
+    try:
+        measurements = sensor_measurement_repository().between_for_devices(list(device_records), range_start, range_end, limit=5000)
+    except Exception:
+        measurements = []
+
+    deduplicated = {}
+    for measurement in measurements:
+        key = (measurement.get("device_id"), measurement.get("measured_at"), measurement.get("metric"))
+        deduplicated[key] = measurement
+
+    for device_id, record in device_records.items():
+        for status in (record or {}).get("status_history") or []:
+            measured_at = status.get("received_at") or ""
+            payload = dict(status.get("payload") or {})
+            if payload.get("soil_moisture_percent") is None and payload.get("last_soil_moisture") is not None:
+                payload["soil_moisture_percent"] = payload["last_soil_moisture"]
+            for measurement in extract_measurements_from_status(device_id, payload, measured_at):
+                key = (device_id, measured_at, measurement.get("metric"))
+                deduplicated.setdefault(key, measurement)
+            duration_sec = payload.get("watering_duration_sec")
+            if payload.get("watering_started") is True and isinstance(duration_sec, int | float) and not isinstance(duration_sec, bool) and duration_sec > 0:
+                deduplicated[(device_id, measured_at, "watering_duration_min")] = {
+                    "device_id": device_id,
+                    "device_kind": payload.get("device_kind") or (record or {}).get("device_kind"),
+                    "measured_at": measured_at,
+                    "metric": "watering_duration_min",
+                    "value": round(float(duration_sec) / 60, 2),
+                    "unit": "分",
+                    "quality": "ok",
+                    "source": "device_action",
+                    "payload": {"channel_mask": payload.get("channel_mask")},
+                }
+
+    placements_by_device = {row.get("device_id"): row for row in placement_rows or []}
+    grouped = {}
+    for measurement in deduplicated.values():
+        measured = _to_local_datetime(measurement.get("measured_at"))
+        if measured is None or not (month_start <= measured.date() < next_month):
+            continue
+        metric = measurement.get("metric") or ""
+        definition = FIELD_RECORD_CATALOG_BY_KEY.get(metric)
+        device_id = measurement.get("device_id") or ""
+        record = device_records.get(device_id) or {}
+        placement = placements_by_device.get(device_id) or {}
+        item = {
+            "device_id": device_id,
+            "device_name": record.get("name") or device_id,
+            "scope_label": placement.get("scope_label") or "圃場全体",
+            "date": measured.date().isoformat(),
+            "time": measured.strftime("%H:%M"),
+            "measured_at": measurement.get("measured_at") or "",
+            "metric": metric,
+            "label": definition.get("label") if definition else METRIC_LABELS.get(metric, metric),
+            "value": measurement.get("value"),
+            "unit": definition.get("unit") if definition else measurement.get("unit") or "",
+            "source": measurement.get("source") or "device",
+            "target_placement_ids": list(placement.get("target_placement_ids") or []),
+        }
+        grouped.setdefault((item["date"], device_id, metric), []).append(item)
+
+    result = []
+    for items in grouped.values():
+        result.extend(sorted(items, key=lambda item: item["measured_at"], reverse=True)[:24])
+    return sorted(result, key=lambda item: (item["date"], item["time"], item["device_id"], item["metric"]))
+
+
+def _build_active_planting_views(active_plantings: list, plant_bundle: dict, automatic_measurements: list, layout: dict):
+    calendars = plant_bundle.get("calendars") or {}
+    work_logs = plant_bundle.get("work_logs") or []
+    category_labels = {
+        "vegetable": "野菜",
+        "fruit_tree": "果樹",
+        "flower": "花き",
+        "herb": "ハーブ",
+        "other": "その他",
+    }
+    preset_by_placement = {
+        placement.get("id"): placement.get("preset")
+        for space in layout.get("spaces", [])
+        for placement in space.get("placements", [])
+    }
+    cultivation_methods = {
+        "ridge": [("ridge_soil", "畝・土耕"), ("ridge_mulch", "畝・マルチ栽培")],
+        "tree": [("in_ground_tree", "地植え果樹・樹木")],
+        "pot": [("container", "鉢・コンテナ栽培")],
+        "hydroponic_bed": [("hydroponic", "水耕栽培"), ("nutrient_solution", "養液栽培")],
+    }
+    views = []
+    for planting in active_plantings:
+        view = dict(planting)
+        calendar_record = calendars.get(planting.get("id")) or {}
+        planned_actions = sorted(
+            (action for action in calendar_record.get("actions", []) if action.get("status") == "planned"),
+            key=lambda action: (action.get("window_start") or "", action.get("title") or ""),
+        )
+        activities = [
+            {
+                "at": planting.get("planted_on") or "",
+                "at_display": planting.get("planted_on") or "",
+                "kind": "planting",
+                "kind_label": "定植",
+                "title": f"{planting.get('crop_name') or '作物'}を登録",
+                "detail": planting.get("placement_name") or "",
+            }
+        ]
+        for log in work_logs:
+            if log.get("planting_id") != planting.get("id"):
+                continue
+            activities.append(
+                {
+                    "at": log.get("performed_on") or log.get("created_at") or "",
+                    "at_display": log.get("performed_on") or "",
+                    "kind": "work",
+                    "kind_label": "作業",
+                    "title": log.get("title") or "栽培作業",
+                    "detail": log.get("note") or "カレンダーから実施を記録",
+                }
+            )
+        for measurement in automatic_measurements:
+            if planting.get("placement_id") not in measurement.get("target_placement_ids", []):
+                continue
+            is_watering = measurement.get("metric") in {"watering_duration_min", "watering_volume_l"}
+            activities.append(
+                {
+                    "at": measurement.get("measured_at") or "",
+                    "at_display": f"{measurement.get('date') or ''} {measurement.get('time') or ''}".strip(),
+                    "kind": "watering" if is_watering else "sensor",
+                    "kind_label": "潅水" if is_watering else "計測",
+                    "title": f"{measurement.get('label') or measurement.get('metric')}: {measurement.get('value')} {measurement.get('unit') or ''}".strip(),
+                    "detail": f"{measurement.get('device_name') or measurement.get('device_id')} / {measurement.get('scope_label') or '圃場全体'}",
+                }
+            )
+        view["crop_category_label"] = category_labels.get(planting.get("crop_category"), "その他")
+        view["placement_preset"] = preset_by_placement.get(planting.get("placement_id"), "")
+        method_options = list(cultivation_methods.get(view["placement_preset"], [("other", "その他")]))
+        current_method = planting.get("cultivation_method") or ""
+        if current_method and current_method not in {value for value, _label in method_options}:
+            method_options.insert(0, (current_method, current_method))
+        view["cultivation_method_options"] = method_options
+        view["calendar"] = calendar_record
+        view["next_action"] = planned_actions[0] if planned_actions else None
+        view["recent_activity"] = sorted(activities, key=lambda item: item.get("at") or "", reverse=True)[:10]
+        views.append(view)
+    return views
+
+
+def _build_monitoring_scopes(placement_rows: list, latest_sensor_values: list):
+    scopes = {}
+    for row in placement_rows:
+        label = row.get("scope_label") or "圃場全体"
+        scope = scopes.setdefault(label, {"label": label, "devices": [], "sensor_values": []})
+        identity = (row.get("device_id"), row.get("placement_id"), row.get("resource_type"), row.get("resource_id"))
+        if not any(item.get("identity") == identity for item in scope["devices"]):
+            scope["devices"].append({**row, "identity": identity})
+    for item in latest_sensor_values:
+        label = item.get("scope_label") or "圃場全体"
+        scope = scopes.setdefault(label, {"label": label, "devices": [], "sensor_values": []})
+        scope["sensor_values"].append(item)
+    return list(scopes.values())
 
 
 def _field_compare_day(compare_date: str):
@@ -4046,13 +5988,20 @@ def _field_device_placement_rows(field: dict, device_records: dict):
         record = device_records.get(device_id)
         role = _infer_device_role(record)
         placement = explicit.get((device_id, role)) or _first_device_placement(explicit, device_id)
-        rows.append(_format_device_placement(device_id, role, placement, areas))
+        row = _format_device_placement(device_id, role, placement, areas)
+        row["device_name"] = (record or {}).get("name") or device_id
+        row["device_kind"] = (record or {}).get("device_kind") or ""
+        rows.append(row)
         seen.add(device_id)
     for camera_id in field.get("camera_device_ids") or []:
         if camera_id in seen:
             continue
+        record = device_records.get(camera_id)
         placement = explicit.get((camera_id, "camera")) or _first_device_placement(explicit, camera_id)
-        rows.append(_format_device_placement(camera_id, "camera", placement, areas))
+        row = _format_device_placement(camera_id, "camera", placement, areas)
+        row["device_name"] = (record or {}).get("name") or camera_id
+        row["device_kind"] = (record or {}).get("device_kind") or "CAM"
+        rows.append(row)
     return rows
 
 
@@ -4134,7 +6083,7 @@ def _field_camera_images_for_date(camera_id: str, target_day: datetime, limit: i
     return [dict(image, camera_id=camera_id) for image in images]
 
 
-def _build_field_soil_moisture_chart(statuses, field_events, include_plotlyjs=False):
+def _build_field_soil_moisture_chart(statuses, field_events, include_plotlyjs=False, *, deferred=False):
     points = _soil_moisture_points(statuses)
     if not points:
         return ""
@@ -4176,7 +6125,7 @@ def _build_field_soil_moisture_chart(statuses, field_events, include_plotlyjs=Fa
     )
     _configure_time_axis(fig, points)
     fig.update_yaxes(range=[0, 100])
-    return _plotly_div(fig, "field-soil-moisture-chart", include_plotlyjs=include_plotlyjs)
+    return _plotly_div(fig, "field-soil-moisture-chart", include_plotlyjs=include_plotlyjs, deferred=deferred)
 
 
 def _add_field_event_markers(fig, field_events):
@@ -4228,18 +6177,35 @@ def _build_field_timeline(status_events: list, field_events: list, notes: list):
                 "at": event.get("received_at"),
                 "title": event.get("summary"),
                 "body": event.get("device_id"),
+                "rating_emoji": "",
+                "attachments": [],
             }
         )
     for event in field_events:
         amount = ""
         if event.get("amount"):
             amount = f" {event.get('amount')}{event.get('unit') or ''}"
+        body_parts = [
+            part
+            for part in (
+                event.get("target_name") if event.get("target_name") not in (None, "", "圃場全体") else "",
+                _field_record_values_summary(event.get("record_values")),
+                event.get("description") or event.get("human_evaluation") or "",
+            )
+            if part
+        ]
         timeline.append(
             {
                 "kind": event.get("event_type") or "field_event",
                 "at": event.get("occurred_at") or event.get("created_at"),
                 "title": f"{event.get('title') or event.get('event_type')}{amount}",
-                "body": event.get("description") or event.get("human_evaluation") or "",
+                "body": " / ".join(body_parts),
+                "rating_emoji": {1: "😞", 2: "😕", 3: "😐", 4: "😊", 5: "😄"}.get(event.get("rating"), ""),
+                "attachments": [
+                    {"id": item.get("id"), "url": item.get("url"), "original_filename": item.get("original_filename") or "記録画像"}
+                    for item in event.get("attachments") or []
+                    if isinstance(item, dict) and item.get("url")
+                ],
             }
         )
     for note in notes:
@@ -4249,6 +6215,8 @@ def _build_field_timeline(status_events: list, field_events: list, notes: list):
                 "at": note.get("created_at"),
                 "title": note.get("text"),
                 "body": note.get("human_evaluation") or "",
+                "rating_emoji": {1: "😞", 2: "😕", 3: "😐", 4: "😊", 5: "😄"}.get(note.get("rating"), ""),
+                "attachments": [],
             }
         )
     return sorted(timeline, key=lambda item: item.get("at") or "", reverse=True)
@@ -4308,6 +6276,7 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
         return {
             "device_id": device_id,
             "scope_label": (placement or {}).get("scope_label"),
+            "target_placement_ids": (placement or {}).get("target_placement_ids") or [],
             "crop_name": (placement or {}).get("crop_name"),
             "area": (placement or {}).get("area"),
             "updated_at": sensor_latest.get("updated_at"),
@@ -4319,6 +6288,7 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
     return {
         "device_id": device_id,
         "scope_label": (placement or {}).get("scope_label"),
+        "target_placement_ids": (placement or {}).get("target_placement_ids") or [],
         "crop_name": (placement or {}).get("crop_name"),
         "area": (placement or {}).get("area"),
         "received_at": (record or {}).get("last_status_at"),
@@ -4529,6 +6499,56 @@ def _build_mqtt_device_chart_payload(statuses):
     return {
         "watering": watering_chart,
         "soil_moisture": _build_soil_moisture_chart(statuses, include_plotlyjs=False),
+        "air_temperature": _build_metric_trend_chart(
+            statuses,
+            aliases=("air_temperature_c",),
+            title="気温推移",
+            unit="℃",
+            color="#dc2626",
+            div_id="air-temperature-chart",
+        ),
+        "air_humidity": _build_metric_trend_chart(
+            statuses,
+            aliases=("air_humidity_percent",),
+            title="湿度推移",
+            unit="%",
+            color="#0284c7",
+            div_id="air-humidity-chart",
+            y_range=(0, 100),
+        ),
+        "soil_temperature": _build_metric_trend_chart(
+            statuses,
+            aliases=("soil_temperature_c",),
+            title="地温推移",
+            unit="℃",
+            color="#b45309",
+            div_id="soil-temperature-chart",
+        ),
+        "soil_ec": _build_metric_trend_chart(
+            statuses,
+            aliases=("soil_ec_us_cm",),
+            title="土壌EC推移",
+            unit="uS/cm",
+            color="#7c3aed",
+            div_id="soil-ec-chart",
+        ),
+        "soil_ph": _build_metric_trend_chart(
+            statuses,
+            aliases=("soil_ph",),
+            title="土壌pH推移",
+            unit="",
+            color="#0f766e",
+            div_id="soil-ph-chart",
+            y_range=(0, 14),
+        ),
+        "par": _build_metric_trend_chart(
+            statuses,
+            aliases=("par_umol_m2_s",),
+            title="PAR推移",
+            unit="umol/m2/s",
+            color="#ca8a04",
+            div_id="par-chart",
+        ),
     }
 
 
@@ -4693,7 +6713,13 @@ def get_camera_image(image_path):
     return send_file(frame_path, mimetype="image/jpeg")
 
 
+def initialize_web_server():
+    """Prepare the local Turso replica before accepting HTTP requests."""
+    sensor_measurement_repository()
+
+
 def flask_run():
+    initialize_web_server()
     http_settings = setting().get("http") or {}
     app.run(host=http_settings.get("host", "0.0.0.0"), port=int(http_settings.get("port", 39151)))
 

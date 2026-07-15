@@ -17,6 +17,7 @@ DEVICE_STATES = {"pending", "active", "disabled", "retired"}
 MAX_STATUS_HISTORY = 2000
 MAX_OTA_STATUS_HISTORY = 100
 DEVICE_KIND_RE = re.compile(r"^[A-Z]{3}$")
+MOSFET_SWITCH_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
 class DeviceConfigValidationError(ValueError):
@@ -467,6 +468,42 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         },
     }
 
+    mosfet_switches = config.get("mosfet_switches", [])
+    if not isinstance(mosfet_switches, list):
+        raise DeviceConfigValidationError("mosfet_switches must be an array")
+    if len(mosfet_switches) > 16:
+        raise DeviceConfigValidationError("mosfet_switches must contain 16 entries or less")
+
+    normalized_mosfet_switches = []
+    mosfet_switch_ids = set()
+    for index, switch in enumerate(mosfet_switches):
+        if not isinstance(switch, dict):
+            raise DeviceConfigValidationError(f"mosfet_switches[{index}] must be an object")
+
+        switch_id = _optional_str(switch, "switch_id", "", f"mosfet_switches[{index}].switch_id", 32)
+        if not switch_id or not MOSFET_SWITCH_ID_RE.match(switch_id):
+            raise DeviceConfigValidationError(f"mosfet_switches[{index}].switch_id must contain only letters, numbers, _, ., :, or -")
+        if switch_id in mosfet_switch_ids:
+            raise DeviceConfigValidationError(f"mosfet_switches[{index}].switch_id must be unique")
+        mosfet_switch_ids.add(switch_id)
+
+        name = _optional_str(switch, "name", switch_id, f"mosfet_switches[{index}].name", 64)
+        if not name:
+            raise DeviceConfigValidationError(f"mosfet_switches[{index}].name must be a non-empty string")
+
+        normalized_mosfet_switches.append(
+            {
+                "switch_id": switch_id,
+                "name": name,
+                "enabled": _optional_bool(switch, "enabled", True, f"mosfet_switches[{index}].enabled"),
+                "role": _optional_str(switch, "role", "", f"mosfet_switches[{index}].role", 32),
+                "terminal": _optional_str(switch, "terminal", "", f"mosfet_switches[{index}].terminal", 32),
+                "channel_mask": _optional_int(switch, "channel_mask", 0, 0, 0xFFFFFFFF, f"mosfet_switches[{index}].channel_mask"),
+                "controlled_load": _optional_str(switch, "controlled_load", "", f"mosfet_switches[{index}].controlled_load", 96),
+                "notes": _optional_str(switch, "notes", "", f"mosfet_switches[{index}].notes", 160),
+            }
+        )
+
     schedules = config["schedules"]
     if not isinstance(schedules, list):
         raise DeviceConfigValidationError("schedules must be an array")
@@ -549,6 +586,7 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         "env_sensors": normalized_env_sensors,
         "env_calibration": normalized_env_calibration,
         "wrs": normalized_wrs,
+        "mosfet_switches": normalized_mosfet_switches,
         "schedules": normalized_schedules,
     }
     payload = json.dumps(normalized, ensure_ascii=True, separators=(",", ":"))

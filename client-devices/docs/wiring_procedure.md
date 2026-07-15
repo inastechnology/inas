@@ -39,6 +39,8 @@ specific pin and terminal tables are in
 - Use bias resistors if the bus floats while all drivers are idle.
 - Do not duplicate Modbus slave IDs on the same bus.
 - If every sensor is silent, check A/B polarity, baud rate, and GND first.
+- When using a 5V MAX485 module, level-shift `RO` to 3.3V before the ESP32S3 RX pin. Do not connect a 5V output directly to a GPIO.
+- Wire SEN0641 as brown=VCC, black=GND, yellow=485-A, blue=485-B and test its default `4800bps / slave 1 / FC03 / register 0x0000` profile.
 
 ## Pump And Valve Wiring
 

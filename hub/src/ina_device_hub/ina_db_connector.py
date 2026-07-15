@@ -46,17 +46,26 @@ def _sync_if_supported(conn):
             raise
 
 
+def _connect_database(db_path: str, url: str | None, auth_token: str, sync_interval: int):
+    if _is_sync_url(url):
+        return libsql.connect(
+            db_path,
+            sync_url=url,
+            auth_token=auth_token,
+            sync_interval=max(1, int(sync_interval)),
+        )
+    return libsql.connect(db_path)
+
+
 class InaDBConnector:
     def __init__(self):
         turso_settings = setting().get("turso")
         db_path = turso_settings.get("local_db_path")
         url = turso_settings.get("database_url")
         auth_token = turso_settings.get("auth_token")
+        self.conn = _connect_database(db_path, url, auth_token, turso_settings.get("sync_interval", 600))
         if _is_sync_url(url):
-            self.conn = libsql.connect(db_path, sync_url=url, auth_token=auth_token)
             self.conn.sync()
-        else:
-            self.conn = libsql.connect(db_path)
         self.ensure_device_event_table()
         self.ensure_sensor_measurement_tables()
 
@@ -131,6 +140,14 @@ class InaDBConnector:
 
     @commit_and_sync
     def upsert_sensor_measurement_definition(self, definition: dict):
+        self._upsert_sensor_measurement_definition(definition)
+
+    @commit_and_sync
+    def upsert_sensor_measurement_definitions(self, definitions: list[dict]):
+        for definition in definitions:
+            self._upsert_sensor_measurement_definition(definition)
+
+    def _upsert_sensor_measurement_definition(self, definition: dict):
         self.conn.execute(
             """
             INSERT INTO sensor_measurement_definitions (
@@ -194,6 +211,22 @@ class InaDBConnector:
             LIMIT ?
             """,
             (device_id, limit),
+        ).fetchall()
+
+    def fetch_sensor_measurements_for_devices(self, device_ids: list[str], start_at: str, end_at: str, limit: int = 5000):
+        device_ids = list(dict.fromkeys(str(device_id) for device_id in device_ids if device_id))
+        if not device_ids:
+            return []
+        placeholders = ",".join("?" for _ in device_ids)
+        return self.conn.execute(
+            f"""
+            SELECT device_id, device_kind, measured_at, metric, value, unit, quality, raw_value, source, payload
+            FROM sensor_measurements
+            WHERE device_id IN ({placeholders}) AND measured_at >= ? AND measured_at < ?
+            ORDER BY measured_at DESC, id DESC
+            LIMIT ?
+            """,
+            (*device_ids, start_at, end_at, max(1, min(int(limit), 20000))),
         ).fetchall()
 
     @commit_and_sync

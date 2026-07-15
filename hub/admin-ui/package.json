@@ -1,0 +1,29 @@
+{
+  "name": "ina-device-hub-admin-layout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:fields": "node scripts/fields-smoke.mjs",
+    "smoke:field-detail": "node scripts/field-detail-smoke.mjs",
+    "smoke:device-detail": "node scripts/device-detail-smoke.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "konva": "^9.3.22",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-konva": "^19.0.10"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.3",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "puppeteer-core": "^25.3.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}

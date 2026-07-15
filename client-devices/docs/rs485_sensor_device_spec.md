@@ -197,8 +197,9 @@ the product manual.
 
 ## ENV Light Sensor
 
-The expected light sensor is an RS485 Modbus PAR sensor with a range around
-0-2500 umol/m2/s.
+The initial supported light sensor is the DFRobot SEN0641 with a 0-4000
+umol/m2/s range over RS485 Modbus. Add separate register, scale, and range
+profiles for other PAR sensors.
 
 Initial provisional register map:
 
@@ -218,6 +219,24 @@ ENV status payload:
   "par_umol_m2_s": 1234.0
 }
 ```
+
+### DFRobot SEN0641 Profile
+
+DFRobot `SEN0641` can be used as the ENV/WRS RS485 PAR sensor. Treat the [DFRobot SEN0641 Wiki](https://wiki.dfrobot.com/sen0641/) and [Modbus reference](https://wiki.dfrobot.com/sen0641/docs/20337) as the authoritative product specifications.
+
+| Item | Setting |
+|---|---|
+| Power | DC 5-30V, less than 10mA. Connect to `SENSOR_12V_SW+` on WRS |
+| Measurement | 0-4000 umol/m2/s with 1 umol/m2/s resolution |
+| Communication | Modbus RTU, 4800bps, 8 data bits, no parity, 1 stop bit |
+| Slave ID | `1` at factory default |
+| Read function | `0x03` |
+| PAR register | `0x0000`, one register, scale `1.0` |
+| Wires | brown=VCC, black=GND, yellow=485-A, blue=485-B |
+
+The WRS default `par` configuration matches this profile. If a soil sensor on the same bus also uses factory-default slave ID `1`, change one device address before connecting both devices. The WRS default allocation is `PAR=1` and `soil=2`. All devices on one bus must use the same baud rate.
+
+When a 5V MAX485 module is used with the XIAO ESP32S3, do not connect its 5V `RO` output directly to `D7/GPIO44`. Level-shift the receive signal to 3.3V or use a 3.3V-logic transceiver such as MAX3485, SP3485, or an SN65HVD variant. Verify the specific MAX485 module's pull-ups, termination, and A/B labels against its schematic.
 
 ## WRS Hardware Assumptions
 

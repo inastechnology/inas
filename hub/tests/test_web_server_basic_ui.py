@@ -1,6 +1,9 @@
+import io
 import os
 import tempfile
 import unittest
+
+from werkzeug.datastructures import MultiDict
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
@@ -17,7 +20,9 @@ os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
 from ina_device_hub import web_server  # noqa: E402
+from ina_device_hub.field_layout_repository import FieldLayoutRepository  # noqa: E402
 from ina_device_hub.field_repository import FieldRepository  # noqa: E402
+from ina_device_hub.plant_management_repository import PlantManagementRepository  # noqa: E402
 from ina_device_hub.sensor_device_repository import SensorDeviceRepository  # noqa: E402
 
 
@@ -35,6 +40,116 @@ class FakeTimelapseMediaService:
                 "url": "/local/api/camera-images/timelapse_frames/camera-1/20260704/20260704_063000.jpg",
             }
         ]
+
+
+class FakeAIContentService:
+    def generate_plant_calendar(self, context, guidance_examples=None):
+        planted_on = context["planting"]["planted_on"]
+        return {
+            "growth_targets": {
+                "soil_moisture_percent": {"min": 32, "max": 62},
+                "soil_ec_us_cm": {"min": 400, "max": 1200},
+            },
+            "actions": [
+                {
+                    "action_type": "fertilization",
+                    "title": "追肥要否を確認",
+                    "priority": "recommended",
+                    "window_start": planted_on,
+                    "window_end": "2026-07-31",
+                    "timing_label": "活着後",
+                    "reason": "樹勢を確認するため",
+                    "instructions": "葉色を確認する",
+                    "tags": ["追肥", "樹勢維持"],
+                    "rule_id": "rule-fertilization",
+                }
+            ],
+            "care_profile": {
+                "summary": "ブルーベリーの栽培基準",
+                "fertilization": {"strategy": "葉色とECで判断する"},
+            },
+            "task_rules": [
+                {
+                    "rule_id": "rule-fertilization",
+                    "action_type": "fertilization",
+                    "title": "追肥要否を確認",
+                    "recurrence_type": "interval_after_completion",
+                    "anchor": "completion_date",
+                    "interval_days": {"min": 30, "preferred": 45, "max": 60},
+                    "active_months": list(range(1, 13)),
+                }
+            ],
+            "generation": {"source": "test", "guidance_count": len(guidance_examples or [])},
+        }
+
+    def generate_follow_up_tasks(self, context):
+        return {
+            "source": "test",
+            "decision_summary": "実施日から次回を計算",
+            "actions": [
+                {
+                    "rule_id": context["task_rule"]["rule_id"],
+                    "action_type": "fertilization",
+                    "title": "次回の追肥要否を確認",
+                    "priority": "recommended",
+                    "window_start": "2026-08-20",
+                    "window_end": "2026-09-05",
+                }
+            ],
+        }
+
+    def answer_plant_question(self, context, question):
+        return f"{context['planting']['crop_name']}について回答: {question}"
+
+
+class FakeDeviceConfigService:
+    def __init__(self):
+        self.records = {}
+        self.get_all_calls = 0
+
+    def get_all_records(self):
+        self.get_all_calls += 1
+        return self.records
+
+    def find_record(self, device_id):
+        return self.records.get(device_id)
+
+
+class FakeSensorMeasurementRepository:
+    def __init__(self):
+        self.measurements = []
+
+    def latest_for_device(self, device_id, limit=100):
+        return [item for item in reversed(self.measurements) if item["device_id"] == device_id][:limit]
+
+    def between_for_devices(self, device_ids, start_at, end_at, limit=5000):
+        return [item for item in reversed(self.measurements) if item["device_id"] in device_ids and start_at <= item["measured_at"] < end_at][:limit]
+
+
+class FakeFieldRecordMediaService:
+    def __init__(self):
+        self.objects = {}
+
+    def upload_images(self, field_id, occurred_at, files):
+        attachments = []
+        for index, image in enumerate(file for file in files if file.filename):
+            image_bytes = image.read()
+            attachment_id = f"attachment-{len(self.objects) + index + 1}"
+            attachment = {
+                "id": attachment_id,
+                "storage": "r2",
+                "object_key": f"field-records/{field_id}/{str(occurred_at)[:10]}/{attachment_id}.png",
+                "content_type": "image/png",
+                "size_bytes": len(image_bytes),
+                "original_filename": image.filename,
+                "url": f"/local/api/fields/{field_id}/record-images/{attachment_id}",
+            }
+            self.objects[attachment_id] = image_bytes
+            attachments.append(attachment)
+        return attachments
+
+    def fetch_image(self, attachment):
+        return self.objects[attachment["id"]]
 
 
 class WebServerBasicUITest(unittest.TestCase):
@@ -56,13 +171,70 @@ class WebServerBasicUITest(unittest.TestCase):
         self.field_repository.save()
         self.original_field_repository = web_server.field_repository
         web_server.field_repository = lambda: self.field_repository
+        self.field_layout_repository = FieldLayoutRepository()
+        self.field_layout_repository.layout_repo_path = os.path.join(self.tmp_dir.name, ".field_layouts.json")
+        self.field_layout_repository.layouts = {}
+        self.field_layout_repository.save()
+        self.original_field_layout_repository = web_server.field_layout_repository
+        web_server.field_layout_repository = lambda: self.field_layout_repository
+        self.plant_management_repository = PlantManagementRepository()
+        self.plant_management_repository.repository_path = os.path.join(self.tmp_dir.name, ".plant_management.json")
+        self.plant_management_repository.data = {
+            "schema_version": 1,
+            "plantings": {},
+            "calendars": {},
+            "feedback": [],
+            "work_logs": [],
+            "questions": [],
+        }
+        self.plant_management_repository.save()
+        self.original_plant_management_repository = web_server.plant_management_repository
+        web_server.plant_management_repository = lambda: self.plant_management_repository
+        self.original_ai_content_service = web_server.ai_content_service
+        web_server.ai_content_service = lambda: FakeAIContentService()
+        self.fake_device_config_service = FakeDeviceConfigService()
+        self.original_device_config_service = web_server.device_config_service
+        web_server.device_config_service = lambda: self.fake_device_config_service
+        self.fake_sensor_measurement_repository = FakeSensorMeasurementRepository()
+        self.original_sensor_measurement_repository = web_server.sensor_measurement_repository
+        web_server.sensor_measurement_repository = lambda: self.fake_sensor_measurement_repository
+        self.fake_field_record_media_service = FakeFieldRecordMediaService()
+        self.original_field_record_media_service = web_server.field_record_media_service
+        web_server.field_record_media_service = lambda: self.fake_field_record_media_service
         self.client = web_server.app.test_client()
 
     def tearDown(self):
         web_server.sensor_device_repository = self.original_sensor_device_repository
         web_server.timelapse_media_service = self.original_timelapse_media_service
         web_server.field_repository = self.original_field_repository
+        web_server.field_layout_repository = self.original_field_layout_repository
+        web_server.plant_management_repository = self.original_plant_management_repository
+        web_server.ai_content_service = self.original_ai_content_service
+        web_server.device_config_service = self.original_device_config_service
+        web_server.sensor_measurement_repository = self.original_sensor_measurement_repository
+        web_server.field_record_media_service = self.original_field_record_media_service
         self.tmp_dir.cleanup()
+
+    def test_ai_settings_page_renders_text_and_image_channels(self):
+        response = self.client.get("/settings/ai")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("AI設定", html)
+        self.assertIn('name="text_analyze_model"', html)
+        self.assertIn('name="image_analyze_model"', html)
+        self.assertIn("接続を確認", html)
+
+    def test_web_server_initialization_primes_measurement_repository(self):
+        calls = []
+        current_factory = web_server.sensor_measurement_repository
+        web_server.sensor_measurement_repository = lambda: calls.append("initialized")
+        try:
+            web_server.initialize_web_server()
+        finally:
+            web_server.sensor_measurement_repository = current_factory
+
+        self.assertEqual(calls, ["initialized"])
 
     def test_device_edit_form_updates_existing_device(self):
         device_id = "sensor-1"
@@ -113,29 +285,123 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(end_at.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-04 23:59:59")
         self.assertEqual(limit, 12)
 
-    def test_field_create_form_stores_crop_context_and_policy(self):
+    def test_home_is_field_selector_without_global_device_list(self):
+        field = self.field_repository.upsert(
+            None,
+            {
+                "name": "伊那東圃場",
+                "location": {"prefecture": "長野県", "municipality": "伊那市", "environment_type": "outdoor"},
+            },
+        )
+        self.fake_device_config_service.records = {"WRS-001": {"name": "全国表示してはいけない潅水機", "device_kind": "WRS", "state": "active"}}
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("圃場を選択", html)
+        self.assertIn("伊那東圃場", html)
+        self.assertIn(f"/fields/{field['id']}", html)
+        self.assertIn('name="q"', html)
+        self.assertNotIn("全国表示してはいけない潅水機", html)
+        self.assertNotIn("/mqtt-devices", html)
+        self.assertNotIn("接続デバイス", html)
+        self.assertEqual(self.fake_device_config_service.get_all_calls, 0)
+
+    def test_field_catalog_filters_and_paginates_without_rendering_all_fields(self):
+        for index in range(20):
+            self.field_repository.upsert(
+                f"field-{index:02d}",
+                {
+                    "name": f"長野圃場 {index:02d}",
+                    "location": {"prefecture": "長野県", "municipality": "伊那市", "environment_type": "outdoor"},
+                },
+            )
+        self.field_repository.upsert(
+            "tokyo-field",
+            {
+                "name": "東京屋内圃場",
+                "location": {"prefecture": "東京都", "municipality": "千代田区", "environment_type": "indoor"},
+            },
+        )
+
+        response = self.client.get("/fields?q=長野&prefecture=長野県&page=2")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("20件中 19-20件", html)
+        self.assertIn("長野圃場 18", html)
+        self.assertIn("長野圃場 19", html)
+        self.assertNotIn("長野圃場 00", html)
+        self.assertNotIn("東京屋内圃場", html)
+        self.assertIn('aria-current="page">2</span>', html)
+
+    def test_field_api_returns_bounded_page_response(self):
+        for index in range(3):
+            self.field_repository.upsert(
+                f"api-field-{index}",
+                {
+                    "name": f"API圃場 {index}",
+                    "location": {"prefecture": "長野県", "municipality": "伊那市", "environment_type": "outdoor"},
+                },
+            )
+
+        response = self.client.get("/local/api/fields?q=API&page=2&page_size=2")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["total"], 3)
+        self.assertEqual(body["page"], 2)
+        self.assertEqual(body["page_size"], 2)
+        self.assertEqual([field["id"] for field in body["items"]], ["api-field-2"])
+
+    def test_field_list_uses_basic_information_create_modal(self):
+        response = self.client.get("/fields")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('id="open-field-create"', html)
+        self.assertIn('id="field-create-dialog"', html)
+        self.assertIn('name="prefecture"', html)
+        self.assertIn('name="municipality"', html)
+        self.assertIn('name="environment_type"', html)
+        self.assertNotIn('name="device_ids"', html)
+        self.assertNotIn('name="crop"', html)
+        self.assertNotIn('name="stage"', html)
+        self.assertNotIn('name="cultivation_method"', html)
+        self.assertNotIn('name="memo"', html)
+
+    def test_field_create_form_stores_only_field_basic_information(self):
         response = self.client.post(
             "/fields",
             data={
-                "name": "試験ハウス",
+                "name": "伊那東圃場",
+                "prefecture": "長野県",
+                "municipality": "伊那市",
+                "locality": "西箕輪",
+                "environment_type": "outdoor",
                 "crop": "トマト",
-                "cultivar": "アイコ",
-                "stage": "開花",
-                "cultivation_method": "ハウス",
-                "objective": "土壌水分を安定させる",
-                "allowed_actions": ["watering", "fertigation"],
-                "target_soil_moisture_min": "35",
-                "target_soil_moisture_max": "65",
+                "device_ids": "INADS-should-not-be-linked",
+                "memo": "保存対象外",
             },
         )
 
         self.assertEqual(response.status_code, 302)
         field = self.field_repository.list()[0]
-        self.assertEqual(field["crop_profile"]["crop_name"], "トマト")
-        self.assertEqual(field["crop_profile"]["cultivar"], "アイコ")
-        self.assertEqual(field["cultivation_context"]["cultivation_method"], "ハウス")
-        self.assertEqual(field["growth_targets"]["soil_moisture_percent"]["max"], 65.0)
-        self.assertEqual(field["control_policy"]["allowed_actions"], ["watering", "fertigation"])
+        self.assertEqual(field["name"], "伊那東圃場")
+        self.assertEqual(field["location"]["prefecture"], "長野県")
+        self.assertEqual(field["location"]["municipality"], "伊那市")
+        self.assertEqual(field["location"]["locality"], "西箕輪")
+        self.assertEqual(field["location"]["environment_type"], "outdoor")
+        self.assertEqual(field["crop_profile"]["crop_name"], "")
+        self.assertEqual(field["device_ids"], [])
+        self.assertEqual(field["memo"], "")
+
+    def test_field_create_requires_location_and_environment(self):
+        response = self.client.post("/fields", data={"name": "不足圃場"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.field_repository.list(), [])
 
     def test_field_detail_renders_growth_context_and_action_candidates(self):
         field = self.field_repository.upsert(
@@ -153,15 +419,129 @@ class WebServerBasicUITest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
-        self.assertIn("生育の前提", html)
-        self.assertIn("次の判断候補", html)
-        self.assertIn("アクション計画の履歴", html)
+        self.assertIn('role="tablist"', html)
+        self.assertIn('data-field-tab="overview"', html)
+        self.assertIn('data-field-tab="cultivation"', html)
+        self.assertIn('data-field-tab="records"', html)
+        self.assertIn('data-field-tab="settings"', html)
+        self.assertIn("今日の記録", html)
+        self.assertIn("設置ビュー", html)
+        self.assertIn('class="installation-preview-image"', html)
+        self.assertIn("作業TODO", html)
+        self.assertNotIn("センサー詳細", html)
+        self.assertIn('id="field-action-candidates"', html)
+        self.assertIn('class="task-list"', html)
+        self.assertIn('class="record-calendar"', html)
+
+    def test_field_detail_streams_shell_before_building_data_context(self):
+        field = self.field_repository.upsert(None, {"name": "ストリーム圃場"})
+        original_builder = web_server._build_field_context
+        build_calls = []
+
+        def tracked_builder(*args, **kwargs):
+            build_calls.append("built")
+            return original_builder(*args, **kwargs)
+
+        web_server._build_field_context = tracked_builder
+        try:
+            response = self.client.get(f"/fields/{field['id']}", buffered=False)
+            iterator = iter(response.response)
+            prefix = b""
+            while b'id="field-stream-progress"' not in prefix:
+                prefix += next(iterator)
+
+            self.assertEqual(build_calls, [])
+            remainder = b"".join(iterator)
+        finally:
+            web_server._build_field_context = original_builder
+
+        self.assertTrue(response.is_streamed)
+        self.assertEqual(response.headers["X-Accel-Buffering"], "no")
+        self.assertEqual(build_calls, ["built"])
+        self.assertIn("作業TODO", (prefix + remainder).decode("utf-8"))
+
+    def test_field_detail_defers_monthly_records_until_primary_sections_are_streamed(self):
+        field = self.field_repository.upsert(None, {"name": "段階配信圃場"})
+        original_builder = web_server._build_field_deferred_context
+        deferred_calls = []
+
+        def tracked_builder(*args, **kwargs):
+            deferred_calls.append("built")
+            return original_builder(*args, **kwargs)
+
+        web_server._build_field_deferred_context = tracked_builder
+        try:
+            response = self.client.get(f"/fields/{field['id']}", buffered=False)
+            iterator = iter(response.response)
+            primary = b""
+            while b"field-primary-stream-complete" not in primary:
+                primary += next(iterator)
+
+            self.assertEqual(deferred_calls, [])
+            remainder = b"".join(iterator)
+        finally:
+            web_server._build_field_deferred_context = original_builder
+
+        self.assertEqual(deferred_calls, ["built"])
+        self.assertIn("現在の圃場", primary.decode("utf-8"))
+        self.assertIn('class="record-calendar"', remainder.decode("utf-8"))
+
+    def test_field_status_dashboard_uses_latest_value_and_flags_target_miss(self):
+        dashboard = web_server._build_field_status_dashboard(
+            {
+                "growth_targets": {
+                    "soil_moisture_percent": {"min": 35, "max": 65},
+                    "soil_ph": {"min": 5.5, "max": 6.5},
+                }
+            },
+            [
+                {
+                    "device_id": "SOI-old",
+                    "scope_label": "1番畝",
+                    "updated_at": "2026-07-14T01:00:00+00:00",
+                    "values": {"soil_moisture_percent": 48, "soil_ph": 6.0},
+                },
+                {
+                    "device_id": "SOI-new",
+                    "scope_label": "2番畝",
+                    "updated_at": "2026-07-14T02:00:00+00:00",
+                    "values": {"last_soil_moisture": 29, "soil_ph": 6.2},
+                },
+            ],
+        )
+
+        metrics = {metric["metric"]: metric for metric in dashboard["metrics"]}
+        moisture = metrics["soil_moisture_percent"]
+        self.assertEqual(dashboard["overall_state"], "attention")
+        self.assertEqual(dashboard["counts"]["attention"], 1)
+        self.assertEqual(moisture["value"], 29)
+        self.assertEqual(moisture["device_id"], "SOI-new")
+        self.assertEqual(moisture["state"], "low")
+        self.assertEqual(moisture["marker_pct"], 29)
+        self.assertEqual(moisture["target_left_pct"], 35)
+        self.assertEqual(moisture["target_width_pct"], 30)
+
+    def test_field_status_dashboard_omits_missing_values(self):
+        dashboard = web_server._build_field_status_dashboard(
+            {"growth_targets": {"soil_moisture_percent": {"min": 40, "max": 70}}},
+            [],
+        )
+
+        self.assertEqual(dashboard["overall_state"], "empty")
+        self.assertEqual(dashboard["counts"]["attention"], 0)
+        self.assertEqual(dashboard["counts"]["unknown"], 0)
+        self.assertEqual(dashboard["metrics"], [])
 
     def test_field_list_renders_summary_cards(self):
         self.field_repository.upsert(
             None,
             {
                 "name": "一覧テスト圃場",
+                "location": {
+                    "prefecture": "長野県",
+                    "municipality": "伊那市",
+                    "environment_type": "greenhouse",
+                },
                 "crop": "キュウリ",
                 "stage": "育苗",
                 "growth_targets": {"soil_moisture_percent": {"min": 45, "max": 75}},
@@ -174,10 +554,37 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         self.assertIn("一覧テスト圃場", html)
-        self.assertIn("土壌水分目標 45.0-75.0%", html)
-        self.assertIn("噴霧", html)
+        self.assertIn("長野県伊那市", html)
+        self.assertIn("ハウス・温室内", html)
+        self.assertIn("接続デバイス", html)
+        self.assertIn("未定植", html)
+        self.assertNotIn("管理区画", html)
+        self.assertNotIn("キュウリ", html)
 
-    def test_field_detail_form_stores_monitoring_units_and_device_placement(self):
+    def test_field_detail_settings_only_edits_location(self):
+        field = self.field_repository.upsert(
+            None,
+            {
+                "name": "栽培選択テスト",
+                "crop": "ブルーベリー",
+                "stage": "開花",
+                "cultivation_context": {"cultivation_method": "鉢・プランター栽培"},
+            },
+        )
+
+        response = self.client.get(f"/fields/{field['id']}")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("場所設定", html)
+        self.assertIn('name="prefecture"', html)
+        self.assertIn('name="municipality"', html)
+        self.assertNotIn('name="stage"', html)
+        self.assertNotIn('name="crop"', html)
+        self.assertNotIn('name="cultivation_method"', html)
+        self.assertNotIn('name="memo"', html)
+
+    def test_field_detail_form_only_updates_field_location(self):
         field = self.field_repository.upsert(
             None,
             {
@@ -185,6 +592,7 @@ class WebServerBasicUITest(unittest.TestCase):
                 "crop": "トマト",
                 "stage": "開花",
                 "device_ids": ["INADS-env"],
+                "memo": "移行前メモ",
             },
         )
 
@@ -192,27 +600,21 @@ class WebServerBasicUITest(unittest.TestCase):
             f"/fields/{field['id']}",
             data={
                 "name": "設置先テスト圃場",
-                "crop": "トマト",
-                "stage": "開花",
-                "areas_text": "A区画,section,トマト,南側",
-                "device_ids": "INADS-env",
-                "camera_device_ids": "",
-                "allowed_actions": ["watering"],
-                "placement_device_id_0": "INADS-env",
-                "placement_device_role_0": "environment",
-                "placement_scope_type_0": "field",
-                "placement_area_id_0": "",
-                "placement_crop_name_0": "トマト",
-                "placement_memo_0": "圃場代表値",
+                "prefecture": "長野県",
+                "municipality": "伊那市",
+                "locality": "西箕輪",
+                "environment_type": "outdoor",
             },
         )
 
         self.assertEqual(response.status_code, 302)
         stored = self.field_repository.get(field["id"])
-        self.assertEqual(stored["areas"][0]["name"], "A区画")
-        self.assertEqual(stored["device_placements"][0]["device_role"], "environment")
-        self.assertEqual(stored["device_placements"][0]["scope_type"], "field")
-        self.assertEqual(stored["device_placements"][0]["memo"], "圃場代表値")
+        self.assertEqual(stored["location"]["prefecture"], "長野県")
+        self.assertEqual(stored["location"]["municipality"], "伊那市")
+        self.assertEqual(stored["location"]["locality"], "西箕輪")
+        self.assertEqual(stored["crop"], "トマト")
+        self.assertEqual(stored["device_ids"], ["INADS-env"])
+        self.assertEqual(stored["memo"], "移行前メモ")
 
     def test_field_detail_renders_monitoring_units_and_device_placements(self):
         field = self.field_repository.upsert(
@@ -233,10 +635,412 @@ class WebServerBasicUITest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
-        self.assertIn("監視単位", html)
-        self.assertIn("東ベッド", html)
-        self.assertIn("デバイス設置先", html)
-        self.assertIn("土壌センサー", html)
+        self.assertIn("設置場所と機器", html)
+        self.assertIn("INADS-soi", html)
+        self.assertIn('href="/mqtt-devices/INADS-soi?tab=settings"', html)
+        self.assertIn('aria-label="INADS-soiの動作設定"', html)
+        self.assertNotIn("<h3>監視単位</h3>", html)
+        self.assertNotIn("東ベッド", html)
+
+    def test_field_layout_page_and_api_support_editing(self):
+        field = self.field_repository.upsert(None, {"name": "設置ビュー圃場", "crop": "イチゴ"})
+
+        page = self.client.get(f"/fields/{field['id']}/layout")
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn('id="installation-layout-root"', html)
+        self.assertIn(f'data-field-id="{field["id"]}"', html)
+        self.assertIn("/static/admin-layout/installation-layout.js", html)
+
+        initial = self.client.get(f"/local/api/fields/{field['id']}/layout")
+        self.assertEqual(initial.status_code, 200)
+        layout = initial.get_json()
+        layout["spaces"][0]["placements"].append(
+            {
+                "id": "ridge-1",
+                "preset": "ridge",
+                "name": "イチゴ畝1",
+                "x": 2,
+                "y": 3,
+                "width": 8,
+                "height": 2,
+            }
+        )
+
+        saved = self.client.put(f"/local/api/fields/{field['id']}/layout", json=layout)
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.get_json()["revision"], 1)
+        self.assertEqual(saved.get_json()["spaces"][0]["placements"][0]["name"], "イチゴ畝1")
+
+    def test_field_layout_api_rejects_stale_revision(self):
+        field = self.field_repository.upsert(None, {"name": "競合テスト圃場"})
+        layout = self.client.get(f"/local/api/fields/{field['id']}/layout").get_json()
+        first = self.client.put(f"/local/api/fields/{field['id']}/layout", json=layout)
+        self.assertEqual(first.status_code, 200)
+        stale = self.client.put(f"/local/api/fields/{field['id']}/layout", json=layout)
+        self.assertEqual(stale.status_code, 409)
+
+    def test_layout_device_list_groups_unassigned_devices_and_hides_other_field_assignments(self):
+        first_field = self.field_repository.upsert(None, {"name": "第1圃場"})
+        second_field = self.field_repository.upsert(None, {"name": "第2圃場"})
+        self.fake_device_config_service.records = {
+            "ENV-001": {"name": "環境センサー1", "device_kind": "ENV", "state": "active"},
+            "SOI-001": {"name": "土壌センサー1", "device_kind": "SOI", "state": "active"},
+            "WRS-001": {
+                "name": "潅水制御1",
+                "device_kind": "WRS",
+                "state": "active",
+                "config": {"mosfet_switches": [{"switch_id": "irr1", "name": "潅水1系", "enabled": True}]},
+            },
+        }
+        layout = self.field_layout_repository.get(first_field["id"], field_name=first_field["name"])
+        layout["spaces"][0]["placements"].append(
+            {
+                "id": "sensor-env",
+                "preset": "sensor",
+                "name": "環境センサー",
+                "x": 1,
+                "y": 1,
+                "width": 2,
+                "height": 2,
+                "binding": {"device_id": "ENV-001", "resource_type": "sensor", "resource_id": ""},
+            }
+        )
+        self.field_layout_repository.upsert(first_field["id"], layout, field_name=first_field["name"])
+
+        first_devices = self.client.get(f"/local/api/fields/{first_field['id']}/layout/devices").get_json()
+        second_devices = self.client.get(f"/local/api/fields/{second_field['id']}/layout/devices").get_json()
+
+        self.assertEqual({item["id"] for item in first_devices}, {"ENV-001", "SOI-001", "WRS-001"})
+        self.assertEqual({item["id"] for item in second_devices}, {"SOI-001", "WRS-001"})
+        groups = {item["id"]: item["group_label"] for item in first_devices}
+        self.assertEqual(groups["ENV-001"], "環境センサー")
+        self.assertEqual(groups["SOI-001"], "土壌センサー")
+        self.assertEqual(groups["WRS-001"], "潅水デバイス")
+
+    def test_field_detail_renders_containment_tree_and_device_resource_relation(self):
+        field = self.field_repository.upsert(None, {"name": "階層テスト圃場"})
+        self.fake_device_config_service.records = {
+            "WRS-001": {
+                "name": "潅水制御盤",
+                "device_kind": "WRS",
+                "state": "active",
+                "config": {"mosfet_switches": [{"switch_id": "irr1", "name": "潅水1系", "enabled": True}]},
+            }
+        }
+        layout = self.field_layout_repository.get(field["id"], field_name=field["name"])
+        layout["spaces"][0]["placements"] = [
+            {"id": "ridge-a", "preset": "ridge", "name": "イチゴ畝A", "x": 2, "y": 2, "width": 8, "height": 2},
+            {
+                "id": "watering-a",
+                "preset": "watering_device",
+                "name": "潅水盤A",
+                "x": 12,
+                "y": 2,
+                "width": 2,
+                "height": 2,
+                "binding": {
+                    "device_id": "WRS-001",
+                    "resource_type": "mosfet_switch",
+                    "resource_id": "irr1",
+                    "target_placement_ids": ["ridge-a"],
+                },
+            },
+        ]
+        self.field_layout_repository.upsert(field["id"], layout, field_name=field["name"])
+
+        response = self.client.get(f"/fields/{field['id']}")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('id="field-installation-tree"', html)
+        self.assertIn("圃場構成", html)
+        self.assertIn("イチゴ畝A", html)
+        self.assertIn("潅水盤A", html)
+        self.assertIn("潅水1系", html)
+        self.assertIn("対象: イチゴ畝A", html)
+        self.assertIn("潅水: 潅水盤A", html)
+        self.assertLess(html.index("階層テスト圃場"), html.index("イチゴ畝A"))
+
+    def test_planting_calendar_edit_completion_and_question_flow(self):
+        field = self.field_repository.upsert(None, {"name": "果樹圃場", "crop": "ブルーベリー"})
+        layout = self.field_layout_repository.get(field["id"], field_name=field["name"])
+        layout["spaces"][0]["placements"].append(
+            {
+                "id": "pot-a",
+                "preset": "pot",
+                "name": "鉢A",
+                "x": 2,
+                "y": 3,
+                "width": 2,
+                "height": 2,
+            }
+        )
+        self.field_layout_repository.upsert(field["id"], layout, field_name=field["name"])
+
+        created = self.client.post(
+            f"/local/api/fields/{field['id']}/plantings",
+            json={
+                "space_id": "space-root",
+                "placement_id": "pot-a",
+                "crop_name": "ブルーベリー",
+                "cultivar": "ティフブルー",
+                "crop_category": "fruit_tree",
+                "tree_age_years": 3,
+                "planted_on": "2026-07-14",
+                "plant_count": 1,
+                "conditions": {"environment": "屋外", "soil_or_substrate": "酸性培養土", "region": "重複地域"},
+            },
+        )
+
+        self.assertEqual(created.status_code, 201)
+        planting = created.get_json()["planting"]
+        action = created.get_json()["calendar"]["actions"][0]
+        self.assertEqual(planting["placement_name"], "鉢A")
+        self.assertEqual(planting["crop_category"], "fruit_tree")
+        self.assertEqual(planting["tree_age_years"], 3)
+        self.assertEqual(planting["conditions"]["region"], "")
+        self.assertEqual(planting["growth_targets"]["soil_moisture_percent"], {"min": 32.0, "max": 62.0})
+        self.assertEqual(action["priority"], "recommended")
+
+        target_update = self.client.patch(
+            f"/local/api/plantings/{planting['id']}",
+            json={"growth_targets": {"soil_moisture_percent": {"min": 35, "max": 65}}},
+        )
+        self.assertEqual(target_update.status_code, 200)
+        self.assertEqual(target_update.get_json()["growth_targets"]["soil_moisture_percent"]["max"], 65.0)
+
+        edited = self.client.patch(
+            f"/local/api/plantings/{planting['id']}/calendar/actions/{action['id']}",
+            json={"priority": "should", "reason": "葉色が薄くなりやすいため", "use_as_guidance": True},
+        )
+        self.assertEqual(edited.status_code, 200)
+        self.assertEqual(edited.get_json()["priority"], "should")
+
+        completed = self.client.post(
+            f"/local/api/plantings/{planting['id']}/calendar/actions/{action['id']}/complete",
+            data={
+                "performed_on": "2026-07-20",
+                "note": "少量施肥",
+                "rating": "4",
+                "images": (io.BytesIO(b"\x89PNG\r\n\x1a\nwork-image"), "work.png"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(completed.status_code, 201)
+        self.assertEqual(completed.get_json()["performed_on"], "2026-07-20")
+        self.assertEqual(completed.get_json()["rating"], 4)
+        self.assertEqual(completed.get_json()["attachments"][0]["storage"], "r2")
+        self.assertEqual(completed.get_json()["follow_up"]["actions"][0]["title"], "次回の追肥要否を確認")
+        self.assertEqual(self.field_repository.get(field["id"])["events"][0]["occurred_at"], "2026-07-20")
+
+        question = self.client.post(
+            f"/local/api/plantings/{planting['id']}/questions",
+            json={"question": "次の追肥はいつですか"},
+        )
+        self.assertEqual(question.status_code, 201)
+        self.assertIn("ブルーベリーについて回答", question.get_json()["answer"])
+
+        regenerated = self.client.post(
+            f"/local/api/plantings/{planting['id']}/calendar/regenerate",
+            json={"start_date": "2026-07-21", "planning_notes": "週末だけ作業する"},
+        )
+        self.assertEqual(regenerated.status_code, 200)
+        self.assertTrue(any(item["status"] == "completed" for item in regenerated.get_json()["calendar"]["actions"]))
+
+        detail = self.client.get(f"/fields/{field['id']}?planting={planting['id']}#cultivation")
+        html = detail.get_data(as_text=True)
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn('data-field-tab="monitoring"', html)
+        self.assertIn(f'data-planting-form="{planting["id"]}"', html)
+        self.assertIn("年間カレンダーを開く", html)
+        self.assertIn("直近の履歴", html)
+        self.assertIn("少量施肥", html)
+        self.assertIn('/static/plant-actions/fertilization.webp', html)
+
+    def test_record_calendar_opens_daily_records_with_r2_image_and_emoji_rating(self):
+        field = self.field_repository.upsert(None, {"name": "記録圃場"})
+        image_bytes = b"\x89PNG\r\n\x1a\nfield-image"
+
+        created = self.client.post(
+            f"/fields/{field['id']}/events",
+            data={
+                "event_type": "observation",
+                "occurred_at": "2026-07-18T08:30",
+                "title": "葉色を確認",
+                "description": "新葉の色は安定",
+                "rating": "5",
+                "images": (io.BytesIO(image_bytes), "leaf.png"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(created.status_code, 302)
+        event = self.field_repository.get(field["id"])["events"][0]
+        self.assertEqual(event["rating"], 5)
+        self.assertEqual(event["attachments"][0]["storage"], "r2")
+
+        detail = self.client.get(f"/fields/{field['id']}?record_month=2026-07#records")
+        html = detail.get_data(as_text=True)
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn('data-record-date="2026-07-18"', html)
+        self.assertIn('id="record-day-modal"', html)
+        self.assertIn("葉色を確認", html)
+        self.assertIn("😄", html)
+
+        attachment_id = event["attachments"][0]["id"]
+        image = self.client.get(f"/local/api/fields/{field['id']}/record-images/{attachment_id}")
+        self.assertEqual(image.status_code, 200)
+        self.assertEqual(image.content_type, "image/png")
+        self.assertEqual(image.data, image_bytes)
+
+        api_created = self.client.post(
+            f"/local/api/fields/{field['id']}/events",
+            data={
+                "event_type": "harvest",
+                "occurred_at": "2026-07-19T10:00",
+                "title": "収穫を確認",
+                "rating": "4",
+                "images": (io.BytesIO(b"\x89PNG\r\n\x1a\napi-image"), "harvest.png"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(api_created.status_code, 201)
+        self.assertEqual(api_created.get_json()["rating"], 4)
+        self.assertEqual(api_created.get_json()["attachments"][0]["storage"], "r2")
+
+    def test_device_free_field_records_selected_values_for_a_pot_and_reuses_recent_items(self):
+        field = self.field_repository.upsert(None, {"name": "手入力圃場"})
+        layout = self.field_layout_repository.get(field["id"], field_name=field["name"])
+        layout["spaces"][0]["placements"].append({"id": "pot-a", "preset": "pot", "name": "ブルーベリー鉢A", "x": 2, "y": 2, "width": 2, "height": 2})
+        self.field_layout_repository.upsert(field["id"], layout, field_name=field["name"])
+
+        initial = self.client.get(f"/fields/{field['id']}?record_month=2026-07#records")
+        initial_html = initial.get_data(as_text=True)
+        self.assertEqual(initial.status_code, 200)
+        self.assertIn("記録することを検索", initial_html)
+        self.assertIn("記録項目を追加", initial_html)
+        self.assertIn("ブルーベリー鉢A", initial_html)
+        self.assertNotIn("センサー詳細", initial_html)
+
+        created = self.client.post(
+            f"/fields/{field['id']}/events",
+            data=MultiDict(
+                [
+                    ("event_type", "daily_record"),
+                    ("occurred_at", "2026-07-18T07:15"),
+                    ("target_placement_id", "pot-a"),
+                    ("record_item_key", "watering_duration_min"),
+                    ("record_item_value", "12"),
+                    ("record_item_key", "soil_ec_us_cm"),
+                    ("record_item_value", "850"),
+                    ("description", "朝の手潅水"),
+                ]
+            ),
+        )
+
+        self.assertEqual(created.status_code, 302)
+        event = self.field_repository.get(field["id"])["events"][0]
+        self.assertEqual(event["target_placement_id"], "pot-a")
+        self.assertEqual(event["target_name"], "ブルーベリー鉢A")
+        self.assertEqual(
+            [(item["key"], item["value"], item["unit"]) for item in event["record_values"]],
+            [("watering_duration_min", 12, "分"), ("soil_ec_us_cm", 850, "uS/cm")],
+        )
+
+        detail = self.client.get(f"/fields/{field['id']}?record_month=2026-07#records")
+        html = detail.get_data(as_text=True)
+        self.assertIn("過去に選択", html)
+        self.assertIn('data-add-record-item="watering_duration_min"', html)
+        self.assertIn('data-add-record-item="soil_ec_us_cm"', html)
+        self.assertIn("朝の手潅水", html)
+
+    def test_record_calendar_includes_multiple_automatic_device_values_with_times(self):
+        field = self.field_repository.upsert(
+            None,
+            {
+                "name": "自動記録圃場",
+                "device_ids": ["ENV-001", "SOI-001", "UNBOUND-001"],
+            },
+        )
+        self.fake_device_config_service.records = {
+            "ENV-001": {"name": "ハウス環境", "device_kind": "ENV", "state": "active", "status_history": []},
+            "SOI-001": {"name": "鉢水分", "device_kind": "SOI", "state": "active", "status_history": []},
+            "UNBOUND-001": {"name": "未配置センサー", "device_kind": "SOI", "state": "active", "status_history": []},
+        }
+        layout = self.field_layout_repository.get(field["id"], field_name=field["name"])
+        layout["spaces"][0]["placements"] = [
+            {
+                "id": "sensor-env",
+                "preset": "sensor",
+                "name": "環境センサー",
+                "x": 1,
+                "y": 1,
+                "width": 2,
+                "height": 2,
+                "binding": {"device_id": "ENV-001", "resource_type": "sensor", "resource_id": ""},
+            },
+            {
+                "id": "sensor-soil",
+                "preset": "sensor",
+                "name": "土壌センサー",
+                "x": 4,
+                "y": 1,
+                "width": 2,
+                "height": 2,
+                "binding": {"device_id": "SOI-001", "resource_type": "sensor", "resource_id": ""},
+            },
+        ]
+        self.field_layout_repository.upsert(field["id"], layout, field_name=field["name"])
+        self.fake_sensor_measurement_repository.measurements = [
+            {
+                "device_id": "ENV-001",
+                "device_kind": "ENV",
+                "measured_at": "2026-07-18T00:30:00+00:00",
+                "metric": "soil_ec_us_cm",
+                "value": 780,
+                "unit": "uS/cm",
+                "source": "mqtt_status",
+            },
+            {
+                "device_id": "ENV-001",
+                "device_kind": "ENV",
+                "measured_at": "2026-07-18T02:30:00+00:00",
+                "metric": "soil_ec_us_cm",
+                "value": 810,
+                "unit": "uS/cm",
+                "source": "mqtt_status",
+            },
+            {
+                "device_id": "SOI-001",
+                "device_kind": "SOI",
+                "measured_at": "2026-07-18T01:00:00+00:00",
+                "metric": "soil_moisture_percent",
+                "value": 44,
+                "unit": "%",
+                "source": "mqtt_status",
+            },
+            {
+                "device_id": "UNBOUND-001",
+                "device_kind": "SOI",
+                "measured_at": "2026-07-18T01:30:00+00:00",
+                "metric": "soil_moisture_percent",
+                "value": 51,
+                "unit": "%",
+                "source": "mqtt_status",
+            },
+        ]
+
+        detail = self.client.get(f"/fields/{field['id']}?record_month=2026-07#records")
+        html = detail.get_data(as_text=True)
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn("自動 3", html)
+        self.assertIn("ハウス環境", html)
+        self.assertIn("鉢水分", html)
+        self.assertNotIn("未配置センサー", html)
+        self.assertIn('"time": "09:30"', html)
+        self.assertIn('"time": "11:30"', html)
 
 
 if __name__ == "__main__":

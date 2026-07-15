@@ -1,0 +1,53 @@
+import os
+import tempfile
+import unittest
+from unittest.mock import patch
+
+
+os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
+os.environ.setdefault("TURSO_DATABASE_URL", "local")
+os.environ.setdefault("TURSO_AUTH_TOKEN", "local")
+os.environ.setdefault("S3_ENDPOINT_URL", "x")
+os.environ.setdefault("S3_BUCKET_NAME", "x")
+os.environ.setdefault("S3_BUCKET_REGION", "auto")
+os.environ.setdefault("S3_ACCESS_KEY", "x")
+os.environ.setdefault("S3_SECRET_KEY", "x")
+os.environ.setdefault("MQTT_BROKER_URL", "localhost")
+os.environ.setdefault("MQTT_BROKER_PORT", "1883")
+os.environ.setdefault("MQTT_BROKER_USERNAME", "")
+os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
+os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
+
+from ina_device_hub import ina_db_connector  # noqa: E402
+
+
+class InaDBConnectorTest(unittest.TestCase):
+    def test_remote_replica_uses_configured_background_sync_interval(self):
+        connection = object()
+        with patch.object(ina_db_connector.libsql, "connect", return_value=connection) as connect:
+            result = ina_db_connector._connect_database(
+                "/tmp/ina.db",
+                "libsql://database.example",
+                "token",
+                45,
+            )
+
+        self.assertIs(result, connection)
+        connect.assert_called_once_with(
+            "/tmp/ina.db",
+            sync_url="libsql://database.example",
+            auth_token="token",
+            sync_interval=45,
+        )
+
+    def test_local_database_does_not_enable_replica_sync(self):
+        connection = object()
+        with patch.object(ina_db_connector.libsql, "connect", return_value=connection) as connect:
+            result = ina_db_connector._connect_database("/tmp/ina.db", "local-demo", "unused", 45)
+
+        self.assertIs(result, connection)
+        connect.assert_called_once_with("/tmp/ina.db")
+
+
+if __name__ == "__main__":
+    unittest.main()

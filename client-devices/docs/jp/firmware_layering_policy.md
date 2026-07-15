@@ -52,6 +52,7 @@ device App は、どの sensor を有効化するか、sensor rail に電源を�
 - MOSFET で切り替える power rail または simple on/off output は `hal_power_switch` を使う。
 - 灌水1系、灌水2系、12V sensor power のように独立出力が複数ある場合は、複数の `hal_power_switch_t` instance を使う。
 - 出力が pump、valve、solenoid、relay のどれに接続されるかは device App config とドキュメントの責務である。HAL は電気的な出力を ON/OFF するだけでよい。
+- 「点滴ライン A」「RS485センサー電源」のような営農者向け表示名や制御対象メモは、`mosfet_switches` などの hub / device App runtime config metadata に置く。`hal_power_switch` に name や role を持たせない。
 - 再利用可能な timed multi-channel output primitive が必要になった場合は、device-kind 固有 HAL ではなく generic common HAL として実装する。
 
 ## WRS への適用

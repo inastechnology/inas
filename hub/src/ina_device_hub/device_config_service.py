@@ -109,6 +109,38 @@ class DeviceConfigService:
                     "power_settle_ms": 800,
                 },
             },
+            "mosfet_switches": [
+                {
+                    "switch_id": "irr1",
+                    "name": "灌水1系",
+                    "enabled": True,
+                    "role": "irrigation",
+                    "terminal": "IRR1",
+                    "channel_mask": 1,
+                    "controlled_load": "",
+                    "notes": "",
+                },
+                {
+                    "switch_id": "irr2",
+                    "name": "灌水2系",
+                    "enabled": True,
+                    "role": "irrigation",
+                    "terminal": "IRR2",
+                    "channel_mask": 2,
+                    "controlled_load": "",
+                    "notes": "",
+                },
+                {
+                    "switch_id": "sensor_power",
+                    "name": "RS485センサー電源",
+                    "enabled": True,
+                    "role": "sensor_power",
+                    "terminal": "SENSOR_12V_SW",
+                    "channel_mask": 0,
+                    "controlled_load": "RS485 sensor 12V branch",
+                    "notes": "",
+                },
+            ],
             "schedules": [
                 {
                     "hour": 6,
@@ -122,6 +154,9 @@ class DeviceConfigService:
 
     def get_record(self, device_id: str):
         return self.repository.get_or_create(device_id, self.default_config())
+
+    def find_record(self, device_id: str):
+        return self.repository.get(device_id)
 
     def get_config(self, device_id: str):
         return self.get_record(device_id)["config"]

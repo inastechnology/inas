@@ -186,6 +186,26 @@ Example:
     "off_sec": 60,
     "cycles": 1
   },
+  "mosfet_switches": [
+    {
+      "switch_id": "irr1",
+      "name": "Strawberry drip line A",
+      "enabled": true,
+      "role": "irrigation",
+      "terminal": "IRR1",
+      "channel_mask": 1,
+      "controlled_load": "12V solenoid valve"
+    },
+    {
+      "switch_id": "sensor_power",
+      "name": "RS485 sensor power",
+      "enabled": true,
+      "role": "sensor_power",
+      "terminal": "SENSOR_12V_SW",
+      "channel_mask": 0,
+      "controlled_load": "RS485 sensor branch"
+    }
+  ],
   "schedules": [
     {
       "hour": 6,
@@ -203,7 +223,7 @@ Example:
 Validation requirements before publish:
 
 - payload is valid JSON
-- MQTT payload is less than 2048 bytes
+- MQTT payload is less than 4096 bytes
 - `schedules` is an array
 - at least one valid schedule exists
 - schedule count is 8 or less
@@ -217,6 +237,10 @@ Validation requirements before publish:
 - weekdays contain at least one value and each value is `0..6`
 - `moisture_threshold` is `0..100`
 - `timezone_offset_sec` matches the operating region
+- `mosfet_switches`, when present, is an output inventory for hub management:
+  `switch_id` is unique, `name` is farmer-facing, `terminal` is the physical
+  terminal label, `controlled_load` records the connected load, and
+  `channel_mask` is `0` for non-scheduled switches such as sensor power
 
 The firmware ignores invalid schedule entries. If no valid schedule remains, it
 does not apply the configuration.

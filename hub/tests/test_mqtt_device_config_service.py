@@ -79,6 +79,8 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertTrue(record["config"]["force_watering"])
         self.assertFalse(record["config"]["debug_log_on_wake"])
         self.assertEqual(record["config"]["ota_check_interval_sec"], 21600)
+        self.assertEqual(record["config"]["mosfet_switches"][0]["switch_id"], "irr1")
+        self.assertEqual(record["config"]["mosfet_switches"][0]["channel_mask"], 1)
         self.assertIsNotNone(record["last_config_request_at"])
         self.assertIsNotNone(record["last_config_reply_at"])
         self.assertEqual(self.mqtt_client.published[0]["topic"], "/INADS-00000000-0000-4000-8000-000000000001/kinds/config/reply")
@@ -86,6 +88,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertIn('"force_watering":true', self.mqtt_client.published[0]["payload"])
         self.assertIn('"debug_log_on_wake":false', self.mqtt_client.published[0]["payload"])
         self.assertIn('"ota_check_interval_sec":21600', self.mqtt_client.published[0]["payload"])
+        self.assertIn('"mosfet_switches":[', self.mqtt_client.published[0]["payload"])
         self.assertFalse(self.mqtt_client.published[0]["retain"])
         self.assertEqual(self.mqtt_client.published[0]["qos"], 0)
         self.assertEqual(len(self.notification_service.new_devices), 1)
@@ -429,6 +432,67 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                     "timezone_offset_sec": 32400,
                     "moisture_threshold": 40,
                     "wrs": {"watering": {"check_interval_sec": 0}},
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
+    def test_config_validation_keeps_mosfet_switch_metadata(self):
+        config = validate_device_config(
+            {
+                "ntp_server": "pool.ntp.org",
+                "timezone_offset_sec": 32400,
+                "moisture_threshold": 40,
+                "mosfet_switches": [
+                    {
+                        "switch_id": "irr1",
+                        "name": "Strawberry drip line A",
+                        "enabled": True,
+                        "role": "irrigation",
+                        "terminal": "IRR1",
+                        "channel_mask": 1,
+                        "controlled_load": "12V solenoid valve",
+                        "notes": "east bed",
+                    },
+                    {
+                        "switch_id": "sensor_power",
+                        "name": "RS485 sensor power",
+                        "enabled": True,
+                        "role": "sensor_power",
+                        "terminal": "SENSOR_12V_SW",
+                        "channel_mask": 0,
+                        "controlled_load": "soil and PAR sensors",
+                    },
+                ],
+                "schedules": [{"hour": 7, "minute": 0, "duration_sec": 60, "channel_mask": 1}],
+            }
+        )
+
+        self.assertEqual(config["mosfet_switches"][0]["name"], "Strawberry drip line A")
+        self.assertEqual(config["mosfet_switches"][0]["channel_mask"], 1)
+        self.assertEqual(config["mosfet_switches"][1]["channel_mask"], 0)
+        self.assertEqual(config["mosfet_switches"][1]["notes"], "")
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "mosfet_switches": [
+                        {"switch_id": "irr1", "name": "A"},
+                        {"switch_id": "irr1", "name": "B"},
+                    ],
+                    "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
+                }
+            )
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    "ntp_server": "pool.ntp.org",
+                    "timezone_offset_sec": 32400,
+                    "moisture_threshold": 40,
+                    "mosfet_switches": [{"switch_id": "irr1", "name": "A", "channel_mask": -1}],
                     "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
                 }
             )

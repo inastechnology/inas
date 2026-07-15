@@ -81,6 +81,9 @@ create a new device HAL wrapper.
 - The meaning of an output, such as pump, valve, solenoid, or relay, belongs to
   device App config and documentation. The HAL only switches the electrical
   output.
+- Farmer-facing names and controlled-load notes, such as "drip line A" or
+  "RS485 sensor power", belong to hub/device App runtime config metadata such
+  as `mosfet_switches`. Do not add name or role fields to `hal_power_switch`.
 - If a reusable timed multi-channel output primitive is needed, implement it as
   a generic common HAL, not as a device-kind-specific HAL.
 

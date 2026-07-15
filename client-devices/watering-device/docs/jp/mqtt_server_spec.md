@@ -229,6 +229,26 @@ payloadはJSONです。
     "min_delta_raw": 80,
     "drift_tolerance_raw": 120
   },
+  "mosfet_switches": [
+    {
+      "switch_id": "irr1",
+      "name": "イチゴ点滴ラインA",
+      "enabled": true,
+      "role": "irrigation",
+      "terminal": "IRR1",
+      "channel_mask": 1,
+      "controlled_load": "12V solenoid valve"
+    },
+    {
+      "switch_id": "sensor_power",
+      "name": "RS485センサー電源",
+      "enabled": true,
+      "role": "sensor_power",
+      "terminal": "SENSOR_12V_SW",
+      "channel_mask": 0,
+      "controlled_load": "RS485 sensor branch"
+    }
+  ],
   "schedules": [
     {
       "hour": 7,
@@ -260,7 +280,21 @@ payloadはJSONです。
 | `ota_check_interval_sec` | No | integer | `3600..86400`, default: `21600` | Maximum deep-sleep interval before the next OTA check. Device wakes earlier when a watering schedule is due |
 | `watering_pattern` | No | object | default: disabled | When enabled, run `on_sec` water / `off_sec` pause for `repeat_count` pulses instead of one continuous schedule duration |
 | `soil_calibration` | No | object | default: `dry_raw=1895`, `wet_raw=1285` | Soil moisture raw-to-percent calibration and auto/drift check settings |
+| `mosfet_switches` | No | array | default: Hub output inventory | MOSFET SW の管理名、端子、制御対象、対応 `channel_mask`。Firmware HAL ではなく Hub 管理用メタデータ |
 | `schedules` | Yes | array | 1 to 8 valid entries | Daily watering schedules |
+
+### mosfet_switches fields
+
+| Field | Required | Type | Range | Description |
+|---|---:|---|---|---|
+| `switch_id` | Yes | string | unique, 32 chars or less | Hub が管理する安定 ID |
+| `name` | Yes | string | 64 chars or less | UI に表示する名前。例: `イチゴ点滴ラインA` |
+| `enabled` | No | boolean | default: `true` | 管理対象として有効か |
+| `role` | No | string | 32 chars or less | `irrigation`、`sensor_power` などの分類 |
+| `terminal` | No | string | 32 chars or less | 実機の端子ラベル |
+| `channel_mask` | No | integer | `0..4294967295` | 灌水予約で直接選ぶ出力は bit mask。センサー電源など予約対象でない SW は `0` |
+| `controlled_load` | No | string | 96 chars or less | 実際に接続した pump、valve、relay、driver、sensor rail など |
+| `notes` | No | string | 160 chars or less | 設置・点検メモ |
 
 ### watering_pattern fields
 
@@ -324,7 +358,7 @@ Examples:
 サーバは、publish前に以下を検証してください。
 
 - JSONとしてvalidであること
-- MQTT payloadが2048 bytes未満であること
+- MQTT payloadが4096 bytes未満であること
 - `schedules`が配列であること
 - 有効なscheduleが1件以上あること
 - schedule数が8件以下であること
@@ -337,6 +371,7 @@ Examples:
 - `weekdays`の場合は曜日指定が1件以上あり、各曜日が`0..6`
 - `moisture_threshold`が`0..100`
 - `timezone_offset_sec`が運用地域に対して正しいこと
+- `mosfet_switches`を含める場合、`switch_id`は重複させず、`name`は空にしない。灌水予約に直接使わない sensor power などは`channel_mask: 0`で管理する
 
 デバイス側は無効なschedule entryを無視します。有効なscheduleが1件も残らない場合、config全体を適用しません。
 

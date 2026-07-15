@@ -184,6 +184,7 @@ RS485センサー電源の注意:
 | `env_sensors.soil.enabled` | 任意 | `true` / `false` | RS485土壌EC/pH/NPKセンサーを使うか |
 | `env_sensors.power_settle_ms` | 任意 | `0`から`30000` | 12Vセンサー電源をONにしてから読み取り開始まで待つ時間 |
 | `env_calibration` | 任意 | object | RS485環境センサー値のscale/offset校正 |
+| `mosfet_switches` | 任意 | 配列 | MOSFET SW の表示名、端子、制御対象、対応 `channel_mask` を Hub で管理する出力台帳 |
 | `schedules` | 必須 | 配列 | 灌水スケジュール。最低1件の有効なscheduleが必要 |
 
 schedule項目:

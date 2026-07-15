@@ -163,7 +163,7 @@ ENV は runtime config の `env_sensors` と `env_calibration` を受け取る�
 
 ## ENV light センサー仕様
 
-想定センサーは 0-2500 umol/m2/s 範囲の太陽活性放射線センサーで、RS485 Modbus 接続とする。
+初期対応センサーは 0-4000 umol/m2/s 範囲の DFRobot SEN0641 とし、RS485 Modbus で接続する。ほかの PAR センサーは register、scale、測定範囲を個別プロファイルとして追加する。
 
 初期実装の仮 register map:
 
@@ -183,6 +183,24 @@ ENV status payload:
   "par_umol_m2_s": 1234.0
 }
 ```
+
+### DFRobot SEN0641 対応プロファイル
+
+DFRobot `SEN0641` は ENV/WRS の RS485 PAR センサーとして使用できる。公式仕様は [DFRobot SEN0641 Wiki](https://wiki.dfrobot.com/sen0641/) と [Modbus リファレンス](https://wiki.dfrobot.com/sen0641/docs/20337) を正とする。
+
+| 項目 | 設定 |
+|---|---|
+| 電源 | DC 5-30V、動作電流 10mA 未満。WRS では `SENSOR_12V_SW+` へ接続 |
+| 測定範囲 | 0-4000 umol/m2/s、分解能 1 umol/m2/s |
+| 通信 | Modbus RTU、4800bps、8 data bits、parity none、1 stop bit |
+| slave ID | `1`（工場出荷値） |
+| read function | `0x03` |
+| PAR register | `0x0000`、1 register、scale `1.0` |
+| 配線 | brown=VCC、black=GND、yellow=485-A、blue=485-B |
+
+WRS の既定 `par` 設定はこの値と一致する。同じ bus へ既定 ID `1` の土壌センサーを追加する場合は、接続前にどちらか一方の slave ID を変更する。WRS の既定構成では `PAR=1`、`soil=2` とする。bus 上の全センサーは baud rate を統一する。
+
+5V 動作の MAX485 module を XIAO ESP32S3 へ接続する場合、MAX485 `RO` の 5V 出力を `D7/GPIO44` へ直結しない。3.3V へ level shift するか、MAX3485/SP3485/SN65HVD 系の 3.3V logic transceiver を使う。MAX485 module 固有の pull-up、termination、A/B 表記も回路図で確認する。
 
 ## WRS ハードウェア前提
 

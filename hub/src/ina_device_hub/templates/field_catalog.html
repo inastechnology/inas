@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }} - INA Device Hub</title>
+    <style>
+      :root {
+        color: #202b26;
+        background: #eef2ee;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body { min-width: 320px; min-height: 100vh; margin: 0; background: #eef2ee; }
+      button, input, select { font: inherit; letter-spacing: 0; }
+      button { cursor: pointer; }
+      a { color: inherit; }
+      .page-header { border-bottom: 1px solid #cbd5cd; background: #fff; }
+      .header-inner, main { width: min(1200px, calc(100% - 40px)); margin: 0 auto; }
+      .header-inner { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 19px 0 20px; }
+      .brand { color: #56645c; font-size: 11px; font-weight: 800; text-decoration: none; }
+      h1 { margin: 4px 0 0; color: #1f3027; font-size: 27px; letter-spacing: 0; }
+      .header-copy { margin: 6px 0 0; color: #69776f; font-size: 12px; }
+      .add-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        min-height: 40px;
+        padding: 8px 13px;
+        border: 1px solid #176b5b;
+        border-radius: 6px;
+        color: #fff;
+        background: #176b5b;
+        font-weight: 800;
+      }
+      .add-button:hover { background: #105748; }
+      .add-button span:first-child { font-size: 20px; font-weight: 400; line-height: 1; }
+      main { padding: 20px 0 44px; }
+      .catalog-toolbar {
+        display: grid;
+        grid-template-columns: minmax(240px, 1fr) minmax(150px, 200px) minmax(150px, 200px) auto;
+        gap: 8px;
+        padding: 12px;
+        border: 1px solid #cfd8d1;
+        border-radius: 7px;
+        background: #fff;
+      }
+      .catalog-toolbar label { display: grid; gap: 4px; color: #647168; font-size: 10px; font-weight: 800; }
+      input, select {
+        width: 100%;
+        min-height: 38px;
+        padding: 7px 9px;
+        border: 1px solid #b9c5bc;
+        border-radius: 5px;
+        color: #24362d;
+        background: #fff;
+      }
+      input:focus, select:focus { border-color: #2d7a66; outline: 2px solid rgba(45, 122, 102, 0.14); }
+      .search-actions { display: flex; align-items: end; gap: 7px; }
+      .search-button, .clear-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 38px;
+        padding: 7px 12px;
+        border: 1px solid #39735d;
+        border-radius: 5px;
+        color: #fff;
+        background: #39735d;
+        font-size: 12px;
+        font-weight: 800;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .clear-link { border-color: #b8c4bb; color: #4f6056; background: #fff; }
+      .catalog-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 17px 1px 9px; }
+      .catalog-meta h2 { margin: 0; color: #304239; font-size: 14px; }
+      .catalog-meta span { color: #6c7971; font-size: 11px; }
+      .field-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
+      .field-card {
+        display: grid;
+        align-content: start;
+        gap: 11px;
+        min-height: 210px;
+        padding: 15px;
+        border: 1px solid #cfd8d1;
+        border-radius: 7px;
+        color: inherit;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(30, 47, 38, 0.05);
+        text-decoration: none;
+      }
+      .field-card:hover { border-color: #779688; box-shadow: 0 4px 13px rgba(30, 47, 38, 0.09); }
+      .card-heading { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+      .card-heading h3 { min-width: 0; margin: 0; color: #24362d; font-size: 17px; overflow-wrap: anywhere; }
+      .environment-badge { flex: 0 0 auto; padding: 3px 7px; border-radius: 4px; color: #315d4c; background: #e6f1ea; font-size: 10px; font-weight: 800; }
+      .location { margin: -4px 0 0; color: #5e6c64; font-size: 12px; line-height: 1.5; }
+      .crop-summary { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 6px 9px; margin: 0; font-size: 12px; }
+      .crop-summary dt { color: #748079; }
+      .crop-summary dd { margin: 0; color: #35483d; overflow-wrap: anywhere; }
+      .summary { display: flex; flex-wrap: wrap; gap: 5px; margin-top: auto; }
+      .pill { padding: 3px 7px; border: 1px solid #d8dfd9; border-radius: 4px; color: #56665d; background: #f5f7f5; font-size: 10px; }
+      .open-label { padding-top: 2px; color: #236451; font-size: 11px; font-weight: 800; text-align: right; }
+      .empty-state { grid-column: 1 / -1; display: grid; place-items: center; min-height: 280px; padding: 28px; border: 1px dashed #bcc8bf; color: #65736b; background: rgba(255, 255, 255, 0.58); text-align: center; }
+      .empty-state strong { color: #33473c; font-size: 16px; }
+      .empty-state p { margin: 7px 0 0; font-size: 12px; }
+      .pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 5px; margin-top: 20px; }
+      .pagination a, .pagination span {
+        display: inline-grid;
+        place-items: center;
+        min-width: 34px;
+        height: 34px;
+        padding: 0 8px;
+        border: 1px solid #bcc8bf;
+        border-radius: 5px;
+        color: #43544a;
+        background: #fff;
+        font-size: 11px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+      .pagination .current { border-color: #236b55; color: #fff; background: #236b55; }
+      .pagination .disabled { color: #9aa49e; background: #f4f6f4; }
+      dialog { width: min(560px, calc(100% - 28px)); max-height: calc(100vh - 28px); padding: 0; overflow: auto; border: 1px solid #aebbb2; border-radius: 7px; background: #fff; box-shadow: 0 20px 60px rgba(20, 36, 28, 0.25); }
+      dialog::backdrop { background: rgba(23, 34, 28, 0.42); }
+      .modal-form { margin: 0; }
+      .modal-header { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px; border-bottom: 1px solid #d6ddd7; background: #fff; z-index: 1; }
+      .modal-header h2 { margin: 0; color: #24362d; font-size: 18px; }
+      .close-button { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid #c6d0c8; border-radius: 5px; color: #53635a; background: #fff; font-size: 20px; }
+      .modal-body { display: grid; gap: 12px; padding: 16px 18px 18px; }
+      .modal-body label { display: grid; gap: 5px; color: #56655c; font-size: 11px; font-weight: 800; }
+      .required { color: #9a3d35; }
+      .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+      .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid #dce2dd; background: #f8faf8; }
+      .modal-actions button { min-height: 36px; padding: 7px 12px; border: 1px solid #adbbb1; border-radius: 5px; color: #47594f; background: #fff; font-weight: 800; }
+      .modal-actions button[type="submit"] { border-color: #176b5b; color: #fff; background: #176b5b; }
+      @media (max-width: 900px) {
+        .catalog-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .search-actions { align-items: stretch; }
+        .field-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      }
+      @media (max-width: 640px) {
+        .header-inner, main { width: min(100% - 20px, 1200px); }
+        .header-inner { align-items: start; }
+        h1 { font-size: 23px; }
+        .add-button { width: 40px; padding: 0; }
+        .add-button .button-label { display: none; }
+        .catalog-toolbar, .field-list, .form-grid { grid-template-columns: 1fr; }
+        .search-actions > * { flex: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <div class="header-inner">
+        <div>
+          <a class="brand" href="/">INA Device Hub</a>
+          <h1>{{ page_title }}</h1>
+          <p class="header-copy">確認・作業する圃場を検索して選択します。</p>
+        </div>
+        <button id="open-field-create" class="add-button" type="button" aria-haspopup="dialog">
+          <span aria-hidden="true">+</span><span class="button-label">圃場を追加</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <form class="catalog-toolbar" method="get" action="{{ catalog_path }}" role="search">
+        <label>圃場名・市区町村・地区
+          <input name="q" value="{{ filters.query }}" placeholder="例: 伊那、東圃場">
+        </label>
+        <label>都道府県
+          <select name="prefecture"><option value="">すべて</option>{% for prefecture in prefectures %}<option value="{{ prefecture }}"{% if filters.prefecture == prefecture %} selected{% endif %}>{{ prefecture }}</option>{% endfor %}</select>
+        </label>
+        <label>設置環境
+          <select name="environment_type"><option value="">すべて</option>{% for value, label in environment_options %}<option value="{{ value }}"{% if filters.environment_type == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        </label>
+        <div class="search-actions"><button class="search-button" type="submit">検索</button>{% if filters.active %}<a class="clear-link" href="{{ catalog_path }}">解除</a>{% endif %}</div>
+      </form>
+
+      <div class="catalog-meta">
+        <h2>圃場</h2>
+        <span>{{ catalog.total }}件中 {{ catalog.range_start }}-{{ catalog.range_end }}件</span>
+      </div>
+      <section class="field-list" aria-label="登録済み圃場">
+        {% for field in fields %}
+        <a class="field-card" href="/fields/{{ field.id }}">
+          <div class="card-heading">
+            <h3>{{ field.name }}</h3>
+            <span class="environment-badge">{{ environment_labels.get(field.location.environment_type, '環境未設定') }}</span>
+          </div>
+          <p class="location">{{ field.location.prefecture }}{{ field.location.municipality }}{% if field.location.locality %} {{ field.location.locality }}{% endif %}{% if not field.location.prefecture and not field.location.municipality %}場所未設定{% endif %}</p>
+          <dl class="crop-summary">
+            <dt>定植中</dt><dd>{{ field.list_summary.crop_labels|join('、') if field.list_summary.crop_labels else '未定植' }}</dd>
+            <dt>設置ビュー</dt><dd>{{ field.list_summary.placement_count }} 配置</dd>
+          </dl>
+          <div class="summary">
+            <span class="pill">定植 {{ field.list_summary.planting_count }}件</span>
+            {% if not home_mode %}<span class="pill">接続デバイス {{ field.list_summary.device_count }}件</span>{% endif %}
+            <span class="pill">作業記録 {{ field.list_summary.record_count }}件</span>
+          </div>
+          <div class="open-label">圃場を開く &gt;</div>
+        </a>
+        {% else %}
+        <div class="empty-state"><div><strong>該当する圃場はありません</strong><p>検索条件を変更するか、圃場を追加してください。</p></div></div>
+        {% endfor %}
+      </section>
+
+      {% if catalog.page_count > 1 %}
+      <nav class="pagination" aria-label="圃場一覧ページ">
+        {% if catalog.previous_url %}<a href="{{ catalog.previous_url }}" aria-label="前のページ">&lt;</a>{% else %}<span class="disabled" aria-hidden="true">&lt;</span>{% endif %}
+        {% for link in catalog.page_links %}{% if link.current %}<span class="current" aria-current="page">{{ link.page }}</span>{% else %}<a href="{{ link.url }}">{{ link.page }}</a>{% endif %}{% endfor %}
+        {% if catalog.next_url %}<a href="{{ catalog.next_url }}" aria-label="次のページ">&gt;</a>{% else %}<span class="disabled" aria-hidden="true">&gt;</span>{% endif %}
+      </nav>
+      {% endif %}
+    </main>
+
+    <dialog id="field-create-dialog" aria-labelledby="field-create-title">
+      <form method="post" action="/fields" class="modal-form">
+        <div class="modal-header">
+          <h2 id="field-create-title">圃場を追加</h2>
+          <button id="close-field-create" class="close-button" type="button" aria-label="閉じる">x</button>
+        </div>
+        <div class="modal-body">
+          <label>圃場名 <span class="required">必須</span><input name="name" required autofocus placeholder="例: 伊那東圃場"></label>
+          <div class="form-grid">
+            <label>都道府県 <span class="required">必須</span><select name="prefecture" required><option value="">選択してください</option>{% for prefecture in prefectures %}<option value="{{ prefecture }}">{{ prefecture }}</option>{% endfor %}</select></label>
+            <label>市区町村 <span class="required">必須</span><input name="municipality" required placeholder="例: 伊那市"></label>
+          </div>
+          <label>設置環境 <span class="required">必須</span><select name="environment_type" required><option value="">選択してください</option>{% for value, label in environment_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
+          <label>町名・地区など<input name="locality" placeholder="例: 西箕輪"></label>
+        </div>
+        <div class="modal-actions"><button id="cancel-field-create" type="button">キャンセル</button><button type="submit">圃場を作成</button></div>
+      </form>
+    </dialog>
+    <script>
+      const fieldDialog = document.getElementById("field-create-dialog");
+      const closeFieldDialog = () => fieldDialog.close();
+      document.getElementById("open-field-create").addEventListener("click", () => fieldDialog.showModal());
+      document.getElementById("close-field-create").addEventListener("click", closeFieldDialog);
+      document.getElementById("cancel-field-create").addEventListener("click", closeFieldDialog);
+      fieldDialog.addEventListener("click", (event) => {
+        const bounds = fieldDialog.getBoundingClientRect();
+        if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeFieldDialog();
+      });
+    </script>
+  </body>
+</html>

@@ -124,6 +124,12 @@ slave IDs on the same bus. A missing sensor is represented by timeout or
 `*_ok=false`, not by changing XIAO pin assignments or creating a new wiring
 variant.
 
+MOSFET-switched outputs are managed as named output inventory in runtime
+config. `mosfet_switches` maps a stable `switch_id` to a farmer-facing `name`,
+physical `terminal`, optional `controlled_load`, and the `channel_mask` used by
+scheduled irrigation when applicable. This lets the hub show "strawberry drip
+line A" while firmware still controls only generic electrical outputs.
+
 Related documents:
 
 - [client-devices/docs/rs485_sensor_device_spec.md](../client-devices/docs/rs485_sensor_device_spec.md)

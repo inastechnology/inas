@@ -68,11 +68,32 @@ Open:
 
 ```text
 http://127.0.0.1:39251/demo/mqtt-devices
+http://127.0.0.1:39251/fields/demo-strawberry-field/layout
 ```
 
-The demo shows sample WTR/WRS devices, irrigation history, soil moisture charts,
-wake history, and device detail navigation. Demo operations are not persisted.
-The real admin UI remains `/mqtt-devices`.
+The demo provides 12 bindable WTR, WRS, ENV, SOI, PAR, and camera devices, plus
+irrigation history, soil moisture charts, wake history, and device detail
+navigation. MQTT demo operations are not
+persisted. The installation layout uses the demo work directory and can be
+edited and saved while the demo server is running. A saved pot, ridge, tree, or
+other cultivation placement can also receive a planting record. The demo then
+creates a fallback plant-management calendar without calling an external LLM;
+calendar edits, selected work dates, and plant questions can be exercised from
+the same screen. The demo always uses the local libSQL file under
+`HUB_DEMO_WORK_DIR` and does not inherit the production Turso URL from `.env`.
+Set `HUB_DEMO_AI_TEXT_ANALYZE_API_KEY` only when an external calendar-generation
+call is intentionally required. The real admin UI remains `/mqtt-devices`.
+
+Build the React/Konva installation layout after changing `admin-ui/src`:
+
+```bash
+cd admin-ui
+npm install
+npm run build
+```
+
+With the demo server running on port 39252, the browser smoke test can be run
+with `HUB_URL=http://127.0.0.1:39252 npm run smoke`.
 
 ## systemd Operation
 

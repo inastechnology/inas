@@ -1,10 +1,11 @@
 import os
 import time
-import boto3
 from urllib.parse import quote
 
-from ina_device_hub.setting import setting
+import boto3
+
 from ina_device_hub.general_log import logger
+from ina_device_hub.setting import setting
 
 
 class StorageConnector:
@@ -52,31 +53,31 @@ class StorageConnector:
             return None
         return self._create_s3_client(bucket_settings)
 
-    def save_to_cloud(self, file_key, fileBytes, content_type="image/jpeg"):
+    def save_to_cloud(self, file_key, file_bytes, content_type="image/jpeg"):
         """
         Saves the file to cloud storage.
         Automatically generates the file path based on the file key and UTC.
         e.g.) {tenant_id}/{file_key}/{yyyymmdd}/{yyyymmdd_hhmmss}.jpg
         """
         file_path = self.get_file_path(file_key)
-        return self.save_bytes_to_cloud(file_path, fileBytes, content_type)
+        return self.save_bytes_to_cloud(file_path, file_bytes, content_type)
 
-    def save_bytes_to_cloud(self, file_path, fileBytes, content_type="image/jpeg"):
+    def save_bytes_to_cloud(self, file_path, file_bytes, content_type="image/jpeg"):
         try:
             self._put_object(
                 self.s3,
                 setting().get("storage_bucket").get("bucket_name"),
                 file_path,
-                fileBytes,
+                file_bytes,
                 content_type,
             )
-            logger.info(f"Image uploaded to {file_path}({len(fileBytes)} bytes)")
+            logger.info(f"Image uploaded to {file_path}({len(file_bytes)} bytes)")
         except Exception as e:
             print(f"Error: {e}")
             return None
         return file_path
 
-    def save_bytes_to_temporary_cloud(self, file_path, fileBytes, content_type="application/octet-stream"):
+    def save_bytes_to_temporary_cloud(self, file_path, file_bytes, content_type="application/octet-stream"):
         if self.tmp_s3 is None:
             raise ValueError("temporary storage bucket is not configured")
 
@@ -86,25 +87,25 @@ class StorageConnector:
                 self.tmp_s3,
                 bucket_name,
                 file_path,
-                fileBytes,
+                file_bytes,
                 content_type,
             )
-            logger.info(f"Temporary object uploaded to {file_path}({len(fileBytes)} bytes)")
+            logger.info(f"Temporary object uploaded to {file_path}({len(file_bytes)} bytes)")
         except Exception as e:
             print(f"Error: {e}")
             return None
         return file_path
 
-    def _put_object(self, client, bucket_name, file_path, fileBytes, content_type):
+    def _put_object(self, client, bucket_name, file_path, file_bytes, content_type):
         # TODO: [Multi-tenancy] Generate the bucket name from tenant_id.
         client.put_object(
             Bucket=bucket_name,
             Key=file_path,
-            Body=fileBytes,
+            Body=file_bytes,
             ContentType=content_type,
         )
 
-    def save_to_local(self, file_key, fileBytes):
+    def save_to_local(self, file_key, file_bytes):
         file_path = os.path.join(
             self.LOCAL_STORAGE_BASE_DIR,
             self.get_file_path(file_key),
@@ -113,17 +114,17 @@ class StorageConnector:
         if not os.path.exists(file_dir):
             os.makedirs(file_dir)
         with open(file_path, "wb") as f:
-            f.write(fileBytes)
+            f.write(file_bytes)
 
         return file_path
 
-    def save_bytes_to_local_path(self, relative_path: str, fileBytes):
+    def save_bytes_to_local_path(self, relative_path: str, file_bytes):
         file_path = os.path.join(self.LOCAL_STORAGE_BASE_DIR, relative_path)
         file_dir = os.path.dirname(file_path)
         if not os.path.exists(file_dir):
             os.makedirs(file_dir)
         with open(file_path, "wb") as file:
-            file.write(fileBytes)
+            file.write(file_bytes)
         return file_path
 
     def fetch_from_cloud_as_bytes(self, file_full_key):
@@ -137,6 +138,15 @@ class StorageConnector:
         except Exception as e:
             print(f"Error: {e}")
             return None
+
+    def delete_from_cloud(self, file_full_key):
+        try:
+            self.s3.delete_object(
+                Bucket=setting().get("storage_bucket").get("bucket_name"),
+                Key=file_full_key,
+            )
+        except Exception as e:
+            print(f"Error: {e}")
 
     def get_file_dir(self, file_key):
         yyyymmdd = time.strftime("%Y%m%d", time.gmtime())
@@ -166,7 +176,7 @@ __instance = None
 
 
 def storage_connector():
-    global __instance
+    global __instance  # noqa: PLW0603
     if not __instance:
         __instance = StorageConnector()
     return __instance

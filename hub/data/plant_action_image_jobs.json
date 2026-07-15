@@ -1,0 +1,40 @@
+{
+  "style": "A clear flat editorial illustration for a Japanese horticulture task card. Practical agricultural handbook style, simple bold shapes, crisp dark outlines, soft paper texture, natural green with a distinct secondary accent, clean warm-white background, close composition, one obvious action, no text, no letters, no logo, no watermark, suitable for a small UI thumbnail.",
+  "jobs": [
+    {
+      "name": "fertilization",
+      "seed": 734201,
+      "prompt": "A gloved gardener applying a measured small scoop of granular fertilizer in a ring around the soil of a healthy strawberry plant, clearly showing supplemental feeding without touching the stem."
+    },
+    {
+      "name": "pruning",
+      "seed": 734202,
+      "prompt": "A gloved gardener using clean pruning shears to remove one crossing branch from a healthy fruit tree, with the intended cut point clearly visible and the tree remaining balanced."
+    },
+    {
+      "name": "watering",
+      "seed": 734203,
+      "prompt": "A gloved gardener gently watering the soil around a healthy strawberry plant with a watering can, with a clear stream reaching the root zone."
+    },
+    {
+      "name": "pest-control",
+      "seed": 734204,
+      "prompt": "A gardener wearing gloves and eye protection carefully spraying the upper and lower surfaces of one affected leaf on a vegetable plant with a handheld garden sprayer, showing targeted crop protection and safe handling."
+    },
+    {
+      "name": "gibberellin-treatment",
+      "seed": 734205,
+      "prompt": "A gloved vineyard worker carefully dipping one young green grape cluster into a small treatment cup, showing a precise gibberellin treatment while supporting the cluster with the other hand."
+    },
+    {
+      "name": "pollination",
+      "seed": 734206,
+      "prompt": "A gloved gardener gently transferring pollen between open fruit-tree blossoms with a small soft brush, with yellow pollen visible on the brush tip and no insects."
+    },
+    {
+      "name": "harvest",
+      "seed": 734207,
+      "prompt": "A gloved gardener picking one fully red ripe strawberry by its stem and placing it into a shallow harvest basket, leaving unripe fruit on the plant."
+    }
+  ]
+}

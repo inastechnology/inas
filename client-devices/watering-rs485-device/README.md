@@ -25,6 +25,19 @@ Default XIAO ESP32S3 pin assignment:
 The analog soil moisture ADC is not used by WRS. Soil feedback is expected from
 an RS485 Modbus soil sensor.
 
+### SEN0641 and MAX485
+
+The DFRobot SEN0641 PAR sensor is supported by the default WRS PAR profile:
+`4800bps`, 8N1, slave `1`, function `0x03`, register `0x0000`, one register,
+and scale `1.0`. Connect its brown wire to switched sensor 12V, black to
+`RS485_GND`, yellow to `RS485_A`, and blue to `RS485_B`. The default soil
+sensor address is `2`, so it can share the bus without changing the SEN0641
+factory address.
+
+MAX485 modules normally use 5V logic. Do not connect a 5V MAX485 `RO` output
+directly to XIAO `D7/GPIO44`; level-shift RX to 3.3V. A 3.3V-logic MAX3485,
+SP3485, or SN65HVD transceiver is preferred for new hardware.
+
 ## Firmware Layers
 
 Layer boundaries follow
@@ -82,6 +95,35 @@ WRS accepts the existing WTR/ENV fields:
     },
     "power_settle_ms": 800
   },
+  "mosfet_switches": [
+    {
+      "switch_id": "irr1",
+      "name": "Strawberry drip line A",
+      "enabled": true,
+      "role": "irrigation",
+      "terminal": "IRR1",
+      "channel_mask": 1,
+      "controlled_load": "12V solenoid valve"
+    },
+    {
+      "switch_id": "irr2",
+      "name": "Strawberry drip line B",
+      "enabled": true,
+      "role": "irrigation",
+      "terminal": "IRR2",
+      "channel_mask": 2,
+      "controlled_load": "pump relay input"
+    },
+    {
+      "switch_id": "sensor_power",
+      "name": "RS485 sensor power",
+      "enabled": true,
+      "role": "sensor_power",
+      "terminal": "SENSOR_12V_SW",
+      "channel_mask": 0,
+      "controlled_load": "soil and PAR sensors"
+    }
+  ],
   "schedules": [
     {
       "hour": 6,
@@ -129,6 +171,10 @@ whether an output is connected to a pump, valve, relay, or solenoid:
 | `1` | Irrigation output 1 (`D2`) |
 | `2` | Irrigation output 2 (`D3`) |
 | `3` | Irrigation outputs 1 and 2 |
+
+Use `mosfet_switches` as the hub-managed output inventory. `name` and
+`controlled_load` describe the installed field hardware, while `channel_mask`
+keeps the firmware control path generic.
 
 ## Status Payload
 

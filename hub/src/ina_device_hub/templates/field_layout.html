@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ field.name }} - 設置ビュー</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/admin-layout/installation-layout.css">
+  </head>
+  <body>
+    <div
+      id="installation-layout-root"
+      data-field-id="{{ field.id }}"
+      data-field-name="{{ field.name }}"
+      data-field-detail-url="/fields/{{ field.id }}"
+    >
+      <p class="layout-loading">設置ビューを読み込んでいます...</p>
+    </div>
+    <noscript>設置ビューを使用するには JavaScript を有効にしてください。</noscript>
+    <script type="module" src="/static/admin-layout/installation-layout.js"></script>
+  </body>
+</html>

@@ -24,12 +24,29 @@ from ina_device_hub.sensor_measurement_repository import (  # noqa: E402
 
 
 class SensorMeasurementRepositoryTest(unittest.TestCase):
+    def test_repository_initializes_definitions_in_one_batch(self):
+        class DefinitionConnector:
+            def __init__(self):
+                self.definition_batches = []
+
+            def upsert_sensor_measurement_definitions(self, definitions):
+                self.definition_batches.append(list(definitions))
+
+        connector = DefinitionConnector()
+
+        SensorMeasurementRepository(connector)
+
+        self.assertEqual(len(connector.definition_batches), 1)
+        self.assertGreater(len(connector.definition_batches[0]), 1)
+
     def test_extract_env_measurements_from_status_payload(self):
         measurements = extract_measurements_from_status(
             "INADS-env",
             {
                 "seq": 10,
                 "device_kind": "ENV",
+                "air_temperature_c": 24.5,
+                "air_humidity_percent": 68.0,
                 "par_ok": True,
                 "par_umol_m2_s": 1234.0,
                 "raw_par": 1234,
@@ -55,6 +72,8 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
         )
 
         by_metric = {item["metric"]: item for item in measurements}
+        self.assertEqual(by_metric["air_temperature_c"]["value"], 24.5)
+        self.assertEqual(by_metric["air_humidity_percent"]["unit"], "%")
         self.assertEqual(by_metric["par_umol_m2_s"]["value"], 1234.0)
         self.assertEqual(by_metric["par_umol_m2_s"]["unit"], "umol/m2/s")
         self.assertEqual(by_metric["soil_ph"]["raw_value"], 65.0)
@@ -164,6 +183,19 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
         self.assertEqual(len(recorded), 1)
         self.assertEqual(latest[0]["metric"], "par_umol_m2_s")
         self.assertEqual(latest[0]["value"], 900.0)
+
+        in_range = repository.between_for_devices(
+            ["INADS-env-measurement-test"],
+            "2026-07-12T00:00:00+00:00",
+            "2026-07-13T00:00:00+00:00",
+        )
+        out_of_range = repository.between_for_devices(
+            ["INADS-env-measurement-test"],
+            "2026-07-13T00:00:00+00:00",
+            "2026-07-14T00:00:00+00:00",
+        )
+        self.assertEqual(len(in_range), 1)
+        self.assertEqual(out_of_range, [])
 
 
 if __name__ == "__main__":

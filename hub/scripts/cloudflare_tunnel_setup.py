@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from cloudflare_access_setup import ScriptError, merged_env, quote_env_value, require_any_value, require_value, upsert_env_file
+from cloudflare_setup_common import ScriptError, merged_env, quote_env_value, require_any_value, require_value, upsert_env_file
 
 API_BASE_URL = "https://api.cloudflare.com/client/v4"
 DEFAULT_TUNNEL_NAME = "inas-hub"
@@ -371,6 +371,7 @@ def cmd_provision(args: argparse.Namespace) -> None:
         token_file = str(token_path)
 
     updates = {
+        "HUB_HTTP_HOST": "127.0.0.1",
         "CLOUDFLARE_TUNNEL_NAME": name,
         "CLOUDFLARE_TUNNEL_ID": tunnel_id,
         "CLOUDFLARE_TUNNEL_HOSTNAME": hostname,

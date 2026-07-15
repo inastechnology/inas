@@ -7,6 +7,24 @@ from ina_device_hub.ina_db_connector import InaDBConnector
 
 SENSOR_MEASUREMENT_DEFINITIONS = [
     {
+        "metric": "air_temperature_c",
+        "display_name": "気温",
+        "unit": "degC",
+        "category": "environment",
+        "device_kinds": ["ENV", "WRS"],
+        "value_type": "float",
+        "description": "圃場またはハウス内の気温。",
+    },
+    {
+        "metric": "air_humidity_percent",
+        "display_name": "湿度",
+        "unit": "%",
+        "category": "environment",
+        "device_kinds": ["ENV", "WRS"],
+        "value_type": "float",
+        "description": "圃場またはハウス内の相対湿度。",
+    },
+    {
         "metric": "soil_moisture_percent",
         "display_name": "土壌水分",
         "unit": "%",
@@ -92,6 +110,8 @@ SENSOR_MEASUREMENT_DEFINITIONS = [
 _DEFINITION_BY_METRIC = {definition["metric"]: definition for definition in SENSOR_MEASUREMENT_DEFINITIONS}
 
 _STATUS_METRICS = {
+    "air_temperature_c": {"ok_keys": (), "raw_key": "raw_air_temperature"},
+    "air_humidity_percent": {"ok_keys": (), "raw_key": "raw_air_humidity"},
     "par_umol_m2_s": {"ok_key": "par_ok", "raw_key": "raw_par"},
     "solar_radiation_w_m2": {"ok_key": "solar_radiation_ok", "raw_key": "raw_solar_radiation"},
     "soil_moisture_percent": {"ok_keys": ("soil_moisture_ok", "soil_rs485_ok"), "raw_key": "raw_soil_moisture"},
@@ -110,8 +130,7 @@ class SensorMeasurementRepository:
         self.ensure_definitions()
 
     def ensure_definitions(self):
-        for definition in SENSOR_MEASUREMENT_DEFINITIONS:
-            self.db_connector.upsert_sensor_measurement_definition(definition)
+        self.db_connector.upsert_sensor_measurement_definitions(SENSOR_MEASUREMENT_DEFINITIONS)
 
     def record_status_measurements(self, device_id: str, status: dict, measured_at: str):
         measurements = extract_measurements_from_status(device_id, status, measured_at)
@@ -128,6 +147,10 @@ class SensorMeasurementRepository:
         rows = self.db_connector.fetch_latest_sensor_measurements(device_id, limit=limit)
         return [_measurement_row_to_dict(row) for row in rows]
 
+    def between_for_devices(self, device_ids: list[str], start_at: str, end_at: str, limit: int = 5000):
+        rows = self.db_connector.fetch_sensor_measurements_for_devices(device_ids, start_at, end_at, limit=limit)
+        return [_measurement_row_to_dict(row) for row in rows]
+
 
 def extract_measurements_from_status(device_id: str, status: dict, measured_at: str):
     if not isinstance(status, dict):
@@ -136,7 +159,9 @@ def extract_measurements_from_status(device_id: str, status: dict, measured_at: 
     device_kind = status.get("device_kind")
     result = []
     for metric, options in _STATUS_METRICS.items():
-        ok_keys = options.get("ok_keys") or (options["ok_key"],)
+        ok_keys = options.get("ok_keys")
+        if ok_keys is None:
+            ok_keys = (options["ok_key"],)
         present_ok_keys = [key for key in ok_keys if key in status]
         if present_ok_keys and not any(status.get(key) is True for key in present_ok_keys):
             continue

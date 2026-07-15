@@ -29,6 +29,7 @@
 - 電源電圧、MOSFET 定格、筐体、WTR build が小型低電圧負荷を駆動するかどうかのような H/W だけの差異は、payload contract や hub 挙動が変わらない限り、既存 `device_kind` 内の H/W profile として扱う。
 - 再利用可能な mechanism は common layer に置く。例: MQTT transport、OTA、RS485 bus handling、Modbus frame handling、GPIO-switched power、storage repositories、Cloudflare provisioning helper。
 - 製品判断は reusable mechanism の上に置く。例: いつ灌水するか、どの threshold を使うか、feedback 欠落をどう扱うか、営農者向け UI wording。
+- MOSFET 出力の表示名や「何を制御しているか」は hub / device App の設定メタデータで管理する。電気的 primitive は power switch または output channel のままであり、HAL は負荷が pump、valve、relay、sensor rail、現場固有ラベルのどれかを知らない。
 - 既存下位 layer の呼び出しを製品名で束ねるだけの wrapper layer は追加しない。wrapper は rename ではなく、実 boundary を追加する場合だけ作る。
 
 ## Hub レイヤルール
@@ -55,6 +56,7 @@
 
 - 測定値は metric definition と time-series value に分ける。query model 上の必要性がない限り、sensor ごとに固定カラムを増やさない。
 - UI は営農者向けの言葉を先に出す。raw payload、register 名、debug field は detail view に置く。
+- runtime config には `mosfet_switches` のような表示メタデータを持たせてよい。hub が `channel_mask=1` だけでなく「点滴ライン A」のように表示するための情報であり、firmware HAL contract ではない。
 - data placement は model の一部である。field、section、ridge/bed、point のどこに属するかを明示し、device ID や MQTT topic だけから推測しない。
 
 ## レビュー時チェックリスト

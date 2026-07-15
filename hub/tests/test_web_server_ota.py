@@ -120,6 +120,18 @@ class WebServerOTATest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("force must be a boolean", response.get_json()["error"])
 
+    def test_home_page_is_field_selector_without_device_navigation(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("圃場を選択", html)
+        self.assertIn('role="search"', html)
+        self.assertIn('id="open-field-create"', html)
+        self.assertNotIn('href="/mqtt-devices"', html)
+        self.assertNotIn('href="/demo/mqtt-devices"', html)
+        self.assertNotIn("MQTT Devices", html)
+
     def test_mqtt_devices_list_links_to_device_detail(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000201"
         self.device_service.set_state(device_id, "active", approved_by="operator")
@@ -142,6 +154,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         self.assertIn("水やり機一覧", html)
+        self.assertIn("圃場ビュー", html)
         self.assertIn("灌水中", html)
         self.assertIn("42%", html)
         self.assertIn(f'href="/mqtt-devices/{device_id}"', html)
@@ -205,12 +218,26 @@ class WebServerOTATest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         self.assertIn("Hub 管理パネル", html)
-        self.assertIn("水やり機一覧へ戻る", html)
+        self.assertIn("機器一覧へ戻る", html)
+        self.assertNotIn("圃場ビュー", html)
+        self.assertNotIn("デバイス API", html)
+        self.assertNotIn("イベント API", html)
+        self.assertIn('role="tablist"', html)
+        self.assertIn('data-tab-target="tab-overview"', html)
+        self.assertIn('data-tab-target="tab-monitoring"', html)
+        self.assertIn('data-tab-target="tab-config"', html)
+        self.assertIn('data-tab-target="tab-firmware"', html)
+        self.assertIn('data-tab-target="tab-diagnostics"', html)
+        self.assertIn(">計測・稼働</button>", html)
+        self.assertIn(">動作設定</button>", html)
+        self.assertIn(">F/W更新</button>", html)
+        self.assertIn(">履歴・診断</button>", html)
+        self.assertIn("設置ビュー", html)
         self.assertIn("水やり機", html)
-        self.assertIn("灌水推移", html)
+        self.assertIn("潅水推移", html)
         self.assertIn("土壌水分推移", html)
         self.assertNotIn("Plotly.newPlot", html)
-        self.assertIn("灌水推移を読み込み中", html)
+        self.assertIn("潅水推移を読み込み中", html)
         self.assertIn('"/local/api/mqtt-devices/"', html)
         self.assertIn("直近3日", html)
         self.assertIn("2週間", html)
@@ -224,7 +251,9 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("42%", html)
         self.assertIn("次回起床", html)
         self.assertIn("起動・通信履歴", html)
-        self.assertIn("水やり設定", html)
+        self.assertIn("動作設定", html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings"', html)
+        self.assertIn(f'aria-label="{device_id}の動作設定"', html)
         self.assertIn('data-state-action="approve"', html)
         self.assertIn('id="metadata-form"', html)
         self.assertIn('id="runtime-config-json"', html)
@@ -246,6 +275,44 @@ class WebServerOTATest(unittest.TestCase):
         charts = charts_response.get_json()
         self.assertIn("Plotly.newPlot", charts["watering"])
         self.assertIn("Plotly.newPlot", charts["soil_moisture"])
+
+    def test_environment_device_detail_has_environment_charts_and_settings_link(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000202"
+        self.device_service.update_metadata(device_id, {"name": "1号ハウス環境センサー", "location": "1号ハウス"})
+        self.device_service.set_state(device_id, "active", approved_by="operator")
+        self.device_repository.record_status(
+            device_id,
+            {
+                "seq": 1,
+                "device_kind": "ENV",
+                "firmware_version": "2.0.0",
+                "air_temperature_c": 24.6,
+                "air_humidity_percent": 68.0,
+                "par_umol_m2_s": 920,
+            },
+        )
+
+        response = self.client.get(f"/mqtt-devices/{device_id}?tab=monitoring")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("1号ハウス環境センサー", html)
+        self.assertIn("24.6 ℃", html)
+        self.assertIn("68.0 %", html)
+        self.assertIn('data-chart-kind="air_temperature"', html)
+        self.assertIn('data-chart-kind="air_humidity"', html)
+        self.assertIn('data-chart-kind="par"', html)
+        self.assertNotIn('data-chart-kind="watering"', html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings"', html)
+        self.assertIn('const tabAliases = { irrigation: "monitoring", config: "settings", maintenance: "diagnostics" };', html)
+
+        charts_response = self.client.get(f"/local/api/mqtt-devices/{device_id}/charts")
+        self.assertEqual(charts_response.status_code, 200)
+        charts = charts_response.get_json()
+        self.assertIn("Plotly.newPlot", charts["air_temperature"])
+        self.assertIn("Plotly.newPlot", charts["air_humidity"])
+        self.assertIn("Plotly.newPlot", charts["par"])
+        self.assertIsNone(charts["watering"])
 
     def test_mqtt_device_times_are_rendered_in_local_time(self):
         utc_received_at = "2026-07-02T21:30:15+00:00"
@@ -274,6 +341,11 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("2026-07-03T06:30:15", chart_html)
         self.assertNotIn("2026-07-02T21:30:15", chart_html)
 
+        deferred_html = web_server._build_watering_trend_chart(statuses, deferred=True)
+        self.assertIn('data-plotly-chart="watering-trend-chart"', deferred_html)
+        self.assertIn('type="application/json"', deferred_html)
+        self.assertNotIn("Plotly.newPlot", deferred_html)
+
     def test_mqtt_devices_query_device_id_redirects_to_detail_path(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000201"
 
@@ -289,6 +361,7 @@ class WebServerOTATest(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertIn("デモデータ表示中", html)
         self.assertIn("操作は保存されません", html)
+        self.assertIn("圃場ビュー", html)
         self.assertIn("北ハウス 1号", html)
         self.assertIn("南ハウス 2号", html)
         self.assertIn("西ハウス 予備機", html)
@@ -305,12 +378,17 @@ class WebServerOTATest(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertIn("デモデータ表示中", html)
         self.assertIn("操作は保存されません", html)
-        self.assertIn("水やり機一覧へ戻る", html)
+        self.assertIn("機器一覧へ戻る", html)
+        self.assertNotIn("圃場ビュー", html)
+        self.assertNotIn("デバイス API", html)
+        self.assertIn('role="tablist"', html)
+        self.assertIn("設置ビュー", html)
+        self.assertIn("高設ベッドA", html)
         self.assertIn("北ハウス 1号", html)
-        self.assertIn("灌水推移", html)
+        self.assertIn("潅水推移", html)
         self.assertIn("土壌水分推移", html)
         self.assertNotIn("Plotly.newPlot", html)
-        self.assertIn("灌水推移を読み込み中", html)
+        self.assertIn("潅水推移を読み込み中", html)
         self.assertIn("/demo/local/api/mqtt-devices/", html)
         self.assertIn("直近3日", html)
         self.assertIn("2週間", html)

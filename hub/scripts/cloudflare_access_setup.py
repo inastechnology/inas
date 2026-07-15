@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import os
 import re
 import sys
 import urllib.error
@@ -19,16 +18,22 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from cloudflare_setup_common import (
+    ScriptError,
+    merged_env,
+    quote_env_value,
+    require_any_value,
+    require_value,
+    upsert_env_file,
+)
+
 API_BASE_URL = "https://api.cloudflare.com/client/v4"
 DEFAULT_APP_NAME = "inas-hub-hosted"
 DEFAULT_GROUP_NAME = "inas-hub-allowed-users"
 DEFAULT_POLICY_NAME = "inas-hub-allow-email-group"
 DEFAULT_SESSION_DURATION = "4h"
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
-class ScriptError(RuntimeError):
-    pass
+EMAIL_DOMAIN_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 
 def log(message: str) -> None:
@@ -37,76 +42,6 @@ def log(message: str) -> None:
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
-
-
-def parse_env_file(path: Path) -> dict[str, str]:
-    values: dict[str, str] = {}
-    if not path.exists():
-        return values
-
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("export "):
-            line = line[len("export ") :].strip()
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if not key:
-            continue
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
-            value = value[1:-1]
-        values[key] = value
-    return values
-
-
-def merged_env(env_file: Path) -> dict[str, str]:
-    values = parse_env_file(env_file)
-    values.update({key: value for key, value in os.environ.items() if value is not None})
-    return values
-
-
-def quote_env_value(value: str) -> str:
-    if not value:
-        return ""
-    if re.search(r"\s|#|['\"]", value):
-        return json.dumps(value, ensure_ascii=False)
-    return value
-
-
-def upsert_env_file(path: Path, updates: dict[str, str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    seen: set[str] = set()
-    output: list[str] = []
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            output.append(line)
-            continue
-        key = stripped.split("=", 1)[0]
-        if key.startswith("export "):
-            key = key[len("export ") :].strip()
-        else:
-            key = key.strip()
-
-        if key in updates:
-            output.append(f"{key}={quote_env_value(updates[key])}")
-            seen.add(key)
-        else:
-            output.append(line)
-
-    if output and output[-1] != "":
-        output.append("")
-    for key, value in updates.items():
-        if key not in seen:
-            output.append(f"{key}={quote_env_value(value)}")
-
-    path.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
 
 
 def normalize_email(email: str) -> str:
@@ -121,6 +56,20 @@ def parse_email_list(raw: str | None) -> list[str]:
         return []
     parts = re.split(r"[,\s]+", raw)
     return [normalize_email(part) for part in parts if part.strip()]
+
+
+def normalize_email_domain(domain: str) -> str:
+    normalized = domain.strip().lower().lstrip("@")
+    if not EMAIL_DOMAIN_RE.match(normalized):
+        raise ScriptError(f"Invalid email domain: {domain}")
+    return normalized
+
+
+def parse_email_domain_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    parts = re.split(r"[,\s]+", raw)
+    return [normalize_email_domain(part) for part in parts if part.strip()]
 
 
 def read_email_file(path: Path) -> list[str]:
@@ -142,6 +91,12 @@ def collect_emails(args: argparse.Namespace, env: dict[str, str]) -> list[str]:
     if email_file:
         emails.extend(read_email_file(Path(email_file)))
     return sorted(set(emails))
+
+
+def collect_email_domains(args: argparse.Namespace, env: dict[str, str]) -> list[str]:
+    domains = parse_email_domain_list(env.get("CLOUDFLARE_ACCESS_ALLOWED_EMAIL_DOMAINS"))
+    domains.extend(normalize_email_domain(domain) for domain in (getattr(args, "email_domain", []) or []))
+    return sorted(set(domains))
 
 
 class CloudflareAPI:
@@ -209,10 +164,21 @@ def email_rule(email: str) -> dict[str, dict[str, str]]:
     return {"email": {"email": email}}
 
 
+def email_domain_rule(domain: str) -> dict[str, dict[str, str]]:
+    return {"email_domain": {"domain": domain}}
+
+
 def rule_email(rule: dict[str, Any]) -> str | None:
     email = rule.get("email")
     if isinstance(email, dict) and isinstance(email.get("email"), str):
         return email["email"].strip().lower()
+    return None
+
+
+def rule_email_domain(rule: dict[str, Any]) -> str | None:
+    email_domain = rule.get("email_domain")
+    if isinstance(email_domain, dict) and isinstance(email_domain.get("domain"), str):
+        return normalize_email_domain(email_domain["domain"])
     return None
 
 
@@ -225,15 +191,28 @@ def group_emails(group: dict[str, Any]) -> list[str]:
     return sorted(set(emails))
 
 
-def group_payload(name: str, emails: list[str], existing: dict[str, Any] | None = None) -> dict[str, Any]:
-    if not emails:
-        raise ScriptError("Access group must contain at least one allowed email.")
+def group_email_domains(group: dict[str, Any]) -> list[str]:
+    domains = []
+    for rule in group.get("include", []) or []:
+        domain = rule_email_domain(rule)
+        if domain:
+            domains.append(domain)
+    return sorted(set(domains))
 
-    existing_include = (existing or {}).get("include", []) or []
-    preserved_include = [rule for rule in existing_include if not rule_email(rule)]
+
+def group_payload(
+    name: str,
+    emails: list[str],
+    existing: dict[str, Any] | None = None,
+    email_domains: list[str] | None = None,
+) -> dict[str, Any]:
+    domains = group_email_domains(existing or {}) if email_domains is None else sorted(set(email_domains))
+    include = [email_rule(email) for email in emails] + [email_domain_rule(domain) for domain in domains]
+    if not include:
+        raise ScriptError("Access group must contain at least one allowed email or email domain.")
     payload: dict[str, Any] = {
         "name": name,
-        "include": preserved_include + [email_rule(email) for email in emails],
+        "include": include,
     }
     for key in ("exclude", "require"):
         if existing and existing.get(key):
@@ -271,9 +250,15 @@ def group_matches(group: dict[str, Any], payload: dict[str, Any]) -> bool:
     )
 
 
-def create_or_update_group(api: CloudflareAPI, group_name: str, emails: list[str], group_id: str | None = None) -> dict[str, Any]:
+def create_or_update_group(
+    api: CloudflareAPI,
+    group_name: str,
+    emails: list[str],
+    group_id: str | None = None,
+    email_domains: list[str] | None = None,
+) -> dict[str, Any]:
     existing = find_group(api, group_id, group_name)
-    payload = group_payload(group_name, emails, existing)
+    payload = group_payload(group_name, emails, existing, email_domains)
     if existing and existing.get("id"):
         if group_matches(existing, payload):
             log(f"Access group is already up to date: {group_name} ({existing['id']})")
@@ -453,21 +438,6 @@ def resolve_team_domain(api: CloudflareAPI, env: dict[str, str]) -> str:
     return configured
 
 
-def require_value(env: dict[str, str], key: str) -> str:
-    value = env.get(key, "").strip()
-    if not value:
-        raise ScriptError(f"Missing required env value: {key}")
-    return value
-
-
-def require_any_value(env: dict[str, str], keys: list[str]) -> str:
-    for key in keys:
-        value = env.get(key, "").strip()
-        if value:
-            return value
-    raise ScriptError(f"Missing required env value: one of {', '.join(keys)}")
-
-
 def print_env_summary(values: dict[str, str]) -> None:
     print("")
     print("# Add or update these values in hub/.env")
@@ -495,15 +465,19 @@ def cmd_provision(args: argparse.Namespace) -> None:
     policy_name = args.policy_name or env.get("CLOUDFLARE_ACCESS_POLICY_NAME") or DEFAULT_POLICY_NAME
     session_duration = args.session_duration or env.get("CLOUDFLARE_ACCESS_SESSION_DURATION") or DEFAULT_SESSION_DURATION
     emails = collect_emails(args, env)
+    email_domains = collect_email_domains(args, env)
 
-    if not emails and not env.get("CLOUDFLARE_ACCESS_GROUP_ID"):
-        raise ScriptError("Set at least one allowed email via --email, --email-file, or CLOUDFLARE_ACCESS_ALLOWED_EMAILS.")
+    if not emails and not email_domains and not env.get("CLOUDFLARE_ACCESS_GROUP_ID"):
+        raise ScriptError(
+            "Set at least one allowed identity via --email, --email-file, --email-domain, "
+            "CLOUDFLARE_ACCESS_ALLOWED_EMAILS, or CLOUDFLARE_ACCESS_ALLOWED_EMAIL_DOMAINS."
+        )
 
     group = find_group(api, env.get("CLOUDFLARE_ACCESS_GROUP_ID"), group_name)
-    if emails:
-        if group and not args.dry_run and not group_matches(group, group_payload(group_name, emails, group)):
+    if emails or email_domains:
+        if group and not args.dry_run and not group_matches(group, group_payload(group_name, emails, group, email_domains)):
             backup_group(env_file, group)
-        group = create_or_update_group(api, group_name, emails, env.get("CLOUDFLARE_ACCESS_GROUP_ID"))
+        group = create_or_update_group(api, group_name, emails, env.get("CLOUDFLARE_ACCESS_GROUP_ID"), email_domains)
     if not group or not group.get("id"):
         raise ScriptError("Could not create or find Access group.")
 
@@ -580,6 +554,51 @@ def cmd_check(args: argparse.Namespace) -> None:
     print("Cloudflare Access API check passed.")
 
 
+def cmd_audit(args: argparse.Namespace) -> None:
+    env, api, _ = access_context(args)
+    hostname = env.get("CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME") or env.get("CLOUDFLARE_TUNNEL_HOSTNAME")
+    if not hostname:
+        raise ScriptError("Missing hosted hostname.")
+    group_name = env.get("CLOUDFLARE_ACCESS_GROUP_NAME") or DEFAULT_GROUP_NAME
+    app_name = env.get("CLOUDFLARE_ACCESS_APP_NAME") or DEFAULT_APP_NAME
+    policy_name = env.get("CLOUDFLARE_ACCESS_POLICY_NAME") or DEFAULT_POLICY_NAME
+    group = find_group(api, env.get("CLOUDFLARE_ACCESS_GROUP_ID"), group_name)
+    app = find_application(api, env.get("CLOUDFLARE_ACCESS_APP_ID"), hostname, app_name)
+    if not group or not group.get("id") or not app or not app.get("id"):
+        raise ScriptError("Access group or application was not found.")
+
+    failures = []
+    include = group.get("include") or []
+    unsupported = [rule for rule in include if not rule_email(rule) and not rule_email_domain(rule)]
+    if not include:
+        failures.append("Access group has no allowed identities")
+    if unsupported:
+        failures.append("Access group contains selectors other than email or email domain")
+    if app.get("type") != "self_hosted" or app.get("domain") != hostname or not app_destinations_include_hostname(app, hostname):
+        failures.append("Access application does not protect the complete hosted hostname")
+
+    policies = api.list_all(f"/access/apps/{app['id']}/policies")
+    managed = next((policy for policy in policies if policy.get("id") == env.get("CLOUDFLARE_ACCESS_POLICY_ID")), None)
+    if managed is None:
+        managed = next((policy for policy in policies if policy.get("name") == policy_name), None)
+    if not managed or managed.get("decision") != "allow":
+        failures.append("Managed Access allow policy was not found")
+    elif comparable_rules(managed.get("include")) != comparable_rules([{"group": {"id": group["id"]}}]):
+        failures.append("Managed Access policy is not limited to the configured identity group")
+    for policy in policies:
+        if policy.get("id") == (managed or {}).get("id"):
+            continue
+        if policy.get("decision") in {"allow", "bypass"}:
+            failures.append(f"Unexpected {policy.get('decision')} policy can grant access: {policy.get('name') or policy.get('id')}")
+
+    if failures:
+        raise ScriptError("Cloudflare Access security audit failed:\n- " + "\n- ".join(failures))
+    print(f"Protected hostname: {hostname}")
+    print(f"Allowed exact emails: {len(group_emails(group))}")
+    print(f"Allowed company email domains: {len(group_email_domains(group))}")
+    print("Cloudflare Access security audit passed.")
+
+
 def load_group_for_allowlist(args: argparse.Namespace) -> tuple[dict[str, str], CloudflareAPI, Path, dict[str, Any]]:
     env, api, env_file = access_context(args)
     group_name = args.group_name or env.get("CLOUDFLARE_ACCESS_GROUP_NAME") or DEFAULT_GROUP_NAME
@@ -620,8 +639,8 @@ def cmd_remove(args: argparse.Namespace) -> None:
     target = set(group_emails(group))
     for email in args.email:
         target.discard(normalize_email(email))
-    if not target:
-        raise ScriptError("Refusing to leave the Access group with zero allowed emails.")
+    if not target and not group_email_domains(group):
+        raise ScriptError("Refusing to leave the Access group with zero allowed identities.")
     updated = update_group_emails(args, sorted(target))
     log(f"Updated Access group {updated.get('id')} with {len(group_emails(updated))} email(s).")
 
@@ -636,8 +655,8 @@ def cmd_apply(args: argparse.Namespace) -> None:
     _, _, _, group = load_group_for_allowlist(args)
     current = set(group_emails(group))
     desired = set(read_email_file(Path(args.email_file)))
-    if not desired:
-        raise ScriptError("Refusing to apply an empty allowlist.")
+    if not desired and not group_email_domains(group):
+        raise ScriptError("Refusing to apply an empty allowlist without an allowed email domain.")
 
     added = sorted(desired - current)
     removed = sorted(current - desired)
@@ -670,6 +689,9 @@ def build_parser() -> argparse.ArgumentParser:
     check_cmd = subparsers.add_parser("check", help="Check Cloudflare Access API credentials and read permissions.")
     check_cmd.set_defaults(func=cmd_check)
 
+    audit_cmd = subparsers.add_parser("audit", help="Verify that the hosted hostname only allows the configured email identities.")
+    audit_cmd.set_defaults(func=cmd_audit)
+
     provision = subparsers.add_parser("provision", help="Create or reuse Access group, self-hosted app, and allow policy.")
     provision.add_argument("--hostname", help="Public hostname protected by Access. Defaults to CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME.")
     provision.add_argument("--app-name", help=f"Access application name. Default: {DEFAULT_APP_NAME}")
@@ -677,6 +699,7 @@ def build_parser() -> argparse.ArgumentParser:
     provision.add_argument("--session-duration", help=f"Access session duration. Default: {DEFAULT_SESSION_DURATION}")
     provision.add_argument("--email", action="append", default=[], help="Allowed email. Repeatable.")
     provision.add_argument("--email-file", help="File containing one allowed email per line.")
+    provision.add_argument("--email-domain", action="append", default=[], help="Allowed company email domain. Repeatable.")
     provision.set_defaults(func=cmd_provision)
 
     list_cmd = subparsers.add_parser("list", help="List allowed emails in the Access group.")

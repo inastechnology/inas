@@ -23,6 +23,9 @@ the Seeed XIAO ESP32S3. For board image previews, see
 - Use unique Modbus slave IDs on each RS485 bus.
 - Treat missing optional RS485 sensors as timeout or `*_ok=false`; do not change
   XIAO pin assignments for each sensor combination.
+- Record every MOSFET-switched output in the hub runtime config
+  `mosfet_switches` inventory. Keep the `terminal`, `channel_mask`, `name`, and
+  `controlled_load` aligned with the labels applied during assembly.
 
 ## Wire Color Convention
 
@@ -120,6 +123,27 @@ External terminals:
 | `RS485_A` / `RS485_B` | Soil, PAR, and irradiance sensors | Unique Modbus slave ID per sensor |
 | `RS485_GND` | Sensor bus ground | Required for long cable stability |
 | `SENSOR_12V_SW+` | RS485 sensor 12V branch | Sensor branch only, not ESP32S3 power |
+
+### WRS + DFRobot SEN0641 Wiring
+
+| SEN0641 wire | WRS terminal | Check |
+|---|---|---|
+| brown / VCC | `SENSOR_12V_SW+` | 12V while sensor power is on, 0V during sleep |
+| black / GND | `RS485_GND` | Continuity to WRS GND |
+| yellow / 485-A | `RS485_A` | Twist with 485-B |
+| blue / 485-B | `RS485_B` | Recheck A/B labels if every read times out |
+
+Use `4800bps / slave 1 / function 0x03 / register 0x0000 / scale 1.0` for the SEN0641 default profile. Use `slave 2` for the soil sensor by default and do not duplicate IDs on one bus.
+
+If a 5V MAX485 module is used, power it from 5V and place a 3.3V level shifter between MAX485 `RO` and XIAO `D7/GPIO44`. Never drive the XIAO RX pin directly from a 5V `RO` output. Prefer a 3.3V-logic MAX3485, SP3485, or SN65HVD transceiver for new builds.
+
+Suggested `mosfet_switches` inventory:
+
+| switch_id | name | terminal | channel_mask | controlled_load |
+|---|---|---|---:|---|
+| `irr1` | Irrigation 1 | `IRR1+` / `IRR1-` | `1` | Field load or driver connected to irrigation output 1 |
+| `irr2` | Irrigation 2 | `IRR2+` / `IRR2-` | `2` | Field load or driver connected to irrigation output 2 |
+| `sensor_power` | RS485 sensor power | `SENSOR_12V_SW+` | `0` | Switched 12V branch for RS485 sensors |
 
 ## ENV
 

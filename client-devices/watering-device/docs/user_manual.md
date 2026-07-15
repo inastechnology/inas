@@ -101,6 +101,7 @@ Push topic:
 | `env_sensors.soil.enabled` | No | Enable RS485 soil EC/pH/NPK sensor |
 | `env_sensors.power_settle_ms` | No | Wait time after enabling 12V sensor power |
 | `env_calibration` | No | Scale/offset calibration for RS485 environmental values |
+| `mosfet_switches` | No | Hub-managed names, terminals, controlled loads, and channel masks for MOSFET-switched outputs |
 | `schedules` | Yes | Irrigation schedules |
 
 Valid runtime config must include at least one valid schedule. The payload should
