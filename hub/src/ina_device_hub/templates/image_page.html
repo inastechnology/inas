@@ -2,6 +2,7 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/static/searchable-select.css" />
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -27,6 +28,27 @@
         padding: 8px;
         font-size: 16px;
         margin-bottom: 20px;
+      }
+      #imageSelect + .static-searchable-select {
+        max-width: 360px;
+        margin: 0 auto 20px;
+      }
+      .image-filter {
+        display: grid;
+        gap: 5px;
+        max-width: 360px;
+        margin: 0 auto 10px;
+        color: #555;
+        font-size: 13px;
+        font-weight: 700;
+        text-align: left;
+      }
+      .image-filter input {
+        min-height: 38px;
+        padding: 7px 9px;
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        font: inherit;
       }
       .loader {
         border: 6px solid #f3f3f3;
@@ -55,7 +77,7 @@
     <h1>Latest Image</h1>
     <p>Device ID: {{ device_id }}</p>
 
-    <select id="imageSelect" onchange="displayImage()">
+    <select id="imageSelect" onchange="displayImage()" aria-label="表示する画像" data-searchable-select data-search-placeholder="撮影日時、画像パスを検索" data-empty-message="一致する画像はありません。">
       {% for image in sensor_images %}
       <option
         value="{{ image.image_path }}"
@@ -72,6 +94,7 @@
       <div class="timestamp" id="imageTimestamp"></div>
     </div>
 
+    <script src="/static/select-filter.js"></script>
     <script>
       function displayImage() {
         const selectElement = document.getElementById("imageSelect");

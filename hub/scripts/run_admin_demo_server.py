@@ -156,6 +156,25 @@ def _prepare_env():
     os.environ["AI_TEXT_ANALYZE_API_KEY"] = os.environ.get("HUB_DEMO_AI_TEXT_ANALYZE_API_KEY", "")
 
 
+def _seed_demo_device_state(config_service, device_id: str, desired_state: str):
+    repository = config_service.repository
+    current_state = config_service.get_record(device_id)["state"]
+    if current_state == desired_state:
+        return
+    if desired_state == "active" and current_state in {"pending", "disabled"}:
+        config_service.set_state(device_id, "active", approved_by="demo")
+        return
+
+    # The demo is a deterministic fixture. Reset states that cannot be reached
+    # through the production lifecycle so every restart exposes all UI states.
+    record = repository.device_configs[device_id]
+    record["state"] = desired_state
+    if desired_state == "pending":
+        record["approved_at"] = None
+        record["approved_by"] = None
+    repository.save()
+
+
 def main():
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root / "src"))
@@ -190,6 +209,8 @@ def main():
     for index, device in enumerate(DEMO_LAYOUT_DEVICES, start=1):
         device_id = device["id"]
         config_service.get_record(device_id)
+        desired_state = "pending" if device_id == "INADS-DEMO-WTR-003" else "active"
+        _seed_demo_device_state(config_service, device_id, desired_state)
         config = config_service.get_config(device_id)
         config["mosfet_switches"] = [
             {
@@ -215,7 +236,6 @@ def main():
                 **device["status"],
             },
         )
-        config_service.set_state(device_id, "active", approved_by="demo")
 
     layout = field_layout_repository().get("demo-strawberry-field", field_name="イチゴ実証圃場")
     valid_placement_ids = {

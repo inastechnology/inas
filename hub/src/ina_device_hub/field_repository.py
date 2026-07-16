@@ -5,7 +5,9 @@ import os
 import uuid
 from datetime import UTC, datetime
 
+from ina_device_hub.collection_search import matches_search, paginate, search_terms
 from ina_device_hub.field_record_catalog import normalize_field_record_values
+from ina_device_hub.json_repository_io import atomic_write_json, serialized_repository_write
 from ina_device_hub.setting import setting
 
 MAX_FIELD_NOTES = 1000
@@ -126,8 +128,7 @@ class FieldRepository:
 
     def load(self):
         if not os.path.exists(self.field_repo_path):
-            with open(self.field_repo_path, "w", encoding="utf-8") as file:
-                json.dump({}, file)
+            atomic_write_json(self.field_repo_path, {})
         try:
             with open(self.field_repo_path, encoding="utf-8") as file:
                 data = json.load(file)
@@ -136,11 +137,42 @@ class FieldRepository:
         self.fields = {field_id: _normalize_field(field_id, record) for field_id, record in data.items() if isinstance(record, dict)}
 
     def save(self):
-        with open(self.field_repo_path, "w", encoding="utf-8") as file:
-            json.dump(self.fields, file, ensure_ascii=True, indent=2)
+        atomic_write_json(self.field_repo_path, self.fields)
 
     def list(self):
         return [copy.deepcopy(field) for field in sorted(self.fields.values(), key=lambda item: item.get("name") or item.get("id"))]
+
+    def search_records(
+        self,
+        field_id: str,
+        *,
+        query="",
+        kinds=None,
+        target="",
+        date_from="",
+        date_to="",
+        page=1,
+        page_size=20,
+    ):
+        field = self._get_existing(field_id)
+        terms = search_terms(query)
+        kind_filter = {_clean_string(item) for item in (kinds or []) if _clean_string(item)}
+        target = _clean_string(target)
+        date_from = _clean_string(date_from)[:10]
+        date_to = _clean_string(date_to)[:10]
+        records = []
+
+        for event in field.get("events") or []:
+            item = _field_event_search_item(event)
+            if _record_search_match(item, terms, kind_filter, target, date_from, date_to):
+                records.append(item)
+        for note in field.get("notes") or []:
+            item = _field_note_search_item(note)
+            if _record_search_match(item, terms, kind_filter, target, date_from, date_to):
+                records.append(item)
+
+        records.sort(key=lambda item: (item.get("occurred_at") or "", item.get("id") or ""), reverse=True)
+        return paginate(records, page=page, page_size=page_size)
 
     def search(self, *, query="", prefecture="", environment_type="", page=1, page_size=24):
         query = _clean_string(query).casefold()[:120]
@@ -187,6 +219,7 @@ class FieldRepository:
         record = self.fields.get(field_id)
         return copy.deepcopy(_normalize_field(field_id, record)) if record else None
 
+    @serialized_repository_write("field_repo_path")
     def upsert(self, field_id: str | None, data: dict):
         if not isinstance(data, dict):
             raise FieldValidationError("field data must be an object")
@@ -246,6 +279,7 @@ class FieldRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("field_repo_path")
     def add_note(self, field_id: str, data: dict):
         record = self._get_existing(field_id)
         text = _clean_string(data.get("text"))
@@ -270,6 +304,7 @@ class FieldRepository:
         self.save()
         return copy.deepcopy(note)
 
+    @serialized_repository_write("field_repo_path")
     def add_event(self, field_id: str, data: dict):
         record = self._get_existing(field_id)
         event_type = _clean_string(data.get("event_type"), "observation")
@@ -305,6 +340,7 @@ class FieldRepository:
         self.save()
         return copy.deepcopy(event)
 
+    @serialized_repository_write("field_repo_path")
     def add_reflection(self, field_id: str, data: dict):
         record = self._get_existing(field_id)
         reflection = {
@@ -327,6 +363,7 @@ class FieldRepository:
         self.save()
         return copy.deepcopy(reflection)
 
+    @serialized_repository_write("field_repo_path")
     def add_action_plan(self, field_id: str, data: dict):
         record = self._get_existing(field_id)
         action_type = _clean_string(data.get("action_type"), "observation")
@@ -365,6 +402,72 @@ class FieldRepository:
         if record is None:
             raise FieldValidationError("field not found")
         return _normalize_field(field_id, record)
+
+
+def _field_event_search_item(event: dict):
+    return {
+        "id": event.get("id") or "",
+        "source": "event",
+        "kind": event.get("event_type") or "field_event",
+        "occurred_at": event.get("occurred_at") or event.get("created_at") or "",
+        "title": event.get("title") or event.get("event_type") or "記録",
+        "body": event.get("description") or event.get("human_evaluation") or "",
+        "target_placement_id": event.get("target_placement_id") or "",
+        "target_name": event.get("target_name") or "",
+        "device_id": event.get("device_id") or "",
+        "rating": event.get("rating"),
+        "attachments": copy.deepcopy(event.get("attachments") or []),
+        "record_values": copy.deepcopy(event.get("record_values") or []),
+        "tags": list(event.get("tags") or []),
+        "amount": event.get("amount") or "",
+        "unit": event.get("unit") or "",
+    }
+
+
+def _field_note_search_item(note: dict):
+    return {
+        "id": note.get("id") or "",
+        "source": "note",
+        "kind": note.get("category") or "note",
+        "occurred_at": note.get("created_at") or "",
+        "title": note.get("text") or "メモ",
+        "body": note.get("human_evaluation") or "",
+        "target_placement_id": "",
+        "target_name": "",
+        "device_id": "",
+        "rating": note.get("rating"),
+        "attachments": copy.deepcopy(note.get("attachments") or []),
+        "record_values": [],
+        "tags": list(note.get("tags") or []),
+        "amount": "",
+        "unit": "",
+    }
+
+
+def _record_search_match(item, terms, kind_filter, target, date_from, date_to):
+    occurred_on = str(item.get("occurred_at") or "")[:10]
+    if kind_filter and item.get("kind") not in kind_filter and item.get("source") not in kind_filter:
+        return False
+    if target and target not in {item.get("target_placement_id"), item.get("target_name")}:
+        return False
+    if date_from and occurred_on < date_from:
+        return False
+    if date_to and occurred_on > date_to:
+        return False
+    return matches_search(
+        terms,
+        [
+            item.get("title"),
+            item.get("body"),
+            item.get("kind"),
+            item.get("target_name"),
+            item.get("device_id"),
+            item.get("tags"),
+            item.get("record_values"),
+            item.get("amount"),
+            item.get("unit"),
+        ],
+    )
 
 
 def _new_field(field_id: str, now: str):

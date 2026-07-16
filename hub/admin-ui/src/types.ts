@@ -63,6 +63,7 @@ export interface FieldLayout {
   spaces: LayoutSpace[];
   revision: number;
   updated_at: string;
+  updated_by: string;
 }
 
 export interface DeviceResource {
@@ -89,7 +90,7 @@ export interface GrowthTarget {
 }
 
 export type PlantActionPriority = "required" | "should" | "recommended" | "optional";
-export type PlantActionStatus = "planned" | "completed" | "skipped";
+export type PlantActionStatus = "planned" | "in_progress" | "completed" | "skipped";
 
 export interface PlantActionTypeDefinition {
   code: string;
@@ -148,6 +149,9 @@ export interface PlantCalendarAction {
   reason: string;
   instructions: string;
   tags: string[];
+  required_people: number;
+  estimated_minutes: number;
+  work_plan: ActionWorkPlan;
   status: PlantActionStatus;
   completion: {
     work_log_id: string;
@@ -155,9 +159,86 @@ export interface PlantCalendarAction {
     note: string;
     rating?: number | null;
     attachments?: RecordImageAttachment[];
+    work_details?: PlantActionWorkDetails;
   } | null;
   source: string;
   rule_id: string;
+}
+
+export type WorkMethodType =
+  | "observation"
+  | "manual"
+  | "device"
+  | "material_application"
+  | "chemical"
+  | "physical"
+  | "biological"
+  | "cultural"
+  | "other";
+
+export interface WorkMethodOption {
+  id: string;
+  label: string;
+  method_type: WorkMethodType;
+  material_name: string;
+  registration_number: string;
+  purpose: string;
+  application_method: string;
+  amount_or_rate: string;
+  procedure_steps: string[];
+  completion_checks: string[];
+  precautions: string[];
+  frequency: WorkFrequency;
+  instructions: string;
+  follow_up_days_default: number | null;
+  source_name: string;
+  source_url: string;
+  source_checked_at: string;
+}
+
+export interface WorkFrequency {
+  mode: "one_time" | "as_needed" | "interval" | "seasonal" | "continuous";
+  min_interval_days: number | null;
+  preferred_interval_days: number | null;
+  max_interval_days: number | null;
+  max_applications: number | null;
+  basis: string;
+}
+
+export interface ActionWorkPlan {
+  targets: string[];
+  start_conditions: string[];
+  skip_conditions: string[];
+  checkpoints: string[];
+  method_options: WorkMethodOption[];
+  completion_criteria: string[];
+}
+
+export interface ActionExecutionDetails {
+  target: string;
+  method_id: string;
+  method_label: string;
+  method_type: WorkMethodType;
+  material_name: string;
+  amount_or_rate: string;
+  registration_number: string;
+  custom_method: string;
+  follow_up_days: number | null;
+  source_name: string;
+  source_url: string;
+  source_checked_at: string;
+}
+
+export interface PlantActionWorkDetails {
+  execution?: ActionExecutionDetails;
+}
+
+export interface PlantActionCompletionPayload {
+  performed_on: string;
+  note: string;
+  rating: number;
+  images: File[];
+  work_details: PlantActionWorkDetails;
 }
 
 export interface PlantTaskRule {
@@ -231,6 +312,7 @@ export interface PlantWorkLog {
   note: string;
   rating: number | null;
   attachments: RecordImageAttachment[];
+  work_details: PlantActionWorkDetails;
 }
 
 export interface PlantBundle {

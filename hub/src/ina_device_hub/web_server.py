@@ -1,11 +1,11 @@
 import json
 import os
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from functools import lru_cache
 from html import escape
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import plotly
 from flask import Flask, Response, jsonify, redirect, render_template, render_template_string, request, send_file, stream_template
@@ -15,7 +15,12 @@ from plotly.io import to_html
 from ina_device_hub.agri_action_service import METRIC_LABELS, build_action_candidates
 from ina_device_hub.ai_content_service import ai_content_service
 from ina_device_hub.camera_connector import camera_connector
-from ina_device_hub.device_config_repository import DeviceConfigValidationError, DeviceRecordValidationError
+from ina_device_hub.collection_search import matches_search, paginate, search_terms
+from ina_device_hub.device_config_repository import (
+    DeviceConfigValidationError,
+    DeviceRecordValidationError,
+    DeviceStateConflictError,
+)
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.device_event_log import list_device_events
 from ina_device_hub.field_calendar_view import build_calendar_todo_items as _build_calendar_todo_items
@@ -26,6 +31,8 @@ from ina_device_hub.field_layout_repository import (
 )
 from ina_device_hub.field_record_calendar import (
     build_field_record_calendar as _build_field_record_calendar,
+)
+from ina_device_hub.field_record_calendar import (
     record_month_start as _record_month_start,
 )
 from ina_device_hub.field_record_catalog import (
@@ -41,6 +48,8 @@ from ina_device_hub.field_record_media_service import (
 )
 from ina_device_hub.field_repository import FieldValidationError, field_repository
 from ina_device_hub.field_status_dashboard import build_field_status_dashboard as _build_field_status_dashboard
+from ina_device_hub.instagram_client import InstagramClient
+from ina_device_hub.instagram_post_task import reload_instagram_post_task_settings
 from ina_device_hub.location_repository import location_repository
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
 from ina_device_hub.plant_management_repository import (
@@ -55,6 +64,15 @@ from ina_device_hub.sensor_measurement_repository import extract_measurements_fr
 from ina_device_hub.setting import setting
 from ina_device_hub.storage_connector import storage_connector
 from ina_device_hub.timelapse_media_service import timelapse_media_service
+from ina_device_hub.user_context import current_user_from_request
+from ina_device_hub.user_preference_repository import (
+    DEFAULT_CULTIVATION_EXPERIENCE_LEVEL,
+    SUPPORTED_CULTIVATION_EXPERIENCE_LEVELS,
+    UserPreferenceConflictError,
+    UserPreferenceValidationError,
+    effective_preferences,
+    user_preference_repository,
+)
 from ina_device_hub.utils import Utils
 
 app = Flask(__name__)
@@ -85,6 +103,17 @@ FIELD_ENVIRONMENT_TYPE_OPTIONS = (
 )
 FIELD_ENVIRONMENT_TYPE_LABELS = dict(FIELD_ENVIRONMENT_TYPE_OPTIONS)
 FIELD_CATALOG_PAGE_SIZE = 18
+
+
+@app.after_request
+def prevent_settings_response_caching(response):
+    if request.path == "/settings" or request.path.startswith("/local/api/settings/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 LAYOUT_PLACEMENT_LABELS = {
     "greenhouse": "ハウス",
     "open_field": "露地エリア",
@@ -95,7 +124,7 @@ LAYOUT_PLACEMENT_LABELS = {
     "hydroponic_bed": "水耕ベッド",
     "watering_device": "潅水設備",
     "sensor": "センサー",
-    "irrigation_line": "ホース・配管（任意）",
+    "irrigation_line": "配管（既存データ）",
     "tank": "タンク",
     "grow_light": "植物育成ライト",
     "mister": "噴霧器",
@@ -620,7 +649,15 @@ def camera_images(device_id):
     )
 
 
-def _build_mqtt_admin_view(devices, selected_device_id, selected_device, selected_statuses, selected_ota_statuses):
+def _build_mqtt_admin_view(
+    devices,
+    selected_device_id,
+    selected_device,
+    selected_statuses,
+    selected_ota_statuses,
+    *,
+    layout_context=None,
+):
     now = datetime.now(UTC)
     device_summaries = [
         _build_device_summary(device_id, record, now) for device_id, record in sorted(devices.items(), key=lambda item: _device_sort_key(item[0], item[1]))
@@ -628,7 +665,14 @@ def _build_mqtt_admin_view(devices, selected_device_id, selected_device, selecte
     return {
         "devices": device_summaries,
         "field_zones": _build_field_zones(device_summaries, selected_device_id),
-        "selected": _build_selected_device_view(selected_device_id, selected_device, selected_statuses, selected_ota_statuses, now)
+        "selected": _build_selected_device_view(
+            selected_device_id,
+            selected_device,
+            selected_statuses,
+            selected_ota_statuses,
+            now,
+            layout_context=layout_context,
+        )
         if selected_device
         else None,
     }
@@ -791,18 +835,25 @@ def _build_device_summary(device_id, record, now):
         "next_wake": _format_next_wake(record.get("last_status_at"), payload.get("next_sleep_sec")),
         "firmware": record.get("firmware_version") or "未取得",
         "target_firmware": record.get("target_firmware_version") or "設定なし",
+        "operational_metrics": _build_device_operational_metrics(record, payload, config, now, watering)[:3],
     }
 
 
-def _build_selected_device_view(device_id, record, statuses, ota_statuses, now):
+def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, *, layout_context=None):
     payload = _latest_status_payload(record)
     config = record.get("config") or {}
     device_kind = record.get("device_kind") or payload.get("device_kind") or ""
     watering = _watering_state(payload)
+    layout_context = layout_context or {"assigned": False, "assignments": [], "primary_path": "", "primary_href": ""}
+    location = layout_context.get("primary_path") or record.get("location") or "未設置"
+    soil_moisture = _first_numeric_value(payload, ("soil_moisture_percent", "last_soil_moisture"))
+    threshold = payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")
     return {
         "id": device_id,
         "title": record.get("name") or device_id,
-        "location": record.get("location") or "場所未設定",
+        "location": location,
+        "location_href": layout_context.get("primary_href") or "",
+        "layout_context": layout_context,
         "memo": record.get("memo") or "",
         "device_kind": device_kind,
         "kind_label": _device_kind_label(device_kind),
@@ -810,8 +861,8 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now):
         "state_label": _device_state_label(record.get("state")),
         "state_class": _device_state_class(record.get("state")),
         "watering": watering,
-        "soil_moisture": _format_percent(payload.get("last_soil_moisture")),
-        "threshold": _format_percent(payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")),
+        "soil_moisture": _format_percent(soil_moisture),
+        "threshold": _format_percent(threshold),
         "last_seen": _format_datetime(record.get("last_seen_at") or record.get("last_status_at")),
         "last_seen_age": _format_age(record.get("last_seen_at") or record.get("last_status_at"), now),
         "next_wake": _format_next_wake(record.get("last_status_at"), payload.get("next_sleep_sec")),
@@ -821,39 +872,177 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now):
         "ota_state": _ota_state_label(record.get("ota_state")),
         "ota_class": _ota_state_class(record.get("ota_state")),
         "ota_error": record.get("ota_error") or "",
-        "summary_metrics": _build_device_summary_metrics(record, payload, now, watering),
+        "operational_heading": "現在の潅水判断" if device_kind in {"WTR", "WRS"} else "現在の計測・稼働状況",
+        "operational_metrics": _build_device_operational_metrics(record, payload, config, now, watering),
         "monitoring_charts": _build_device_monitoring_charts(device_kind, statuses),
         "schedules": _format_schedules_for_ui(config.get("schedules") or [], config),
         "config_summary": _format_config_summary(config),
-        "installation": _build_device_installation_view(config, payload),
         "watering_history": _build_watering_history(statuses),
         "wake_history": _build_wake_history(statuses),
         "ota_history": _build_ota_history(ota_statuses),
     }
 
 
-def _build_device_summary_metrics(record, payload, now, watering):
-    device_kind = record.get("device_kind") or payload.get("device_kind") or ""
-    metrics = []
+def _build_device_layout_context(device_id, record=None):
+    assignments = []
+    layout_repository = field_layout_repository()
+    for field in field_repository().list():
+        field_id = field.get("id") or ""
+        if not field_id:
+            continue
+        layout = layout_repository.get(field_id, field_name=field.get("name") or "")
+        spaces = {space.get("id"): space for space in layout.get("spaces") or [] if space.get("id")}
+        placement_index = {
+            placement.get("id"): (space, placement)
+            for space in spaces.values()
+            for placement in space.get("placements") or []
+            if placement.get("id")
+        }
+        field_assignments = []
+        for space in spaces.values():
+            for placement in space.get("placements") or []:
+                binding = placement.get("binding") if isinstance(placement.get("binding"), dict) else {}
+                if binding.get("device_id") != device_id:
+                    continue
+                target_items = []
+                for target_id in binding.get("target_placement_ids") or []:
+                    target_location = placement_index.get(target_id)
+                    if target_location is None:
+                        continue
+                    target_space, target = target_location
+                    target_items.append(
+                        {
+                            "id": target_id,
+                            "name": target.get("name") or target_id,
+                            "kind_label": LAYOUT_PLACEMENT_LABELS.get(target.get("preset"), target.get("preset") or "配置物"),
+                            "path": _layout_placement_path(field, layout, target_space.get("id"), target),
+                            "href": _layout_placement_url(field_id, target_space.get("id"), target_id),
+                        }
+                    )
+                preset = placement.get("preset") or ""
+                relation_label = "潅水対象" if preset == "watering_device" else "計測対象" if preset == "sensor" else "関連対象"
+                resource_type = binding.get("resource_type") or "device"
+                field_assignments.append(
+                    {
+                        "field_id": field_id,
+                        "field_name": field.get("name") or field_id,
+                        "field_href": f"/fields/{quote(str(field_id), safe='')}",
+                        "layout_href": f"/fields/{quote(str(field_id), safe='')}/layout",
+                        "space_id": space.get("id") or "",
+                        "space_name": space.get("name") or "圃場全体",
+                        "placement_id": placement.get("id") or "",
+                        "placement_name": placement.get("name") or placement.get("id") or "配置物",
+                        "placement_kind": LAYOUT_PLACEMENT_LABELS.get(preset, preset or "配置物"),
+                        "path": _layout_placement_path(field, layout, space.get("id"), placement),
+                        "href": _layout_placement_url(field_id, space.get("id"), placement.get("id")),
+                        "resource_name": _layout_resource_name(record, resource_type, binding.get("resource_id") or ""),
+                        "relation_label": relation_label,
+                        "targets": target_items,
+                        "field_level": False,
+                    }
+                )
 
+        if field_assignments:
+            assignments.extend(field_assignments)
+            continue
+        if device_id in set(field.get("device_ids") or []) | set(field.get("camera_device_ids") or []):
+            field_name = field.get("name") or field_id
+            field_href = f"/fields/{quote(str(field_id), safe='')}"
+            assignments.append(
+                {
+                    "field_id": field_id,
+                    "field_name": field_name,
+                    "field_href": field_href,
+                    "layout_href": f"{field_href}/layout",
+                    "space_id": layout.get("root_space_id") or "",
+                    "space_name": "圃場全体",
+                    "placement_id": "",
+                    "placement_name": "圃場全体",
+                    "placement_kind": "圃場",
+                    "path": f"{field_name} / 圃場全体",
+                    "href": field_href,
+                    "resource_name": "デバイス",
+                    "relation_label": "関連対象",
+                    "targets": [],
+                    "field_level": True,
+                }
+            )
+
+    assignments.sort(key=lambda item: (item["field_name"], item["path"], item["placement_id"]))
+    primary = assignments[0] if assignments else {}
+    return {
+        "assigned": bool(assignments),
+        "assignments": assignments,
+        "primary_path": primary.get("path") or "",
+        "primary_href": primary.get("href") or "",
+    }
+
+
+def _layout_placement_path(field, layout, space_id, placement):
+    spaces = {space.get("id"): space for space in layout.get("spaces") or [] if space.get("id")}
+    parent_by_child = {
+        child_space_id: (space.get("id"), parent)
+        for space in spaces.values()
+        for parent in space.get("placements") or []
+        if (child_space_id := parent.get("child_space_id"))
+    }
+    ancestor_names = []
+    current_space_id = space_id
+    visited = set()
+    while current_space_id and current_space_id != layout.get("root_space_id") and current_space_id not in visited:
+        visited.add(current_space_id)
+        parent_location = parent_by_child.get(current_space_id)
+        if parent_location is None:
+            break
+        current_space_id, parent = parent_location
+        ancestor_names.append(parent.get("name") or parent.get("id") or "空間")
+    path_parts = [field.get("name") or field.get("id") or "圃場", *reversed(ancestor_names)]
+    placement_name = placement.get("name") or placement.get("id") or "配置物"
+    if not path_parts or path_parts[-1] != placement_name:
+        path_parts.append(placement_name)
+    return " / ".join(path_parts)
+
+
+def _layout_placement_url(field_id, space_id, placement_id):
+    query = urlencode({"space": space_id or "", "placement": placement_id or ""})
+    return f"/fields/{quote(str(field_id), safe='')}/layout?{query}"
+
+
+def _build_device_operational_metrics(record, payload, config, now, watering):
+    device_kind = record.get("device_kind") or payload.get("device_kind") or ""
     if device_kind in {"WTR", "WRS"}:
-        metrics.append(
+        soil_moisture = _first_numeric_value(payload, ("soil_moisture_percent", "last_soil_moisture"))
+        threshold = payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")
+        next_watering = _next_watering_schedule(config, now)
+        moisture_class, moisture_hint = _moisture_threshold_guidance(soil_moisture, threshold)
+        return [
             {
-                "label": "潅水",
+                "label": "次の潅水",
+                "value": next_watering["label"],
+                "class": "priority",
+                "hint": next_watering["hint"],
+            },
+            {
+                "label": "土壌水分しきい値",
+                "value": _format_percent(threshold),
+                "class": "",
+                "hint": "この値以下で潅水を判断",
+            },
+            {
+                "label": "現在の土壌水分",
+                "value": _format_percent(soil_moisture),
+                "class": moisture_class,
+                "hint": moisture_hint,
+            },
+            {
+                "label": "現在の潅水状態",
                 "value": watering["label"],
                 "class": watering["class"],
                 "hint": "最後のstatusから判断",
-            }
-        )
+            },
+        ]
 
     metric_specs = {
-        "WTR": (("土壌水分", ("last_soil_moisture", "soil_moisture_percent"), "%", 1),),
-        "WRS": (
-            ("土壌水分", ("soil_moisture_percent", "last_soil_moisture"), "%", 1),
-            ("土壌EC", ("soil_ec_us_cm",), "uS/cm", 0),
-            ("土壌pH", ("soil_ph",), "", 1),
-            ("PAR", ("par_umol_m2_s",), "umol/m2/s", 0),
-        ),
         "ENV": (
             ("気温", ("air_temperature_c",), "℃", 1),
             ("湿度", ("air_humidity_percent",), "%", 1),
@@ -867,8 +1056,11 @@ def _build_device_summary_metrics(record, payload, now, watering):
         ),
         "PAR": (("PAR", ("par_umol_m2_s",), "umol/m2/s", 0),),
     }
+    metrics = []
     for label, aliases, unit, digits in metric_specs.get(device_kind, ()):
         value = _first_numeric_value(payload, aliases)
+        if value is None:
+            continue
         metrics.append(
             {
                 "label": label,
@@ -878,29 +1070,70 @@ def _build_device_summary_metrics(record, payload, now, watering):
             }
         )
 
-    metrics.extend(
-        [
-            {
-                "label": "最終通信",
-                "value": _format_age(record.get("last_seen_at") or record.get("last_status_at"), now),
-                "class": "",
-                "hint": _format_datetime(record.get("last_seen_at") or record.get("last_status_at")),
-            },
-            {
-                "label": "ファームウェア",
-                "value": record.get("firmware_version") or "未取得",
-                "class": "",
-                "hint": f"更新目標 {record.get('target_firmware_version') or '設定なし'}",
-            },
-            {
-                "label": "更新状態",
-                "value": _ota_state_label(record.get("ota_state")),
-                "class": _ota_state_class(record.get("ota_state")),
-                "hint": record.get("ota_error") or "問題なし",
-            },
-        ]
-    )
-    return metrics
+    if metrics:
+        return metrics
+    return [
+        {
+            "label": "稼働状態",
+            "value": _device_state_label(record.get("state")),
+            "class": _device_state_class(record.get("state")),
+            "hint": "機器の登録状態",
+        },
+        {
+            "label": "最終通信",
+            "value": _format_age(record.get("last_seen_at") or record.get("last_status_at"), now),
+            "class": "",
+            "hint": _format_datetime(record.get("last_seen_at") or record.get("last_status_at")),
+        },
+    ]
+
+
+def _next_watering_schedule(config, now):
+    config = config if isinstance(config, dict) else {}
+    offset_seconds = config.get("timezone_offset_sec")
+    if not isinstance(offset_seconds, int) or not -43200 <= offset_seconds <= 50400:
+        offset_seconds = 0
+    device_timezone = timezone(timedelta(seconds=offset_seconds))
+    local_now = now.astimezone(device_timezone)
+    candidates = []
+    for schedule in config.get("schedules") or []:
+        if not isinstance(schedule, dict):
+            continue
+        hour = schedule.get("hour")
+        minute = schedule.get("minute")
+        if not isinstance(hour, int) or not isinstance(minute, int) or not 0 <= hour <= 23 or not 0 <= minute <= 59:
+            continue
+        candidate = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if candidate <= local_now:
+            candidate += timedelta(days=1)
+        candidates.append((candidate, schedule))
+    if not candidates:
+        return {"label": "予約なし", "hint": "動作設定で潅水予約を追加できます"}
+
+    candidate, schedule = min(candidates, key=lambda item: item[0])
+    days_ahead = (candidate.date() - local_now.date()).days
+    date_label = "今日" if days_ahead == 0 else "明日" if days_ahead == 1 else f"{candidate.month}月{candidate.day}日"
+    hint_parts = [
+        _format_channel_mask_for_config(schedule.get("channel_mask"), config),
+        _format_duration(schedule.get("duration_sec")),
+    ]
+    return {
+        "label": f"{date_label} {candidate:%H:%M}",
+        "hint": " / ".join(part for part in hint_parts if part),
+    }
+
+
+def _moisture_threshold_guidance(soil_moisture, threshold):
+    if not isinstance(soil_moisture, int | float) or isinstance(soil_moisture, bool):
+        return "muted", "現在値を取得できていません"
+    if not isinstance(threshold, int | float) or isinstance(threshold, bool):
+        return "muted", "しきい値が設定されていません"
+    difference = float(soil_moisture) - float(threshold)
+    if difference < 0:
+        return "warn", f"しきい値を {abs(difference):g} ポイント下回っています"
+    if difference == 0:
+        return "warn", "しきい値に達しています"
+    return "good", f"しきい値まで {difference:g} ポイント"
 
 
 def _first_numeric_value(payload, aliases):
@@ -984,73 +1217,6 @@ def _detected_device_chart_specs(statuses):
     for kind, title, empty_message, aliases in candidates:
         if any(_first_numeric_value(payload, aliases) is not None for payload in payloads):
             yield kind, title, empty_message
-
-
-def _build_device_installation_view(config, payload):
-    config = config if isinstance(config, dict) else {}
-    payload = payload if isinstance(payload, dict) else {}
-    active_mask = payload.get("channel_mask") if payload.get("watering_started") is True and isinstance(payload.get("channel_mask"), int) else 0
-    lines = []
-    auxiliaries = []
-
-    for index, switch in enumerate(config.get("mosfet_switches") or []):
-        if not isinstance(switch, dict) or switch.get("enabled") is False:
-            continue
-        channel_mask = switch.get("channel_mask")
-        if not isinstance(channel_mask, int):
-            channel_mask = 0
-        name = switch.get("name") if isinstance(switch.get("name"), str) and switch.get("name").strip() else switch.get("switch_id") or f"SW {index + 1}"
-        item = {
-            "name": name,
-            "role": _mosfet_role_label(switch.get("role")),
-            "terminal": switch.get("terminal") or "端子未設定",
-            "controlled_load": switch.get("controlled_load") or "制御対象未設定",
-            "channel_mask": channel_mask,
-            "mask_label": f"mask {channel_mask}" if channel_mask > 0 else "予約対象外",
-            "class": "good" if channel_mask > 0 and active_mask & channel_mask else "ok",
-        }
-        if channel_mask > 0 and switch.get("role") != "sensor_power":
-            lines.append(item)
-        else:
-            item["class"] = "muted" if channel_mask == 0 else item["class"]
-            auxiliaries.append(item)
-
-    if not lines:
-        seen_masks = []
-        for schedule in config.get("schedules") or []:
-            if not isinstance(schedule, dict):
-                continue
-            channel_mask = schedule.get("channel_mask")
-            if isinstance(channel_mask, int) and channel_mask > 0 and channel_mask not in seen_masks:
-                seen_masks.append(channel_mask)
-        for channel_mask in seen_masks:
-            lines.append(
-                {
-                    "name": _format_channel_mask_for_config(channel_mask, config),
-                    "role": "灌水",
-                    "terminal": "端子未設定",
-                    "controlled_load": "制御対象未設定",
-                    "channel_mask": channel_mask,
-                    "mask_label": f"mask {channel_mask}",
-                    "class": "good" if active_mask & channel_mask else "ok",
-                }
-            )
-
-    return {
-        "lines": lines,
-        "auxiliaries": auxiliaries,
-        "line_count": len(lines),
-        "auxiliary_count": len(auxiliaries),
-        "active_mask": active_mask,
-    }
-
-
-def _mosfet_role_label(role):
-    return {
-        "irrigation": "灌水",
-        "sensor_power": "センサー電源",
-        "other": "その他",
-    }.get(role, str(role or "未分類"))
 
 
 def _latest_status_payload(record):
@@ -1902,8 +2068,17 @@ def mqtt_device_demo_detail_page(device_id):
     return _mqtt_devices_page_response(demo_mode=True, device_id=device_id, page_mode="detail")
 
 
+def _mqtt_device_catalog_url(path, query, page):
+    parameters = {key: value for key, value in {"q": query, "page": page if page > 1 else ""}.items() if value not in ("", None)}
+    return f"{path}?{urlencode(parameters)}" if parameters else path
+
+
 def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list"):
     is_detail_page = page_mode == "detail"
+    device_query = request.args.get("q", "").strip()[:200] if not is_detail_page else ""
+    device_page = request.args.get("page", 1) if not is_detail_page else 1
+    device_page_size = 24
+    device_catalog = {"total": 0, "page": 1, "page_size": device_page_size, "page_count": 1, "has_previous": False, "has_next": False}
     if demo_mode:
         demo_data = _demo_mqtt_admin_page_data(device_id)
         devices = demo_data["devices"]
@@ -1913,8 +2088,38 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         firmware_artifacts = demo_data["firmware_artifacts"]
         recent_events = demo_data["recent_events"] if is_detail_page else []
         connection_events = demo_data["connection_events"] if is_detail_page else []
+        if not is_detail_page:
+            terms = search_terms(device_query)
+            matches = [
+                (candidate_id, record)
+                for candidate_id, record in devices.items()
+                if matches_search(
+                    terms,
+                    [candidate_id, record.get("name"), record.get("location"), record.get("device_kind"), record.get("state")],
+                )
+            ]
+            matches.sort(key=lambda item: ((item[1].get("name") or item[0]).casefold(), item[0]))
+            try:
+                page_result = paginate(matches, page=device_page, page_size=device_page_size)
+            except ValueError:
+                page_result = paginate(matches, page=1, page_size=device_page_size)
+            devices = dict(page_result.pop("items"))
+            device_catalog = page_result
     else:
-        devices = device_config_service().get_all_records()
+        if is_detail_page:
+            selected_record = device_config_service().get_record(device_id)
+            devices = {device_id: selected_record} if selected_record is not None else {}
+        else:
+            try:
+                page_result = device_config_service().search_records(
+                    query=device_query,
+                    page=device_page,
+                    page_size=device_page_size,
+                )
+            except ValueError:
+                page_result = device_config_service().search_records(page=1, page_size=device_page_size)
+            devices = page_result.pop("items")
+            device_catalog = page_result
         selected_device_id = device_id if is_detail_page else None
         selected_statuses = device_config_service().list_statuses(selected_device_id, limit=MQTT_ADMIN_STATUS_HISTORY_LIMIT) if selected_device_id else []
         selected_ota_statuses = ota_update_service().list_ota_statuses(selected_device_id, limit=20) if selected_device_id else []
@@ -1928,9 +2133,19 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
     selected_device = devices.get(selected_device_id) if selected_device_id else None
     if is_detail_page and selected_device is None:
         return jsonify({"error": "device not found"}), 404
-    admin_view = _build_mqtt_admin_view(devices, selected_device_id, selected_device, selected_statuses, selected_ota_statuses)
+    layout_context = _build_device_layout_context(selected_device_id, selected_device) if selected_device and not demo_mode else None
+    admin_view = _build_mqtt_admin_view(
+        devices,
+        selected_device_id,
+        selected_device,
+        selected_statuses,
+        selected_ota_statuses,
+        layout_context=layout_context,
+    )
     device_link_prefix = "/demo/mqtt-devices/" if demo_mode else "/mqtt-devices/"
     list_path = "/demo/mqtt-devices" if demo_mode else "/mqtt-devices"
+    device_catalog["previous_url"] = _mqtt_device_catalog_url(list_path, device_query, int(device_catalog["page"]) - 1) if device_catalog["has_previous"] else ""
+    device_catalog["next_url"] = _mqtt_device_catalog_url(list_path, device_query, int(device_catalog["page"]) + 1) if device_catalog["has_next"] else ""
     template = """
     <!doctype html>
     <html lang="ja">
@@ -1938,6 +2153,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Hub 管理パネル</title>
+        <link rel="stylesheet" href="/static/searchable-select.css">
         <style>
           :root {
             --bg: #f6f7f9;
@@ -2132,7 +2348,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             cursor: pointer;
           }
           button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
-          button:disabled { opacity: .65; cursor: wait; }
+          button:disabled { opacity: .65; cursor: not-allowed; }
+          button[aria-busy="true"] { cursor: wait; }
           button[aria-busy="true"]::after {
             content: "";
             width: 12px;
@@ -2193,52 +2410,21 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             display: grid;
             gap: 18px;
           }
-          .device-field {
-            position: relative;
-            overflow: hidden;
-            border: 1px solid #adc7ad;
-            border-radius: 8px;
-            background: linear-gradient(180deg, #edf7ee 0%, #f8fafc 100%);
-            padding: 16px;
-          }
-          .device-field::before {
-            content: "";
-            position: absolute;
-            inset: 76px 16px 16px;
-            border-radius: 6px;
-            background: repeating-linear-gradient(90deg, rgba(22, 101, 52, .10) 0 2px, transparent 2px 24px);
-            pointer-events: none;
-          }
-          .device-field > * { position: relative; }
-          .device-field-grid {
-            display: grid;
-            grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr);
-            gap: 14px;
-            align-items: stretch;
-          }
-          .controller-node, .line-node {
-            border: 1px solid rgba(148, 163, 184, .55);
-            border-radius: 8px;
-            background: rgba(255, 255, 255, .94);
-            padding: 12px;
-          }
-          .controller-node {
-            display: grid;
-            align-content: center;
-            min-height: 150px;
-            border-color: #64748b;
-          }
-          .line-stack { display: grid; gap: 10px; }
-          .line-node {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 8px;
-            border-left: 5px solid #0284c7;
-          }
-          .line-node.good { border-left-color: var(--green); }
-          .line-node.ok { border-left-color: #0284c7; }
-          .line-node.warn { border-left-color: #d97706; }
-          .line-node.muted { border-left-color: #94a3b8; color: var(--muted); }
+          .priority-panel { border-top: 4px solid #166534; }
+          .priority-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 10px; }
+          .priority-heading h3 { margin: 0; font-size: 16px; }
+          .metric.priority { border-color: #166534; background: #f0f8f2; }
+          .metric.priority .value { color: #14532d; font-size: 28px; }
+          .location-list { display: grid; border-top: 1px solid var(--line); }
+          .location-row { display: grid; grid-template-columns: minmax(220px, 1.1fr) minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
+          .location-path { display: grid; gap: 4px; min-width: 0; }
+          .location-path a { font-weight: 700; }
+          .location-path small { color: var(--muted); }
+          .relation-targets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+          .relation-targets > span { color: var(--muted); font-size: 12px; font-weight: 700; }
+          .relation-targets a { display: inline-flex; border: 1px solid #b9d1c2; border-radius: 5px; background: #f1f8f3; color: #14532d; padding: 5px 8px; font-size: 13px; }
+          .location-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+          .location-actions a { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--text); padding: 6px 9px; font-size: 13px; }
           .line-title { font-weight: 700; font-size: 15px; }
           .line-sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
           .line-mask { color: var(--muted); font-size: 12px; white-space: nowrap; }
@@ -2248,6 +2434,16 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 12px;
           }
+          .device-list-search { display: grid; grid-template-columns: 20px minmax(0, 520px) auto; align-items: center; gap: 6px; margin: 12px 0; color: var(--muted); }
+          .device-list-search::before { content: "⌕"; font-size: 18px; text-align: center; }
+          .device-list-search input { min-height: 38px; }
+          .device-list-search button { min-height: 38px; }
+          .device-filter-empty { margin: 12px 0 0; }
+          .device-result-summary { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+          .device-pagination { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; }
+          .device-pagination a { padding: 7px 10px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+          .select-filter { display: grid; gap: 5px; max-width: 520px; margin: 0 0 9px; color: var(--muted); font-size: 12px; }
+          .select-filter-empty { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
           .device-tile {
             display: grid;
             grid-template-columns: 1fr auto;
@@ -2421,8 +2617,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .nav { justify-content: flex-start; margin-top: 12px; }
             .detail-header { display: block; }
             .field-head { display: block; }
-            .device-field-grid { grid-template-columns: 1fr; }
-            .line-node { grid-template-columns: 1fr; }
+            .location-row { grid-template-columns: 1fr; }
+            .location-actions { justify-content: flex-start; }
             .section-grid { grid-template-columns: 1fr; }
             .tile-metrics { grid-template-columns: 1fr; }
             .list-row { grid-template-columns: 1fr; }
@@ -2501,10 +2697,15 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           {% if not is_detail_page %}
           <section class="panel">
-            <h2>水やり機一覧</h2>
-            <p class="lead">カードを選ぶと、水やり機ごとの詳しい履歴と設定を確認できます。</p>
+            <h2>機器一覧</h2>
+            <p class="lead">カードを選ぶと、機器種別に応じた現在値、履歴、設定を確認できます。検索はサーバ側で実行します。</p>
+            <form class="device-list-search" id="device-list-search-form" method="get" action="{{ list_path }}">
+              <input id="device-list-search" name="q" type="search" value="{{ device_query }}" placeholder="機器名、ID、種別、設置場所を検索" aria-label="機器を検索" autocomplete="off">
+              <button type="submit">検索</button>
+            </form>
+            <p class="device-result-summary" id="device-result-summary">{{ device_catalog.total }}件中 {{ admin_view.devices|length }}件を表示 / {{ device_catalog.page }}ページ</p>
             {% if admin_view.devices %}
-            <div class="device-grid">
+            <div class="device-grid" id="device-list-grid">
               {% for device in admin_view.devices %}
               <a class="device-tile" href="{{ device_link_prefix }}{{ device.id }}" aria-current="{{ 'true' if device.id == selected_device_id else 'false' }}">
                 <div>
@@ -2516,35 +2717,35 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <span class="badge {{ device.state_class }}">{{ device.state_label }}</span>
                 </div>
                 <div class="tile-metrics">
-                  <div class="mini"><span>灌水</span><strong>{{ device.watering_label }}</strong></div>
-                  <div class="mini"><span>土壌水分</span><strong>{{ device.soil_moisture }}</strong></div>
-                  <div class="mini"><span>次回起床</span><strong>{{ device.next_wake }}</strong></div>
+                  {% for metric in device.operational_metrics %}<div class="mini"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>{% endfor %}
                 </div>
               </a>
               {% endfor %}
             </div>
             {% else %}
-            <div class="empty">まだ MQTT device が登録されていません。</div>
+            <div class="empty">{% if device_query %}一致する機器はありません。{% else %}まだ MQTT device が登録されていません。{% endif %}</div>
             {% endif %}
+            {% if device_catalog.has_previous or device_catalog.has_next %}<nav class="device-pagination" aria-label="機器一覧ページ">{% if device_catalog.previous_url %}<a href="{{ device_catalog.previous_url }}">前へ</a>{% endif %}<span>{{ device_catalog.page }} / {{ device_catalog.page_count }}</span>{% if device_catalog.next_url %}<a href="{{ device_catalog.next_url }}">次へ</a>{% endif %}</nav>{% endif %}
           </section>
           {% endif %}
 
           {% if is_detail_page and admin_view.selected %}
           {% set selected = admin_view.selected %}
-          <section class="panel">
+          <section class="panel priority-panel">
             <div class="detail-header">
               <div>
                 <h2>{{ selected.title }}</h2>
-                <p class="lead">{{ selected.kind_label }} / {{ selected.location }} / {{ selected.id }}</p>
+                <p class="lead">{{ selected.kind_label }} / {% if selected.location_href %}<a href="{{ selected.location_href }}">{{ selected.location }}</a>{% else %}{{ selected.location }}{% endif %} / {{ selected.id }}</p>
                 {% if selected.memo %}<p>{{ selected.memo }}</p>{% endif %}
               </div>
               <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span>
             </div>
+            <div class="priority-heading"><h3>{{ selected.operational_heading }}</h3><span class="muted">運用判断に必要な情報</span></div>
             <div class="metrics">
-              {% for metric in selected.summary_metrics %}
-              <div class="metric">
+              {% for metric in selected.operational_metrics %}
+              <div class="metric {{ metric.class }}">
                 <span class="label">{{ metric.label }}</span>
-                <span class="value">{% if metric.class %}<span class="badge {{ metric.class }}">{{ metric.value }}</span>{% else %}{{ metric.value }}{% endif %}</span>
+                <span class="value">{% if metric.class in ['good', 'ok', 'warn', 'danger', 'muted'] %}<span class="badge {{ metric.class }}">{{ metric.value }}</span>{% else %}{{ metric.value }}{% endif %}</span>
                 <div class="hint">{{ metric.hint }}</div>
               </div>
               {% endfor %}
@@ -2561,61 +2762,33 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             </div>
 
             <section id="tab-overview" class="tab-panel" role="tabpanel">
-              {% if selected.supports_irrigation %}
-              <section class="device-field" aria-label="選択デバイス設置ビュー">
+              <section class="panel" aria-label="設置場所と関連先">
                 <div class="field-head">
                   <div>
-                    <h2>設置ビュー</h2>
-                    <p class="lead">{{ selected.location }} の中で、このデバイスが制御する灌水ラインと設備だけを表示します。</p>
+                    <h2>設置場所・関連先</h2>
+                    <p class="lead">圃場の設置ビューを正本として、機器の設置先と作用対象を表示します。</p>
                   </div>
-                  <span class="badge muted">{{ selected.installation.line_count }} 灌水系</span>
+                  <span class="badge {{ 'good' if selected.layout_context.assigned else 'muted' }}">{{ selected.layout_context.assignments|length }} 箇所</span>
                 </div>
-                <div class="device-field-grid">
-                  <div class="controller-node">
-                    <h3>{{ selected.title }}</h3>
-                    <div class="line-sub">{{ selected.kind_label }}</div>
-                    <div class="line-sub">最終通信: {{ selected.last_seen_age }}</div>
-                    <div class="line-sub">更新状態: {{ selected.ota_state }}</div>
-                  </div>
-                  <div class="line-stack">
-                    {% if selected.installation.lines %}
-                    {% for line in selected.installation.lines %}
-                    <div class="line-node {{ line.class }}">
-                      <div>
-                        <div class="line-title">{{ line.name }}</div>
-                        <div class="line-sub">{{ line.role }} / {{ line.terminal }} / {{ line.controlled_load }}</div>
-                      </div>
-                      <div class="line-mask">{{ line.mask_label }}</div>
+                {% if selected.layout_context.assignments %}
+                <div class="location-list">
+                  {% for assignment in selected.layout_context.assignments %}
+                  <div class="location-row">
+                    <div class="location-path">
+                      <a href="{{ assignment.href }}">{{ assignment.path }}</a>
+                      <small>{{ assignment.placement_kind }}{% if not assignment.field_level %} / {{ assignment.resource_name }}{% endif %}</small>
                     </div>
-                    {% endfor %}
-                    {% else %}
-                    <div class="empty">灌水ラインがまだ設定されていません。</div>
-                    {% endif %}
-                    {% if selected.installation.auxiliaries %}
-                    {% for item in selected.installation.auxiliaries %}
-                    <div class="line-node {{ item.class }}">
-                      <div>
-                        <div class="line-title">{{ item.name }}</div>
-                        <div class="line-sub">{{ item.role }} / {{ item.terminal }} / {{ item.controlled_load }}</div>
-                      </div>
-                      <div class="line-mask">{{ item.mask_label }}</div>
+                    <div class="relation-targets">
+                      {% if assignment.targets %}<span>{{ assignment.relation_label }}</span>{% for target in assignment.targets %}<a href="{{ target.href }}" title="{{ target.path }}">{{ target.name }}</a>{% endfor %}{% else %}<span>{{ assignment.relation_label }}は未設定</span>{% endif %}
                     </div>
-                    {% endfor %}
-                    {% endif %}
+                    <div class="location-actions"><a href="{{ assignment.field_href }}">圃場を開く</a><a href="{{ assignment.layout_href }}">設置ビューを編集</a></div>
                   </div>
+                  {% endfor %}
                 </div>
+                {% else %}
+                <div class="empty">圃場の設置ビューに配置されていません。対象圃場の設置ビューから機器を紐づけてください。</div>
+                {% endif %}
               </section>
-              {% else %}
-              <section class="panel">
-                <h2>設置情報</h2>
-                <div class="compact-grid">
-                  <div class="mini"><span>機器名</span><strong>{{ selected.title }}</strong></div>
-                  <div class="mini"><span>機器種別</span><strong>{{ selected.kind_label }}</strong></div>
-                  <div class="mini"><span>設置場所</span><strong>{{ selected.location }}</strong></div>
-                  <div class="mini"><span>機器ID</span><strong>{{ selected.id }}</strong></div>
-                </div>
-              </section>
-              {% endif %}
 
               <div class="section-grid">
                 {% if selected.supports_irrigation %}
@@ -2651,18 +2824,17 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             <section id="tab-config" class="tab-panel" role="tabpanel" hidden>
           <section class="panel">
             <h2>機器情報</h2>
-            <form id="metadata-form">
+            <form id="metadata-form" data-stateful-form data-pristine-message="機器情報は変更されていません。"{% if selected_device.state == 'retired' %} data-state-blocked="true" data-blocked-message="廃止済みの機器情報は変更できません。"{% endif %}>
               <div class="form-grid">
                 <div><label for="metadata-name">表示名</label><input id="metadata-name" name="name" type="text" value="{{ selected_device.name or '' }}"></div>
-                <div><label for="metadata-location">場所</label><input id="metadata-location" name="location" type="text" value="{{ selected_device.location or '' }}"></div>
                 <div><label for="metadata-memo">メモ</label><input id="metadata-memo" name="memo" type="text" value="{{ selected_device.memo or '' }}"></div>
               </div>
-              <div class="actions"><button type="submit" class="primary">表示情報を保存</button></div>
+              <div class="actions"><span class="muted" data-stateful-reason></span><button type="submit" class="primary" data-stateful-submit>表示情報を保存</button></div>
             </form>
           </section>
           <section class="panel">
             <h2>動作設定</h2>
-            <form id="runtime-config-form" class="config-form">
+            <form id="runtime-config-form" class="config-form" data-stateful-form data-pristine-message="動作設定は変更されていません。"{% if selected_device.state == 'retired' %} data-state-blocked="true" data-blocked-message="廃止済みの動作設定は変更できません。"{% endif %}>
               <div class="metrics">
                 <div class="metric"{% if not selected.supports_irrigation %} hidden{% endif %}>
                   <span class="label">灌水しきい値</span>
@@ -2923,10 +3095,12 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </div>
 
               <div class="actions">
-                <button type="submit">設定を保存</button>
-                <button type="button" id="save-push-runtime-config" class="primary">保存して device に送信</button>
-                <button type="button" id="push-runtime-config">保存済み設定を送信</button>
+                <span class="muted" data-stateful-reason></span>
+                <button type="submit" data-stateful-submit>設定を保存</button>
+                <button type="button" id="save-push-runtime-config" class="primary" data-requires-dirty{% if selected_device.state != 'active' %} data-state-blocked="true" disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>保存して device に送信</button>
+                <button type="button" id="push-runtime-config"{% if selected_device.state != 'active' %} disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>保存済み設定を送信</button>
               </div>
+              {% if selected_device.state == 'retired' %}<p class="empty" id="device-push-disabled">廃止済みのため、動作設定は閲覧のみです。</p>{% elif selected_device.state != 'active' %}<p class="empty" id="device-push-disabled">現在は{{ selected.state_label }}です。設定は保存できますが、機器への送信は稼働状態へ変更してから行ってください。</p>{% endif %}
             </form>
           </section>
             </section>
@@ -3012,17 +3186,17 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <div class="metric"><span class="label">更新目標</span><span class="value">{{ selected.target_firmware }}</span><div class="hint">次回OTA確認時に適用</div></div>
               <div class="metric"><span class="label">更新状態</span><span class="value"><span class="badge {{ selected.ota_class }}">{{ selected.ota_state }}</span></span><div class="hint">{{ selected.ota_error or "問題なし" }}</div></div>
             </div>
-            <form id="firmware-target-form">
+            <form id="firmware-target-form" data-stateful-form data-pristine-message="更新対象は変更されていません。"{% if selected_device.state == 'retired' %} data-state-blocked="true" data-blocked-message="廃止済みのF/W対象は変更できません。"{% endif %}>
               <label for="target-firmware-version">更新するF/Wバージョン</label>
-              <select id="target-firmware-version">
+              <select id="target-firmware-version" aria-label="更新するF/Wバージョン" data-searchable-select data-search-placeholder="バージョン、ビルドを検索" data-empty-message="一致するF/W候補はありません。">
                 <option value="">設定なし</option>
                 {% for artifact in firmware_target_options %}
                 <option value="{{ artifact.version }}" {% if selected_device.target_firmware_version == artifact.version %}selected{% endif %}>{{ artifact.label }}</option>
                 {% endfor %}
               </select>
               <div class="actions">
-                <button type="submit" class="primary">更新対象に設定</button>
-                <button type="button" id="clear-firmware-target">更新対象を解除</button>
+                <span class="muted" data-stateful-reason></span><button type="submit" class="primary" data-stateful-submit>更新対象に設定</button>
+                <button type="button" id="clear-firmware-target"{% if not selected_device.target_firmware_version or selected_device.state == 'retired' %} disabled title="{{ '廃止済みの機器は変更できません' if selected_device.state == 'retired' else '解除する更新対象はありません' }}"{% endif %}>更新対象を解除</button>
               </div>
             </form>
           </section>
@@ -3048,7 +3222,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             <details open>
               <summary>firmware.bin を登録する</summary>
               <div class="detail-body">
-                <form id="firmware-upload-form" enctype="multipart/form-data">
+                <form id="firmware-upload-form" enctype="multipart/form-data" data-stateful-form data-pristine-message="firmware.binを選択してください。">
                   <div class="form-grid">
                     <div>
                       <label for="firmware-device-kind">デバイス種別</label>
@@ -3078,7 +3252,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                     <button type="button" id="inspect-firmware-manifest">manifest再読み取り</button>
                     <label><input id="firmware-force" name="force" type="checkbox">強制更新</label>
                     <label><input id="firmware-allow-downgrade" name="allow_downgrade" type="checkbox">古いバージョンへの更新を許可</label>
-                    <button type="submit" class="primary">アップロードして登録</button>
+                    <span class="muted" data-stateful-reason></span><button type="submit" class="primary" data-stateful-submit>アップロードして登録</button>
                   </div>
                 </form>
               </div>
@@ -3117,13 +3291,23 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <summary>機器状態の管理</summary>
               <div class="detail-body">
                 <p>現在: <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span></p>
-                <label for="approved-by">承認者</label>
-                <input id="approved-by" type="text" value="operator">
+                {% if selected_device.state == 'pending' %}
+                <p class="lead">登録内容を確認後、承認すると動作設定の送信や運用を開始できます。</p>
+                <label for="approved-by">承認者</label><input id="approved-by" type="text" value="operator">
                 <div class="actions">
                   <button type="button" data-state-action="approve">承認する</button>
-                  <button type="button" data-state-action="disable">停止する</button>
-                  <button type="button" data-state-action="retire">廃止する</button>
+                  <button type="button" data-state-action="retire">登録を廃止する</button>
                 </div>
+                {% elif selected_device.state == 'active' %}
+                <p class="lead">稼働を止める場合は停止してください。廃止は停止後に選択できます。</p>
+                <div class="actions"><button type="button" data-state-action="disable">停止する</button></div>
+                {% elif selected_device.state == 'disabled' %}
+                <p class="lead">運用を再開するか、今後使用しない機器として廃止できます。</p>
+                <label for="approved-by">再開者</label><input id="approved-by" type="text" value="operator">
+                <div class="actions"><button type="button" data-state-action="approve">稼働を再開する</button><button type="button" data-state-action="retire">廃止する</button></div>
+                {% else %}
+                <div class="empty">廃止済みです。機器状態はこれ以上変更できません。</div>
+                {% endif %}
               </div>
             </details>
 
@@ -3134,7 +3318,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 <div class="actions">
                   <button type="button" id="apply-runtime-json">JSON をフォームに反映</button>
                   <button type="button" id="save-runtime-json">JSON で保存</button>
-                  <button type="button" id="save-push-runtime-json" class="primary">JSON で保存して device に送信</button>
+                  <button type="button" id="save-push-runtime-json" class="primary"{% if selected_device.state != 'active' %} disabled title="稼働中の機器にだけ送信できます"{% endif %}>JSON で保存して device に送信</button>
                 </div>
               </div>
             </details>
@@ -3158,8 +3342,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           {% endif %}
         </div>
 
+        <script src="/static/stateful-actions.js"></script>
+        <script src="/static/select-filter.js"></script>
         <script>
           const selectedDeviceId = {{ selected_device_id | tojson }};
+          const selectedDeviceState = {{ (selected_device.state if selected_device else '') | tojson }};
           const demoMode = {{ demo_mode | tojson }};
           const chartEndpoint = selectedDeviceId ? ((demoMode ? "/demo/local/api/mqtt-devices/" : "/local/api/mqtt-devices/") + encodeURIComponent(selectedDeviceId) + "/charts") : null;
           const initialRuntimeConfig = {{ (selected_device.config if selected_device else {}) | tojson }};
@@ -3167,6 +3354,23 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           let pendingWorkCount = 0;
           let lastActionButton = null;
           let currentMosfetSwitches = [];
+
+          const deviceListSearch = document.getElementById("device-list-search");
+          if (deviceListSearch) {
+            const form = document.getElementById("device-list-search-form");
+            let searchTimer = null;
+            deviceListSearch.addEventListener("input", () => {
+              window.clearTimeout(searchTimer);
+              searchTimer = window.setTimeout(() => form?.requestSubmit(), 450);
+            });
+          }
+
+          if (selectedDeviceState === "retired") {
+            document.querySelectorAll("#metadata-form input, #metadata-form select, #metadata-form textarea, #metadata-form button, #runtime-config-form input, #runtime-config-form select, #runtime-config-form textarea, #runtime-config-form button, #runtime-config-json, #apply-runtime-json, #save-runtime-json, #save-push-runtime-json, #firmware-target-form select, #firmware-target-form button, #clear-firmware-target").forEach((control) => {
+              control.disabled = true;
+              control.title = "廃止済みの機器は変更できません";
+            });
+          }
 
           document.addEventListener("click", (event) => {
             const button = event.target.closest("button");
@@ -3454,7 +3658,6 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               event.preventDefault();
               const body = {
                 name: document.getElementById("metadata-name").value || null,
-                location: document.getElementById("metadata-location").value || null,
                 memo: document.getElementById("metadata-memo").value || null,
               };
               try {
@@ -3603,6 +3806,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               row.remove();
               refreshScheduleChannelOptions();
               refreshRuntimeConfigPreview();
+              document.getElementById("runtime-config-form")?.dispatchEvent(new Event("change", { bubbles: true }));
             });
             row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", () => {
               refreshScheduleChannelOptions();
@@ -3665,6 +3869,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               }
               row.remove();
               refreshRuntimeConfigPreview();
+              document.getElementById("runtime-config-form")?.dispatchEvent(new Event("change", { bubbles: true }));
             });
             row.querySelector("[data-schedule-frequency-mode]").addEventListener("input", () => setFrequencyControlsVisible(row));
             row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", refreshRuntimeConfigPreview));
@@ -3941,6 +4146,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const runtimeConfigForm = document.getElementById("runtime-config-form");
           if (runtimeConfigForm) {
             renderRuntimeConfigForm(initialRuntimeConfig);
+            runtimeConfigForm.dispatchEvent(new CustomEvent("stateful-form-reset"));
             runtimeConfigForm.addEventListener("submit", async (event) => {
               event.preventDefault();
               await saveRuntimeConfig(false);
@@ -3970,6 +4176,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               }
               editor.appendChild(createScheduleRow({ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1, frequency: { mode: "daily" } }));
               refreshRuntimeConfigPreview();
+              runtimeConfigForm?.dispatchEvent(new Event("change", { bubbles: true }));
             });
           }
           const addMosfetSwitchButton = document.getElementById("add-mosfet-switch");
@@ -3994,6 +4201,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               }));
               refreshScheduleChannelOptions();
               refreshRuntimeConfigPreview();
+              runtimeConfigForm?.dispatchEvent(new Event("change", { bubbles: true }));
             });
           }
           const applyRuntimeJsonButton = document.getElementById("apply-runtime-json");
@@ -4001,6 +4209,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             applyRuntimeJsonButton.addEventListener("click", () => {
               try {
                 renderRuntimeConfigForm(JSON.parse(document.getElementById("runtime-config-json").value));
+                runtimeConfigForm?.dispatchEvent(new Event("change", { bubbles: true }));
                 showResult("JSON をフォームに反映しました", true);
               } catch (error) {
                 showResult("水やり設定 JSON が正しくありません", false);
@@ -4195,46 +4404,160 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         device_link_prefix=device_link_prefix,
         is_detail_page=is_detail_page,
         list_path=list_path,
+        device_query=device_query,
+        device_catalog=device_catalog,
     )
 
 
 # ==========================================
 # Field pages
 # ==========================================
+@app.route("/preferences", methods=["GET"])
+def user_preferences_page():
+    user = current_user_from_request(request)
+    preferences = _current_user_preferences(user.email)
+    return render_template("user_preferences.html", user=user, preferences=preferences)
+
+
+@app.route("/local/api/me/preferences", methods=["GET", "PATCH"])
+def current_user_preferences_api():
+    user = current_user_from_request(request)
+    repository = user_preference_repository()
+    if request.method == "GET":
+        return jsonify({"user": {"email": user.email, "role": user.role}, "preferences": _current_user_preferences(user.email)})
+
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        expected_version = int(request_body.get("version", -1))
+    except (TypeError, ValueError):
+        return jsonify({"error": "version must be an integer"}), 400
+    try:
+        preferences = repository.update(user.email, request_body, expected_version)
+    except UserPreferenceConflictError as exc:
+        return jsonify({"error": str(exc), "code": "revision_conflict", "current": exc.current}), 409
+    except UserPreferenceValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"user": {"email": user.email, "role": user.role}, "preferences": preferences})
+
+
+def _current_user_preferences(user_email):
+    return effective_preferences(user_preference_repository(), user_email)
+
+
+def _current_plant_advice_profile():
+    user = current_user_from_request(request)
+    preferences = _current_user_preferences(user.email).get("preferences", {})
+    experience_level = str(preferences.get("cultivation_experience") or DEFAULT_CULTIVATION_EXPERIENCE_LEVEL)
+    if experience_level not in SUPPORTED_CULTIVATION_EXPERIENCE_LEVELS:
+        experience_level = DEFAULT_CULTIVATION_EXPERIENCE_LEVEL
+    return {"experience_level": experience_level}
+
+
 @app.route("/settings", methods=["GET", "POST"])
-@app.route("/settings/ai", methods=["GET", "POST"])
 def hub_settings_page():
-    current = dict(setting().get("ai") or {})
-    saved = False
+    user = current_user_from_request(request)
+    if user.role != "admin":
+        return render_template("settings_forbidden.html", user=user), 403
+    current_ai = dict(setting().get("ai") or {})
+    current_instagram = dict(setting().get("instagram") or {})
     if request.method == "POST":
-        next_settings = {
-            **current,
-            "enabled": request.form.get("enabled") == "on",
-            "text_analyze_base_url": request.form.get("text_analyze_base_url", "").strip(),
-            "text_analyze_model": request.form.get("text_analyze_model", "").strip(),
-            "image_analyze_base_url": request.form.get("image_analyze_base_url", "").strip(),
-            "image_analyze_model": request.form.get("image_analyze_model", "").strip(),
-        }
-        for key in ("text_analyze_api_key", "image_analyze_api_key"):
-            supplied = request.form.get(key, "").strip()
-            if supplied:
-                next_settings[key] = supplied
-        setting().set("ai", next_settings)
-        ai_content_service().reload_settings()
-        current = next_settings
-        saved = True
-    visible = {
-        **current,
-        "text_analyze_api_key": "",
-        "image_analyze_api_key": "",
-        "text_key_configured": bool(current.get("text_analyze_api_key")),
-        "image_key_configured": bool(current.get("image_analyze_api_key")),
+        section = request.form.get("settings_section", "ai")
+        if section == "ai":
+            setting().set(
+                "ai",
+                {
+                    "enabled": request.form.get("enabled") == "on",
+                    "text_analyze_base_url": request.form.get("text_analyze_base_url", "").strip(),
+                    "text_analyze_model": request.form.get("text_analyze_model", "").strip(),
+                    "image_analyze_base_url": request.form.get("image_analyze_base_url", "").strip(),
+                    "image_analyze_model": request.form.get("image_analyze_model", "").strip(),
+                },
+            )
+            for channel in ("text", "image"):
+                secret_key = f"{channel}_analyze_api_key"
+                if request.form.get(f"clear_{secret_key}") == "on":
+                    setting().set_secret("ai", secret_key, "")
+                    continue
+                submitted_secret = request.form.get(secret_key, "")
+                if submitted_secret:
+                    setting().set_secret("ai", secret_key, submitted_secret.strip())
+            ai_content_service().reload_settings()
+            reload_instagram_post_task_settings()
+        elif section == "instagram":
+            post_schedule_start = request.form.get("post_schedule_start", "09:01").strip()
+            try:
+                datetime.strptime(post_schedule_start, "%H:%M")
+            except ValueError:
+                return "post_schedule_start must use HH:MM", 400
+            camera_id = request.form.get("camera_id", "").strip()
+            camera_ids = {item["id"] for item in _instagram_camera_options(current_instagram.get("camera_id", ""))}
+            if camera_id and camera_id not in camera_ids:
+                return "camera_id must identify a registered camera", 400
+            setting().set(
+                "instagram",
+                {
+                    "post_schedule_start": post_schedule_start,
+                    "camera_id": camera_id,
+                    "plant_position_prompt": request.form.get("plant_position_prompt", "").strip(),
+                },
+            )
+            reload_instagram_post_task_settings()
+        else:
+            return "unsupported settings section", 400
+        return redirect(f"/settings?{urlencode({'section': section, 'saved': '1'})}")
+
+    visible_ai = {
+        "enabled": bool(current_ai.get("enabled")),
+        "text_analyze_base_url": current_ai.get("text_analyze_base_url", ""),
+        "text_analyze_model": current_ai.get("text_analyze_model", ""),
+        "image_analyze_base_url": current_ai.get("image_analyze_base_url", ""),
+        "image_analyze_model": current_ai.get("image_analyze_model", ""),
+        "text_key_configured": setting().secret_configured("ai", "text_analyze_api_key"),
+        "image_key_configured": setting().secret_configured("ai", "image_analyze_api_key"),
     }
-    return render_template("hub_settings.html", ai=visible, saved=saved)
+    visible_instagram = {
+        "post_schedule_start": current_instagram.get("post_schedule_start", "09:01"),
+        "camera_id": current_instagram.get("camera_id", ""),
+        "plant_position_prompt": current_instagram.get("plant_position_prompt", ""),
+        "account_id": current_instagram.get("account_id", ""),
+        "account_username": current_instagram.get("account_username", ""),
+        "account_profile_updated_at": current_instagram.get("account_profile_updated_at", ""),
+        "credentials_configured": bool(current_instagram.get("user_id") and current_instagram.get("access_token")),
+    }
+    infrastructure = (
+        {"label": "Turso", "configured": bool((setting().get("turso") or {}).get("database_url") and (setting().get("turso") or {}).get("auth_token"))},
+        {"label": "R2 / S3", "configured": bool((setting().get("storage_bucket") or {}).get("endpoint_url") and (setting().get("storage_bucket") or {}).get("bucket_name"))},
+        {"label": "MQTT", "configured": bool((setting().get("mqtt") or {}).get("mqtt_broker"))},
+        {"label": "AIテキストAPIキー", "configured": visible_ai["text_key_configured"]},
+        {"label": "AI画像APIキー", "configured": visible_ai["image_key_configured"]},
+    )
+    response = app.make_response(
+        render_template(
+            "hub_settings.html",
+            ai=visible_ai,
+            instagram=visible_instagram,
+            instagram_camera_options=_instagram_camera_options(current_instagram.get("camera_id", "")),
+            infrastructure=infrastructure,
+            active_section=request.args.get("section") if request.args.get("section") in {"ai", "instagram", "system"} else "ai",
+            saved=request.args.get("saved") == "1",
+            user=user,
+        )
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/settings/ai", methods=["GET", "POST"])
+def legacy_hub_ai_settings_page():
+    return redirect("/settings?section=ai")
 
 
 @app.route("/local/api/settings/ai/test", methods=["POST"])
 def test_hub_ai_settings_api():
+    if current_user_from_request(request).role != "admin":
+        return jsonify({"error": "admin role is required"}), 403
     request_body = request.get_json(silent=True)
     if not isinstance(request_body, dict):
         return jsonify({"error": "request body must be a JSON object"}), 400
@@ -4245,14 +4568,69 @@ def test_hub_ai_settings_api():
         result = ai_content_service().test_connection(
             channel,
             {
-                "api_key": str(request_body.get("api_key") or "").strip(),
                 "base_url": str(request_body.get("base_url") or "").strip(),
                 "model": str(request_body.get("model") or "").strip(),
             },
         )
     except RuntimeError as exc:
-        return jsonify({"error": str(exc)}), 502
-    return jsonify(result)
+        error_message = str(exc)
+        ai_settings = setting().get("ai") or {}
+        for secret_key in ("text_analyze_api_key", "image_analyze_api_key"):
+            secret_value = str(ai_settings.get(secret_key) or "")
+            if secret_value:
+                error_message = error_message.replace(secret_value, "[redacted]")
+        return jsonify({"error": error_message}), 502
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/local/api/settings/instagram/profile", methods=["POST"])
+def refresh_instagram_account_profile_api():
+    if current_user_from_request(request).role != "admin":
+        return jsonify({"error": "admin role is required"}), 403
+    instagram = dict(setting().get("instagram") or {})
+    if not instagram.get("user_id") or not instagram.get("access_token"):
+        return jsonify({"error": "InstagramのユーザーIDとアクセストークンを初期設定してください"}), 400
+    try:
+        profile = InstagramClient(instagram["user_id"], instagram["access_token"]).get_account_profile()
+    except RuntimeError:
+        return jsonify({"error": "Instagram APIからアカウント情報を取得できませんでした"}), 502
+    updated_at = datetime.now(UTC).isoformat(timespec="seconds")
+    setting().set(
+        "instagram",
+        {
+            "account_id": profile["id"],
+            "account_username": profile["username"],
+            "account_profile_updated_at": updated_at,
+        },
+    )
+    reload_instagram_post_task_settings()
+    response = jsonify(
+        {
+            "id": profile["id"],
+            "username": profile["username"],
+            "updated_at": updated_at,
+        }
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def _instagram_camera_options(selected_camera_id=""):
+    cameras = {}
+    for device_id, camera in (camera_connector().camera_device_repository.get_all() or {}).items():
+        camera = camera if isinstance(camera, dict) else {}
+        cameras[str(device_id)] = camera.get("name") or str(device_id)
+    for device_id, record in (device_config_service().get_all_records() or {}).items():
+        if (record or {}).get("device_kind") == "CAM":
+            cameras.setdefault(str(device_id), (record or {}).get("name") or str(device_id))
+    if selected_camera_id and selected_camera_id not in cameras:
+        cameras[selected_camera_id] = f"{selected_camera_id}（現在の設定・未登録）"
+    return [
+        {"id": device_id, "name": name}
+        for device_id, name in sorted(cameras.items(), key=lambda item: (item[1].lower(), item[0].lower()))
+    ]
 
 
 @app.route("/fields", methods=["GET", "POST"])
@@ -4354,6 +4732,7 @@ def _render_field_catalog(*, home_mode: bool):
         prefectures=JAPAN_PREFECTURES,
         environment_options=FIELD_ENVIRONMENT_TYPE_OPTIONS,
         environment_labels=FIELD_ENVIRONMENT_TYPE_LABELS,
+        current_user=current_user_from_request(request),
     )
 
 
@@ -4403,6 +4782,7 @@ def field_detail_page(field_id):
             prefectures=JAPAN_PREFECTURES,
             environment_options=FIELD_ENVIRONMENT_TYPE_OPTIONS,
             environment_labels=FIELD_ENVIRONMENT_TYPE_LABELS,
+            current_user=current_user_from_request(request),
         ),
         mimetype="text/html",
     )
@@ -4416,7 +4796,23 @@ def field_layout_page(field_id):
     field = field_repository().get(field_id)
     if field is None:
         return jsonify({"error": "field not found"}), 404
+    legacy_calendar_id = request.args.get("calendar", "").strip()
+    if legacy_calendar_id:
+        return redirect(f"/fields/{field_id}/calendar?{urlencode({'planting': legacy_calendar_id})}")
     return render_template("field_layout.html", field=field)
+
+
+@app.route("/fields/<field_id>/calendar", methods=["GET"])
+def field_calendar_page(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    return render_template(
+        "field_calendar.html",
+        field=field,
+        planting_id=request.args.get("planting", "").strip(),
+        action_id=request.args.get("action", "").strip(),
+    )
 
 
 @app.route("/local/api/fields/<field_id>/layout", methods=["GET"])
@@ -4440,9 +4836,20 @@ def update_field_layout_api(field_id):
     if not isinstance(request_body, dict):
         return jsonify({"error": "request body must be a JSON object"}), 400
     try:
-        layout = field_layout_repository().upsert(field_id, request_body, field_name=field.get("name", ""))
+        user = current_user_from_request(request)
+        layout = field_layout_repository().upsert(
+            field_id,
+            request_body,
+            field_name=field.get("name", ""),
+            updated_by=user.email,
+        )
     except FieldLayoutConflictError as exc:
-        return jsonify({"error": str(exc)}), 409
+        return jsonify({
+            "error": str(exc),
+            "code": "revision_conflict",
+            "submitted_revision": request_body.get("revision"),
+            "current": exc.current,
+        }), 409
     except FieldLayoutValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(layout)
@@ -4453,6 +4860,55 @@ def list_field_layout_devices_api(field_id):
     field = field_repository().get(field_id)
     if field is None:
         return jsonify({"error": "field not found"}), 404
+    return jsonify(_field_layout_devices(field_id, field))
+
+
+@app.route("/local/api/fields/<field_id>/layout/device-options", methods=["GET"])
+def search_field_layout_devices_api(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    groups = set(_query_list("group"))
+    include_ids = set(_query_list("include"))
+    terms = search_terms(request.args.get("q", ""))
+    available_devices = [
+        device
+        for device in _field_layout_devices(field_id, field)
+        if not groups or device.get("group_label") in groups
+    ]
+    devices = [
+        device
+        for device in available_devices
+        if matches_search(
+            terms,
+            [
+                device.get("id"),
+                device.get("name"),
+                device.get("device_kind"),
+                device.get("kind_label"),
+                device.get("group_label"),
+                device.get("location"),
+                device.get("state"),
+                device.get("resources"),
+            ],
+        )
+    ]
+    devices.sort(key=lambda device: ((device.get("name") or device.get("id") or "").casefold(), device.get("id") or ""))
+    try:
+        result = paginate(
+            devices,
+            page=request.args.get("page", 1),
+            page_size=request.args.get("page_size", 50),
+            maximum_page_size=100,
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    pinned = [device for device in available_devices if device.get("id") in include_ids]
+    result["items"] = list({device["id"]: device for device in [*pinned, *result["items"]]}.values())
+    return jsonify(result)
+
+
+def _field_layout_devices(field_id, field):
 
     records = device_config_service().get_all_records()
     assignments = _layout_device_assignments()
@@ -4489,7 +4945,7 @@ def list_field_layout_devices_api(field_id):
                 "resources": resources,
             }
         )
-    return jsonify(devices)
+    return devices
 
 
 def _layout_device_assignments():
@@ -4522,14 +4978,34 @@ def _layout_device_group_label(device_kind):
     return "その他デバイス"
 
 
+def _query_list(name):
+    values = []
+    for raw_value in request.args.getlist(name):
+        for value in str(raw_value or "").split(","):
+            value = value.strip()
+            if value and value not in values:
+                values.append(value)
+    return values
+
+
 @app.route("/local/api/fields/<field_id>/plantings", methods=["GET"])
 def list_field_plantings_api(field_id):
     field = field_repository().get(field_id)
     if field is None:
         return jsonify({"error": "field not found"}), 404
     today = request.args.get("today", "").strip() or None
+    compact = _is_truthy_request_arg(request.args.get("compact"))
+    calendar_planting_ids = _query_list("calendar_planting_id")
     try:
-        return jsonify(plant_management_repository().field_bundle(field_id, today=today))
+        return jsonify(
+            plant_management_repository().field_bundle(
+                field_id,
+                today=today,
+                statuses=["active"] if compact else None,
+                calendar_planting_ids=calendar_planting_ids if compact else None,
+                include_work_logs=not compact or bool(calendar_planting_ids),
+            )
+        )
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -4553,15 +5029,17 @@ def create_field_planting_api(field_id):
     planting_data = {
         **request_body,
         "placement_name": placement["name"],
-        "cultivation_method": request_body.get("cultivation_method") or (field.get("cultivation_context") or {}).get("cultivation_method", ""),
+        "cultivation_method": request_body.get("cultivation_method") or "",
     }
     planting_data["conditions"] = {
         **(request_body.get("conditions") if isinstance(request_body.get("conditions"), dict) else {}),
         "region": "",
     }
     try:
+        _validate_planting_generation_input(planting_data)
         planting = repository.create_planting(field_id, planting_data)
         context = _build_plant_generation_context(field, layout, space, placement, planting)
+        context["audience"] = _current_plant_advice_profile()
         context["planning"] = {
             "start_date": planting["planted_on"],
             "horizon_months": 12,
@@ -4580,6 +5058,50 @@ def create_field_planting_api(field_id):
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"planting": repository.get_planting(planting["id"]), "calendar": calendar}), 201
+
+
+@app.route("/local/api/plantings/<planting_id>/calendar/actions", methods=["GET"])
+def search_plant_calendar_actions_api(planting_id):
+    repository = plant_management_repository()
+    if repository.get_planting(planting_id) is None:
+        return jsonify({"error": "planting not found"}), 404
+    try:
+        result = repository.search_actions(
+            planting_id,
+            query=request.args.get("q", ""),
+            statuses=_query_list("status"),
+            action_types=_query_list("action_type"),
+            date_from=request.args.get("date_from", ""),
+            date_to=request.args.get("date_to", ""),
+            page=request.args.get("page", 1),
+            page_size=request.args.get("page_size", 50),
+        )
+    except (PlantManagementNotFoundError, PlantManagementValidationError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
+
+
+def _validate_planting_generation_input(value):
+    conditions = value.get("conditions") if isinstance(value.get("conditions"), dict) else {}
+    required_values = (
+        ("作物名", value.get("crop_name")),
+        ("作物区分", value.get("crop_category")),
+        ("定植日", value.get("planted_on")),
+        ("栽培方式", value.get("cultivation_method")),
+        ("用土・培地", conditions.get("soil_or_substrate")),
+        ("日当たり", conditions.get("sunlight")),
+    )
+    missing = [label for label, item in required_values if not str(item or "").strip()]
+    try:
+        plant_count = int(value.get("plant_count"))
+    except (TypeError, ValueError):
+        plant_count = 0
+    if plant_count < 1:
+        missing.append("株数")
+    if value.get("crop_category") == "fruit_tree" and value.get("tree_age_years") in (None, ""):
+        missing.append("樹齢")
+    if missing:
+        raise PlantManagementValidationError(f"AI計画生成に必要な項目が不足しています: {', '.join(missing)}")
 
 
 @app.route("/local/api/plantings/<planting_id>", methods=["PATCH"])
@@ -4614,6 +5136,7 @@ def regenerate_plant_calendar_api(planting_id):
     if space is None or placement is None:
         return jsonify({"error": "planting placement was not found in the field layout"}), 400
     context = _build_plant_generation_context(field, layout, space, placement, planting)
+    context["audience"] = _current_plant_advice_profile()
     context["planning"] = {
         "start_date": str(request_body.get("start_date") or date.today().isoformat()),
         "horizon_months": 12,
@@ -4693,9 +5216,19 @@ def complete_plant_calendar_action_api(planting_id, action_id):  # noqa: PLR0911
     completed_action = next((action for action in (calendar_record or {}).get("actions", []) if action.get("id") == action_id), None)
     if not calendar_record or completed_action is None:
         return jsonify({"error": "calendar action not found"}), 404
+    if completed_action.get("status") != "in_progress":
+        return jsonify({"error": "作業を開始してから実績を記録してください"}), 409
     try:
         rating = _record_rating(request_body.get("rating"))
         performed_on = date.fromisoformat(str(request_body.get("performed_on") or "")).isoformat()
+        work_details = request_body.get("work_details") or {}
+        if isinstance(work_details, str):
+            try:
+                work_details = json.loads(work_details)
+            except json.JSONDecodeError as exc:
+                raise PlantManagementValidationError("work_details must be valid JSON") from exc
+        if not isinstance(work_details, dict):
+            raise PlantManagementValidationError("work_details must be an object")
         attachments = field_record_media_service().upload_images(
             planting["field_id"],
             performed_on,
@@ -4708,6 +5241,7 @@ def complete_plant_calendar_action_api(planting_id, action_id):  # noqa: PLR0911
             request_body.get("note", ""),
             rating=rating,
             attachments=attachments,
+            work_details=work_details,
         )
         field_repository().add_event(
             work_log["field_id"],
@@ -4753,6 +5287,7 @@ def complete_plant_calendar_action_api(planting_id, action_id):  # noqa: PLR0911
             "completion_event": work_log,
             "planned_actions": [action for action in current_calendar.get("actions", []) if action.get("status") == "planned"],
             "recent_work_logs": repository.recent_work_logs(planting_id, limit=12),
+            "audience": _current_plant_advice_profile(),
         }
         follow_up = ai_content_service().generate_follow_up_tasks(follow_up_context)
         try:
@@ -4945,6 +5480,27 @@ def list_fields_api():
             page_size=page_size,
         )
     )
+
+
+@app.route("/local/api/fields/<field_id>/records", methods=["GET"])
+def search_field_records_api(field_id):
+    if field_repository().get(field_id) is None:
+        return jsonify({"error": "field not found"}), 404
+    try:
+        result = field_repository().search_records(
+            field_id,
+            query=request.args.get("q", ""),
+            kinds=_query_list("kind"),
+            target=request.args.get("target", ""),
+            date_from=request.args.get("date_from", ""),
+            date_to=request.args.get("date_to", ""),
+            page=request.args.get("page", 1),
+            page_size=request.args.get("page_size", 20),
+        )
+    except (FieldValidationError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    result["items"] = [_field_record_search_view(item) for item in result["items"]]
+    return jsonify(result)
 
 
 @app.route("/local/api/fields/<field_id>", methods=["GET"])
@@ -5389,13 +5945,13 @@ def _build_field_list_item(field: dict):
     return item
 
 
-def _build_field_context(
+def _build_field_context(  # noqa: PLR0915
     field: dict,
     compare_date: str = "",
     record_month: str = "",
     *,
     include_automatic_measurements: bool = True,
-):  # noqa: PLR0915
+):
     compare_day = _field_compare_day(compare_date)
     layout = field_layout_repository().get(field["id"], field_name=field.get("name", ""))
     device_records = _field_device_records(field, layout)
@@ -5442,7 +5998,8 @@ def _build_field_context(
 
     recent_status_events = sorted(recent_status_events, key=lambda item: item.get("received_at") or "", reverse=True)[:40]
     field_events = sorted(list(field.get("events") or []), key=lambda item: item.get("occurred_at") or item.get("created_at") or "", reverse=True)
-    timeline = _build_field_timeline(recent_status_events, field_events, field.get("notes") or [])
+    record_search_page = field_repository().search_records(field["id"], page=1, page_size=20)
+    timeline = [_field_record_search_view(item) for item in record_search_page["items"]]
     growth_targets = _active_planting_growth_targets(active_plantings)
     field_snapshot = {
         key: field.get(key)
@@ -5485,7 +6042,9 @@ def _build_field_context(
         "recent_field_events": field_events[:40],
         "recent_action_plans": list(field.get("action_plans") or [])[-20:],
         "device_placement_rows": placement_rows,
-        "timeline": timeline[:80],
+        "timeline": timeline,
+        "record_search_total": record_search_page["total"],
+        "record_search_has_next": record_search_page["has_next"],
         "recent_notes": list(field.get("notes") or [])[-20:],
         "recent_images": recent_images[:12],
         "compare_date": compare_day.strftime("%Y-%m-%d"),
@@ -5503,8 +6062,8 @@ def _build_field_context(
         ),
         "monitoring_scopes": _build_monitoring_scopes(placement_rows, latest_sensor_values),
         "layout": layout,
-        "layout_preview": _build_layout_preview(layout, active_plantings),
-        "installation_tree": _build_installation_tree(layout, device_records, active_plantings),
+        "layout_preview": _build_layout_preview(layout, active_plantings, field_id=field["id"]),
+        "installation_tree": _build_installation_tree(layout, device_records, active_plantings, field_id=field["id"]),
         "plant_bundle": plant_bundle,
         "active_plantings": active_plantings,
         "record_calendar": _build_field_record_calendar(field, plant_bundle, record_month, automatic_record_measurements),
@@ -5601,7 +6160,8 @@ def _layout_device_placement_rows(layout: dict, device_records: dict):
     return rows
 
 
-def _build_installation_tree(layout: dict, device_records: dict, active_plantings: list):
+def _build_installation_tree(layout: dict, device_records: dict, active_plantings: list, *, field_id=""):
+    field_id = field_id or layout.get("field_id") or ""
     spaces = {space.get("id"): space for space in layout.get("spaces", []) if space.get("id")}
     root_space_id = layout.get("root_space_id")
     root = spaces.get(root_space_id)
@@ -5625,6 +6185,8 @@ def _build_installation_tree(layout: dict, device_records: dict, active_planting
             "detail": "圃場",
             "relation": "",
             "relation_kind": "",
+            "href": f"/fields/{quote(str(field_id), safe='')}",
+            "action_label": "圃場詳細を開く",
         }
     ]
     visited_spaces = {root_space_id}
@@ -5673,6 +6235,12 @@ def _build_installation_tree(layout: dict, device_records: dict, active_planting
                     "detail": " / ".join(detail_parts),
                     "relation": relation,
                     "relation_kind": relation_kind,
+                    "href": (
+                        f"/mqtt-devices/{quote(str(device_id), safe='')}"
+                        if device_id
+                        else _layout_placement_url(field_id, space_id, placement.get("id"))
+                    ),
+                    "action_label": "機器詳細を開く" if device_id else "配置詳細を開く",
                 }
             )
 
@@ -5688,6 +6256,8 @@ def _build_installation_tree(layout: dict, device_records: dict, active_planting
                         "detail": f"{device_id} / {resource_type}",
                         "relation": "",
                         "relation_kind": "",
+                        "href": f"/mqtt-devices/{quote(str(device_id), safe='')}?tab=settings",
+                        "action_label": "機器の動作設定を開く",
                     }
                 )
 
@@ -5743,7 +6313,8 @@ def _legacy_root_device_placement_rows(field: dict, device_records: dict):
     return rows
 
 
-def _build_layout_preview(layout: dict, active_plantings: list):
+def _build_layout_preview(layout: dict, active_plantings: list, *, field_id=""):
+    field_id = field_id or layout.get("field_id") or ""
     root = next((space for space in layout.get("spaces", []) if space.get("id") == layout.get("root_space_id")), None)
     if root is None:
         return {"columns": 1, "rows": 1, "placements": [], "updated_at": ""}
@@ -5773,6 +6344,11 @@ def _build_layout_preview(layout: dict, active_plantings: list):
                 "height": round(max(placement.get("height", 1) / rows * 100, 3.0), 3),
                 "subtitle": crop_label or (f"栽培場所 {child_count}件" if child_count else ""),
                 "bound": bool(placement.get("binding")),
+                "href": (
+                    f"/mqtt-devices/{quote(str((placement.get('binding') or {}).get('device_id')), safe='')}"
+                    if (placement.get("binding") or {}).get("device_id")
+                    else _layout_placement_url(field_id, root.get("id"), placement.get("id"))
+                ),
             }
         )
     return {
@@ -6222,6 +6798,26 @@ def _build_field_timeline(status_events: list, field_events: list, notes: list):
     return sorted(timeline, key=lambda item: item.get("at") or "", reverse=True)
 
 
+def _field_record_search_view(item):
+    amount = f" {item.get('amount')}{item.get('unit')}" if item.get("amount") else ""
+    body_parts = [
+        part
+        for part in (
+            item.get("target_name") if item.get("target_name") not in (None, "", "圃場全体") else "",
+            _field_record_values_summary(item.get("record_values")),
+            item.get("body") or "",
+        )
+        if part
+    ]
+    return {
+        **item,
+        "at": item.get("occurred_at") or "",
+        "title": f"{item.get('title') or item.get('kind') or '記録'}{amount}",
+        "body": " / ".join(body_parts),
+        "rating_emoji": {1: "😞", 2: "😕", 3: "😐", 4: "😊", 5: "😄"}.get(item.get("rating"), ""),
+    }
+
+
 def _compact_device_record(record: dict | None):
     if not isinstance(record, dict):
         return None
@@ -6253,7 +6849,7 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
         "battery_v",
         "rssi",
         "threshold",
-    ):
+):  # noqa: PLR0915
         if payload.get(key) is not None:
             values[key] = payload.get(key)
     try:
@@ -6390,6 +6986,8 @@ def update_device_config(device_id):
     push = request.args.get("push", "false").lower() == "true"
     try:
         result = device_config_service().update_and_optionally_push(device_id, request_body, push=push)
+    except DeviceStateConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except DeviceConfigValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
@@ -6402,6 +7000,8 @@ def update_device_config(device_id):
 def push_device_config(device_id):
     try:
         published = device_config_service().publish_push(device_id)
+    except DeviceStateConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
 
@@ -6410,7 +7010,23 @@ def push_device_config(device_id):
 
 @app.route("/local/api/mqtt-devices", methods=["GET"])
 def list_mqtt_devices():
-    return jsonify(device_config_service().get_all_records())
+    search_requested = any(
+        key in request.args
+        for key in ("q", "state", "device_kind", "page", "page_size")
+    )
+    if not search_requested:
+        return jsonify(device_config_service().get_all_records())
+    try:
+        result = device_config_service().search_records(
+            query=request.args.get("q", ""),
+            states=_query_list("state"),
+            device_kinds=_query_list("device_kind"),
+            page=request.args.get("page", 1),
+            page_size=request.args.get("page_size", 50),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
 
 
 @app.route("/local/api/mqtt-devices/<device_id>", methods=["GET"])
@@ -6429,6 +7045,8 @@ def update_mqtt_device_metadata(device_id):
 
     try:
         record = device_config_service().update_metadata(device_id, request_body)
+    except DeviceStateConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except DeviceRecordValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(record)
@@ -6440,18 +7058,24 @@ def approve_mqtt_device(device_id):
     try:
         record = device_config_service().set_state(device_id, "active", approved_by=request_body.get("approved_by"))
     except DeviceRecordValidationError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return jsonify({"error": str(exc)}), 409
     return jsonify(record)
 
 
 @app.route("/local/api/mqtt-devices/<device_id>/disable", methods=["POST"])
 def disable_mqtt_device(device_id):
-    return jsonify(device_config_service().set_state(device_id, "disabled"))
+    try:
+        return jsonify(device_config_service().set_state(device_id, "disabled"))
+    except DeviceRecordValidationError as exc:
+        return jsonify({"error": str(exc)}), 409
 
 
 @app.route("/local/api/mqtt-devices/<device_id>/retire", methods=["POST"])
 def retire_mqtt_device(device_id):
-    return jsonify(device_config_service().set_state(device_id, "retired"))
+    try:
+        return jsonify(device_config_service().set_state(device_id, "retired"))
+    except DeviceRecordValidationError as exc:
+        return jsonify({"error": str(exc)}), 409
 
 
 @app.route("/local/api/mqtt-devices/<device_id>/runtime-config", methods=["GET"])
@@ -6632,6 +7256,8 @@ def set_mqtt_device_firmware_target(device_id):
     target = request_body.get("target_firmware_version", request_body.get("version"))
     try:
         record = ota_update_service().set_firmware_target(device_id, target)
+    except DeviceStateConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except DeviceRecordValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(record)
@@ -6716,6 +7342,7 @@ def get_camera_image(image_path):
 def initialize_web_server():
     """Prepare the local Turso replica before accepting HTTP requests."""
     sensor_measurement_repository()
+    user_preference_repository()
 
 
 def flask_run():

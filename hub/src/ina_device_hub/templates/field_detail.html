@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ field.name }} - INA Field</title>
+    <link rel="stylesheet" href="/static/searchable-select.css">
     <style>
       :root { color-scheme: light; --ink: #1d2721; --muted: #68756d; --line: #d5ddd7; --surface: #fff; --green: #226b52; --good: #22734f; --warn: #ad6413; --danger: #ad3e36; }
       * { box-sizing: border-box; }
@@ -44,7 +45,9 @@
       .count span { color: var(--muted); font-size: 10px; }
       .count strong { font-size: 20px; }
       .range-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 9px; }
-      .range-card { display: grid; gap: 9px; min-height: 148px; padding: 12px; border: 1px solid #dce2dd; border-radius: 6px; background: #fff; }
+      .range-card { position: relative; display: grid; gap: 9px; min-height: 148px; padding: 12px; border: 1px solid #dce2dd; border-radius: 6px; color: inherit; background: #fff; text-decoration: none; cursor: pointer; }
+      .range-card:hover, .range-card:focus-visible { border-color: #3f7f68; outline: 2px solid #d9e9e1; outline-offset: 1px; text-decoration: none; transform: translateY(-1px); }
+      .range-card-action { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #24634e; font-size: 10px; font-weight: 800; }
       .range-card.state-low, .range-card.state-high { border-color: #dda36f; }
       .range-card-header { display: flex; justify-content: space-between; gap: 8px; }
       .range-card-title { color: var(--muted); font-size: 11px; font-weight: 750; }
@@ -70,7 +73,8 @@
       .task-list { display: grid; gap: 8px; }
       .candidate { display: grid; gap: 7px; padding: 11px; border: 1px solid #d8dfda; border-left: 4px solid var(--warn); border-radius: 6px; }
       .candidate.observation { border-left-color: #66776b; }
-      .candidate.calendar-task { border-left-color: #2b7a62; background: #fbfdfb; }
+      .candidate.calendar-task { border-left-color: #2b7a62; color: inherit; background: #fbfdfb; text-decoration: none; cursor: pointer; }
+      .candidate.calendar-task:hover, .candidate.calendar-task:focus-visible { border-color: #55907b; outline: 2px solid #dbeae3; outline-offset: 1px; text-decoration: none; transform: translateY(-1px); }
       .candidate.calendar-task.overdue { border-left-color: var(--danger); background: #fffafa; }
       .candidate.calendar-task.upcoming { border-left-color: #b28a2e; }
       .calendar-task-layout { display: grid; grid-template-columns: 136px minmax(0, 1fr); align-items: start; gap: 12px; }
@@ -95,7 +99,8 @@
       .installation-preview-wrap { position: relative; }
       .installation-edit { position: absolute; top: 10px; right: 10px; z-index: 3; display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #a8b5ac; border-radius: 6px; color: #294a3b; background: rgba(255,255,255,.96); box-shadow: 0 2px 8px rgba(31,50,40,.14); font-size: 20px; text-decoration: none; }
       .installation-preview-image { position: relative; width: 100%; aspect-ratio: 2.4 / 1; min-height: 260px; max-height: 490px; overflow: hidden; border: 1px solid #aeb9b0; border-radius: 7px; background-color: #edf0e9; background-image: linear-gradient(#d7ddd3 1px, transparent 1px), linear-gradient(90deg, #d7ddd3 1px, transparent 1px); background-size: 24px 24px; }
-      .preview-placement { position: absolute; display: grid; place-content: center; min-width: 24px; min-height: 22px; overflow: hidden; padding: 3px; border: 1px solid #7c8c78; border-radius: 4px; color: #29362e; background: #dce7d4; text-align: center; }
+      .preview-placement { position: absolute; display: grid; place-content: center; min-width: 24px; min-height: 22px; overflow: hidden; padding: 3px; border: 1px solid #7c8c78; border-radius: 4px; color: #29362e; background: #dce7d4; text-align: center; text-decoration: none; }
+      .preview-placement:hover, .preview-placement:focus-visible { z-index: 2; outline: 2px solid #226f91; outline-offset: 2px; text-decoration: none; }
       .preview-placement.greenhouse { border-color: #5f927f; background: rgba(197,229,216,.9); }
       .preview-placement.ridge, .preview-placement.open_field { border-color: #998260; background: #e5d8b8; }
       .preview-placement.pot, .preview-placement.tree { border-color: #668d5f; background: #cfe0bf; }
@@ -105,13 +110,19 @@
       .preview-placement small { overflow: hidden; color: #52625a; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
       .bound-dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border: 1px solid #fff; border-radius: 50%; background: #168360; }
       .installation-tree { border-top: 1px solid #dbe2dc; }
+      .collection-filter { position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 5px; margin: 0 10px 10px; padding: 0 8px; border: 1px solid #c7d1ca; border-radius: 5px; color: #627269; background: #fff; }
+      .collection-filter::before { content: "⌕"; font-size: 15px; }
+      .collection-filter input { min-height: 34px; padding: 0; border: 0; outline: 0; background: transparent; }
+      .collection-filter.compact { margin: 0; }
+      .collection-filter-empty { margin: 0 10px 10px; padding: 10px; color: #748078; background: #f6f8f6; font-size: 10px; text-align: center; }
       .installation-tree-details { padding: 0; overflow: hidden; }
       .installation-tree-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 15px 17px; cursor: pointer; list-style: none; }
       .installation-tree-details > summary::-webkit-details-marker { display: none; }
       .installation-tree-details > summary::after { content: "+"; display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid #bec9c1; border-radius: 5px; color: #315a49; font-size: 18px; }
       .installation-tree-details[open] > summary::after { content: "−"; }
       .installation-tree-details > summary .section-heading { flex: 1; align-items: center; margin: 0; }
-      .tree-row { --depth: 0; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 45px; padding: 7px 9px 7px calc(var(--depth) * 24px + 9px); border-bottom: 1px solid #e1e6e2; }
+      .tree-row { --depth: 0; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto 24px; align-items: center; gap: 9px; min-height: 45px; padding: 7px 9px 7px calc(var(--depth) * 24px + 9px); border-bottom: 1px solid #e1e6e2; color: inherit; text-decoration: none; }
+      .tree-row:hover, .tree-row:focus-visible { background: #f3f7f4; text-decoration: none; }
       .tree-row.kind-field { background: #f2f7f3; font-weight: 800; }
       .tree-mark { width: 9px; height: 9px; border: 2px solid #fff; border-radius: 50%; background: #77857d; box-shadow: 0 0 0 1px #9aa69f; }
       .kind-field .tree-mark, .kind-space .tree-mark { background: #28705a; box-shadow: 0 0 0 1px #28705a; }
@@ -123,9 +134,11 @@
       .tree-relation { max-width: 360px; padding: 3px 6px; overflow: hidden; border-radius: 4px; color: #315d4c; background: #e8f2ec; font-size: 9px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
       .tree-relation.watering { color: #1f647d; background: #e3f1f5; }
       .tree-relation.manual { color: #66736b; background: #eef1ef; }
+      .tree-open { grid-column: 4; display: grid; place-items: center; width: 24px; height: 24px; color: #4a6759; font-size: 17px; }
       .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
       .sensor-values { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
-      .sensor-value { display: grid; gap: 4px; padding: 9px; border: 1px solid #dce2dd; border-radius: 5px; }
+      .sensor-value { display: grid; gap: 4px; padding: 9px; border: 1px solid #dce2dd; border-radius: 5px; color: inherit; text-decoration: none; }
+      .sensor-value:hover, .sensor-value:focus-visible { border-color: #4f8872; outline: 2px solid #dfebe5; text-decoration: none; }
       .sensor-value span { color: var(--muted); font-size: 9px; }
       .sensor-value strong { font-size: 16px; }
       .monitoring-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
@@ -147,6 +160,8 @@
       .planting-form .form-grid { gap: 9px; }
       .planting-form-actions { display: flex; align-items: center; gap: 10px; }
       .planting-save-status { color: #316650; font-size: 10px; }
+      .primary-button:disabled { border-color: #bdc8c0; color: #87928b; background: #edf1ee; cursor: not-allowed; }
+      .stateful-reason { margin: 0; color: #87513a; font-size: 10px; line-height: 1.4; }
       .planting-calendar-link { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 7px 10px; border: 1px solid #2b7058; border-radius: 5px; color: #245f4b; background: #fff; font-size: 11px; font-weight: 800; text-decoration: none; }
       .planting-side { display: grid; align-content: start; gap: 12px; }
       .next-crop-action { display: grid; gap: 5px; padding: 11px; border-left: 4px solid #b46f23; background: #fff7ed; }
@@ -236,7 +251,8 @@
       .record-extras { border-top: 1px solid #dce2dd; }
       .record-extras summary { padding: 10px 2px; color: #506159; font-size: 11px; font-weight: 800; cursor: pointer; }
       .record-extras > div { display: grid; gap: 10px; padding: 2px 0 8px; }
-      .record-submit-row { display: flex; justify-content: flex-end; }
+      .record-submit-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+      .record-submit-row .stateful-reason { margin-right: auto; }
       .record-submit-row .primary-button { min-width: 170px; }
       .record-item-dialog-backdrop { position: fixed; inset: 0; z-index: 34; display: grid; place-items: center; padding: 18px; background: rgba(22, 32, 26, .46); }
       .record-item-dialog { display: grid; grid-template-rows: auto minmax(0, 1fr); width: min(720px, 100%); max-height: min(720px, calc(100vh - 36px)); overflow: hidden; border: 1px solid #aebbb2; border-radius: 8px; background: #fff; box-shadow: 0 20px 55px rgba(22, 35, 27,.28); }
@@ -277,6 +293,12 @@
       .timeline-images { display: flex; gap: 6px; margin-top: 7px; overflow-x: auto; }
       .timeline-images a { display: block; width: 112px; height: 84px; flex: 0 0 112px; overflow: hidden; border: 1px solid #cad4cc; border-radius: 5px; }
       .timeline-images img { width: 100%; height: 100%; object-fit: cover; }
+      .record-history-filter { display: grid; grid-template-columns:minmax(220px,1.5fr) minmax(130px,.7fr) minmax(130px,.7fr) minmax(130px,.7fr) auto; align-items:end; gap:8px; margin-bottom:8px; }
+      .record-history-filter label { display:grid; gap:4px; color:#5d6c64; font-size:10px; font-weight:800; }
+      .record-history-filter input,.record-history-filter select { width:100%; min-height:36px; padding:6px 8px; border:1px solid #bdc8c0; border-radius:5px; background:#fff; }
+      .record-history-filter button,.record-history-more { min-height:36px; padding:6px 10px; border:1px solid #39755e; border-radius:5px; color:#2f6751; background:#fff; font-weight:800; cursor:pointer; }
+      .record-history-status { min-height:16px; margin:0; color:#66756d; font-size:10px; }
+      .record-history-more { justify-self:center; margin-top:10px; }
       .location-form { display: grid; gap: 12px; max-width: 780px; }
       .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
       .chart-box { min-height: 330px; }
@@ -285,6 +307,8 @@
       .plotly-deferred-status.error { color: var(--danger); }
       @media (max-width: 900px) {
         .overview-lead, .detail-grid, .forms-grid, .monitoring-summary, .planting-card { grid-template-columns: 1fr; }
+        .record-history-filter { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .record-history-filter .wide { grid-column:1/-1; }
         .installation-preview-image { aspect-ratio: 1.65 / 1; }
       }
       @media (max-width: 640px) {
@@ -299,8 +323,9 @@
         .range-grid { display: flex; overflow-x: auto; }
         .range-card { flex: 0 0 min(78vw, 280px); }
         .installation-preview-image { min-height: 230px; aspect-ratio: 1.25 / 1; }
-        .tree-row { grid-template-columns: 12px minmax(0, 1fr); padding-left: calc(var(--depth) * 16px + 7px); }
+        .tree-row { grid-template-columns: 12px minmax(0, 1fr) 24px; padding-left: calc(var(--depth) * 16px + 7px); }
         .tree-relation { grid-column: 2; max-width: 100%; justify-self: start; }
+        .tree-open { grid-column: 3; grid-row: 1; }
         .record-calendar { min-width: 720px; }
         .calendar-scroll { overflow-x: auto; }
         .form-grid { grid-template-columns: 1fr; }
@@ -315,6 +340,8 @@
         .automatic-record-row { grid-template-columns: minmax(100px, 1fr) auto; }
         .automatic-record-row time { grid-column: 1 / -1; }
         .calendar-task-layout { grid-template-columns: 96px minmax(0, 1fr); gap: 9px; }
+        .record-history-filter { grid-template-columns:1fr; }
+        .record-history-filter .wide { grid-column:auto; }
       }
     </style>
   </head>
@@ -322,7 +349,7 @@
     <header class="field-header">
       <div class="header-inner">
         <div><p class="breadcrumb"><a href="/fields">圃場一覧</a> / {{ field.name }}</p><h1>{{ field.name }}</h1><p class="meta">{{ field.location.prefecture }}{{ field.location.municipality }}{% if field.location.locality %} {{ field.location.locality }}{% endif %} / {{ environment_labels.get(field.location.environment_type, '環境未設定') }}</p></div>
-        <div class="header-actions"><a class="header-action" href="/settings/ai" title="AI設定">AI設定</a></div>
+        <div class="header-actions"><a class="header-action" href="/preferences" title="個人設定">&#9786; 個人設定</a>{% if current_user.role == 'admin' %}<a class="header-action" href="/settings" title="アプリ設定">&#9881; アプリ設定</a>{% endif %}</div>
       </div>
     </header>
     <nav class="tabs-shell" aria-label="圃場詳細メニュー">
@@ -357,12 +384,13 @@
           </div>
           <div class="range-grid">
             {% for metric in context.dashboard.metrics %}
-            <article class="range-card state-{{ metric.state }}">
+            <a class="range-card state-{{ metric.state }}" href="{{ metric.target_url }}" aria-label="{{ metric.label }}の目標値を設定">
               <div class="range-card-header"><div><div class="range-card-title">{{ metric.label }}</div><div class="range-value">{{ metric.value_display }}<small>{{ metric.unit }}</small></div></div><span class="state-label">{{ metric.state_label }}</span></div>
               <div><div class="range-track">{% if metric.minimum is not none or metric.maximum is not none %}<span class="target-zone" style="left:{{ metric.target_left_pct }}%;width:{{ metric.target_width_pct }}%"></span>{% endif %}<span class="value-marker" style="left:{{ metric.marker_pct }}%"></span></div><div class="range-scale"><span>{{ metric.domain_min_display }}</span><span>{{ metric.domain_max_display }} {{ metric.unit }}</span></div></div>
               <div class="target-scale">{% if metric.minimum is not none or metric.maximum is not none %}目標 {{ metric.minimum_display }} - {{ metric.maximum_display }} {{ metric.unit }}{% else %}目標未設定{% endif %}</div>
               <p class="range-source">{{ metric.device_id }} / {{ metric.scope_label }} / {{ metric.observed_at_display }}</p>
-            </article>
+              <span class="range-card-action">目標値を設定 <span aria-hidden="true">&#8250;</span></span>
+            </a>
             {% endfor %}
           </div>
           {% else %}<div class="manual-overview"><div><span>記録</span><strong>{{ context.record_calendar.today_items|length }}件</strong></div><div><span>自動取得</span><strong>{{ context.record_calendar.today_measurement_count }}件</strong></div><button type="button" class="primary-button" data-open-today-record>今日を記録</button></div>{% endif %}
@@ -372,7 +400,7 @@
           <div class="section-heading"><div><span class="eyebrow">人間が行うこと</span><h2>作業TODO</h2></div><span class="task-count">{{ context.todo_count }}件</span></div>
           <div class="task-list">
             {% for task in context.calendar_todo_items %}
-            <article class="candidate calendar-task {{ task.timing_state }}" style="border-left-color: {{ task.accent }}">
+            <a class="candidate calendar-task {{ task.timing_state }}" href="{{ task.calendar_url }}" style="border-left-color: {{ task.accent }}" aria-label="{{ task.title }}の詳細を開く">
               <div class="calendar-task-layout{% if not task.illustration_url %} no-illustration{% endif %}">
                 {% if task.illustration_url %}<img class="calendar-task-illustration" src="{{ task.illustration_url }}" alt="{{ task.action_type_label }}の作業イラスト" loading="lazy">{% endif %}
                 <div class="calendar-task-copy">
@@ -380,10 +408,10 @@
                   <h3>{{ task.title }}</h3>
                   <p>{{ task.reason }}</p>
                   <div class="task-window">予定 {{ task.window_start }} - {{ task.window_end }}</div>
-                  <a class="task-open" href="{{ task.calendar_url }}">栽培カレンダーで確認 &#8599;</a>
+                  <span class="task-open">作業詳細を開く &#8250;</span>
                 </div>
               </div>
-            </article>
+            </a>
             {% endfor %}
             {% if context.calendar_todo_items and context.action_candidates %}<div class="task-divider">センサー・現在値からの判断</div>{% endif %}
             {% for candidate in context.action_candidates %}
@@ -405,9 +433,9 @@
         <div class="section-heading"><div><span class="eyebrow">設置状況</span><h2>設置ビュー</h2></div><span class="meta">{{ context.layout_preview.placements|length }}配置</span></div>
         <div class="installation-preview-wrap">
           <a class="installation-edit" href="/fields/{{ field.id }}/layout" title="設置ビューを編集" aria-label="設置ビューを編集">&#9998;</a>
-          <div class="installation-preview-image" role="img" aria-label="{{ field.name }}の設置ビュー">
-            {% for placement in context.layout_preview.placements %}
-            <div class="preview-placement {{ placement.preset }}" style="left:{{ placement.left }}%;top:{{ placement.top }}%;width:{{ placement.width }}%;height:{{ placement.height }}%"><strong>{{ placement.name }}</strong>{% if placement.subtitle %}<small>{{ placement.subtitle }}</small>{% endif %}{% if placement.bound %}<span class="bound-dot"></span>{% endif %}</div>
+            <div class="installation-preview-image" role="group" aria-label="{{ field.name }}の設置ビュー">
+              {% for placement in context.layout_preview.placements %}
+            <a class="preview-placement {{ placement.preset }}" href="{{ placement.href }}" title="{{ placement.name }}の詳細を開く" style="left:{{ placement.left }}%;top:{{ placement.top }}%;width:{{ placement.width }}%;height:{{ placement.height }}%"><strong>{{ placement.name }}</strong>{% if placement.subtitle %}<small>{{ placement.subtitle }}</small>{% endif %}{% if placement.bound %}<span class="bound-dot"></span>{% endif %}</a>
             {% endfor %}
           </div>
         </div>
@@ -415,7 +443,7 @@
 
       <details class="surface installation-tree-details" id="field-installation-tree" data-tab-panel="overview">
         <summary><div class="section-heading"><div><span class="eyebrow">設置場所と機器</span><h2>圃場構成</h2></div><span class="meta">{{ context.installation_tree|length }}項目</span></div></summary>
-        {% if context.installation_tree %}<div class="installation-tree" role="tree" aria-label="圃場の設置階層">{% for node in context.installation_tree %}<div class="tree-row kind-{{ node.kind }}" role="treeitem" aria-level="{{ node.depth + 1 }}" style="--depth: {{ node.depth }}"><span class="tree-mark" aria-hidden="true"></span><span class="tree-label"><strong>{{ node.label }}</strong><small>{{ node.detail }}</small></span>{% if node.relation %}<span class="tree-relation {{ node.relation_kind }}">{{ node.relation }}</span>{% endif %}</div>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに配置物はありません。</p>{% endif %}
+        {% if context.installation_tree %}<label class="collection-filter"><input id="installation-tree-filter" type="search" placeholder="場所、培地、機器を検索" aria-label="圃場構成を検索"></label><p id="installation-tree-empty" class="collection-filter-empty" hidden>一致する項目はありません。</p><div class="installation-tree" role="tree" aria-label="圃場の設置階層">{% for node in context.installation_tree %}<a class="tree-row kind-{{ node.kind }}" href="{{ node.href }}" role="treeitem" aria-level="{{ node.depth + 1 }}" aria-label="{{ node.label }}、{{ node.action_label }}" data-filter-text="{{ node.label }} {{ node.detail }} {{ node.relation }}" style="--depth: {{ node.depth }}"><span class="tree-mark" aria-hidden="true"></span><span class="tree-label"><strong>{{ node.label }}</strong><small>{{ node.detail }}</small></span>{% if node.relation %}<span class="tree-relation {{ node.relation_kind }}">{{ node.relation }}</span>{% endif %}<span class="tree-open" aria-hidden="true">&#8250;</span></a>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに配置物はありません。</p>{% endif %}
       </details>
 
       <section class="surface" data-tab-panel="monitoring">
@@ -425,7 +453,7 @@
 
       <section class="surface" data-tab-panel="monitoring">
         <div class="section-heading"><div><span class="eyebrow">物理スコープ</span><h2>空間ごとの環境・設備</h2></div><span class="meta">{{ context.monitoring_scopes|length }}区分</span></div>
-        {% if context.monitoring_scopes %}<div class="monitoring-scopes">{% for scope in context.monitoring_scopes %}<article class="scope-panel"><header><h3>{{ scope.label }}</h3><span class="meta">{{ scope.devices|length }}機器</span></header>{% if scope.devices %}<div class="scope-device-list">{% for device in scope.devices %}<span class="scope-device"><span>{{ device.device_name or device.device_id }} / {{ device.device_role_label }}</span><a class="scope-device-settings" href="/mqtt-devices/{{ device.device_id }}?tab=settings" title="{{ device.device_name or device.device_id }}の動作設定" aria-label="{{ device.device_name or device.device_id }}の動作設定">&#9881;</a></span>{% endfor %}</div>{% endif %}{% if scope.sensor_values %}<div class="sensor-values">{% for item in scope.sensor_values %}{% for key, value in item["values"].items() %}<div class="sensor-value"><span>{{ item.device_id }} / {{ metric_labels.get(key, key) }}</span><strong>{{ value }}</strong></div>{% endfor %}{% endfor %}</div>{% else %}<p class="meta">この空間の直近計測値はありません。</p>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに機器を配置すると、空間ごとにここへ整理されます。</p>{% endif %}
+        {% if context.monitoring_scopes %}<div class="monitoring-scopes">{% for scope in context.monitoring_scopes %}<article class="scope-panel"><header><h3>{{ scope.label }}</h3><span class="meta">{{ scope.devices|length }}機器</span></header>{% if scope.devices %}<div class="scope-device-list">{% for device in scope.devices %}<span class="scope-device"><span>{{ device.device_name or device.device_id }} / {{ device.device_role_label }}</span><a class="scope-device-settings" href="/mqtt-devices/{{ device.device_id }}?tab=settings" title="{{ device.device_name or device.device_id }}の動作設定" aria-label="{{ device.device_name or device.device_id }}の動作設定">&#9881;</a></span>{% endfor %}</div>{% endif %}{% if scope.sensor_values %}<div class="sensor-values">{% for item in scope.sensor_values %}{% for key, value in item["values"].items() %}<a class="sensor-value" href="/mqtt-devices/{{ item.device_id }}?tab=monitoring" aria-label="{{ item.device_id }}の{{ metric_labels.get(key, key) }}推移を開く"><span>{{ item.device_id }} / {{ metric_labels.get(key, key) }}</span><strong>{{ value }}</strong></a>{% endfor %}{% endfor %}</div>{% else %}<p class="meta">この空間の直近計測値はありません。</p>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに機器を配置すると、空間ごとにここへ整理されます。</p>{% endif %}
       </section>
 
       <!-- field-primary-stream-complete -->
@@ -433,19 +461,20 @@
       <section class="surface" data-tab-panel="cultivation">
         <div class="section-heading"><div><span class="eyebrow">作物単位</span><h2>定植中の作物</h2></div><a class="icon-link" href="/fields/{{ field.id }}/layout" title="設置ビューで配置を編集" aria-label="設置ビューで配置を編集">&#9998;</a></div>
         {% if deferred_context.active_plantings %}
+        {% if deferred_context.active_plantings|length > 1 %}<label class="collection-filter compact"><input id="planting-card-filter" type="search" placeholder="作物、品種、設置場所を検索" aria-label="定植中の作物を検索"></label><p id="planting-card-empty" class="collection-filter-empty" hidden>一致する作物はありません。</p>{% endif %}
         <div class="planting-grid">
           {% for planting in deferred_context.active_plantings %}
-          <article class="planting-card" id="planting-{{ planting.id }}" data-planting-card="{{ planting.id }}">
-            <form class="planting-form" data-planting-form="{{ planting.id }}">
+          <article class="planting-card" id="planting-{{ planting.id }}" data-planting-card="{{ planting.id }}" data-filter-text="{{ planting.crop_name }} {{ planting.cultivar }} {{ planting.placement_name }} {{ planting.crop_category_label }}">
+            <form class="planting-form" data-planting-form="{{ planting.id }}" data-stateful-form data-pristine-message="作物情報は変更されていません。">
               <div class="section-heading"><div><span class="eyebrow">{{ planting.placement_name }}</span><h3>{{ planting.crop_name }}{% if planting.cultivar %} / {{ planting.cultivar }}{% endif %}</h3></div><span class="tag">{{ planting.crop_category_label }}</span></div>
               <div class="form-grid"><label>作物名<input name="crop_name" value="{{ planting.crop_name }}" required></label><label>品種<input name="cultivar" value="{{ planting.cultivar }}"></label><label>作物区分<select name="crop_category" data-crop-category>{% for value, label in [('vegetable','野菜'),('fruit_tree','果樹'),('flower','花き'),('herb','ハーブ'),('other','その他')] %}<option value="{{ value }}"{% if planting.crop_category == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label><label data-tree-age{% if planting.crop_category != 'fruit_tree' %} hidden{% endif %}>樹齢<input name="tree_age_years" type="number" min="0" max="300" value="{{ planting.tree_age_years if planting.tree_age_years is not none else '' }}"></label><label>定植日<input name="planted_on" type="date" value="{{ planting.planted_on }}" required></label><label>株数<input name="plant_count" type="number" min="1" value="{{ planting.plant_count }}" required></label></div>
               <label>栽培方式<select name="cultivation_method">{% for value, label in planting.cultivation_method_options %}<option value="{{ value }}"{% if value == planting.cultivation_method %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
               <label>メモ<textarea name="memo">{{ planting.memo }}</textarea></label>
-              <div class="planting-form-actions"><button class="primary-button" type="submit">作物情報を保存</button><span class="planting-save-status" role="status"></span></div>
+              <div class="planting-form-actions"><button class="primary-button" type="submit" data-stateful-submit>作物情報を保存</button><span class="planting-save-status stateful-reason" role="status" data-stateful-reason></span></div>
             </form>
             <div class="planting-side">
               {% if planting.next_action %}<div class="next-crop-action"><span>次の計画 {{ planting.next_action.window_start }} - {{ planting.next_action.window_end }}</span><strong>{{ planting.next_action.title }}</strong><p>{{ planting.next_action.reason }}</p></div>{% endif %}
-              <a class="planting-calendar-link" href="/fields/{{ field.id }}/layout?calendar={{ planting.id }}">年間カレンダーを開く ↗</a>
+              <a class="planting-calendar-link" href="/fields/{{ field.id }}/calendar?planting={{ planting.id }}">年間カレンダーを開く ↗</a>
               <div><div class="section-heading"><h3>直近の履歴</h3><span class="meta">最大10件</span></div><div class="crop-stepper">{% for activity in planting.recent_activity %}<div class="crop-step"><time>{{ activity.at_display }}</time><span class="crop-step-marker"></span><div class="crop-step-body"><strong>{{ activity.kind_label }} / {{ activity.title }}</strong>{% if activity.detail %}<small>{{ activity.detail }}</small>{% endif %}</div></div>{% endfor %}</div></div>
             </div>
           </article>
@@ -461,24 +490,35 @@
 
       <section class="surface record-composer" id="field-record-composer" data-tab-panel="records">
         <div class="section-heading"><div><span class="eyebrow">日々の入力</span><h2>記録を追加</h2></div></div>
-        <form class="stack-form" id="field-record-form" method="post" action="/fields/{{ field.id }}/events" enctype="multipart/form-data">
+        <form class="stack-form" id="field-record-form" method="post" action="/fields/{{ field.id }}/events" enctype="multipart/form-data" data-stateful-form data-pristine-message="記録内容を追加してください。">
           <input type="hidden" name="event_type" value="daily_record">
-          <div class="record-context-grid"><label>日時<input name="occurred_at" type="datetime-local" required></label><label>対象<select name="target_placement_id">{% for target in context.record_targets %}<option value="{{ target.id }}">{{ target.label }}</option>{% endfor %}</select></label></div>
+          <div class="record-context-grid"><label>日時<input name="occurred_at" type="datetime-local" required></label><label>対象<select name="target_placement_id" id="record-target-select" aria-label="記録対象" data-searchable-select data-search-placeholder="培地、空間、圃場を検索" data-empty-message="一致する記録対象はありません。">{% for target in context.record_targets %}<option value="{{ target.id }}">{{ target.label }}</option>{% endfor %}</select></label></div>
           <section class="automatic-records" id="record-automatic-section" hidden><div class="record-subheading"><div><span class="auto-indicator" aria-hidden="true"></span><strong>デバイスから自動取得</strong></div><span id="record-automatic-count"></span></div><div id="record-automatic-list"></div></section>
           <section class="recent-record-items" id="recent-record-items"{% if not context.recent_record_items %} hidden{% endif %}><div class="record-subheading"><strong>過去に選択</strong></div><div class="recent-item-list" id="recent-record-item-list">{% for item in context.recent_record_items %}<button type="button" data-add-record-item="{{ item.key }}"><span aria-hidden="true">＋</span>{{ item.label }}</button>{% endfor %}</div></section>
           <div class="record-value-list" id="record-value-list"><p class="record-value-empty">記録項目はまだ追加されていません。</p></div>
           <button class="record-item-search-open" id="record-item-search-open" type="button"><span aria-hidden="true">＋</span>記録項目を追加</button>
           <details class="record-extras"><summary>メモ・評価・画像</summary><div><label>メモ<textarea name="description"></textarea></label><fieldset class="rating-fieldset"><legend>評価</legend><div class="rating-options">{% for value, emoji, label in [(1, '😞', 'とても悪い'), (2, '😕', '悪い'), (3, '😐', '普通'), (4, '😊', '良い'), (5, '😄', 'とても良い')] %}<label class="rating-option" title="{{ label }}"><input type="radio" name="rating" value="{{ value }}" aria-label="{{ value }}: {{ label }}"><span aria-hidden="true">{{ emoji }}</span></label>{% endfor %}</div></fieldset><label>画像<input name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple></label></div></details>
-          <div class="record-submit-row"><button class="primary-button" type="submit">この内容で記録</button></div>
+          <div class="record-submit-row"><p class="stateful-reason" id="record-submit-reason">記録項目、メモ、評価、画像のいずれかを追加してください。</p><button class="primary-button" type="submit" data-stateful-submit>この内容で記録</button></div>
         </form>
       </section>
 
-      <section class="surface" data-tab-panel="records"><h2>記録一覧</h2><div class="timeline">{% for item in context.timeline %}<article><p class="meta">{{ item.at or '時刻なし' }} / {{ item.kind }}</p><h3>{{ item.title }}{% if item.rating_emoji %}<span class="timeline-rating">{{ item.rating_emoji }}</span>{% endif %}</h3>{% if item.body %}<p>{{ item.body }}</p>{% endif %}{% if item.attachments %}<div class="timeline-images">{% for attachment in item.attachments %}<a href="{{ attachment.url }}" target="_blank" rel="noopener" title="{{ attachment.original_filename }}"><img src="{{ attachment.url }}" alt="{{ attachment.original_filename }}" loading="lazy"></a>{% endfor %}</div>{% endif %}</article>{% else %}<p class="empty-state">記録はまだありません。</p>{% endfor %}</div></section>
+      <section class="surface record-history" data-tab-panel="records" data-field-id="{{ field.id }}">
+        <div class="section-heading"><div><span class="eyebrow">履歴検索</span><h2>記録一覧</h2></div><output id="record-history-count">{{ context.timeline|length }} / {{ context.record_search_total }}件</output></div>
+        <form class="record-history-filter" id="record-history-filter">
+          <label class="wide">記録を検索<input name="q" type="search" placeholder="作業、作物、場所、値、タグを検索" aria-label="栽培記録を検索" autocomplete="off"></label>
+          <label>記録種別<select name="kind"><option value="">すべて</option><option value="daily_record">日々の記録</option><option value="watering">潅水</option><option value="fertilizer">施肥</option><option value="pest">防除</option><option value="harvest">収穫</option><option value="observation">観察</option><option value="note">メモ</option></select></label>
+          <label>開始日<input name="date_from" type="date"></label>
+          <label>終了日<input name="date_to" type="date"></label>
+          <button type="submit">検索</button>
+        </form>
+        <p class="record-history-status" id="record-history-status" role="status" aria-live="polite"></p>
+        <div class="timeline" id="record-history-list">{% for item in context.timeline %}<article><p class="meta">{{ item.at or '時刻なし' }} / {{ item.kind }}</p><h3>{{ item.title }}{% if item.rating_emoji %}<span class="timeline-rating">{{ item.rating_emoji }}</span>{% endif %}</h3>{% if item.body %}<p>{{ item.body }}</p>{% endif %}{% if item.attachments %}<div class="timeline-images">{% for attachment in item.attachments %}<a href="{{ attachment.url }}" target="_blank" rel="noopener" title="{{ attachment.original_filename }}"><img src="{{ attachment.url }}" alt="{{ attachment.original_filename }}" loading="lazy"></a>{% endfor %}</div>{% endif %}</article>{% else %}<p class="empty-state">記録はまだありません。</p>{% endfor %}</div>
+        <button class="record-history-more" id="record-history-more" type="button"{% if not context.record_search_has_next %} hidden{% endif %}>さらに20件を表示</button>
+      </section>
 
       <section class="surface" data-tab-panel="settings">
         <div class="section-heading"><div><span class="eyebrow">圃場情報</span><h2>場所設定</h2></div></div>
-        <form class="location-form" method="post"><label>圃場名<input name="name" value="{{ field.name }}" required></label><div class="form-grid"><label>都道府県<select name="prefecture" required><option value="">選択</option>{% for prefecture in prefectures %}<option value="{{ prefecture }}"{% if field.location.prefecture == prefecture %} selected{% endif %}>{{ prefecture }}</option>{% endfor %}</select></label><label>市区町村<input name="municipality" value="{{ field.location.municipality }}" required></label><label>町名・地区<input name="locality" value="{{ field.location.locality }}"></label><label>設置環境<select name="environment_type" required><option value="">選択</option>{% for value, label in environment_options %}<option value="{{ value }}"{% if field.location.environment_type == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></div><button class="primary-button" type="submit">保存</button></form>
-        <p><a href="/settings/ai">AIモデル・API接続を設定する ↗</a></p>
+        <form class="location-form" method="post" data-stateful-form data-pristine-message="圃場情報は変更されていません。"><label>圃場名<input name="name" value="{{ field.name }}" required></label><div class="form-grid"><label>都道府県<select name="prefecture" required aria-label="圃場の都道府県" data-searchable-select data-search-placeholder="都道府県を検索"><option value="">選択</option>{% for prefecture in prefectures %}<option value="{{ prefecture }}"{% if field.location.prefecture == prefecture %} selected{% endif %}>{{ prefecture }}</option>{% endfor %}</select></label><label>市区町村<input name="municipality" value="{{ field.location.municipality }}" required></label><label>町名・地区<input name="locality" value="{{ field.location.locality }}"></label><label>設置環境<select name="environment_type" required><option value="">選択</option>{% for value, label in environment_options %}<option value="{{ value }}"{% if field.location.environment_type == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></div><p class="stateful-reason" data-stateful-reason></p><button class="primary-button" type="submit" data-stateful-submit>保存</button></form>
       </section>
     </main>
     <div class="record-modal-backdrop" id="record-day-modal" hidden>
@@ -498,6 +538,8 @@
     <script type="application/json" id="record-measurement-data">{{ deferred_context.record_calendar.measurements_by_date|tojson }}</script>
     <script type="application/json" id="record-catalog-data">{{ context.record_catalog|tojson }}</script>
     <script type="application/json" id="record-recent-data">{{ context.recent_record_items|map(attribute='key')|list|tojson }}</script>
+    <script src="/static/stateful-actions.js"></script>
+    <script src="/static/select-filter.js"></script>
     <script>
       let plotlyLoadPromise;
       const loadPlotly = () => {
@@ -567,6 +609,34 @@
       window.addEventListener("hashchange", () => activate(location.hash.slice(1), false));
       activate(location.hash.slice(1), false);
 
+      const normalizeCollectionText = (value) => String(value || "")
+        .normalize("NFKC")
+        .toLocaleLowerCase("ja")
+        .replace(/[\s・_\-/]+/g, "")
+        .replace(/灌/g, "潅")
+        .replace(/鉢植え/g, "鉢")
+        .replace(/ハウス/g, "温室");
+      const bindCollectionFilter = (inputId, itemSelector, emptyId) => {
+        const input = document.getElementById(inputId);
+        const items = Array.from(document.querySelectorAll(itemSelector));
+        const empty = document.getElementById(emptyId);
+        if (!input || !items.length) return;
+        const filter = () => {
+          const terms = String(input.value || "").split(/[\s　]+/).map(normalizeCollectionText).filter(Boolean);
+          let visible = 0;
+          items.forEach((item) => {
+            const searchable = normalizeCollectionText(item.dataset.filterText || item.textContent);
+            item.hidden = !terms.every((term) => searchable.includes(term));
+            if (!item.hidden) visible += 1;
+          });
+          if (empty) empty.hidden = visible > 0;
+        };
+        input.addEventListener("input", filter);
+        filter();
+      };
+      bindCollectionFilter("installation-tree-filter", "#field-installation-tree .tree-row", "installation-tree-empty");
+      bindCollectionFilter("planting-card-filter", ".planting-grid .planting-card", "planting-card-empty");
+
       const requestedPlantingId = new URLSearchParams(location.search).get("planting");
       if (requestedPlantingId) {
         activate("cultivation", false);
@@ -586,7 +656,6 @@
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
           const status = form.querySelector(".planting-save-status");
-          const submit = form.querySelector("button[type='submit']");
           const values = new FormData(form);
           const payload = {
             crop_name: String(values.get("crop_name") || ""),
@@ -598,7 +667,7 @@
             cultivation_method: String(values.get("cultivation_method") || ""),
             memo: String(values.get("memo") || ""),
           };
-          submit.disabled = true;
+          form.dispatchEvent(new CustomEvent("stateful-form-busy", { detail: true }));
           status.textContent = "保存中...";
           try {
             const response = await fetch(`/local/api/plantings/${encodeURIComponent(form.dataset.plantingForm)}`, {
@@ -608,14 +677,122 @@
             });
             const body = await response.json();
             if (!response.ok) throw new Error(body.error || "保存できませんでした");
+            form.dispatchEvent(new CustomEvent("stateful-form-reset"));
             status.textContent = "保存しました";
             window.setTimeout(() => location.reload(), 350);
           } catch (error) {
             status.textContent = error instanceof Error ? error.message : "保存できませんでした";
-            submit.disabled = false;
+            form.dispatchEvent(new CustomEvent("stateful-form-busy", { detail: false }));
           }
         });
       });
+
+      const recordHistorySection = document.querySelector(".record-history");
+      const recordHistoryForm = document.getElementById("record-history-filter");
+      const recordHistoryList = document.getElementById("record-history-list");
+      const recordHistoryCount = document.getElementById("record-history-count");
+      const recordHistoryStatus = document.getElementById("record-history-status");
+      const recordHistoryMore = document.getElementById("record-history-more");
+      const recordHistoryCache = new Map();
+      let recordHistoryPage = 1;
+      let recordHistoryTimer = null;
+      let recordHistoryController = null;
+
+      const recordHistoryParameters = (page) => {
+        const formData = new FormData(recordHistoryForm);
+        const parameters = new URLSearchParams({page:String(page),page_size:"20"});
+        ["q", "kind", "date_from", "date_to"].forEach((name) => {
+          const value = String(formData.get(name) || "").trim();
+          if (value) parameters.set(name, value);
+        });
+        return parameters;
+      };
+      const renderHistoryItem = (item) => {
+        const article = document.createElement("article");
+        const meta = document.createElement("p");
+        meta.className = "meta";
+        meta.textContent = `${item.occurred_at || "時刻なし"} / ${item.kind || "記録"}`;
+        const heading = document.createElement("h3");
+        heading.append(document.createTextNode(item.title || "記録"));
+        if (item.rating_emoji) {
+          const rating = document.createElement("span");
+          rating.className = "timeline-rating";
+          rating.textContent = item.rating_emoji;
+          heading.append(rating);
+        }
+        article.append(meta, heading);
+        if (item.body) {
+          const body = document.createElement("p");
+          body.textContent = item.body;
+          article.append(body);
+        }
+        if (Array.isArray(item.attachments) && item.attachments.length) {
+          const images = document.createElement("div");
+          images.className = "timeline-images";
+          item.attachments.forEach((attachment) => {
+            if (!attachment?.url) return;
+            const link = document.createElement("a");
+            link.href = attachment.url;
+            link.target = "_blank";
+            link.rel = "noopener";
+            link.title = attachment.original_filename || "記録画像";
+            const image = document.createElement("img");
+            image.src = attachment.url;
+            image.alt = attachment.original_filename || "記録画像";
+            image.loading = "lazy";
+            link.append(image);
+            images.append(link);
+          });
+          article.append(images);
+        }
+        return article;
+      };
+      const loadRecordHistory = async (page = 1, append = false) => {
+        const parameters = recordHistoryParameters(page);
+        const cacheKey = parameters.toString();
+        recordHistoryController?.abort();
+        const controller = new AbortController();
+        recordHistoryController = controller;
+        recordHistoryStatus.textContent = "記録を検索しています...";
+        recordHistoryMore.disabled = true;
+        try {
+          let body = recordHistoryCache.get(cacheKey);
+          if (!body) {
+            const response = await fetch(`/local/api/fields/${encodeURIComponent(recordHistorySection.dataset.fieldId)}/records?${parameters}`, {headers:{Accept:"application/json"},signal:controller.signal});
+            body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+            recordHistoryCache.set(cacheKey, body);
+          }
+          if (!append) recordHistoryList.replaceChildren();
+          body.items.forEach((item) => recordHistoryList.append(renderHistoryItem(item)));
+          if (!recordHistoryList.querySelector("article")) {
+            const empty = document.createElement("p");
+            empty.className = "empty-state";
+            empty.textContent = "一致する記録はありません。";
+            recordHistoryList.append(empty);
+          }
+          recordHistoryPage = body.page;
+          const displayed = recordHistoryList.querySelectorAll("article").length;
+          recordHistoryCount.textContent = `${displayed} / ${body.total}件`;
+          recordHistoryStatus.textContent = body.total ? `${body.total}件の記録が見つかりました。` : "検索条件に一致する記録はありません。";
+          recordHistoryMore.hidden = !body.has_next;
+        } catch (error) {
+          if (error?.name === "AbortError") return;
+          recordHistoryStatus.textContent = error instanceof Error ? error.message : "記録を取得できませんでした。";
+        } finally {
+          if (!controller.signal.aborted) recordHistoryMore.disabled = false;
+        }
+      };
+      recordHistoryForm?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void loadRecordHistory(1, false);
+      });
+      recordHistoryForm?.querySelector("[name='q']")?.addEventListener("input", () => {
+        window.clearTimeout(recordHistoryTimer);
+        recordHistoryTimer = window.setTimeout(() => void loadRecordHistory(1, false), 350);
+      });
+      recordHistoryForm?.querySelectorAll("select,input[type='date']").forEach((control) => control.addEventListener("change", () => void loadRecordHistory(1, false)));
+      recordHistoryMore?.addEventListener("click", () => void loadRecordHistory(recordHistoryPage + 1, true));
 
       const recordData = JSON.parse(document.getElementById("record-calendar-data").textContent || "{}");
       const measurementData = JSON.parse(document.getElementById("record-measurement-data").textContent || "{}");
@@ -633,6 +810,8 @@
       const recordItemQuery = document.getElementById("record-item-query");
       const recordSearchResults = document.getElementById("record-search-results");
       const selectedRecordItems = new Set();
+      const recordSubmit = recordForm.querySelector("button[type='submit']");
+      const recordSubmitReason = document.getElementById("record-submit-reason");
       const recentStorageKey = "ina-field-record-items:" + {{ field.id|tojson }};
       let activeRecordCategory = "";
       let selectedRecordDate = "";
@@ -643,6 +822,24 @@
         return local.toISOString().slice(0, 16);
       };
       if (!recordOccurredAt.value) recordOccurredAt.value = localDateTimeValue();
+
+      const syncRecordSubmitAvailability = () => {
+        const hasDescription = Boolean(recordForm.querySelector("[name='description']").value.trim());
+        const hasRating = Boolean(recordForm.querySelector("[name='rating']:checked"));
+        const hasImages = recordForm.querySelector("[name='images']").files.length > 0;
+        const hasContent = selectedRecordItems.size > 0 || hasDescription || hasRating || hasImages;
+        const valid = recordForm.checkValidity();
+        recordSubmit.disabled = !hasContent || !valid;
+        recordSubmit.setAttribute("aria-disabled", recordSubmit.disabled ? "true" : "false");
+        recordSubmitReason.hidden = hasContent && valid;
+        recordSubmitReason.textContent = !hasContent
+          ? "記録項目、メモ、評価、画像のいずれかを追加してください。"
+          : !valid ? "追加した記録項目の値を入力してください。" : "";
+        recordSubmit.title = recordSubmit.disabled ? `実行できません: ${recordSubmitReason.textContent}` : "";
+      };
+      recordForm.addEventListener("input", syncRecordSubmitAvailability);
+      recordForm.addEventListener("change", syncRecordSubmitAvailability);
+      recordForm.addEventListener("stateful-action-state", syncRecordSubmitAvailability);
 
       const storedRecentKeys = () => {
         try {
@@ -735,6 +932,7 @@
           updateRecordValueEmptyState();
           renderRecentButtons();
           renderRecordSearchResults();
+          syncRecordSubmitAvailability();
         });
         row.append(label, hidden, wrapper, remove);
         recordValueList.append(row);
@@ -742,6 +940,7 @@
         updateRecordValueEmptyState();
         renderRecentButtons();
         renderRecordSearchResults();
+        syncRecordSubmitAvailability();
         if (focus) input.focus();
       };
 
@@ -989,6 +1188,7 @@
       renderRecentButtons();
       renderRecordSearchResults();
       syncAutomaticRecords();
+      syncRecordSubmitAvailability();
     </script>
   </body>
 </html>

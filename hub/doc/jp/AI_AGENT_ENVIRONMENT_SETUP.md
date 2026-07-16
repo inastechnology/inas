@@ -37,11 +37,10 @@ git status --short
 test -f .env
 ```
 
-`.env` がない場合だけ、`.default.env` から作る。実値はユーザーまたは secret 管理から取得する。
+`.env` がない場合は対話式CLIで作る。実値はユーザーまたは secret 管理から取得する。
 
 ```bash
-cp .default.env .env
-chmod 600 .env
+uv run ina-hub install
 ```
 
 `.env` の値を確認する必要がある場合は、値ではなくキーの存在だけを見る。

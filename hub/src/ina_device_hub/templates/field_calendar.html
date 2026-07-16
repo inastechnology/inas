@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ field.name }} - 年間栽培カレンダー</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/admin-layout/installation-layout.css">
+  </head>
+  <body>
+    <div
+      id="installation-layout-root"
+      data-view="calendar"
+      data-field-id="{{ field.id }}"
+      data-field-name="{{ field.name }}"
+      data-field-detail-url="/fields/{{ field.id }}"
+      data-planting-id="{{ planting_id }}"
+      data-action-id="{{ action_id }}"
+    >
+      <p class="layout-loading">年間カレンダーを読み込んでいます...</p>
+    </div>
+    <noscript>年間カレンダーを使用するには JavaScript を有効にしてください。</noscript>
+    <script type="module" src="/static/admin-layout/installation-layout.js"></script>
+  </body>
+</html>

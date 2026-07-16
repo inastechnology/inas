@@ -106,6 +106,8 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         self.assertEqual(bundle["plantings"][0]["growth_targets"]["soil_moisture_percent"]["max"], 65.0)
         self.assertEqual(bundle["suggestions"][0]["timing_state"], "due")
         self.assertEqual(bundle["suggestions"][0]["action"]["title"], "葉の病害虫確認")
+        self.assertEqual(calendar["actions"][0]["required_people"], 1)
+        self.assertEqual(calendar["actions"][0]["estimated_minutes"], 30)
 
     def test_rejects_second_active_planting_at_same_placement(self):
         self._create_blueberry()
@@ -131,10 +133,52 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         self.assertEqual(len(guidance), 1)
         self.assertEqual(guidance[0]["changes"]["priority"]["before"], "should")
 
+    def test_action_can_move_to_in_progress_with_workload_and_remains_a_suggestion(self):
+        planting = self._create_blueberry()
+        calendar = self._create_calendar(planting["id"])
+        action_id = calendar["actions"][0]["id"]
+
+        updated = self.repository.update_action(
+            planting["id"],
+            action_id,
+            {"status": "in_progress", "required_people": 3, "estimated_minutes": 75},
+        )
+        suggestions = self.repository.list_suggestions("field-1", today="2026-07-20")
+
+        self.assertEqual(updated["status"], "in_progress")
+        self.assertEqual(updated["required_people"], 3)
+        self.assertEqual(updated["estimated_minutes"], 75)
+        self.assertIn(action_id, {item["action"]["id"] for item in suggestions})
+
+        with self.assertRaises(PlantManagementValidationError):
+            self.repository.update_action(planting["id"], action_id, {"required_people": 0})
+
+    def test_search_actions_filters_text_status_period_and_paginates(self):
+        planting = self._create_blueberry()
+        calendar = self._create_calendar(planting["id"])
+        fertilizer_id = calendar["actions"][0]["id"]
+        self.repository.update_action(planting["id"], fertilizer_id, {"status": "in_progress"})
+
+        by_text = self.repository.search_actions(planting["id"], query="新 梢 追肥", statuses=["in_progress"])
+        by_period = self.repository.search_actions(
+            planting["id"],
+            date_from="2026-07-14",
+            date_to="2026-07-21",
+            page=1,
+            page_size=1,
+        )
+
+        self.assertEqual(by_text["total"], 1)
+        self.assertEqual(by_text["items"][0]["id"], fertilizer_id)
+        self.assertEqual(by_period["total"], 2)
+        self.assertEqual(by_period["page_count"], 2)
+        self.assertTrue(by_period["has_next"])
+
     def test_complete_action_stores_selected_work_date(self):
         planting = self._create_blueberry()
         calendar = self._create_calendar(planting["id"])
         action_id = calendar["actions"][0]["id"]
+        self.repository.update_action(planting["id"], action_id, {"status": "in_progress"})
 
         attachment = {
             "id": "image-1",
@@ -152,14 +196,119 @@ class PlantManagementRepositoryTest(unittest.TestCase):
             "少量施肥",
             rating=4,
             attachments=[attachment],
+            work_details={
+                "execution": {
+                    "target": "鉢Aの根域",
+                    "method_id": "custom",
+                    "method_label": "液肥Aを施す",
+                    "method_type": "material_application",
+                    "material_name": "液肥A",
+                    "amount_or_rate": "500倍を1鉢2L",
+                    "custom_method": "液肥Aを施す",
+                    "follow_up_days": 10,
+                }
+            },
         )
         bundle = self.repository.field_bundle("field-1", today="2026-07-24")
 
         self.assertEqual(work_log["performed_on"], "2026-07-23")
         self.assertEqual(work_log["rating"], 4)
         self.assertEqual(work_log["attachments"][0]["storage"], "r2")
+        self.assertEqual(work_log["work_details"]["execution"]["follow_up_days"], 10)
+        self.assertEqual(work_log["work_details"]["execution"]["material_name"], "液肥A")
+        self.assertEqual(work_log["work_details"]["execution"]["amount_or_rate"], "500倍を1鉢2L")
         self.assertEqual(bundle["work_logs"][0]["note"], "少量施肥")
         self.assertEqual(bundle["calendars"][planting["id"]]["actions"][0]["status"], "completed")
+
+    def test_legacy_pest_control_fields_migrate_to_common_work_model(self):
+        planting = self._create_blueberry()
+        calendar = self.repository.create_calendar(
+            planting["id"],
+            [
+                {
+                    "action_type": "pest_control",
+                    "title": "害虫確認",
+                    "priority": "recommended",
+                    "window_start": "2026-07-20",
+                    "window_end": "2026-07-21",
+                    "pest_control": {
+                        "targets": ["アブラムシ類"],
+                        "observation_points": ["新芽と葉裏"],
+                        "method_options": [
+                            {
+                                "id": "legacy-method",
+                                "label": "既存の方法",
+                                "method_type": "physical",
+                                "product_name": "旧資材名",
+                                "effective_days_default": 7,
+                            }
+                        ],
+                    },
+                }
+            ],
+        )
+
+        action = calendar["actions"][0]
+        self.assertNotIn("pest_control", action)
+        self.assertEqual(action["work_plan"]["checkpoints"], ["新芽と葉裏"])
+        self.assertEqual(action["work_plan"]["method_options"][0]["material_name"], "旧資材名")
+        self.assertEqual(action["work_plan"]["method_options"][0]["follow_up_days_default"], 7)
+        self.assertTrue(action["work_plan"]["start_conditions"])
+        self.assertTrue(action["work_plan"]["completion_criteria"])
+        self.assertEqual(action["work_plan"]["method_options"][0]["frequency"]["mode"], "as_needed")
+
+    def test_generated_work_plan_is_parsed_into_the_fixed_action_format(self):
+        planting = self._create_blueberry()
+        calendar = self.repository.create_calendar(
+            planting["id"],
+            [
+                {
+                    "action_type": "fertilization",
+                    "title": "液肥の要否を判断",
+                    "priority": "recommended",
+                    "window_start": "2026-08-01",
+                    "window_end": "2026-08-07",
+                    "work_plan": {
+                        "targets": ["鉢Aの根域"],
+                        "start_conditions": ["排液ECが目標以下で葉色が薄い"],
+                        "skip_conditions": ["根傷みまたは過湿がある"],
+                        "checkpoints": ["葉色", "排液EC"],
+                        "completion_criteria": ["使用量と排液ECを記録した"],
+                        "method_options": [
+                            {
+                                "id": "verified-liquid-feed",
+                                "label": "検証済み液肥を施す",
+                                "method_type": "material_application",
+                                "material_name": "液肥A",
+                                "purpose": "樹勢を維持する",
+                                "application_method": "培地を軽く湿らせてから根域へ施す",
+                                "amount_or_rate": "500倍を1鉢2L",
+                                "procedure_steps": ["排液ECを測る", "500倍に希釈する", "根域へ2L施す"],
+                                "completion_checks": ["排液と施用量を記録した"],
+                                "precautions": ["EC高値なら見送る"],
+                                "frequency": {
+                                    "mode": "interval",
+                                    "min_interval_days": 10,
+                                    "preferred_interval_days": 14,
+                                    "max_interval_days": 21,
+                                    "max_applications": 3,
+                                    "basis": "製品表示と排液EC",
+                                },
+                            }
+                        ],
+                    },
+                }
+            ],
+        )
+
+        plan = calendar["actions"][0]["work_plan"]
+        method = plan["method_options"][0]
+        self.assertEqual(plan["start_conditions"], ["排液ECが目標以下で葉色が薄い"])
+        self.assertEqual(plan["skip_conditions"], ["根傷みまたは過湿がある"])
+        self.assertEqual(method["amount_or_rate"], "500倍を1鉢2L")
+        self.assertEqual(method["procedure_steps"][1], "500倍に希釈する")
+        self.assertEqual(method["frequency"]["preferred_interval_days"], 14)
+        self.assertEqual(method["frequency"]["max_applications"], 3)
 
     def test_update_planting_targets_validates_range(self):
         planting = self._create_blueberry()
@@ -188,6 +337,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
     def test_replace_calendar_preserves_completed_actions_and_replaces_future_plan(self):
         planting = self._create_blueberry()
         calendar = self._create_calendar(planting["id"])
+        self.repository.update_action(planting["id"], calendar["actions"][0]["id"], {"status": "in_progress"})
         self.repository.complete_action(planting["id"], calendar["actions"][0]["id"], "2026-07-23", "実施")
 
         replaced = self.repository.replace_calendar(
@@ -204,9 +354,21 @@ class PlantManagementRepositoryTest(unittest.TestCase):
             {"source": "llm"},
         )
 
-        self.assertEqual(replaced["revision"], 3)
+        self.assertEqual(replaced["revision"], 4)
         self.assertEqual([action["status"] for action in replaced["actions"]], ["completed", "planned"])
         self.assertEqual(replaced["actions"][1]["title"], "新しい観察計画")
+
+    def test_planned_action_cannot_be_completed_or_deleted_after_start(self):
+        planting = self._create_blueberry()
+        calendar = self._create_calendar(planting["id"])
+        action_id = calendar["actions"][0]["id"]
+
+        with self.assertRaises(PlantManagementValidationError):
+            self.repository.complete_action(planting["id"], action_id, "2026-07-23")
+
+        self.repository.update_action(planting["id"], action_id, {"status": "in_progress"})
+        with self.assertRaises(PlantManagementValidationError):
+            self.repository.delete_action(planting["id"], action_id)
 
     def test_append_generated_actions_deduplicates_same_rule_and_window(self):
         planting = self._create_blueberry()

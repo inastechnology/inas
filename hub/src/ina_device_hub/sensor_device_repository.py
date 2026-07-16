@@ -1,6 +1,7 @@
 import json
 import os
 
+from ina_device_hub.json_repository_io import atomic_write_json, serialized_repository_write
 from ina_device_hub.setting import setting
 
 
@@ -13,28 +14,27 @@ class SensorDeviceRepository:
 
     def load(self):
         if not os.path.exists(self.device_repo_path):
-            # create empty file
-            with open(self.device_repo_path, "w") as f:
-                f.write("{}")
+            atomic_write_json(self.device_repo_path, {}, indent=None)
         try:
             with open(self.device_repo_path) as f:
                 self.device_dict = json.load(f)
-        except FileNotFoundError:
-            pass
+        except (FileNotFoundError, json.JSONDecodeError):
+            self.device_dict = {}
 
     def save(self):
-        with open(self.device_repo_path, "w") as f:
-            json.dump(self.device_dict, f)
+        atomic_write_json(self.device_repo_path, self.device_dict, indent=None)
 
     def get(self, key):
         return self.device_dict.get(key)
 
+    @serialized_repository_write("device_repo_path")
     def add(self, device_id, info: dict):
         existing = self.device_dict.get(device_id, {})
         updated = {**existing, **info, "id": device_id}
         self.device_dict[device_id] = updated
         self.save()
 
+    @serialized_repository_write("device_repo_path")
     def remove(self, device_id):
         if device_id in self.device_dict:
             del self.device_dict[device_id]
@@ -43,6 +43,7 @@ class SensorDeviceRepository:
     def get_all(self):
         return self.device_dict
 
+    @serialized_repository_write("device_repo_path")
     def clear(self):
         self.device_dict = {}
         self.save()

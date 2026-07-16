@@ -2,9 +2,13 @@ import json
 import os
 import sys
 import uuid
+from copy import deepcopy
 from functools import lru_cache
+from pathlib import Path
 
 from dotenv import load_dotenv
+
+from ina_device_hub.json_repository_io import atomic_write_json, repository_file_lock
 
 load_dotenv()
 
@@ -121,13 +125,16 @@ INSTAGRAM_SENSOR_ID = os.environ.get("INSTAGRAM_SENSOR_ID", "").strip()
 INSTAGRAM_CAMERA_ID = os.environ.get("INSTAGRAM_CAMERA_ID", "").strip()
 INSTAGRAM_PLANT_POSITION_PROMPT = os.environ.get("INSTAGRAM_PLANT_POSITION_PROMPT", "").strip()
 INSTAGRAM_ADMIN_USERNAME = os.environ.get("INSTAGRAM_ADMIN_USERNAME", "").strip()
+INSTAGRAM_POST_SCHEDULE_START = os.environ.get(
+    "INSTAGRAM_POST_SCHEDULE_START",
+    os.environ.get("AI_AGENT_SCHEDULE_START", "09:01"),
+).strip()
 INSTAGRAM_WEATHER_FORECAST_URL = os.environ.get("INSTAGRAM_WEATHER_FORECAST_URL", WEATHER_FORECAST_URL).strip()
 INSTAGRAM_WEATHER_AREA_NAME = os.environ.get("INSTAGRAM_WEATHER_AREA_NAME", WEATHER_AREA_NAME).strip()
 INSTAGRAM_WEATHER_OFFICE_NAME = os.environ.get("INSTAGRAM_WEATHER_OFFICE_NAME", WEATHER_OFFICE_NAME).strip()
 INSTAGRAM_WEATHER_FORECAST_TITLE = os.environ.get("INSTAGRAM_WEATHER_FORECAST_TITLE", WEATHER_FORECAST_TITLE).strip()
 
 AI_ENABLED = bool("true" == os.environ.get("AI_ENABLED", "false").lower())
-AI_AGENT_SCHEDULE_START = os.environ.get("AI_AGENT_SCHEDULE_START", "09:01").strip()
 AI_IMAGE_ANALYZE_API_KEY = os.environ.get("AI_IMAGE_ANALYZE_API_KEY", "").strip()
 AI_IMAGE_ANALYZE_BASE_URL = os.environ.get("AI_IMAGE_ANALYZE_BASE_URL", "").strip()
 AI_IMAGE_ANALYZE_MODEL = os.environ.get("AI_IMAGE_ANALYZE_MODEL", "").strip()
@@ -228,6 +235,10 @@ DEFAULT_SETTINGS = {
         "camera_id": INSTAGRAM_CAMERA_ID,
         "plant_position_prompt": INSTAGRAM_PLANT_POSITION_PROMPT,
         "admin_username": INSTAGRAM_ADMIN_USERNAME,
+        "post_schedule_start": INSTAGRAM_POST_SCHEDULE_START,
+        "account_id": "",
+        "account_username": "",
+        "account_profile_updated_at": "",
         "weather_forecast_url": INSTAGRAM_WEATHER_FORECAST_URL,
         "weather_area_name": INSTAGRAM_WEATHER_AREA_NAME,
         "weather_office_name": INSTAGRAM_WEATHER_OFFICE_NAME,
@@ -242,7 +253,6 @@ DEFAULT_SETTINGS = {
     },
     "ai": {
         "enabled": AI_ENABLED,
-        "agent_schedule_start": AI_AGENT_SCHEDULE_START,
         "image_analyze_api_key": AI_IMAGE_ANALYZE_API_KEY,
         "image_analyze_base_url": AI_IMAGE_ANALYZE_BASE_URL,
         "image_analyze_model": AI_IMAGE_ANALYZE_MODEL,
@@ -283,6 +293,78 @@ DEFAULT_SETTINGS = {
 }
 
 
+RUNTIME_SETTING_FIELDS = {
+    "ai": {
+        "enabled",
+        "image_analyze_base_url",
+        "image_analyze_model",
+        "text_analyze_base_url",
+        "text_analyze_model",
+    },
+    "instagram": {
+        "post_schedule_start",
+        "camera_id",
+        "plant_position_prompt",
+        "account_id",
+        "account_username",
+        "account_profile_updated_at",
+    },
+}
+
+RUNTIME_SECRET_FIELDS = {
+    "ai": {
+        "image_analyze_api_key",
+        "text_analyze_api_key",
+    },
+}
+
+
+def _runtime_settings_from(values):
+    if not isinstance(values, dict):
+        return {}
+    runtime_settings = {}
+    for section, allowed_fields in RUNTIME_SETTING_FIELDS.items():
+        source = values.get(section)
+        if not isinstance(source, dict):
+            continue
+        runtime_settings[section] = {key: source[key] for key in allowed_fields if key in source}
+    legacy_ai = values.get("ai")
+    instagram = runtime_settings.setdefault("instagram", {})
+    if (
+        "post_schedule_start" not in instagram
+        and isinstance(legacy_ai, dict)
+        and "agent_schedule_start" in legacy_ai
+    ):
+        instagram["post_schedule_start"] = legacy_ai["agent_schedule_start"]
+    if not instagram:
+        runtime_settings.pop("instagram", None)
+    return runtime_settings
+
+
+def _runtime_secrets_from(values):
+    if not isinstance(values, dict):
+        return {}
+    runtime_secrets = {}
+    for section, allowed_fields in RUNTIME_SECRET_FIELDS.items():
+        source = values.get(section)
+        if not isinstance(source, dict):
+            continue
+        selected = {key: str(source[key]) for key in allowed_fields if key in source}
+        if selected:
+            runtime_secrets[section] = selected
+    return runtime_secrets
+
+
+def _merge_settings(base, overrides):
+    merged = deepcopy(base)
+    for section, values in overrides.items():
+        if isinstance(values, dict) and isinstance(merged.get(section), dict):
+            merged[section].update(values)
+        else:
+            merged[section] = values
+    return merged
+
+
 """ Setting module
 This module provides the settings for the device.
 
@@ -290,31 +372,94 @@ This module provides the settings for the device.
 
 
 class Setting:
-    SETTING_FILE_PATH = os.path.expanduser("~/.ina-device-hub/config.json")
+    SETTING_FILE_PATH = os.path.join(WORK_DIR, "config.json")
+    SECRET_FILE_PATH = os.path.join(WORK_DIR, "runtime-secrets.json")
 
-    def __init__(self, path=None):
+    def __init__(self, path=None, secret_path=None):
         if path:
-            self.SETTING_FILE_PATH = path
-        self.settings = DEFAULT_SETTINGS
+            self.SETTING_FILE_PATH = str(path)
+            self.SECRET_FILE_PATH = str(Path(path).with_name("runtime-secrets.json"))
+        if secret_path:
+            self.SECRET_FILE_PATH = str(secret_path)
+        self.settings = deepcopy(DEFAULT_SETTINGS)
         self.load()
 
     def load(self):
+        with repository_file_lock(self.SETTING_FILE_PATH):
+            self._load_unlocked()
+
+    def _load_unlocked(self):
+        runtime_settings = {}
         try:
             with open(self.SETTING_FILE_PATH) as f:
-                self.settings = json.load(f)
-        except FileNotFoundError:
+                persisted = json.load(f)
+            runtime_settings = _runtime_settings_from(persisted)
+            normalized = {"schema_version": 1, **runtime_settings}
+            if persisted != normalized:
+                self.settings = _merge_settings(DEFAULT_SETTINGS, runtime_settings)
+                self._save_unlocked()
+        except (FileNotFoundError, json.JSONDecodeError):
             pass
+        self.settings = _merge_settings(DEFAULT_SETTINGS, runtime_settings)
+        self.settings = _merge_settings(self.settings, self._load_secret_overrides())
+
+    def _load_secret_overrides(self):
+        try:
+            with open(self.SECRET_FILE_PATH, encoding="utf-8") as file:
+                return _runtime_secrets_from(json.load(file))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
 
     def save(self):
-        with open(self.SETTING_FILE_PATH, "w") as f:
-            json.dump(self.settings, f)
+        with repository_file_lock(self.SETTING_FILE_PATH):
+            self._save_unlocked()
+
+    def _save_unlocked(self):
+        setting_path = Path(self.SETTING_FILE_PATH)
+        setting_path.parent.mkdir(parents=True, exist_ok=True)
+        persisted = {
+            "schema_version": 1,
+            **_runtime_settings_from(self.settings),
+        }
+        atomic_write_json(str(setting_path), persisted)
+        os.chmod(setting_path, 0o600)
 
     def get(self, key):
         return self.settings.get(key)
 
     def set(self, key, value):
-        self.settings[key] = value
-        self.save()
+        if key not in RUNTIME_SETTING_FIELDS:
+            raise ValueError(f"{key} is not a runtime-editable setting")
+        with repository_file_lock(self.SETTING_FILE_PATH):
+            self._load_unlocked()
+            runtime_value = _runtime_settings_from({key: value}).get(key, {})
+            current = self.settings.get(key) if isinstance(self.settings.get(key), dict) else {}
+            self.settings[key] = {**current, **runtime_value}
+            self._save_unlocked()
+
+    def set_secret(self, section, key, value):
+        if section not in RUNTIME_SECRET_FIELDS or key not in RUNTIME_SECRET_FIELDS[section]:
+            raise ValueError(f"{section}.{key} is not a runtime-editable secret")
+        value = str(value)
+        with repository_file_lock(self.SECRET_FILE_PATH):
+            secret_values = self._load_secret_overrides()
+            secret_values.setdefault(section, {})[key] = value
+            secret_path = Path(self.SECRET_FILE_PATH)
+            secret_path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_json(
+                str(secret_path),
+                {"schema_version": 1, **_runtime_secrets_from(secret_values)},
+            )
+            os.chmod(secret_path, 0o600)
+        self.settings = _merge_settings(self.settings, secret_values)
+
+    def secret_configured(self, section, key):
+        if section not in RUNTIME_SECRET_FIELDS or key not in RUNTIME_SECRET_FIELDS[section]:
+            raise ValueError(f"{section}.{key} is not a runtime-editable secret")
+        return bool(self.settings.get(section, {}).get(key))
+
+    def runtime_settings(self):
+        return _runtime_settings_from(self.settings)
 
     def get_work_dir(self):
         return WORK_DIR

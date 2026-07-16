@@ -30,14 +30,13 @@ r
 1. 依存を同期
 
 ```bash
-rye sync
+uv sync
 ```
 
-2. 環境ファイルを配置（リポジトリに ` .default.env` があればコピー）
+2. 対話式に環境ファイルを作成し、接続を確認
 
 ```bash
-cp .default.env .env
-# 必要に応じて編集
+uv run ina-hub install
 ```
 
 3. systemd のインストールスクリプトでデプロイ（sudo）

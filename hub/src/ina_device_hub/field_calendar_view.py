@@ -40,7 +40,7 @@ def _calendar_todo_item(field_id: str, suggestion: dict):
         "accent": action_type_view["accent"],
         "window_start": action.get("window_start"),
         "window_end": action.get("window_end"),
-        "calendar_url": f"/fields/{field_id}/layout?{urlencode({'calendar': suggestion.get('planting_id') or ''})}",
+        "calendar_url": f"/fields/{field_id}/calendar?{urlencode({'planting': suggestion.get('planting_id') or '', 'action': action.get('id') or ''})}",
     }
 
 

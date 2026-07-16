@@ -40,6 +40,26 @@ class AIContentServiceTest(unittest.TestCase):
         self.assertTrue(result["care_profile"]["irrigation"]["decision_factors"])
         self.assertTrue(any(rule["anchor"] == "completion_date" for rule in result["task_rules"]))
         self.assertEqual(result["growth_targets"]["soil_ph"], {"min": 4.5, "max": 5.5})
+        self.assertTrue(all(action["work_plan"]["targets"] for action in result["actions"]))
+        self.assertTrue(all(action["work_plan"]["start_conditions"] for action in result["actions"]))
+        self.assertTrue(all(action["work_plan"]["skip_conditions"] for action in result["actions"]))
+        self.assertTrue(all(action["work_plan"]["checkpoints"] for action in result["actions"]))
+        self.assertTrue(all(action["work_plan"]["method_options"] for action in result["actions"]))
+        self.assertTrue(all(action["work_plan"]["completion_criteria"] for action in result["actions"]))
+        self.assertTrue(
+            all(
+                method["procedure_steps"] and method["completion_checks"] and method["precautions"]
+                for action in result["actions"]
+                for method in action["work_plan"]["method_options"]
+            )
+        )
+        fertilization = next(action for action in result["actions"] if action["action_type"] == "fertilization")
+        pruning = next(action for action in result["actions"] if action["action_type"] == "pruning")
+        self.assertIn("葉色と樹勢", fertilization["work_plan"]["checkpoints"])
+        self.assertTrue(any(method["method_type"] == "material_application" for method in fertilization["work_plan"]["method_options"]))
+        self.assertIn("枯枝・交差枝・徒長枝", pruning["work_plan"]["targets"])
+        pest_action = next(action for action in result["actions"] if action["action_type"] == "pest_control")
+        self.assertTrue(pest_action["work_plan"]["checkpoints"])
 
     def test_calendar_does_not_call_api_when_ai_is_disabled(self):
         self.service.ai_settings = {"enabled": False, "text_analyze_api_key": "configured", "text_analyze_model": "model"}
@@ -144,6 +164,102 @@ class AIContentServiceTest(unittest.TestCase):
         self.assertEqual(result["actions"], [])
         self.assertIn("新しい栽培知識や目標値を作り直してはいけません", prompt)
         self.assertIn("保存済み基準", prompt)
+
+    def test_initial_and_follow_up_prompts_apply_the_selected_experience_level(self):
+        beginner_context = {**self.context, "audience": {"experience_level": "beginner"}}
+        initial_prompt = "\n".join(
+            message["content"] for message in self.service._initial_plant_plan_messages(beginner_context, [])
+        )
+        self.assertIn("対象利用者は農業初心者です", initial_prompt)
+        self.assertIn("準備、実施、終了確認", initial_prompt)
+        self.assertIn("procedure_steps", initial_prompt)
+        self.assertIn("validated_pesticide_candidates", initial_prompt)
+        self.assertIn("収穫前日数", initial_prompt)
+
+        professional_context = {
+            "audience": {"experience_level": "professional"},
+            "task_rule": {"recurrence_type": "interval_after_completion"},
+        }
+        follow_up_prompt = "\n".join(
+            message["content"] for message in self.service._follow_up_task_messages(professional_context)
+        )
+        self.assertIn("対象利用者は農業・園芸の実務経験者です", follow_up_prompt)
+        self.assertIn("判断閾値", follow_up_prompt)
+        self.assertIn("frequency", follow_up_prompt)
+        self.assertIn("同じ肥料、農薬、資材、方法の再実施を自動決定しない", follow_up_prompt)
+
+    def test_unknown_experience_level_uses_standard_prompt(self):
+        context = {**self.context, "audience": {"experience_level": "unknown"}}
+
+        prompt = "\n".join(message["content"] for message in self.service._initial_plant_plan_messages(context, []))
+
+        self.assertIn("対象利用者は基本的な栽培作業ができる標準レベルです", prompt)
+
+    def test_pest_follow_up_uses_recorded_follow_up_days(self):
+        self.service.ai_settings = {"text_analyze_api_key": ""}
+        context = {
+            "task_rule": {
+                "rule_id": "rule-pest-control",
+                "action_type": "pest_control",
+                "title": "害虫の再発を確認",
+                "recurrence_type": "continuous_review",
+                "anchor": "completion_date",
+                "interval_days": {"min": 7, "preferred": 14, "max": 21},
+                "active_months": list(range(1, 13)),
+            },
+            "completed_action": {
+                "action_type": "pest_control",
+                "priority": "should",
+                "work_plan": {"targets": ["アブラムシ類"], "checkpoints": ["新芽と葉裏"]},
+            },
+            "completion_event": {
+                "performed_on": "2026-08-10",
+                "work_details": {"execution": {"target": "アブラムシ類", "follow_up_days": 10}},
+            },
+        }
+
+        result = self.service.generate_follow_up_tasks(context)
+
+        action = result["actions"][0]
+        self.assertEqual(action["timing_label"], "前回実施日から約10日後")
+        self.assertEqual(action["work_plan"]["targets"], ["アブラムシ類"])
+        self.assertIn("再発・残存", action["instructions"])
+
+    def test_fertilization_follow_up_uses_recorded_method_and_follow_up_days(self):
+        self.service.ai_settings = {"text_analyze_api_key": ""}
+        context = {
+            "task_rule": {
+                "rule_id": "rule-fertilization",
+                "action_type": "fertilization",
+                "title": "追肥後の状態確認",
+                "recurrence_type": "interval_after_completion",
+                "anchor": "completion_date",
+                "interval_days": {"min": 30, "preferred": 45, "max": 60},
+                "active_months": list(range(1, 13)),
+            },
+            "completed_action": {
+                "action_type": "fertilization",
+                "priority": "recommended",
+                "work_plan": {"targets": ["根域・培地"], "checkpoints": ["葉色と樹勢"]},
+            },
+            "completion_event": {
+                "performed_on": "2026-08-10",
+                "work_details": {
+                    "execution": {
+                        "target": "鉢Aの根域",
+                        "method_label": "液肥を施す",
+                        "follow_up_days": 12,
+                    }
+                },
+            },
+        }
+
+        result = self.service.generate_follow_up_tasks(context)
+
+        action = result["actions"][0]
+        self.assertEqual(action["timing_label"], "前回実施日から約12日後")
+        self.assertEqual(action["work_plan"]["targets"], ["鉢Aの根域"])
+        self.assertIn("液肥を施す", action["instructions"])
 
 
 if __name__ == "__main__":

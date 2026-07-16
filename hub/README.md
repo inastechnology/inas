@@ -27,31 +27,24 @@ Cross-project specification:
 
 ## Quick Start
 
-1. Install rye if needed: https://rye.astral.sh/guide/installation/
+1. Install uv if needed: https://docs.astral.sh/uv/getting-started/installation/
 
 2. Install dependencies:
 
 ```bash
-rye sync
+uv sync
 ```
 
 3. Create environment configuration:
 
 ```bash
-cp .default.env .env
-# Edit .env for your environment.
+uv run ina-hub install
 ```
 
-4. Create the database if needed:
+4. Run the local hub. The local libSQL schema is prepared automatically:
 
 ```bash
-rye run db:create
-```
-
-5. Run the local hub:
-
-```bash
-rye run serve
+uv run python src/ina_device_hub/serve.py
 # Default: http://localhost:39151
 ```
 

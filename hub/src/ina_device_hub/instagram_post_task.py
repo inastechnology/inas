@@ -66,6 +66,7 @@ class InstagramPostTask:
         self.scheduler.add_job(
             self._run,
             "cron",
+            id="instagram-post",
             hour=hour,
             minute=minute,
             max_instances=1,
@@ -74,6 +75,25 @@ class InstagramPostTask:
         worker_thread = threading.Thread(target=self.scheduler.start)
         worker_thread.daemon = True
         worker_thread.start()
+
+    def reload_settings(self):
+        self.ai_settings = self.settings.get("ai") or {}
+        self.instagram_settings = self.settings.get("instagram") or {}
+        self.weather_forecast_service = weather_forecast_service(
+            forecast_url=self.instagram_settings.get("weather_forecast_url"),
+            area_name=self.instagram_settings.get("weather_area_name"),
+            office_name=self.instagram_settings.get("weather_office_name"),
+            forecast_title=self.instagram_settings.get("weather_forecast_title"),
+        )
+        if self.scheduler.running and not self.is_enabled():
+            self.scheduler.shutdown(wait=False)
+            self.scheduler = BlockingScheduler()
+            return
+        if not self.scheduler.running:
+            self.start()
+            return
+        hour, minute = self._parse_schedule()
+        self.scheduler.reschedule_job("instagram-post", trigger="cron", hour=hour, minute=minute)
 
     def is_enabled(self):
         required_values = [
@@ -97,6 +117,7 @@ class InstagramPostTask:
             self.instagram_settings.get("user_id"),
             self.instagram_settings.get("access_token"),
         )
+        self._ensure_account_profile(instagram_client)
         end_at = datetime.now()
         last_post_at = self._parse_datetime(state.get("last_post_at"))
         is_weekly_recap = self._is_weekly_recap_day(end_at)
@@ -297,8 +318,26 @@ class InstagramPostTask:
         return forecast
 
     def _get_admin_username(self):
-        username = self.instagram_settings.get("admin_username") or "inas_technologies.ja"
+        username = self.instagram_settings.get("account_username") or self.instagram_settings.get("admin_username") or ""
         return username.strip().lower()
+
+    def _ensure_account_profile(self, instagram_client: InstagramClient):
+        if self.instagram_settings.get("account_username"):
+            return
+        try:
+            profile = instagram_client.get_account_profile()
+            now = datetime.now().astimezone().isoformat(timespec="seconds")
+            self.settings.set(
+                "instagram",
+                {
+                    "account_id": profile["id"],
+                    "account_username": profile["username"],
+                    "account_profile_updated_at": now,
+                },
+            )
+            self.instagram_settings = self.settings.get("instagram") or {}
+        except RuntimeError:
+            logger.warning("Could not refresh the Instagram account profile")
 
     def _select_key_frames(self, frame_paths: list[str]):
         if len(frame_paths) <= 3:
@@ -329,7 +368,7 @@ class InstagramPostTask:
         return self.storage_connector.get_temporary_public_url(uploaded_key)
 
     def _parse_schedule(self):
-        schedule = self.ai_settings.get("agent_schedule_start", "09:01")
+        schedule = self.instagram_settings.get("post_schedule_start", "09:01")
         hour_str, minute_str = schedule.split(":", maxsplit=1)
         return int(hour_str), int(minute_str)
 
@@ -356,7 +395,12 @@ __instance = None
 
 
 def instagram_post_task():
-    global __instance
+    global __instance  # noqa: PLW0603
     if not __instance:
         __instance = InstagramPostTask()
     return __instance
+
+
+def reload_instagram_post_task_settings():
+    if __instance:
+        __instance.reload_settings()

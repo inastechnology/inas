@@ -3,69 +3,235 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AI設定 - INA Device Hub</title>
+    <title>アプリ設定 - INA Device Hub</title>
+    <link rel="stylesheet" href="/static/searchable-select.css">
     <style>
-      :root { --ink:#1d2721; --muted:#66736b; --line:#d4ddd7; --green:#176b52; --surface:#fff; --bg:#f3f5f2; }
+      :root { --ink:#202b26; --muted:#65736b; --line:#cfd8d1; --green:#176b52; --green-soft:#e9f3ed; --amber:#8a5a12; --amber-soft:#fbf2df; --surface:#fff; --bg:#eef2ee; }
       * { box-sizing:border-box; }
-      body { margin:0; color:var(--ink); background:var(--bg); font-family:system-ui,sans-serif; }
-      button,input { font:inherit; }
-      header { background:#fff; border-bottom:1px solid var(--line); }
-      header div,main { width:min(980px,100%); margin:auto; padding:20px 28px; }
-      a { color:var(--green); }
-      h1 { margin:6px 0 0; font-size:26px; letter-spacing:0; }
-      .eyebrow { color:var(--green); font-size:12px; font-weight:800; }
-      .notice { padding:12px 14px; border:1px solid #9cc9b7; background:#eaf5ef; }
-      form { display:grid; gap:16px; }
-      .provider { background:var(--surface); border:1px solid var(--line); border-radius:6px; padding:20px; }
-      .provider h2 { margin:0 0 6px; font-size:19px; }
-      .provider > p { margin:0 0 18px; color:var(--muted); }
-      .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-      label { display:grid; gap:6px; font-size:13px; font-weight:700; }
-      label.wide { grid-column:1/-1; }
-      input { width:100%; min-height:42px; border:1px solid #b8c5bd; border-radius:4px; padding:8px 10px; background:#fff; }
-      .toggle { display:flex; align-items:center; gap:9px; }
+      body { min-width:320px; min-height:100vh; margin:0; color:var(--ink); background:var(--bg); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+      button,input,select,textarea { font:inherit; letter-spacing:0; }
+      button { cursor:pointer; }
+      a { color:inherit; }
+      [hidden] { display:none !important; }
+      .page-header { border-bottom:1px solid var(--line); background:#fff; }
+      .header-inner,.settings-shell { width:min(1120px,calc(100% - 40px)); margin:auto; }
+      .header-inner { display:flex; align-items:end; justify-content:space-between; gap:20px; padding:18px 0; }
+      .brand { color:#56645c; font-size:11px; font-weight:800; text-decoration:none; }
+      h1 { margin:4px 0 0; font-size:27px; letter-spacing:0; }
+      .back-link { color:#315f4c; font-size:12px; font-weight:800; text-decoration:none; }
+      .settings-shell { display:grid; grid-template-columns:220px minmax(0,1fr); gap:20px; padding:20px 0 48px; }
+      .settings-sidebar { align-self:start; position:sticky; top:16px; display:grid; gap:12px; }
+      .settings-search { display:grid; gap:5px; color:#59685f; font-size:11px; font-weight:800; }
+      input,select,textarea { width:100%; min-height:40px; padding:8px 10px; border:1px solid #b9c5bc; border-radius:5px; color:#24362d; background:#fff; }
+      textarea { min-height:112px; resize:vertical; line-height:1.55; }
+      input:focus,select:focus,textarea:focus { border-color:#2d7a66; outline:2px solid rgba(45,122,102,.14); }
+      .settings-nav { display:grid; gap:3px; }
+      .settings-nav a { padding:9px 10px; border-left:3px solid transparent; color:#59685f; font-size:13px; font-weight:750; text-decoration:none; }
+      .settings-nav a:hover,.settings-nav a.active { border-left-color:var(--green); color:#174f3d; background:#fff; }
+      .source-note { margin:0; padding:10px; border-top:1px solid var(--line); color:#6b776f; font-size:11px; line-height:1.55; }
+      .settings-content { min-width:0; border:1px solid var(--line); border-radius:7px; background:var(--surface); }
+      .notice { margin:0; padding:12px 18px; border-bottom:1px solid #9cc9b7; color:#245b47; background:#eaf5ef; font-size:13px; font-weight:750; }
+      .settings-section { scroll-margin-top:16px; padding:22px; border-bottom:1px solid #dbe2dc; }
+      .settings-section:last-child { border-bottom:0; }
+      .section-heading { display:flex; align-items:start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+      .section-heading h2 { margin:0; font-size:20px; }
+      .section-heading p { margin:5px 0 0; color:var(--muted); font-size:12px; line-height:1.5; }
+      .setting-list { display:grid; }
+      .setting-row { display:grid; grid-template-columns:minmax(160px,220px) minmax(0,1fr); gap:24px; padding:16px 0; border-top:1px solid #edf0ed; }
+      .setting-row:first-child { border-top:0; padding-top:0; }
+      .setting-label { font-size:13px; font-weight:800; }
+      .setting-label small { display:block; margin-top:4px; color:var(--muted); font-size:11px; font-weight:500; line-height:1.5; }
+      .setting-control { display:grid; gap:8px; min-width:0; }
+      .toggle { display:flex; align-items:center; gap:9px; min-height:40px; font-size:13px; font-weight:750; }
       .toggle input { width:18px; min-height:18px; }
-      .key-state { color:var(--muted); font-size:12px; font-weight:500; }
-      .actions { display:flex; justify-content:space-between; gap:12px; align-items:center; }
-      button { min-height:40px; border:1px solid var(--green); border-radius:4px; padding:8px 14px; color:var(--green); background:#fff; font-weight:750; cursor:pointer; }
+      .provider-fields { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(160px,1fr); gap:9px; }
+      .provider-fields label { display:grid; gap:5px; color:#58675e; font-size:11px; font-weight:800; }
+      .provider-fields .wide { grid-column:1/-1; }
+      .status-line { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+      .status { display:inline-flex; align-items:center; gap:5px; padding:4px 7px; border-radius:4px; color:#1f654c; background:var(--green-soft); font-size:11px; font-weight:800; }
+      .status.missing { color:var(--amber); background:var(--amber-soft); }
+      .status::before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+      .inline-help { color:var(--muted); font-size:11px; }
+      .secret-control { display:grid; gap:6px; }
+      .secret-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+      .secret-actions .toggle { min-height:auto; color:#7f3e38; font-size:11px; }
+      .account-value { font-size:14px; font-weight:800; }
+      .section-actions { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding-top:16px; }
+      button { min-height:38px; padding:7px 13px; border:1px solid var(--green); border-radius:5px; color:var(--green); background:#fff; font-weight:800; }
       button.primary { color:#fff; background:var(--green); }
-      button:disabled { opacity:.55; cursor:wait; }
-      .test-result { min-height:20px; color:var(--muted); font-size:13px; }
+      button:disabled { border-color:#b9c3bc; color:#87928b; background:#f1f3f1; cursor:not-allowed; }
+      .test-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+      .test-result { min-height:18px; color:var(--muted); font-size:12px; }
       .test-result.ok { color:#166447; }
-      .test-result.error { color:#a13d35; }
-      @media (max-width:700px) { header div,main { padding:16px; } .grid { grid-template-columns:1fr; } label.wide { grid-column:auto; } .actions { align-items:stretch; flex-direction:column; } .actions button { width:100%; } }
+      .test-result.error,.disabled-reason { color:#9b3f36; }
+      .disabled-reason { margin:0; font-size:11px; }
+      .environment-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+      .environment-item { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:42px; padding:9px 11px; border:1px solid #d8dfda; border-radius:5px; font-size:12px; font-weight:750; }
+      .command { padding:8px 10px; border:1px solid #d4dad5; border-radius:4px; color:#3d4d44; background:#f5f7f5; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; overflow-wrap:anywhere; }
+      .select-filter { display:grid; gap:5px; color:#59685f; font-size:11px; font-weight:800; }
+      .select-filter-empty { margin:0; color:var(--muted); font-size:11px; }
+      .empty-search { padding:40px 22px; color:var(--muted); text-align:center; }
+      @media (max-width:760px) {
+        .header-inner,.settings-shell { width:min(100% - 24px,1120px); }
+        .header-inner { align-items:start; }
+        .settings-shell { grid-template-columns:1fr; gap:12px; padding-top:12px; }
+        .settings-sidebar { position:static; }
+        .settings-nav { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        .settings-nav a { border-left:0; border-bottom:3px solid transparent; text-align:center; }
+        .settings-nav a:hover,.settings-nav a.active { border-left:0; border-bottom-color:var(--green); }
+        .source-note { display:none; }
+        .setting-row { grid-template-columns:1fr; gap:8px; }
+        .provider-fields,.environment-grid { grid-template-columns:1fr; }
+        .provider-fields .wide { grid-column:auto; }
+        .test-row { align-items:stretch; flex-direction:column; }
+      }
     </style>
   </head>
   <body>
-    <header><div><a href="/fields">圃場一覧</a><div class="eyebrow">DEVICE HUB</div><h1>AI設定</h1></div></header>
-    <main>
-      {% if saved %}<p class="notice" role="status">AI設定を保存しました。</p>{% endif %}
-      <form method="post" id="ai-settings-form">
-        <label class="toggle"><input type="checkbox" name="enabled"{% if ai.enabled %} checked{% endif %}>AI機能を有効にする</label>
-        {% for channel, title, description in [('text', 'テキスト・栽培計画', '栽培カレンダー、目標レンジ、質問回答に使用します。'), ('image', '画像解析', '植物画像や定点観察の解析に使用します。')] %}
-        <section class="provider" data-ai-provider="{{ channel }}">
-          <h2>{{ title }}</h2><p>{{ description }}</p>
-          <div class="grid">
-            <label class="wide">OpenAI互換 Base URL<input name="{{ channel }}_analyze_base_url" value="{{ ai[channel + '_analyze_base_url'] }}" placeholder="https://api.openai.com/v1"></label>
-            <label>モデル<input name="{{ channel }}_analyze_model" value="{{ ai[channel + '_analyze_model'] }}" placeholder="利用するモデルID"></label>
-            <label>APIキー <span class="key-state">{% if ai[channel + '_key_configured'] %}登録済み・変更時のみ入力{% else %}未登録{% endif %}</span><input type="password" name="{{ channel }}_analyze_api_key" autocomplete="new-password" placeholder="{% if ai[channel + '_key_configured'] %}変更しない場合は空欄{% else %}APIキー{% endif %}"></label>
-          </div>
-          <div class="actions"><span class="test-result" aria-live="polite"></span><button type="button" data-test-ai>接続を確認</button></div>
+    <header class="page-header">
+      <div class="header-inner">
+        <div><a class="brand" href="/">INA Device Hub</a><h1>アプリ設定</h1></div>
+        <div><a class="back-link" href="/preferences">個人設定</a> <a class="back-link" href="/fields">圃場一覧へ戻る</a></div>
+      </div>
+    </header>
+    <main class="settings-shell">
+      <aside class="settings-sidebar">
+        <label class="settings-search">設定を検索<input id="settings-search" type="search" autocomplete="off" placeholder="AI、モデル、Turso..." aria-controls="settings-content"></label>
+        <nav class="settings-nav" aria-label="設定カテゴリ">
+          <a href="#ai" data-settings-nav="ai">AI</a>
+          <a href="#instagram" data-settings-nav="instagram">Instagram</a>
+          <a href="#system" data-settings-nav="system">システム</a>
+        </nav>
+        <p class="source-note">運用設定とAIキーはこの画面、基盤接続情報は <code>.env</code> で管理します。保存済みの秘密値は表示しません。</p>
+      </aside>
+      <div class="settings-content" id="settings-content">
+        {% if saved %}<p class="notice" role="status">設定を保存しました。</p>{% endif %}
+        <section class="settings-section" id="ai" data-settings-section="ai" data-search="AI 人工知能 OpenAI テキスト 画像 栽培計画 モデル API 接続">
+          <div class="section-heading"><div><h2>AI</h2><p>栽培計画と画像解析に使用するOpenAI互換APIを設定します。</p></div></div>
+          <form method="post" action="/settings" id="ai-settings-form" data-stateful-form data-pristine-message="AI設定は変更されていません。">
+            <input type="hidden" name="settings_section" value="ai">
+            <div class="setting-list">
+              <div class="setting-row" data-setting-row data-search="AI 有効 無効 enabled">
+                <div class="setting-label">AI機能</div>
+                <div class="setting-control"><label class="toggle"><input type="checkbox" name="enabled"{% if ai.enabled %} checked{% endif %}>有効にする</label></div>
+              </div>
+              {% for channel,title,description in [('text','テキスト・栽培計画','栽培カレンダー、目標レンジ、質問回答'),('image','画像解析','植物画像と定点観察の解析')] %}
+              <div class="setting-row" data-setting-row data-ai-provider="{{ channel }}" data-search="{{ title }} {{ description }} OpenAI Base URL model モデル API キー 接続">
+                <div class="setting-label">{{ title }}<small>{{ description }}に使用します。</small></div>
+                <div class="setting-control">
+                  <div class="provider-fields">
+                    <label class="wide">OpenAI互換 Base URL<input name="{{ channel }}_analyze_base_url" value="{{ ai[channel + '_analyze_base_url'] }}" placeholder="https://api.openai.com/v1"></label>
+                    <label>モデル<input name="{{ channel }}_analyze_model" value="{{ ai[channel + '_analyze_model'] }}" placeholder="利用するモデルID"></label>
+                    <div class="wide secret-control">
+                      <label>APIキー<input type="password" name="{{ channel }}_analyze_api_key" value="" autocomplete="new-password" spellcheck="false" placeholder="変更する場合のみ入力"></label>
+                      <div class="secret-actions">
+                        <span class="status{% if not ai[channel + '_key_configured'] %} missing{% endif %}">{% if ai[channel + '_key_configured'] %}設定済み{% else %}未設定{% endif %}</span>
+                        {% if ai[channel + '_key_configured'] %}<label class="toggle"><input type="checkbox" name="clear_{{ channel }}_analyze_api_key">登録済みキーを削除</label>{% endif %}
+                      </div>
+                      <span class="inline-help">保存済みの値は画面・APIへ返しません。空欄のまま保存すると現在のキーを維持します。</span>
+                    </div>
+                  </div>
+                  {% set connection_ready = ai[channel + '_key_configured'] and ai[channel + '_analyze_model'] %}
+                  <div class="test-row"><span class="test-result" aria-live="polite"></span><button type="button" data-test-ai{% if not connection_ready %} disabled aria-describedby="{{ channel }}-test-disabled" title="APIキーとモデルを設定してください"{% endif %}>接続を確認</button></div>
+                  {% if not connection_ready %}<p class="disabled-reason" id="{{ channel }}-test-disabled">{% if not ai[channel + '_key_configured'] %}APIキー{% endif %}{% if not ai[channel + '_key_configured'] and not ai[channel + '_analyze_model'] %}と{% endif %}{% if not ai[channel + '_analyze_model'] %}モデル{% endif %}を保存すると確認できます。</p>{% endif %}
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+            <div class="section-actions"><p class="disabled-reason" data-stateful-reason></p><button class="primary" type="submit" data-stateful-submit>AI設定を保存</button></div>
+          </form>
         </section>
-        {% endfor %}
-        <div class="actions"><span>未設定または呼び出し失敗時は標準案を使用します。</span><button class="primary" type="submit">設定を保存</button></div>
-      </form>
+
+        <section class="settings-section" id="instagram" data-settings-section="instagram" data-search="Instagram インスタグラム 投稿 カメラ アカウント 時刻 prompt プロンプト">
+          <div class="section-heading"><div><h2>Instagram</h2><p>定点カメラからの自動投稿に固有の設定です。</p></div></div>
+          <form method="post" action="/settings" id="instagram-settings-form" data-stateful-form data-pristine-message="Instagram設定は変更されていません。">
+            <input type="hidden" name="settings_section" value="instagram">
+            <div class="setting-list">
+              <div class="setting-row" data-setting-row data-search="投稿 開始 時刻 schedule 日次">
+                <div class="setting-label">投稿処理開始時刻<small>Instagramの自動投稿処理を開始する時刻です。他の日次処理には使用しません。</small></div>
+                <div class="setting-control"><input type="time" name="post_schedule_start" value="{{ instagram.post_schedule_start or '09:01' }}" required></div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="カメラ device camera タイムラプス 選択">
+                <div class="setting-label">投稿元カメラ<small>登録済みのカメラデバイスから選択します。</small></div>
+                <div class="setting-control">
+                  <select id="instagram-camera-select" name="camera_id" aria-label="投稿元カメラ" data-searchable-select data-search-placeholder="カメラ名、IDを検索" data-empty-message="一致するカメラはありません。"><option value="">選択してください</option>{% for camera in instagram_camera_options %}<option value="{{ camera.id }}"{% if instagram.camera_id == camera.id %} selected{% endif %}>{{ camera.name }} / {{ camera.id }}</option>{% endfor %}</select>
+                  {% if not instagram_camera_options %}<p class="disabled-reason">利用できるカメラデバイスがありません。先にカメラを登録してください。</p>{% endif %}
+                </div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="植物 位置 配置 解析 prompt プロンプト">
+                <div class="setting-label">植物位置の補足<small>画像内の作物の位置や、誤認を避けるための前提を投稿文生成へ渡します。</small></div>
+                <div class="setting-control"><textarea name="plant_position_prompt" maxlength="4000" placeholder="例: 画面中央はライチ。左端の鉢は解析対象外。">{{ instagram.plant_position_prompt }}</textarea></div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="アカウント username user ID API 取得 接続">
+                <div class="setting-label">投稿アカウント<small>自分のユーザー名をInstagram APIから取得し、コメント指示の判定にも使います。</small></div>
+                <div class="setting-control">
+                  <div class="account-value" id="instagram-account-name">{% if instagram.account_username %}@{{ instagram.account_username }}{% else %}未取得{% endif %}</div>
+                  <div class="inline-help" id="instagram-account-meta">{% if instagram.account_profile_updated_at %}最終取得: {{ instagram.account_profile_updated_at }}{% endif %}</div>
+                  <div class="test-row"><span class="test-result" id="instagram-profile-result" aria-live="polite"></span><button type="button" id="refresh-instagram-profile"{% if not instagram.credentials_configured %} disabled title="初期設定でInstagramユーザーIDとアクセストークンを設定してください"{% endif %}>接続確認・再取得</button></div>
+                  {% if not instagram.credentials_configured %}<p class="disabled-reason">初期設定でInstagramユーザーIDとアクセストークンを登録すると取得できます。</p>{% endif %}
+                </div>
+              </div>
+            </div>
+            <div class="section-actions"><p class="disabled-reason" data-stateful-reason></p><button class="primary" type="submit" data-stateful-submit>Instagram設定を保存</button></div>
+          </form>
+        </section>
+
+        <section class="settings-section" id="system" data-settings-section="system" data-search="システム 環境 env Turso R2 S3 MQTT APIキー 初期設定 接続">
+          <div class="section-heading"><div><h2>システム</h2><p>起動・接続設定の登録状態を確認します。</p></div></div>
+          <div class="setting-list">
+            <div class="setting-row" data-setting-row data-search="env 環境 Turso R2 S3 MQTT APIキー 接続 設定状態">
+              <div class="setting-label">接続設定<small>値そのものは画面へ表示しません。</small></div>
+              <div class="setting-control"><div class="environment-grid">{% for item in infrastructure %}<div class="environment-item"><span>{{ item.label }}</span><span class="status{% if not item.configured %} missing{% endif %}">{% if item.configured %}設定済み{% else %}未設定{% endif %}</span></div>{% endfor %}</div></div>
+            </div>
+            <div class="setting-row" data-setting-row data-search="install configure uv 初期設定 変更 CLI command">
+              <div class="setting-label">初期設定・再設定<small>基盤接続情報とInstagramアクセストークンはHub上のCLIで変更します。</small></div>
+              <div class="setting-control"><div class="command">uv run ina-hub install</div><div class="command">uv run ina-hub configure</div></div>
+            </div>
+          </div>
+        </section>
+        <p class="empty-search" id="settings-empty" hidden>一致する設定がありません。</p>
+      </div>
     </main>
+    <script src="/static/stateful-actions.js"></script>
+    <script src="/static/select-filter.js"></script>
     <script>
+      const searchInput = document.getElementById("settings-search");
+      const sections = [...document.querySelectorAll("[data-settings-section]")];
+      const emptyState = document.getElementById("settings-empty");
+      const normalize = (value) => String(value || "").toLocaleLowerCase().normalize("NFKC");
+      const filterSettings = () => {
+        const query = normalize(searchInput.value.trim());
+        let visibleSections = 0;
+        sections.forEach((section) => {
+          const rows = [...section.querySelectorAll("[data-setting-row]")];
+          let visibleRows = 0;
+          rows.forEach((row) => {
+            const matches = !query || normalize(`${row.dataset.search} ${row.textContent}`).includes(query);
+            row.hidden = !matches;
+            if (matches) visibleRows += 1;
+          });
+          const sectionMatches = !query || normalize(`${section.dataset.search} ${section.querySelector("h2")?.textContent}`).includes(query);
+          section.hidden = query ? !(visibleRows || sectionMatches) : false;
+          if (!section.hidden) visibleSections += 1;
+        });
+        emptyState.hidden = visibleSections > 0;
+      };
+      searchInput.addEventListener("input", filterSettings);
+
+      const activeSection = {{ active_section|tojson }};
+      document.querySelector(`[data-settings-nav="${CSS.escape(activeSection)}"]`)?.classList.add("active");
+      if (activeSection !== "ai") requestAnimationFrame(() => document.getElementById(activeSection)?.scrollIntoView({block:"start"}));
+
       document.querySelectorAll("[data-ai-provider]").forEach((section) => {
         const button = section.querySelector("[data-test-ai]");
+        if (!button || button.disabled) return;
         const result = section.querySelector(".test-result");
         button.addEventListener("click", async () => {
           const channel = section.dataset.aiProvider;
           const form = document.getElementById("ai-settings-form");
           button.disabled = true; result.className = "test-result"; result.textContent = "接続確認中...";
           try {
-            const response = await fetch("/local/api/settings/ai/test", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ channel, base_url:form.elements[`${channel}_analyze_base_url`].value, model:form.elements[`${channel}_analyze_model`].value, api_key:form.elements[`${channel}_analyze_api_key`].value }) });
+            const response = await fetch("/local/api/settings/ai/test", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel,base_url:form.elements[`${channel}_analyze_base_url`].value,model:form.elements[`${channel}_analyze_model`].value})});
             const body = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
             result.className = "test-result ok"; result.textContent = `接続できました: ${body.model}`;
@@ -73,6 +239,22 @@
             result.className = "test-result error"; result.textContent = error instanceof Error ? error.message : "接続できませんでした";
           } finally { button.disabled = false; }
         });
+      });
+
+      const instagramProfileButton = document.getElementById("refresh-instagram-profile");
+      instagramProfileButton?.addEventListener("click", async () => {
+        const result = document.getElementById("instagram-profile-result");
+        instagramProfileButton.disabled = true; result.className = "test-result"; result.textContent = "取得中...";
+        try {
+          const response = await fetch("/local/api/settings/instagram/profile", {method:"POST",headers:{"Accept":"application/json"}});
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+          document.getElementById("instagram-account-name").textContent = `@${body.username}`;
+          document.getElementById("instagram-account-meta").textContent = `最終取得: ${body.updated_at}`;
+          result.className = "test-result ok"; result.textContent = "アカウント情報を更新しました";
+        } catch (error) {
+          result.className = "test-result error"; result.textContent = error instanceof Error ? error.message : "取得できませんでした";
+        } finally { instagramProfileButton.disabled = false; }
       });
     </script>
   </body>

@@ -17,7 +17,12 @@ os.environ.setdefault("MQTT_BROKER_USERNAME", "")
 os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
-from ina_device_hub.device_config_repository import DeviceConfigRepository, DeviceConfigValidationError, validate_device_config  # noqa: E402
+from ina_device_hub.device_config_repository import (  # noqa: E402
+    DeviceConfigRepository,
+    DeviceConfigValidationError,
+    DeviceRecordValidationError,
+    validate_device_config,
+)
 from ina_device_hub.device_config_service import DeviceConfigService  # noqa: E402
 from ina_device_hub.device_event_log import _event_log_path  # noqa: E402
 
@@ -57,6 +62,25 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp_dir.cleanup()
+
+    def test_search_records_filters_server_side_and_paginates(self):
+        for index, name in enumerate(("北ハウス潅水機", "南ハウス環境計", "予備潅水機")):
+            device_id = f"INADS-SEARCH-{index}"
+            self.repository.get_or_create(device_id, self.service.default_config())
+            self.repository.update_metadata(device_id, {"name": name, "location": "北ハウス" if index < 2 else "倉庫"})
+
+        result = self.service.search_records(query="灌 水", page=1, page_size=1)
+
+        # The configured MOSFET names are searchable as well as the device
+        # metadata, so all three default watering-device records match.
+        self.assertEqual(result["total"], 3)
+        self.assertEqual(result["page_count"], 3)
+        self.assertEqual(len(result["items"]), 1)
+        self.assertTrue(result["has_next"])
+        summary = next(iter(result["items"].values()))
+        self.assertNotIn("status_history", summary)
+        self.assertNotIn("ota_status_history", summary)
+        self.assertNotIn("runtime_config", summary)
 
     def test_config_request_registers_pending_device_and_replies_default_threshold(self):
         handled = self.service.handle_mqtt_message(
@@ -156,6 +180,29 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertEqual(event["direction"], "outbound")
         self.assertEqual(event["device_id"], device_id)
         self.assertEqual(event["payload"]["moisture_threshold"], 45)
+
+    def test_device_state_transitions_follow_the_operational_lifecycle(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000020"
+        self.service.get_record(device_id)
+
+        with self.assertRaises(DeviceRecordValidationError):
+            self.service.publish_push(device_id)
+        self.assertEqual(self.mqtt_client.published, [])
+        with self.assertRaises(DeviceRecordValidationError):
+            self.repository.set_state(device_id, "disabled")
+        self.repository.set_state(device_id, "active", approved_by="operator")
+        with self.assertRaises(DeviceRecordValidationError):
+            self.repository.set_state(device_id, "retired")
+        self.repository.set_state(device_id, "disabled")
+        self.repository.set_state(device_id, "retired")
+        with self.assertRaises(DeviceRecordValidationError):
+            self.repository.set_state(device_id, "active", approved_by="operator")
+        with self.assertRaises(DeviceRecordValidationError):
+            self.repository.update_metadata(device_id, {"name": "変更不可"})
+        with self.assertRaises(DeviceRecordValidationError):
+            self.repository.upsert(device_id, self.service.default_config())
+        with self.assertRaises(DeviceRecordValidationError):
+            self.repository.set_firmware_target(device_id, "2.0.0")
 
     def test_config_request_replies_even_when_payload_is_empty_or_invalid(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000004"

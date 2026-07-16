@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ page_title }} - INA Device Hub</title>
+    <link rel="stylesheet" href="/static/searchable-select.css">
     <style>
       :root {
         color: #202b26;
@@ -21,6 +22,22 @@
       .brand { color: #56645c; font-size: 11px; font-weight: 800; text-decoration: none; }
       h1 { margin: 4px 0 0; color: #1f3027; font-size: 27px; letter-spacing: 0; }
       .header-copy { margin: 6px 0 0; color: #69776f; font-size: 12px; }
+      .header-actions { display: flex; align-items: center; gap: 8px; }
+      .settings-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        padding: 8px 11px;
+        border: 1px solid #b9c5bc;
+        border-radius: 6px;
+        color: #46574e;
+        background: #fff;
+        font-size: 12px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+      .settings-button:hover { border-color: #779688; background: #f5f8f6; }
       .add-button {
         display: inline-flex;
         align-items: center;
@@ -135,6 +152,8 @@
       .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid #dce2dd; background: #f8faf8; }
       .modal-actions button { min-height: 36px; padding: 7px 12px; border: 1px solid #adbbb1; border-radius: 5px; color: #47594f; background: #fff; font-weight: 800; }
       .modal-actions button[type="submit"] { border-color: #176b5b; color: #fff; background: #176b5b; }
+      .modal-actions button:disabled { border-color: #bdc7c0; color: #87928b; background: #edf1ee; cursor: not-allowed; }
+      .modal-actions .disabled-reason { align-self: center; margin: 0 auto 0 0; color: #8b4b35; font-size: 10px; }
       @media (max-width: 900px) {
         .catalog-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .search-actions { align-items: stretch; }
@@ -146,6 +165,8 @@
         h1 { font-size: 23px; }
         .add-button { width: 40px; padding: 0; }
         .add-button .button-label { display: none; }
+        .settings-button { width: 40px; padding: 0; font-size: 0; }
+        .settings-button span { font-size: 18px; }
         .catalog-toolbar, .field-list, .form-grid { grid-template-columns: 1fr; }
         .search-actions > * { flex: 1; }
       }
@@ -159,9 +180,13 @@
           <h1>{{ page_title }}</h1>
           <p class="header-copy">確認・作業する圃場を検索して選択します。</p>
         </div>
-        <button id="open-field-create" class="add-button" type="button" aria-haspopup="dialog">
-          <span aria-hidden="true">+</span><span class="button-label">圃場を追加</span>
-        </button>
+        <div class="header-actions">
+          <a class="settings-button" href="/preferences" title="個人設定"><span aria-hidden="true">&#9786;</span> 個人設定</a>
+          {% if current_user.role == 'admin' %}<a class="settings-button" href="/settings" title="アプリ設定"><span aria-hidden="true">&#9881;</span> アプリ設定</a>{% endif %}
+          <button id="open-field-create" class="add-button" type="button" aria-haspopup="dialog">
+            <span aria-hidden="true">+</span><span class="button-label">圃場を追加</span>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -171,7 +196,7 @@
           <input name="q" value="{{ filters.query }}" placeholder="例: 伊那、東圃場">
         </label>
         <label>都道府県
-          <select name="prefecture"><option value="">すべて</option>{% for prefecture in prefectures %}<option value="{{ prefecture }}"{% if filters.prefecture == prefecture %} selected{% endif %}>{{ prefecture }}</option>{% endfor %}</select>
+          <select name="prefecture" aria-label="都道府県で絞り込み" data-searchable-select data-search-placeholder="都道府県を検索"><option value="">すべて</option>{% for prefecture in prefectures %}<option value="{{ prefecture }}"{% if filters.prefecture == prefecture %} selected{% endif %}>{{ prefecture }}</option>{% endfor %}</select>
         </label>
         <label>設置環境
           <select name="environment_type"><option value="">すべて</option>{% for value, label in environment_options %}<option value="{{ value }}"{% if filters.environment_type == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
@@ -217,7 +242,7 @@
     </main>
 
     <dialog id="field-create-dialog" aria-labelledby="field-create-title">
-      <form method="post" action="/fields" class="modal-form">
+      <form method="post" action="/fields" class="modal-form" data-stateful-form data-pristine-message="圃場情報を入力してください。" data-invalid-message="圃場名、都道府県、市区町村、設置環境は必須です。">
         <div class="modal-header">
           <h2 id="field-create-title">圃場を追加</h2>
           <button id="close-field-create" class="close-button" type="button" aria-label="閉じる">x</button>
@@ -225,15 +250,17 @@
         <div class="modal-body">
           <label>圃場名 <span class="required">必須</span><input name="name" required autofocus placeholder="例: 伊那東圃場"></label>
           <div class="form-grid">
-            <label>都道府県 <span class="required">必須</span><select name="prefecture" required><option value="">選択してください</option>{% for prefecture in prefectures %}<option value="{{ prefecture }}">{{ prefecture }}</option>{% endfor %}</select></label>
+            <label>都道府県 <span class="required">必須</span><select name="prefecture" required aria-label="圃場の都道府県" data-searchable-select data-search-placeholder="都道府県を検索"><option value="">選択してください</option>{% for prefecture in prefectures %}<option value="{{ prefecture }}">{{ prefecture }}</option>{% endfor %}</select></label>
             <label>市区町村 <span class="required">必須</span><input name="municipality" required placeholder="例: 伊那市"></label>
           </div>
           <label>設置環境 <span class="required">必須</span><select name="environment_type" required><option value="">選択してください</option>{% for value, label in environment_options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></label>
           <label>町名・地区など<input name="locality" placeholder="例: 西箕輪"></label>
         </div>
-        <div class="modal-actions"><button id="cancel-field-create" type="button">キャンセル</button><button type="submit">圃場を作成</button></div>
+        <div class="modal-actions"><p class="disabled-reason" data-stateful-reason></p><button id="cancel-field-create" type="button">キャンセル</button><button type="submit" data-stateful-submit>圃場を作成</button></div>
       </form>
     </dialog>
+    <script src="/static/stateful-actions.js"></script>
+    <script src="/static/select-filter.js"></script>
     <script>
       const fieldDialog = document.getElementById("field-create-dialog");
       const closeFieldDialog = () => fieldDialog.close();

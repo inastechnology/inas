@@ -32,7 +32,7 @@ try {
   await page.click("#open-field-create");
   await page.waitForFunction(() => document.querySelector("#field-create-dialog")?.open === true);
   await page.type('#field-create-dialog input[name="name"]', fieldName);
-  await page.select('#field-create-dialog select[name="prefecture"]', "長野県");
+  await chooseStaticSearchableOption(page, '#field-create-dialog select[name="prefecture"]', "長野県", "長野");
   await page.type('#field-create-dialog input[name="municipality"]', "伊那市");
   await page.select('#field-create-dialog select[name="environment_type"]', "outdoor");
   await page.type('#field-create-dialog input[name="locality"]', "西箕輪");
@@ -48,6 +48,7 @@ try {
   assert.equal(await page.$('select[name="stage"]'), null);
   assert.equal(await page.$('select[name="cultivation_method"]'), null);
   assert.equal(await page.$('input[name="crop"]'), null);
+  assert(await page.$('select[name="prefecture"] + .static-searchable-select'), "field prefecture must use the shared searchable dropdown");
 
   const fields = await fetchJson(`${baseUrl}/local/api/fields`);
   const field = fields.items.find((item) => item.name === fieldName);
@@ -61,6 +62,10 @@ try {
   await page.click('[data-field-tab="records"]');
   assert.equal(await page.$("#field-status-dashboard .range-card"), null);
   assert.equal(await page.$("#record-automatic-section:not([hidden])"), null);
+  assert(await page.$("#record-target-select + .static-searchable-select"), "record target must use the shared searchable dropdown");
+  await page.click("#record-target-select + .static-searchable-select .searchable-select-control");
+  await page.waitForSelector("#record-target-select + .static-searchable-select input[type=\"search\"]", { visible: true });
+  await page.keyboard.press("Escape");
   await page.click("#record-item-search-open");
   await page.type("#record-item-query", "EC");
   await page.waitForFunction(() => Array.from(document.querySelectorAll(".record-search-item strong")).some((item) => item.textContent === "EC"));
@@ -157,4 +162,16 @@ async function fetchJson(url) {
   const body = await response.json();
   if (!response.ok) throw new Error(body.error || `request failed: ${response.status}`);
   return body;
+}
+
+async function chooseStaticSearchableOption(page, selectSelector, value, query = "") {
+  const rootSelector = `${selectSelector} + .static-searchable-select`;
+  assert(await page.$(rootSelector), `searchable select was not initialized: ${selectSelector}`);
+  assert.equal(await page.$eval(`${rootSelector} input[type="search"]`, (input) => input.offsetParent === null), true, "search field must stay hidden inside the closed dropdown");
+  await page.click(`${rootSelector} .searchable-select-control`);
+  await page.waitForSelector(`${rootSelector} input[type="search"]`, { visible: true });
+  if (query) await page.type(`${rootSelector} input[type="search"]`, query);
+  await page.waitForSelector(`${rootSelector} [data-searchable-option][data-value="${value}"]`);
+  await page.click(`${rootSelector} [data-searchable-option][data-value="${value}"]`);
+  assert.equal(await page.$eval(selectSelector, (select) => select.value), value);
 }

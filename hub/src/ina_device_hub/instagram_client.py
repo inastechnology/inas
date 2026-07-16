@@ -75,6 +75,17 @@ class InstagramClient:
             next_url = (next_response.get("paging") or {}).get("next")
         return comments[:limit]
 
+    def get_account_profile(self):
+        response = self._get(
+            f"/{self.user_id}",
+            {"fields": "id,username"},
+        )
+        account_id = str(response.get("id") or "").strip()
+        username = str(response.get("username") or "").strip()
+        if not account_id or not username:
+            raise RuntimeError("Instagram account profile response is incomplete")
+        return {"id": account_id, "username": username}
+
     def _post_media(
         self,
         create_params: dict,

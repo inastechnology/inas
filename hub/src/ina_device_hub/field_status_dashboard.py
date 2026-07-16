@@ -1,6 +1,7 @@
 """Build field status metrics independently from HTTP rendering concerns."""
 
 from datetime import UTC, datetime
+from urllib.parse import urlencode
 
 
 METRIC_SPECS = (
@@ -47,7 +48,7 @@ def build_field_status_dashboard(field: dict, latest_sensor_values: list, active
     metrics = [
         metric
         for spec in METRIC_SPECS
-        if (metric := _build_metric(spec, targets, latest_sensor_values, active_plantings or [])) is not None
+        if (metric := _build_metric(field, spec, targets, latest_sensor_values, active_plantings or [])) is not None
     ]
     counts = _state_counts(metrics)
     overall_state, overall_label, summary = _overall_status(metrics, counts)
@@ -65,13 +66,13 @@ def build_field_status_dashboard(field: dict, latest_sensor_values: list, active
     }
 
 
-def _build_metric(spec: dict, default_targets: dict, latest_sensor_values: list, active_plantings: list):
+def _build_metric(field: dict, spec: dict, default_targets: dict, latest_sensor_values: list, active_plantings: list):
     observation = _latest_observation(latest_sensor_values, spec["aliases"])
     value = observation.get("value") if observation else None
     if value is None:
         return None
 
-    target = _metric_target(default_targets, spec["metric"], observation, active_plantings)
+    target, target_planting = _metric_target(default_targets, spec["metric"], observation, active_plantings)
     minimum = _number(target.get("min"))
     maximum = _number(target.get("max"))
     domain_min, default_domain_max = spec["domain"]
@@ -103,6 +104,7 @@ def _build_metric(spec: dict, default_targets: dict, latest_sensor_values: list,
         "scope_label": observation.get("scope_label") if observation else "",
         "observed_at": observation.get("observed_at") if observation else "",
         "observed_at_display": _format_datetime(observation.get("observed_at")) if observation else "",
+        "target_url": _target_settings_url(field, spec["metric"], target_planting, active_plantings),
     }
 
 
@@ -142,9 +144,27 @@ def _metric_target(default_targets: dict, metric: str, observation: dict | None,
         candidates = active_plantings
     if len(candidates) == 1:
         target = (candidates[0].get("growth_targets") or {}).get(metric)
-        return target if isinstance(target, dict) else {}
+        return (target if isinstance(target, dict) else {}), candidates[0]
     target = default_targets.get(metric)
-    return target if isinstance(target, dict) else {}
+    return (target if isinstance(target, dict) else {}), None
+
+
+def _target_settings_url(field: dict, metric: str, target_planting: dict | None, active_plantings: list):
+    field_id = str(field.get("id") or "").strip()
+    if not field_id:
+        return ""
+    planting = target_planting
+    if planting is None and active_plantings:
+        planting = active_plantings[0]
+    query = {"target_metric": metric}
+    if planting:
+        if planting.get("space_id"):
+            query["space"] = planting["space_id"]
+        if planting.get("placement_id"):
+            query["placement"] = planting["placement_id"]
+        if planting.get("id"):
+            query["planting"] = planting["id"]
+    return f"/fields/{field_id}/layout?{urlencode(query)}"
 
 
 def _latest_observation(latest_sensor_values: list, aliases: tuple):

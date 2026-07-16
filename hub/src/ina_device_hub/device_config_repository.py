@@ -6,6 +6,7 @@ from collections import deque
 from datetime import UTC, datetime
 from functools import lru_cache
 
+from ina_device_hub.json_repository_io import atomic_write_json, serialized_repository_write
 from ina_device_hub.setting import setting
 
 
@@ -14,6 +15,12 @@ def _utc_now():
 
 
 DEVICE_STATES = {"pending", "active", "disabled", "retired"}
+DEVICE_STATE_TRANSITIONS = {
+    "pending": {"active", "retired"},
+    "active": {"disabled"},
+    "disabled": {"active", "retired"},
+    "retired": set(),
+}
 MAX_STATUS_HISTORY = 2000
 MAX_OTA_STATUS_HISTORY = 100
 DEVICE_KIND_RE = re.compile(r"^[A-Z]{3}$")
@@ -28,6 +35,10 @@ class DeviceRecordValidationError(ValueError):
     pass
 
 
+class DeviceStateConflictError(DeviceRecordValidationError):
+    pass
+
+
 class DeviceConfigRepository:
     device_config_path = os.path.join(setting().get_work_dir(), ".device_configs.json")
 
@@ -37,17 +48,15 @@ class DeviceConfigRepository:
 
     def load(self):
         if not os.path.exists(self.device_config_path):
-            with open(self.device_config_path, "w", encoding="utf-8") as file:
-                json.dump({}, file)
+            atomic_write_json(self.device_config_path, {})
         try:
             with open(self.device_config_path, encoding="utf-8") as file:
                 self.device_configs = json.load(file)
-        except FileNotFoundError:
+        except (FileNotFoundError, json.JSONDecodeError):
             self.device_configs = {}
 
     def save(self):
-        with open(self.device_config_path, "w", encoding="utf-8") as file:
-            json.dump(self.device_configs, file, ensure_ascii=True, indent=2)
+        atomic_write_json(self.device_config_path, self.device_configs)
 
     def get(self, device_id: str):
         record = self.device_configs.get(device_id)
@@ -56,9 +65,12 @@ class DeviceConfigRepository:
     def get_all(self):
         return {device_id: copy.deepcopy(_normalize_device_record(device_id, record)) for device_id, record in self.device_configs.items()}
 
+    @serialized_repository_write("device_config_path")
     def upsert(self, device_id: str, config: dict):
         validated = validate_device_config(config)
         record = self._get_or_new_record(device_id)
+        if record.get("state") == "retired":
+            raise DeviceStateConflictError("retired devices are read-only")
         record["config"] = validated
         record["runtime_config"] = validated
         record["updated_at"] = _utc_now()
@@ -66,6 +78,7 @@ class DeviceConfigRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("device_config_path")
     def get_or_create(self, device_id: str, default_config: dict):
         record = self.get(device_id)
         if record is not None:
@@ -79,6 +92,7 @@ class DeviceConfigRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("device_config_path")
     def record_config_request(self, device_id: str, default_config: dict):
         record = self.get_or_create(device_id, default_config)
         now = _utc_now()
@@ -89,6 +103,7 @@ class DeviceConfigRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("device_config_path")
     def record_config_reply(self, device_id: str):
         record = self._get_or_new_record(device_id)
         now = _utc_now()
@@ -98,6 +113,7 @@ class DeviceConfigRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("device_config_path")
     def record_status(self, device_id: str, status: dict):
         record = self._get_or_new_record(device_id)
         now = _utc_now()
@@ -114,8 +130,11 @@ class DeviceConfigRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("device_config_path")
     def update_metadata(self, device_id: str, metadata: dict):
         record = self._get_or_new_record(device_id)
+        if record.get("state") == "retired":
+            raise DeviceStateConflictError("retired devices are read-only")
         for key in ("name", "location", "memo"):
             if key in metadata:
                 value = metadata[key]
@@ -127,11 +146,17 @@ class DeviceConfigRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("device_config_path")
     def set_state(self, device_id: str, state: str, approved_by: str | None = None):
         if state not in DEVICE_STATES:
             raise DeviceRecordValidationError(f"state must be one of: {', '.join(sorted(DEVICE_STATES))}")
 
         record = self._get_or_new_record(device_id)
+        current_state = record.get("state", "pending")
+        if state == current_state:
+            raise DeviceStateConflictError(f"device is already {state}")
+        if state not in DEVICE_STATE_TRANSITIONS[current_state]:
+            raise DeviceStateConflictError(f"device state cannot change from {current_state} to {state}")
         now = _utc_now()
         record["state"] = state
         record["updated_at"] = now
@@ -142,6 +167,7 @@ class DeviceConfigRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("device_config_path")
     def set_firmware_target(self, device_id: str, target_firmware_version: str | None):
         if target_firmware_version is not None:
             if not isinstance(target_firmware_version, str) or not target_firmware_version.strip():
@@ -149,12 +175,15 @@ class DeviceConfigRepository:
             target_firmware_version = target_firmware_version.strip()
 
         record = self._get_or_new_record(device_id)
+        if record.get("state") == "retired":
+            raise DeviceStateConflictError("retired devices are read-only")
         record["target_firmware_version"] = target_firmware_version
         record["updated_at"] = _utc_now()
         self.device_configs[device_id] = record
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("device_config_path")
     def record_ota_request(self, device_id: str, request_payload: dict):
         record = self._get_or_new_record(device_id)
         now = _utc_now()
@@ -167,6 +196,7 @@ class DeviceConfigRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("device_config_path")
     def record_ota_status(self, device_id: str, status: dict):
         record = self._get_or_new_record(device_id)
         now = _utc_now()

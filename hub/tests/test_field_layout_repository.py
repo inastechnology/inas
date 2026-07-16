@@ -1,5 +1,6 @@
 import os
 import tempfile
+import threading
 import unittest
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
@@ -128,8 +129,40 @@ class FieldLayoutRepositoryTest(unittest.TestCase):
         saved = self.repository.upsert("field-1", layout)
         saved["revision"] = 0
 
-        with self.assertRaises(FieldLayoutConflictError):
+        with self.assertRaises(FieldLayoutConflictError) as raised:
             self.repository.upsert("field-1", saved)
+
+        self.assertEqual(raised.exception.current["revision"], 1)
+
+    def test_two_repository_instances_serialize_writes_and_reject_one_stale_revision(self):
+        second_repository = FieldLayoutRepository()
+        second_repository.layout_repo_path = self.repository.layout_repo_path
+        first_layout = self.repository.get("field-1", "圃場")
+        second_layout = second_repository.get("field-1", "圃場")
+        first_layout["name"] = "画面A"
+        second_layout["name"] = "画面B"
+        barrier = threading.Barrier(2)
+        results = []
+
+        def save(repository, layout, actor):
+            barrier.wait()
+            try:
+                results.append(("saved", repository.upsert("field-1", layout, updated_by=actor)))
+            except FieldLayoutConflictError as error:
+                results.append(("conflict", error.current))
+
+        threads = [
+            threading.Thread(target=save, args=(self.repository, first_layout, "a@example.com")),
+            threading.Thread(target=save, args=(second_repository, second_layout, "b@example.com")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(sorted(result[0] for result in results), ["conflict", "saved"])
+        self.assertEqual({result[1]["revision"] for result in results}, {1})
+        self.assertIn(self.repository.get("field-1")["updated_by"], {"a@example.com", "b@example.com"})
 
     def test_upsert_rejects_north_angle_outside_supported_range(self):
         layout = self.repository.get("field-1", "圃場")

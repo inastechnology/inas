@@ -3,6 +3,7 @@ import json
 import os
 from datetime import UTC, datetime
 
+from ina_device_hub.json_repository_io import atomic_write_json, repository_file_lock
 from ina_device_hub.setting import setting
 
 LAYOUT_SCHEMA_VERSION = 3
@@ -43,7 +44,9 @@ class FieldLayoutValidationError(ValueError):
 
 
 class FieldLayoutConflictError(ValueError):
-    pass
+    def __init__(self, current):
+        super().__init__("layout was updated by another client")
+        self.current = current
 
 
 class FieldLayoutRepository:
@@ -51,12 +54,12 @@ class FieldLayoutRepository:
 
     def __init__(self):
         self.layouts = {}
-        self.load()
+        with repository_file_lock(self.layout_repo_path):
+            self.load()
 
     def load(self):
         if not os.path.exists(self.layout_repo_path):
-            with open(self.layout_repo_path, "w", encoding="utf-8") as file:
-                json.dump({}, file)
+            atomic_write_json(self.layout_repo_path, {})
         try:
             with open(self.layout_repo_path, encoding="utf-8") as file:
                 data = json.load(file)
@@ -65,31 +68,36 @@ class FieldLayoutRepository:
         self.layouts = {field_id: value for field_id, value in data.items() if isinstance(value, dict)}
 
     def save(self):
-        with open(self.layout_repo_path, "w", encoding="utf-8") as file:
-            json.dump(self.layouts, file, ensure_ascii=True, indent=2)
+        atomic_write_json(self.layout_repo_path, self.layouts)
 
     def get(self, field_id: str, field_name: str = ""):
-        record = self.layouts.get(field_id)
-        if record is None:
-            return _new_layout(field_id, field_name)
-        return copy.deepcopy(_normalize_layout(field_id, record, field_name=field_name))
+        with repository_file_lock(self.layout_repo_path):
+            self.load()
+            record = self.layouts.get(field_id)
+            if record is None:
+                return _new_layout(field_id, field_name)
+            return copy.deepcopy(_normalize_layout(field_id, record, field_name=field_name))
 
-    def upsert(self, field_id: str, data: dict, field_name: str = ""):
+    def upsert(self, field_id: str, data: dict, field_name: str = "", updated_by: str = ""):
         if not isinstance(data, dict):
             raise FieldLayoutValidationError("layout data must be an object")
 
-        current = self.layouts.get(field_id)
-        current_revision = _clean_int(current.get("revision"), 0) if current else 0
-        supplied_revision = _clean_int(data.get("revision"), 0)
-        if supplied_revision != current_revision:
-            raise FieldLayoutConflictError("layout was updated by another client")
+        with repository_file_lock(self.layout_repo_path):
+            self.load()
+            current = self.layouts.get(field_id)
+            current_revision = _clean_int(current.get("revision"), 0) if current else 0
+            supplied_revision = _clean_int(data.get("revision"), 0)
+            if supplied_revision != current_revision:
+                current_layout = _normalize_layout(field_id, current, field_name=field_name) if current else _new_layout(field_id, field_name)
+                raise FieldLayoutConflictError(copy.deepcopy(current_layout))
 
-        normalized = _normalize_layout(field_id, data, field_name=field_name)
-        normalized["revision"] = current_revision + 1
-        normalized["updated_at"] = _utc_now()
-        self.layouts[field_id] = normalized
-        self.save()
-        return copy.deepcopy(normalized)
+            normalized = _normalize_layout(field_id, data, field_name=field_name)
+            normalized["revision"] = current_revision + 1
+            normalized["updated_at"] = _utc_now()
+            normalized["updated_by"] = _clean_string(updated_by, "unknown")
+            self.layouts[field_id] = normalized
+            self.save()
+            return copy.deepcopy(normalized)
 
 
 def _new_layout(field_id: str, field_name: str):
@@ -112,6 +120,7 @@ def _new_layout(field_id: str, field_name: str):
         ],
         "revision": 0,
         "updated_at": "",
+        "updated_by": "",
     }
 
 
@@ -180,6 +189,7 @@ def _normalize_layout(field_id: str, value: dict, field_name: str = ""):
         "spaces": spaces,
         "revision": _clean_int(value.get("revision"), 0),
         "updated_at": _clean_string(value.get("updated_at")),
+        "updated_by": _clean_string(value.get("updated_by")),
     }
 
 

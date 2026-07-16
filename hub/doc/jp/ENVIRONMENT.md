@@ -1,10 +1,9 @@
 # 環境変数 (.env) の説明
 
-このプロジェクトで利用する環境変数（`.env`）について、各キーの意味、必須か任意か、設定例、トークンの入手先などをまとめます。リポジトリにある ` .default.env` をコピーして ` .env` を作成し、値を実運用向けに編集してください。
+このプロジェクトで利用する環境変数（`.env`）について、各キーの意味、必須か任意か、設定例、トークンの入手先などをまとめます。新規導入では対話式CLIで作成してください。設定レイヤの責務は [HUB_CONFIGURATION_MANAGEMENT.md](HUB_CONFIGURATION_MANAGEMENT.md) を参照してください。
 
 ```bash
-cp .default.env .env
-chmod 600 .env
+uv run ina-hub install
 ```
 
 注意: 機密情報（API キー・シークレット）は決して公開リポジトリにコミットしないでください。可能であれば Vault / Secrets Manager を利用して運用し、デバイス側では起動時に `.env` を生成してください。
@@ -15,11 +14,12 @@ chmod 600 .env
 
 ## 一般
 
-- `LANGUAGE` (任意) — ロケール/言語指定。例: `en`。
 - `WORK_DIR` (任意) — アプリの作業ディレクトリ。例: `~/.ina-device-hub`。
 - `LOCAL_STORAGE_BASE_DIR` (任意) — 画像などを保存するローカルディレクトリ。例: `/mnt/storage/ina`。
 - `HUB_HTTP_HOST` (任意) — local hub HTTP server の bind address。既定: `0.0.0.0`。Cloudflare hosted option の起動scriptは、Tunnelを経由しないLANからの認証回避を防ぐため `127.0.0.1` へ強制する。
 - `HUB_HTTP_PORT` (任意) — local hub HTTP server の port。既定: `39151`。
+- `HUB_LOCAL_USER_EMAIL` (任意) — Cloudflare Accessを経由しないローカル利用時のユーザーemail。既定: `local-user@ina.local`。
+- `HUB_ADMIN_EMAILS` (本番推奨) — `/settings` とAI接続確認を許可するemailのカンマ区切り。本番では明示する。未設定時はAccess利用者全員を作業者とし、ローカル直利用だけを管理者として扱う。
 
 ## Turso (ローカル/リモート DB)
 
@@ -79,12 +79,12 @@ curl -X POST \
 - `INSTAGRAM_USER_ID` — Instagram のユーザー ID（数値）。
 - `INSTAGRAM_ACCESS_TOKEN` — Instagram Graph API のアクセストークン。
 - `INSTAGRAM_SENSOR_ID` — 投稿文生成時に参照するセンサーデバイス ID（任意）。
-- `INSTAGRAM_CAMERA_ID` — タイムラプス元のカメラデバイス ID。自動投稿を使う場合は必須です。
-- `INSTAGRAM_PLANT_POSITION_PROMPT` — Instagram 投稿の位置情報や解析プロンプト（任意）。
 
-現在の実装では、`AI_AGENT_SCHEDULE_START` の時刻に前回投稿以降のフレームからタイムラプス動画を作り、`INSTAGRAM_CAMERA_ID` の代表画像とあわせて投稿文を生成し、Instagram Reel として投稿します。
+投稿処理開始時刻、タイムラプス元のカメラ、植物位置の補足は管理者用 `/settings` のInstagramカテゴリで管理します。現在の実装では、設定時刻に前回投稿以降のフレームからタイムラプス動画を作り、選択したカメラの代表画像とあわせて投稿文を生成し、Instagram Reelとして投稿します。
 
-取得方法: Facebook (Meta) の Graph API を使い、Instagram Business/Creator アカウントをアプリに接続してアクセストークンを取得します（permissions: instagram_basic, instagram_content_publish 等が関係します）。Instagram のトークン管理はやや複雑なので公式ドキュメントを参照してください。
+投稿する自分のユーザー名は `INSTAGRAM_USER_ID` とアクセストークンを使ってGraph APIから取得し、非秘密のアカウント情報として保存します。`INSTAGRAM_ADMIN_USERNAME` の手入力は新規環境では使用しません。
+
+取得方法: Facebook (Meta) の Graph API を使い、Instagram Business/Creator アカウントをアプリに接続してアクセストークンを取得します（permissions: instagram_basic, instagram_content_publish 等が関係します）。Instagram のトークン管理はやや複雑なので、[Meta Instagram Platform](https://developers.facebook.com/docs/instagram-platform/) と [Meta公式Instagram APIコレクション](https://www.postman.com/meta/instagram/overview) を参照してください。
 
 ## MQTT ブローカー
 
@@ -120,12 +120,10 @@ SwitchBot Cloud API で Plug Mini などを制御する場合だけ設定しま�
 
 ## AI 関連設定
 
-- `AI_ENABLED` (任意) — AI 機能を有効にする場合は `true`。
-- `AI_AGENT_SCHEDULE_START` (任意) — AI エージェントが動作を開始する時刻（例: `09:01`）。日次の Instagram 投稿ジョブ時刻として使われます。
-- `AI_IMAGE_ANALYZE_API_KEY` — 画像解析用 API キー（例: OpenAI, DeepSeek などのキー）。
-- `AI_IMAGE_ANALYZE_BASE_URL` — 画像解析 API のベース URL。未設定時は OpenAI 互換の既定 URL を使います。
-- `AI_IMAGE_ANALYZE_MODEL` — 画像解析で使うモデル名（例: `gpt-4o` 等）。
-- `AI_TEXT_ANALYZE_API_KEY`, `AI_TEXT_ANALYZE_BASE_URL`, `AI_TEXT_ANALYZE_MODEL` — テキスト解析用の API キー・エンドポイント・モデル。
+- `AI_IMAGE_ANALYZE_API_KEY` — 画像解析用APIキーの旧環境向け初期値。
+- `AI_TEXT_ANALYZE_API_KEY` — テキスト解析用APIキーの旧環境向け初期値。
+
+AI有効/無効、APIキー、テキスト/画像のBase URLとモデルは管理者用 `/settings` で管理します。APIキーは `WORK_DIR/runtime-secrets.json` に `0600` で保存し、保存値をHTMLやJSON APIへ返しません。ユーザーごとのタイムゾーンと日付形式は `/preferences` からTursoへ保存します。Hubの表示とAI回答は日本語固定で、翻訳はブラウザ機能を使用します。旧 `AI_ENABLED`、`AI_AGENT_SCHEDULE_START`、`AI_*_BASE_URL`、`AI_*_MODEL` は既存環境の初期値としてだけ互換読み込みします。
 
 現在の実装では、画像解析モデルに代表画像とタイムラプス動画 URL を渡して観察メモを作成し、その結果とセンサーデータをもとにテキストモデルで Instagram 投稿文を生成します。
 
@@ -217,8 +215,9 @@ grep -E "TURSO_DATABASE_URL|TURSO_AUTH_TOKEN|S3_ENDPOINT_URL|S3_BUCKET_NAME|MQTT
 
 - AI プロバイダ（例: OpenAI, DeepSeek 等）
   - 目的: 画像解析やテキスト解析を行う場合に利用
-  - 必要な値: `AI_IMAGE_ANALYZE_API_KEY`, `AI_IMAGE_ANALYZE_MODEL`, `AI_TEXT_ANALYZE_API_KEY`, `AI_TEXT_ANALYZE_BASE_URL`, `AI_TEXT_ANALYZE_MODEL`
-  - 最短手順: 各ベンダにアカウント登録 → API キーを発行 → 必要ならモデル名やエンドポイントを確認して設定
+  - `.env` に必要な値: `AI_IMAGE_ANALYZE_API_KEY`, `AI_TEXT_ANALYZE_API_KEY`
+  - GUIで設定する値: Text/ImageのBase URL、モデル、AI有効/無効
+  - 最短手順: 各ベンダにアカウント登録 → APIキーを発行 → `uv run ina-hub configure` でキーを登録 → `/settings` でモデルとエンドポイントを設定
 
 - Discord（任意、通知）
   - 目的: 通知を Discord に送る（アラートや結果の通知）

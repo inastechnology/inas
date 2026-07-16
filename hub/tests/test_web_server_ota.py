@@ -2,7 +2,7 @@ import hashlib
 import os
 import tempfile
 import unittest
-from datetime import timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("LOCAL_STORAGE_BASE_DIR", tempfile.mkdtemp())
@@ -153,7 +153,7 @@ class WebServerOTATest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
-        self.assertIn("水やり機一覧", html)
+        self.assertIn("機器一覧", html)
         self.assertIn("圃場ビュー", html)
         self.assertIn("灌水中", html)
         self.assertIn("42%", html)
@@ -232,7 +232,11 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn(">動作設定</button>", html)
         self.assertIn(">F/W更新</button>", html)
         self.assertIn(">履歴・診断</button>", html)
-        self.assertIn("設置ビュー", html)
+        self.assertIn("設置場所・関連先", html)
+        self.assertNotIn("<h2>設置ビュー</h2>", html)
+        self.assertIn("現在の潅水判断", html)
+        self.assertIn("次の潅水", html)
+        self.assertIn("土壌水分しきい値", html)
         self.assertIn("水やり機", html)
         self.assertIn("潅水推移", html)
         self.assertIn("土壌水分推移", html)
@@ -254,12 +258,15 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("動作設定", html)
         self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings"', html)
         self.assertIn(f'aria-label="{device_id}の動作設定"', html)
-        self.assertIn('data-state-action="approve"', html)
+        self.assertIn('data-state-action="disable"', html)
+        self.assertNotIn('data-state-action="approve"', html)
+        self.assertNotIn('data-state-action="retire"', html)
         self.assertIn('id="metadata-form"', html)
         self.assertIn('id="runtime-config-json"', html)
         self.assertIn('id="save-push-runtime-config"', html)
         self.assertIn('id="firmware-target-form"', html)
-        self.assertIn('<select id="target-firmware-version">', html)
+        self.assertIn('<select id="target-firmware-version" aria-label="更新するF/Wバージョン" data-searchable-select', html)
+        self.assertIn('/static/searchable-select.css', html)
         self.assertIn('id="firmware-upload-form"', html)
         self.assertIn('id="firmware-version" name="version" type="text" value="" readonly', html)
         self.assertIn('id="inspect-firmware-manifest"', html)
@@ -313,6 +320,35 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("Plotly.newPlot", charts["air_humidity"])
         self.assertIn("Plotly.newPlot", charts["par"])
         self.assertIsNone(charts["watering"])
+
+    def test_retired_device_is_read_only_in_ui_and_mutation_apis(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000203"
+        self.device_service.get_record(device_id)
+        self.device_service.set_state(device_id, "retired")
+
+        detail_response = self.client.get(f"/mqtt-devices/{device_id}?tab=settings")
+        self.assertEqual(detail_response.status_code, 200)
+        html = detail_response.get_data(as_text=True)
+        self.assertIn('id="metadata-form" data-stateful-form', html)
+        self.assertIn('data-blocked-message="廃止済みの機器情報は変更できません。"', html)
+        self.assertIn('data-blocked-message="廃止済みの動作設定は変更できません。"', html)
+        self.assertIn('data-blocked-message="廃止済みのF/W対象は変更できません。"', html)
+
+        metadata_response = self.client.patch(
+            f"/local/api/mqtt-devices/{device_id}",
+            json={"name": "変更不可"},
+        )
+        self.assertEqual(metadata_response.status_code, 409)
+        config_response = self.client.put(
+            f"/local/api/mqtt-devices/{device_id}/runtime-config",
+            json=self.device_service.default_config(),
+        )
+        self.assertEqual(config_response.status_code, 409)
+        target_response = self.client.put(
+            f"/local/api/mqtt-devices/{device_id}/firmware-target",
+            json={"target_firmware_version": "2.0.0"},
+        )
+        self.assertEqual(target_response.status_code, 409)
 
     def test_mqtt_device_times_are_rendered_in_local_time(self):
         utc_received_at = "2026-07-02T21:30:15+00:00"
@@ -382,7 +418,8 @@ class WebServerOTATest(unittest.TestCase):
         self.assertNotIn("圃場ビュー", html)
         self.assertNotIn("デバイス API", html)
         self.assertIn('role="tablist"', html)
-        self.assertIn("設置ビュー", html)
+        self.assertIn("設置場所・関連先", html)
+        self.assertNotIn("<h2>設置ビュー</h2>", html)
         self.assertIn("高設ベッドA", html)
         self.assertIn("北ハウス 1号", html)
         self.assertIn("潅水推移", html)
@@ -406,6 +443,27 @@ class WebServerOTATest(unittest.TestCase):
         charts = charts_response.get_json()
         self.assertIn("Plotly.newPlot", charts["watering"])
         self.assertIn("Plotly.newPlot", charts["soil_moisture"])
+
+    def test_next_watering_schedule_uses_device_timezone_and_rolls_to_tomorrow(self):
+        config = {
+            "timezone_offset_sec": 32400,
+            "schedules": [
+                {"hour": 6, "minute": 30, "duration_sec": 90, "channel_mask": 1},
+                {"hour": 17, "minute": 45, "duration_sec": 60, "channel_mask": 2},
+            ],
+            "mosfet_switches": [
+                {"name": "潅水1系", "enabled": True, "channel_mask": 1},
+                {"name": "潅水2系", "enabled": True, "channel_mask": 2},
+            ],
+        }
+
+        before_evening = web_server._next_watering_schedule(config, datetime(2026, 7, 16, 7, 0, tzinfo=UTC))
+        after_evening = web_server._next_watering_schedule(config, datetime(2026, 7, 16, 10, 0, tzinfo=UTC))
+
+        self.assertEqual(before_evening["label"], "今日 17:45")
+        self.assertEqual(before_evening["hint"], "潅水2系 / 1分")
+        self.assertEqual(after_evening["label"], "明日 06:30")
+        self.assertEqual(after_evening["hint"], "潅水1系 / 1分30秒")
 
 
 def _firmware_binary(

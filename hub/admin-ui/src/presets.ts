@@ -31,7 +31,7 @@ export interface PresetDefinition {
   stroke: string;
   childSpaceType?: SpaceType;
   keywords: string[];
-  optional?: boolean;
+  paletteVisible?: boolean;
 }
 
 export const PRESETS: PresetDefinition[] = [
@@ -48,7 +48,7 @@ export const PRESETS: PresetDefinition[] = [
   { id: "mister", label: "噴霧器", group: "設備", icon: ShowerHead, width: 2, height: 2, fill: "#d8edf2", stroke: "#397b88", keywords: ["ミスト", "霧", "散水", "加湿"] },
   { id: "fan", label: "送風機", group: "設備", icon: Fan, width: 2, height: 2, fill: "#e4ece8", stroke: "#537469", keywords: ["扇風機", "サーキュレーター", "換気", "ファン"] },
   { id: "hvac", label: "空調", group: "設備", icon: AirVent, width: 3, height: 2, fill: "#e4e8ef", stroke: "#596a80", keywords: ["エアコン", "冷房", "暖房", "除湿", "空調機"] },
-  { id: "irrigation_line", label: "ホース・配管（任意）", group: "設備", icon: Minus, width: 8, height: 1, fill: "#c9e6f0", stroke: "#287a96", keywords: ["チューブ", "パイプ", "水道", "物理経路"], optional: true },
+  { id: "irrigation_line", label: "配管（既存データ）", group: "設備", icon: Minus, width: 8, height: 1, fill: "#c9e6f0", stroke: "#287a96", keywords: ["ホース", "チューブ", "パイプ", "水道", "物理経路"], paletteVisible: false },
   { id: "tank", label: "タンク", group: "設備", icon: Database, width: 3, height: 3, fill: "#dbe6ef", stroke: "#526f86", keywords: ["貯水", "液肥", "養液槽", "水槽"] },
 ];
 

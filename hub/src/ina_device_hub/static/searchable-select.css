@@ -1,0 +1,59 @@
+.searchable-select-native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-height: 1px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  clip-path: inset(50%) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.static-searchable-select [hidden] { display: none !important; }
+.static-searchable-select { position: relative; width: 100%; min-width: 0; margin: 0; text-align: left; }
+.static-searchable-select .searchable-select-control {
+  display: grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 7px;
+  width: 100%; min-height: 40px; margin: 0; padding: 7px 9px; border: 1px solid #b8c4bc;
+  border-radius: 5px; color: #293b31; background: #fff; font: inherit; font-weight: 500; text-align: left;
+}
+.static-searchable-select .searchable-select-control:hover:not(:disabled),
+.static-searchable-select.open .searchable-select-control { border-color: #4d806d; }
+.static-searchable-select .searchable-select-control:focus-visible { outline: 2px solid rgba(45, 122, 102, .2); outline-offset: 1px; }
+.static-searchable-select .searchable-select-control > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.static-searchable-select .searchable-select-control .placeholder { color: #7a867f; }
+.static-searchable-select .searchable-select-chevron { justify-self: end; color: #5f7067; font-size: 17px; line-height: 1; transition: transform 120ms ease; }
+.static-searchable-select.open .searchable-select-chevron { transform: rotate(180deg); }
+.static-searchable-select .searchable-select-popover {
+  position: absolute; z-index: 100; top: calc(100% + 4px); left: 0; width: max(100%, 280px);
+  max-width: min(440px, calc(100vw - 24px)); margin: 0; padding: 6px; border: 1px solid #aebdb4;
+  border-radius: 6px; background: #fff; box-shadow: 0 12px 30px rgba(27, 45, 36, .18);
+}
+.static-searchable-select .searchable-select-search {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr) 24px; align-items: center; gap: 4px;
+  margin: 0 0 5px; padding: 0 6px; border: 1px solid #9fb3a7; border-radius: 4px; color: #5e7066; background: #fff;
+}
+.static-searchable-select .searchable-select-search input {
+  width: 100%; min-height: 34px; margin: 0; padding: 0; border: 0; border-radius: 0; outline: 0;
+  color: #293b31; background: transparent; font: inherit; font-size: 12px;
+}
+.static-searchable-select .searchable-select-search input:focus { border: 0; outline: 0; }
+.static-searchable-select .searchable-select-search input::-webkit-search-cancel-button { appearance: none; }
+.static-searchable-select .searchable-select-clear {
+  display: grid; place-items: center; width: 23px; min-height: 23px; margin: 0; padding: 0;
+  border: 0; border-radius: 3px; color: #62736a; background: transparent; font-size: 18px; font-weight: 500;
+}
+.static-searchable-select .searchable-select-options { display: grid; max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
+.static-searchable-select .searchable-select-group { display: grid; }
+.static-searchable-select .searchable-select-group + .searchable-select-group { margin-top: 4px; padding-top: 4px; border-top: 1px solid #e2e7e3; }
+.static-searchable-select .searchable-select-group-label { padding: 4px 7px 3px; color: #748078; font-size: 10px; font-weight: 800; }
+.static-searchable-select .searchable-select-options [role="option"] {
+  display: grid; grid-template-columns: minmax(0, 1fr) 18px; align-items: center; gap: 6px;
+  width: 100%; min-height: 34px; margin: 0; padding: 6px 7px; border: 0; border-radius: 4px;
+  color: #304239; background: transparent; font: inherit; font-size: 12px; font-weight: 500; text-align: left;
+}
+.static-searchable-select .searchable-select-options [role="option"]:hover,
+.static-searchable-select .searchable-select-options [role="option"]:focus-visible { outline: 0; background: #edf4f0; }
+.static-searchable-select .searchable-select-options [role="option"][aria-selected="true"] { color: #155e4d; background: #e5f1ec; font-weight: 800; }
+.static-searchable-select .searchable-select-options [role="option"] > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.static-searchable-select .searchable-select-check { justify-self: end; }
+.static-searchable-select .searchable-select-empty { margin: 0; padding: 18px 8px; color: #76827b; font-size: 11px; text-align: center; }

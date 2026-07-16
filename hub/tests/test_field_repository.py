@@ -1,5 +1,6 @@
 import os
 import tempfile
+import threading
 import unittest
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
@@ -29,6 +30,32 @@ class FieldRepositoryTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp_dir.cleanup()
+
+    def test_two_repository_instances_keep_both_concurrent_creates(self):
+        second_repository = FieldRepository()
+        second_repository.field_repo_path = self.repository.field_repo_path
+        barrier = threading.Barrier(2)
+        errors = []
+
+        def create(repository, name):
+            barrier.wait()
+            try:
+                repository.upsert(None, {"name": name})
+            except Exception as error:  # pragma: no cover - asserted below
+                errors.append(error)
+
+        threads = [
+            threading.Thread(target=create, args=(self.repository, "圃場A")),
+            threading.Thread(target=create, args=(second_repository, "圃場B")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.repository.load()
+        self.assertEqual(errors, [])
+        self.assertEqual({field["name"] for field in self.repository.list()}, {"圃場A", "圃場B"})
 
     def test_upsert_stores_crop_context_targets_and_policy(self):
         field = self.repository.upsert(
@@ -183,6 +210,37 @@ class FieldRepositoryTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "unsupported record item"):
             self.repository.add_event(field["id"], {"record_values": [{"key": "unknown", "value": "1"}]})
+
+    def test_search_records_filters_normalized_text_kind_date_and_pages(self):
+        field = self.repository.upsert(None, {"name": "記録検索圃場"})
+        self.repository.add_event(
+            field["id"],
+            {
+                "event_type": "watering",
+                "occurred_at": "2026-07-15T07:00",
+                "title": "鉢Aを潅水",
+                "target_name": "ブルーベリー鉢A",
+                "description": "10分間実施",
+                "tags": ["朝作業"],
+            },
+        )
+        self.repository.add_event(
+            field["id"],
+            {"event_type": "fertilizer", "occurred_at": "2026-07-16T08:00", "title": "液肥を施用"},
+        )
+        self.repository.add_note(field["id"], {"category": "observation", "text": "葉色を確認", "tags": ["ブルーベリー"]})
+
+        watering = self.repository.search_records(field["id"], query="灌 水 ブルーベリー", kinds=["watering"])
+        first_page = self.repository.search_records(field["id"], page=1, page_size=2)
+        second_page = self.repository.search_records(field["id"], page=2, page_size=2)
+        dated = self.repository.search_records(field["id"], date_from="2026-07-16", kinds=["fertilizer"])
+
+        self.assertEqual(watering["total"], 1)
+        self.assertEqual(watering["items"][0]["target_name"], "ブルーベリー鉢A")
+        self.assertEqual(first_page["total"], 3)
+        self.assertEqual(len(first_page["items"]), 2)
+        self.assertEqual(len(second_page["items"]), 1)
+        self.assertEqual(dated["items"][0]["title"], "液肥を施用")
 
 
 if __name__ == "__main__":

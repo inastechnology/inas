@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>個人設定 - INA Device Hub</title>
+    <style>
+      :root { color: #1f2c25; background: #eef2ee; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      body { min-width: 320px; min-height: 100vh; margin: 0; background: #eef2ee; }
+      button, input, select { font: inherit; letter-spacing: 0; }
+      .page-header { border-bottom: 1px solid #ccd5ce; background: #fff; }
+      .header-inner, main { width: min(980px, calc(100% - 40px)); margin: 0 auto; }
+      .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 0; }
+      .brand { color: #536159; font-size: 11px; font-weight: 800; text-decoration: none; }
+      h1 { margin: 4px 0 0; font-size: 25px; letter-spacing: 0; }
+      .back-link { color: #24654f; font-size: 12px; font-weight: 800; }
+      main { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 18px; padding: 22px 0 48px; }
+      .sidebar, .settings-section { border: 1px solid #d2dad4; border-radius: 7px; background: #fff; }
+      .sidebar { align-self: start; padding: 14px; }
+      .search { display: grid; gap: 5px; color: #59675f; font-size: 11px; font-weight: 800; }
+      input, select { width: 100%; min-height: 38px; padding: 8px 9px; border: 1px solid #b8c4bb; border-radius: 5px; color: #26342c; background: #fff; }
+      .account { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid #e0e5e1; }
+      .account span, .account small { display: block; color: #708078; font-size: 10px; }
+      .account strong { display: block; margin: 3px 0 8px; overflow-wrap: anywhere; font-size: 12px; }
+      .role { display: inline-block; padding: 3px 6px; border-radius: 4px; color: #285d49; background: #e7f1eb; font-size: 10px; font-weight: 800; }
+      .content { display: grid; gap: 12px; }
+      .settings-section { overflow: hidden; }
+      .section-heading { padding: 17px 18px 13px; border-bottom: 1px solid #e1e6e2; }
+      h2 { margin: 0; font-size: 17px; letter-spacing: 0; }
+      .section-heading p { margin: 5px 0 0; color: #68766e; font-size: 11px; line-height: 1.5; }
+      .setting-list { display: grid; }
+      .setting-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 280px); align-items: center; gap: 20px; min-height: 76px; padding: 13px 18px; border-bottom: 1px solid #e5e9e6; }
+      .setting-label { font-size: 12px; font-weight: 800; }
+      .setting-label small { display: block; margin-top: 4px; color: #758078; font-size: 10px; font-weight: 500; line-height: 1.45; }
+      .section-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; background: #f7f9f7; }
+      .save-state { min-height: 18px; color: #627068; font-size: 11px; }
+      .save-state.error { color: #a33d35; font-weight: 800; }
+      .save-state.success { color: #1e6b4d; font-weight: 800; }
+      .primary { min-height: 38px; padding: 8px 13px; border: 1px solid #176b50; border-radius: 5px; color: #fff; background: #176b50; font-weight: 800; cursor: pointer; }
+      .empty-search { display: none; padding: 26px; border: 1px solid #d2dad4; border-radius: 7px; color: #647169; background: #fff; text-align: center; }
+      dialog { width: min(580px, calc(100% - 24px)); padding: 0; border: 0; border-radius: 7px; color: #26342c; box-shadow: 0 18px 52px rgba(20, 36, 27, .28); }
+      dialog::backdrop { background: rgba(27, 39, 32, .5); }
+      .dialog-heading { padding: 17px 18px 12px; border-bottom: 1px solid #dce3de; }
+      .dialog-heading h2 { font-size: 17px; }
+      .dialog-heading p { margin: 6px 0 0; color: #66736c; font-size: 11px; line-height: 1.5; }
+      .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 15px 18px; }
+      .comparison section { padding: 11px; border: 1px solid #d8dfda; border-radius: 5px; background: #f8faf8; }
+      .comparison h3 { margin: 0 0 8px; font-size: 11px; }
+      .comparison dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 8px; margin: 0; font-size: 10px; }
+      .comparison dt { color: #738078; }
+      .comparison dd { margin: 0; font-weight: 700; }
+      .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid #dce3de; background: #f7f9f7; }
+      .dialog-actions button { min-height: 36px; padding: 7px 11px; border: 1px solid #aebbb2; border-radius: 5px; color: #3f5147; background: #fff; font-weight: 800; cursor: pointer; }
+      .dialog-actions .primary { color: #fff; background: #176b50; }
+      @media (max-width: 720px) {
+        .header-inner, main { width: min(100% - 20px, 980px); }
+        main { grid-template-columns: 1fr; }
+        .setting-row { grid-template-columns: 1fr; gap: 8px; }
+        .comparison { grid-template-columns: 1fr; }
+        .section-actions { align-items: stretch; flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <div class="header-inner">
+        <div><a class="brand" href="/">INA Device Hub</a><h1>個人設定</h1></div>
+        <a class="back-link" href="/fields">圃場一覧へ戻る</a>
+      </div>
+    </header>
+    <main>
+      <aside class="sidebar">
+        <label class="search">設定を検索<input id="preference-search" type="search" autocomplete="off" placeholder="時刻、日付、栽培レベル..."></label>
+        <div class="account"><span>ログイン中</span><strong>{{ user.email }}</strong><small>権限</small><span class="role">{{ '管理者' if user.role == 'admin' else '作業者' }}</span></div>
+      </aside>
+      <div class="content" id="preference-content">
+        <form class="settings-section" id="preference-form" data-stateful-form data-pristine-message="個人設定は変更されていません。" data-search="日時 timezone タイムゾーン 日付 date format 栽培 アドバイス 初心者 標準 プロ">
+          <div class="section-heading"><h2>表示と栽培アドバイス</h2><p>この設定はログイン中のユーザーだけに適用され、別の端末でも引き継がれます。</p></div>
+          <div class="setting-list">
+            <label class="setting-row" data-search="timezone タイムゾーン 時刻"><span class="setting-label">タイムゾーン<small>カレンダーと記録時刻の表示基準です。</small></span><select name="timezone"><option value="Asia/Tokyo"{% if preferences.timezone == 'Asia/Tokyo' %} selected{% endif %}>Asia/Tokyo</option><option value="UTC"{% if preferences.timezone == 'UTC' %} selected{% endif %}>UTC</option></select></label>
+            <label class="setting-row" data-search="date format 日付 表示形式"><span class="setting-label">日付形式</span><select name="date_format"><option value="yyyy-MM-dd"{% if preferences.date_format == 'yyyy-MM-dd' %} selected{% endif %}>2026-07-15</option><option value="yyyy/MM/dd"{% if preferences.date_format == 'yyyy/MM/dd' %} selected{% endif %}>2026/07/15</option><option value="MM/dd/yyyy"{% if preferences.date_format == 'MM/dd/yyyy' %} selected{% endif %}>07/15/2026</option></select></label>
+            <label class="setting-row" data-search="栽培 アドバイス 習熟度 初心者 標準 プロ beginner professional"><span class="setting-label">栽培アドバイスの詳しさ<small>AIが作る作業手順の説明量と専門性を調整します。農業上の判断基準や安全条件はどの設定でも省略しません。</small></span><select name="cultivation_experience"><option value="beginner"{% if preferences.preferences.get('cultivation_experience') == 'beginner' %} selected{% endif %}>初心者 - 手順を詳しく</option><option value="standard"{% if preferences.preferences.get('cultivation_experience', 'standard') == 'standard' %} selected{% endif %}>標準 - 必要情報を簡潔に</option><option value="professional"{% if preferences.preferences.get('cultivation_experience') == 'professional' %} selected{% endif %}>プロ - 判断・数値・根拠を優先</option></select></label>
+          </div>
+          <div class="section-actions"><span id="save-state" class="save-state" role="status" data-stateful-reason></span><button class="primary" type="submit" data-stateful-submit>個人設定を保存</button></div>
+        </form>
+        <p id="empty-search" class="empty-search">一致する設定はありません。</p>
+      </div>
+    </main>
+
+    <dialog id="conflict-dialog" aria-labelledby="conflict-title">
+      <div class="dialog-heading"><h2 id="conflict-title">別の画面で設定が更新されました</h2><p>サーバー上の最新版を確認し、残す内容を選択してください。</p></div>
+      <div class="comparison">
+        <section><h3>サーバー上の最新版</h3><dl id="server-values"></dl></section>
+        <section><h3>この画面の入力</h3><dl id="local-values"></dl></section>
+      </div>
+      <div class="dialog-actions"><button id="use-server" type="button">最新版を使う</button><button id="retry-local" class="primary" type="button">入力内容で再保存</button></div>
+    </dialog>
+
+    <script src="/static/stateful-actions.js"></script>
+    <script>
+      const form = document.getElementById("preference-form");
+      const saveState = document.getElementById("save-state");
+      const conflictDialog = document.getElementById("conflict-dialog");
+      let version = {{ preferences.version }};
+      let storedPreferences = {{ preferences.preferences | tojson }};
+      let pendingLocal = null;
+      let conflictCurrent = null;
+
+      const formValue = () => ({
+        version,
+        timezone: form.elements.timezone.value,
+        date_format: form.elements.date_format.value,
+        preferences: { ...storedPreferences, cultivation_experience: form.elements.cultivation_experience.value },
+      });
+      const applyValue = (value) => {
+        version = Number(value.version || 0);
+        form.elements.timezone.value = value.timezone;
+        form.elements.date_format.value = value.date_format;
+        storedPreferences = value.preferences || {};
+        form.elements.cultivation_experience.value = storedPreferences.cultivation_experience || "standard";
+      };
+      const experienceLabel = (value) => ({ beginner: "初心者", standard: "標準", professional: "プロ" }[value] || "標準");
+      const comparisonMarkup = (value) => `<dt>タイムゾーン</dt><dd>${value.timezone}</dd><dt>日付</dt><dd>${value.date_format}</dd><dt>栽培アドバイス</dt><dd>${experienceLabel(value.preferences?.cultivation_experience)}</dd>`;
+
+      async function savePreferences(value) {
+        form.dispatchEvent(new CustomEvent("stateful-form-busy", { detail: true }));
+        saveState.className = "save-state";
+        saveState.textContent = "保存中...";
+        const response = await fetch("/local/api/me/preferences", {
+          method: "PATCH",
+          headers: { "Accept": "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify(value),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (response.status === 409 && body.current) {
+          pendingLocal = value;
+          conflictCurrent = body.current;
+          document.getElementById("server-values").innerHTML = comparisonMarkup(conflictCurrent);
+          document.getElementById("local-values").innerHTML = comparisonMarkup(pendingLocal);
+          saveState.textContent = "";
+          form.dispatchEvent(new CustomEvent("stateful-form-busy", { detail: false }));
+          conflictDialog.showModal();
+          return;
+        }
+        if (!response.ok) {
+          form.dispatchEvent(new CustomEvent("stateful-form-busy", { detail: false }));
+          throw new Error(body.error || `保存に失敗しました (${response.status})`);
+        }
+        applyValue(body.preferences);
+        form.dispatchEvent(new CustomEvent("stateful-form-reset"));
+        saveState.className = "save-state success";
+        saveState.textContent = "保存しました";
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        try { await savePreferences(formValue()); }
+        catch (error) { saveState.className = "save-state error"; saveState.textContent = error.message; }
+      });
+      document.getElementById("use-server").addEventListener("click", () => {
+        if (conflictCurrent) applyValue(conflictCurrent);
+        form.dispatchEvent(new CustomEvent("stateful-form-reset"));
+        conflictDialog.close();
+        saveState.className = "save-state";
+        saveState.textContent = "サーバー上の最新版を表示しています";
+      });
+      document.getElementById("retry-local").addEventListener("click", async () => {
+        if (!pendingLocal || !conflictCurrent) return;
+        conflictDialog.close();
+        try { await savePreferences({ ...pendingLocal, version: conflictCurrent.version }); }
+        catch (error) { saveState.className = "save-state error"; saveState.textContent = error.message; }
+      });
+
+      document.getElementById("preference-search").addEventListener("input", (event) => {
+        const query = event.target.value.trim().toLocaleLowerCase();
+        let visibleRows = 0;
+        form.querySelectorAll("[data-search]").forEach((row) => {
+          if (row === form) return;
+          const visible = !query || row.dataset.search.toLocaleLowerCase().includes(query);
+          row.hidden = !visible;
+          if (visible) visibleRows += 1;
+        });
+        form.hidden = visibleRows === 0;
+        document.getElementById("empty-search").style.display = visibleRows === 0 ? "block" : "none";
+      });
+    </script>
+  </body>
+</html>

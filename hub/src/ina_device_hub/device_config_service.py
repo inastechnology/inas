@@ -1,8 +1,11 @@
+import copy
 import json
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 
+from ina_device_hub.collection_search import matches_search, paginate, search_terms
 from ina_device_hub.device_config_repository import (
+    DeviceStateConflictError,
     device_config_repository,
     validate_device_config,
 )
@@ -164,6 +167,48 @@ class DeviceConfigService:
     def get_all_records(self):
         return self.repository.get_all()
 
+    def search_records(self, *, query="", states=None, device_kinds=None, page=1, page_size=50):
+        terms = search_terms(query)
+        state_filter = {str(item or "").strip() for item in (states or []) if str(item or "").strip()}
+        kind_filter = {str(item or "").strip().upper() for item in (device_kinds or []) if str(item or "").strip()}
+        matches = []
+        for device_id, record in self.repository.get_all().items():
+            state = str(record.get("state") or "unknown")
+            last_status = record.get("last_status") if isinstance(record.get("last_status"), dict) else {}
+            device_kind = str(record.get("device_kind") or last_status.get("device_kind") or "").upper()
+            if state_filter and state not in state_filter:
+                continue
+            if kind_filter and device_kind not in kind_filter:
+                continue
+            config = record.get("config") if isinstance(record.get("config"), dict) else {}
+            switches = config.get("mosfet_switches") if isinstance(config.get("mosfet_switches"), list) else []
+            if not matches_search(
+                terms,
+                [
+                    device_id,
+                    record.get("name"),
+                    record.get("location"),
+                    record.get("memo"),
+                    state,
+                    device_kind,
+                    [
+                        [switch.get("name"), switch.get("switch_id"), switch.get("controlled_load")]
+                        for switch in switches
+                        if isinstance(switch, dict)
+                    ],
+                ],
+            ):
+                continue
+            summary = copy.deepcopy(record)
+            summary.pop("status_history", None)
+            summary.pop("ota_status_history", None)
+            summary.pop("runtime_config", None)
+            matches.append((device_id, summary))
+        matches.sort(key=lambda item: ((item[1].get("name") or item[0]).casefold(), item[0]))
+        result = paginate(matches, page=page, page_size=page_size)
+        result["items"] = {device_id: record for device_id, record in result["items"]}
+        return result
+
     def update_config(self, device_id: str, config: dict):
         return self.repository.upsert(device_id, config)
 
@@ -241,6 +286,10 @@ class DeviceConfigService:
         return published
 
     def publish_push(self, device_id: str):
+        record = self.repository.get(device_id)
+        state = record.get("state") if record else "pending"
+        if state != "active":
+            raise DeviceStateConflictError(f"runtime config can only be sent to active devices (current: {state})")
         return self.publish_config(device_id, "push", retain=True)
 
     def handle_mqtt_message(self, mqtt_client, message: dict):

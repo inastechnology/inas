@@ -22,31 +22,24 @@ hub と client device を横断した全体仕様は [../../../docs/jp/SYSTEM_SP
 
 クイックスタート
 
-1. rye を導入（未導入の場合）: https://rye.astral.sh/guide/installation/
+1. uv を導入（未導入の場合）: https://docs.astral.sh/uv/getting-started/installation/
 
 2. 依存を同期
 
 ```bash
-rye sync
+uv sync
 ```
 
-3. 環境変数を用意（`.default.env` があればコピー）
+3. 対話式に初期設定と接続確認を行う
 
 ```bash
-cp .default.env .env
-# 編集: .env の値を実運用に合わせて更新してください
+uv run ina-hub install
 ```
 
-4. 必要なら DB を作成
+4. ローカルで起動（libSQL schema は起動時に自動準備）
 
 ```bash
-rye run db:create
-```
-
-5. ローカルで起動（開発）
-
-```bash
-rye run serve
+uv run python src/ina_device_hub/serve.py
 # デフォルト: http://localhost:39151
 ```
 
@@ -99,7 +92,11 @@ Cloudflare hosted option は 2 種類あります。
 
 Tunnel 版のネットワーク構成図は [NETWORK_ARCHITECTURE.md](NETWORK_ARCHITECTURE.md) を参照してください。
 
-hub の管理 UI は、TOPで圃場を検索・選択し、選択後に圃場の現在状態、設置物、デバイス、栽培作業へ進む構成です。全デバイスをTOPへ列挙しません。設置ビューは空間ごとの北向きを保持し、Canvas 上の方位マークで常時確認できます。UI 改善方針は [HUB_ADMIN_UX_IMPLEMENTATION.md](HUB_ADMIN_UX_IMPLEMENTATION.md)、設置ビューの操作とデータモデルは [HUB_INSTALLATION_LAYOUT_SPEC.md](HUB_INSTALLATION_LAYOUT_SPEC.md)、圃場・設置物・デバイスの階層と大量件数への対応は [HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md](HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md) を参照してください。
+hub の管理 UI は、TOPで圃場を検索・選択し、選択後に圃場の現在状態、設置物、デバイス、栽培作業へ進む構成です。全デバイスをTOPへ列挙しません。設置ビューは空間ごとの北向きを保持し、Canvas 上の方位マークで常時確認できます。UI 改善方針は [HUB_ADMIN_UX_IMPLEMENTATION.md](HUB_ADMIN_UX_IMPLEMENTATION.md)、状態ごとの操作可否と表示原則は [HUB_UI_STATE_ACTION_POLICY.md](HUB_UI_STATE_ACTION_POLICY.md)、設置ビューの操作とデータモデルは [HUB_INSTALLATION_LAYOUT_SPEC.md](HUB_INSTALLATION_LAYOUT_SPEC.md)、圃場・設置物・デバイスの階層と大量件数への対応は [HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md](HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md) を参照してください。
+
+定植単位の年間計画、作業期間、優先度、防除対象、作業実績、LLM呼び出し条件、FAMIC/WAGRIを使う農薬検索方針は [HUB_PLANT_MANAGEMENT_CALENDAR_SPEC.md](HUB_PLANT_MANAGEMENT_CALENDAR_SPEC.md) にまとめています。
+
+Hub全体のAI・システム設定は管理者用 `/settings`、タイムゾーンと日付形式はemail単位の `/preferences` に分離しています。個人設定の正本はTursoです。Hubは日本語固定とし、翻訳はブラウザ機能を使用します。設置ビューはrevisionによる楽観ロックと三者比較を行い、同時編集時に変更を無言で上書きしません。詳細は [HUB_CONFIGURATION_MANAGEMENT.md](HUB_CONFIGURATION_MANAGEMENT.md) と [HUB_USER_SETTINGS_AND_CONCURRENT_EDITING.md](HUB_USER_SETTINGS_AND_CONCURRENT_EDITING.md) を参照してください。
 
 圃場一覧では `＋ 圃場を追加` のモーダルから、名前、都道府県、市区町村、設置環境など圃場自体の基本情報だけを登録します。作物、品種、作物区分、樹齢、栽培方式、土壌・培地、目標レンジ、栽培カレンダーは圃場属性ではなく、設置ビュー上の培地に登録した定植単位で管理します。圃場詳細は `概要`、`環境・設備`、`栽培`、`記録`、`設定` のタブで分け、初期表示では現在の圃場状態と `次の判断候補` を先に表示します。土壌水分、EC、pH、湿度、PAR は現在値と作物目標の範囲をレンジグラフで比較し、目標内、下限未満、上限超過、目標未設定を区別します。時系列グラフは `環境・設備` で圃場全体から空間別へ整理し、`栽培` では作物情報、年間カレンダー、直近10件の経過を確認します。`記録` タブはデバイス0台でも使用でき、潅水時間、EC、pH、作物状態など必要な項目だけを検索して追加します。同日のデバイス値がある場合は複数デバイス・複数時刻を自動表示し、月間カレンダーから手入力、5段階絵文字評価、R2画像とともに振り返れます。詳細は [HUB_DEVICE_FREE_FIELD_RECORDING_SPEC.md](HUB_DEVICE_FREE_FIELD_RECORDING_SPEC.md) を参照してください。これらを前提条件として、hub は最新センサー値との差から灌水・液肥・噴霧などの判断候補を作ります。判断候補は将来、植物管理カレンダー、画像・気象判断、設備保守、定期作業を統合した圃場 TODO リストへ発展させます。現時点で hub から制御できるのは WTR/WRS の灌水のみで、液肥と噴霧は将来デバイス向けの候補として記録します。改善ループの仕様は [AGRI_IMPROVEMENT_LOOP.md](AGRI_IMPROVEMENT_LOOP.md) を参照してください。
 
@@ -230,30 +227,30 @@ Instagram 自動投稿を使う場合は、追加で次を設定してくださ�
 
 - S3_TMP_ENDPOINT_URL, S3_TMP_BUCKET_NAME, S3_TMP_BUCKET_REGION, S3_TMP_ACCESS_KEY, S3_TMP_SECRET_KEY
 - S3_TMP_BASE_URL
-- INSTAGRAM_USER_ID, INSTAGRAM_ACCESS_TOKEN, INSTAGRAM_CAMERA_ID
-- INSTAGRAM_SENSOR_ID, INSTAGRAM_PLANT_POSITION_PROMPT, INSTAGRAM_ADMIN_USERNAME
+- INSTAGRAM_USER_ID, INSTAGRAM_ACCESS_TOKEN
+- INSTAGRAM_SENSOR_ID
 - INSTAGRAM_WEATHER_FORECAST_URL, INSTAGRAM_WEATHER_AREA_NAME
 - INSTAGRAM_WEATHER_OFFICE_NAME, INSTAGRAM_WEATHER_FORECAST_TITLE
-- AI_ENABLED, AI_AGENT_SCHEDULE_START
-- AI_IMAGE_ANALYZE_API_KEY, AI_IMAGE_ANALYZE_BASE_URL, AI_IMAGE_ANALYZE_MODEL
-- AI_TEXT_ANALYZE_API_KEY, AI_TEXT_ANALYZE_BASE_URL, AI_TEXT_ANALYZE_MODEL
+- AI_IMAGE_ANALYZE_API_KEY, AI_TEXT_ANALYZE_API_KEY
+
+AI有効/無効、AI APIキー、Base URL、モデル、Instagram投稿処理開始時刻、投稿元カメラ、植物位置の補足はHubの `/settings`、ユーザーのタイムゾーンと日付形式は `/preferences` で管理します。AI APIキーの保存値は画面へ再表示されません。
 
 Instagram 自動投稿フロー
 
 - `TIMELAPSE_INTERVAL` ごとに RTSP から静止画を取得し、S3 とローカルの `timelapse_frames/` に保存します。
 - `WEATHER_RECORD_INTERVAL_SECONDS` ごとに Open-Meteo から指定緯度経度の日別気象データを取得し、`WORK_DIR/weather_records.jsonl` に生育気象ログとして追記します。
-- `AI_AGENT_SCHEDULE_START` の時刻になると、通常日は前回投稿以降、日曜は直近7日分の静止画から mp4 を生成します。
+- `/settings` のInstagram投稿処理開始時刻になると、通常日は前回投稿以降、日曜は直近7日分の静止画から mp4 を生成します。
 - 生成した動画と代表画像を `S3_TMP_*` にアップロードし、公開 URL を作成します。
-- AI に代表画像、タイムラプス動画 URL、センサースナップショット、前回投稿時に保存した広域天気予報、`INSTAGRAM_PLANT_POSITION_PROMPT` を渡して投稿文を生成します。
+- AI に代表画像、タイムラプス動画 URL、センサースナップショット、前回投稿時に保存した広域天気予報、画面で設定した植物位置の補足を渡して投稿文を生成します。
 - 投稿完了後、次回投稿用に `INSTAGRAM_WEATHER_FORECAST_URL` の JMA feed から `INSTAGRAM_WEATHER_OFFICE_NAME` と `INSTAGRAM_WEATHER_FORECAST_TITLE` に一致する最新 XML を選び、`INSTAGRAM_WEATHER_AREA_NAME` の天気予報を状態ファイルに保存します。
 - Instagram Graph API を使って Reel を投稿します。
 
 注意:
 
 - Instagram 投稿には公開アクセス可能な `S3_TMP_BASE_URL` が必要です。非公開バケット URL では投稿できません。
-- `INSTAGRAM_CAMERA_ID` は `.camera_device_list.json` に登録済みのカメラ ID を指定してください。
+- 投稿元カメラは `/settings` で登録済みのカメラデバイスから選択してください。
 - `INSTAGRAM_SENSOR_ID` を設定すると、最新センサーデータを投稿文生成に含めます。
-- `INSTAGRAM_ADMIN_USERNAME` は指示コメントとして扱う Instagram ユーザー名です。その他ユーザーのコメントは一般話題のみ参照し、セキュリティ関連話題は無視します。
+- 指示コメントとして扱う自分のInstagramユーザー名はGraph APIから自動取得します。その他ユーザーのコメントは一般話題のみ参照し、セキュリティ関連話題は無視します。
 - Instagram 投稿用の天気予報はArea単位の天気と降水確率だけを投稿文生成に含めます。観測地点名、観測所コード、住所、地点気温は含めません。
 - `weather_records.jsonl` は1行1 JSONの追記ログです。Open-Meteo の日別データは `source.type=reanalysis` として、`daily_summaries` に日別の降水量、降雨時間、日照時間、日射量、ET0、最高/最低気温を保持します。
 - 投稿文テンプレートを変更する場合は `data/instagram_caption_prompt.txt` を編集してください（必須プレースホルダーが欠けた場合は安全のため内蔵テンプレートにフォールバックします）。

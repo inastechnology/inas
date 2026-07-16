@@ -4,12 +4,15 @@ import os
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
+from ina_device_hub.collection_search import matches_search, paginate, search_terms
+from ina_device_hub.json_repository_io import atomic_write_json, serialized_repository_write
 from ina_device_hub.plant_action_catalog import (
     is_known_plant_action_type,
     normalize_plant_action_type,
     plant_action_type_codes,
     plant_action_types,
 )
+from ina_device_hub.plant_work_catalog import default_action_work_plan
 from ina_device_hub.setting import setting
 
 MAX_PLANTINGS = 2000
@@ -20,8 +23,26 @@ MAX_QUESTIONS = 1000
 
 VALID_PLANTING_STATUSES = {"active", "harvested", "removed"}
 VALID_CROP_CATEGORIES = {"vegetable", "fruit_tree", "flower", "herb", "other"}
-VALID_ACTION_STATUSES = {"planned", "completed", "skipped"}
+VALID_ACTION_STATUSES = {"planned", "in_progress", "completed", "skipped"}
+ACTION_STATUS_TRANSITIONS = {
+    "planned": {"in_progress", "skipped"},
+    "in_progress": {"planned", "skipped"},
+    "completed": set(),
+    "skipped": {"planned"},
+}
 VALID_ACTION_PRIORITIES = {"required", "should", "recommended", "optional"}
+VALID_WORK_METHOD_TYPES = {
+    "observation",
+    "manual",
+    "device",
+    "material_application",
+    "chemical",
+    "physical",
+    "biological",
+    "cultural",
+    "other",
+}
+VALID_WORK_FREQUENCY_MODES = {"one_time", "as_needed", "interval", "seasonal", "continuous"}
 VALID_RECURRENCE_TYPES = {"one_time", "interval_after_completion", "seasonal", "condition_based", "continuous_review"}
 VALID_RECURRENCE_ANCHORS = {"planting_date", "completion_date", "calendar_date", "observation"}
 VALID_ACTION_TYPES = plant_action_type_codes()
@@ -32,7 +53,6 @@ PLANTING_TARGET_RANGES = {
     "air_humidity_percent": (0.0, 100.0),
     "par_umol_m2_s": (0.0, 2000.0),
 }
-
 
 class PlantManagementValidationError(ValueError):
     pass
@@ -51,8 +71,7 @@ class PlantManagementRepository:
 
     def load(self):
         if not os.path.exists(self.repository_path):
-            with open(self.repository_path, "w", encoding="utf-8") as file:
-                json.dump(_empty_data(), file)
+            atomic_write_json(self.repository_path, _empty_data())
         try:
             with open(self.repository_path, encoding="utf-8") as file:
                 loaded = json.load(file)
@@ -61,9 +80,9 @@ class PlantManagementRepository:
         self.data = _normalize_data(loaded)
 
     def save(self):
-        with open(self.repository_path, "w", encoding="utf-8") as file:
-            json.dump(self.data, file, ensure_ascii=True, indent=2)
+        atomic_write_json(self.repository_path, self.data)
 
+    @serialized_repository_write("repository_path")
     def create_planting(self, field_id: str, value: dict):
         if not isinstance(value, dict):
             raise PlantManagementValidationError("planting data must be an object")
@@ -103,6 +122,7 @@ class PlantManagementRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("repository_path")
     def update_planting(self, planting_id: str, value: dict):
         record = self._planting(planting_id)
         if not isinstance(value, dict):
@@ -134,6 +154,7 @@ class PlantManagementRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("repository_path")
     def create_calendar(
         self,
         planting_id: str,
@@ -173,6 +194,7 @@ class PlantManagementRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("repository_path")
     def update_action(self, planting_id: str, action_id: str, value: dict, *, use_as_guidance: bool = False):
         planting = self._planting(planting_id)
         calendar = self._calendar_for_planting(planting)
@@ -180,6 +202,8 @@ class PlantManagementRepository:
         if not isinstance(value, dict):
             raise PlantManagementValidationError("action data must be an object")
         before = copy.deepcopy(action)
+        if before["status"] == "completed" and value:
+            raise PlantManagementValidationError("completed actions are read-only")
 
         for key in ("title", "reason", "instructions", "timing_label"):
             if key in value:
@@ -199,6 +223,8 @@ class PlantManagementRepository:
             status = _clean_string(value.get("status"))
             if status not in VALID_ACTION_STATUSES:
                 raise PlantManagementValidationError("unsupported action status")
+            if status != action["status"] and status not in ACTION_STATUS_TRANSITIONS[action["status"]]:
+                raise PlantManagementValidationError(f"action status cannot change from {action['status']} to {status}")
             action["status"] = status
         if "window_start" in value:
             action["window_start"] = _date_string(value.get("window_start"), "window_start")
@@ -208,6 +234,20 @@ class PlantManagementRepository:
             raise PlantManagementValidationError("window_end must be on or after window_start")
         if "tags" in value:
             action["tags"] = _clean_string_list(value.get("tags"), limit=20, item_length=60)
+        if "required_people" in value:
+            action["required_people"] = _bounded_int(
+                value.get("required_people"), action["required_people"], 1, 100, "required_people"
+            )
+        if "estimated_minutes" in value:
+            action["estimated_minutes"] = _bounded_int(
+                value.get("estimated_minutes"), action["estimated_minutes"], 1, 1440, "estimated_minutes"
+            )
+        if "work_plan" in value:
+            action["work_plan"] = _normalize_action_work_plan(value.get("work_plan"), action["action_type"])
+        elif "pest_control" in value:
+            action["work_plan"] = _normalize_action_work_plan(value.get("pest_control"), action["action_type"])
+        elif action["action_type"] != before["action_type"]:
+            action["work_plan"] = _normalize_action_work_plan(None, action["action_type"])
         action["source"] = "user_edited"
 
         changed = _dict_diff(before, action)
@@ -232,6 +272,7 @@ class PlantManagementRepository:
             self.save()
         return copy.deepcopy(action)
 
+    @serialized_repository_write("repository_path")
     def add_action(self, planting_id: str, value: dict):
         planting = self._planting(planting_id)
         calendar = self._calendar_for_planting(planting)
@@ -246,18 +287,20 @@ class PlantManagementRepository:
         self.save()
         return copy.deepcopy(action)
 
+    @serialized_repository_write("repository_path")
     def delete_action(self, planting_id: str, action_id: str):
         planting = self._planting(planting_id)
         calendar = self._calendar_for_planting(planting)
         action = _find_action(calendar, action_id)
-        if action.get("status") == "completed":
-            raise PlantManagementValidationError("completed actions cannot be deleted")
+        if action.get("status") != "planned":
+            raise PlantManagementValidationError("only planned actions can be deleted")
         calendar["actions"] = [item for item in calendar["actions"] if item["id"] != action_id]
         calendar["revision"] += 1
         calendar["updated_at"] = _utc_now()
         self.data["calendars"][calendar["id"]] = calendar
         self.save()
 
+    @serialized_repository_write("repository_path")
     def replace_calendar(
         self,
         planting_id: str,
@@ -273,9 +316,9 @@ class PlantManagementRepository:
             raise PlantManagementValidationError("calendar actions must be a non-empty array")
         if len(actions) > MAX_ACTIONS_PER_CALENDAR:
             raise PlantManagementValidationError(f"calendar actions must contain {MAX_ACTIONS_PER_CALENDAR} entries or less")
-        completed = [copy.deepcopy(action) for action in calendar["actions"] if action.get("status") == "completed"]
+        preserved = [copy.deepcopy(action) for action in calendar["actions"] if action.get("status") != "planned"]
         regenerated = [_normalize_action(action, index) for index, action in enumerate(actions)]
-        calendar["actions"] = completed + regenerated
+        calendar["actions"] = preserved + regenerated
         if care_profile is not None:
             calendar["care_profile"] = _normalize_care_profile(care_profile)
         if task_rules is not None:
@@ -287,6 +330,7 @@ class PlantManagementRepository:
         self.save()
         return copy.deepcopy(calendar)
 
+    @serialized_repository_write("repository_path")
     def append_generated_actions(self, planting_id: str, actions: list):
         planting = self._planting(planting_id)
         calendar = self._calendar_for_planting(planting)
@@ -296,7 +340,7 @@ class PlantManagementRepository:
         existing_keys = {
             (action.get("rule_id"), action.get("window_start"), action.get("window_end"), action.get("title"))
             for action in calendar["actions"]
-            if action.get("status") == "planned"
+            if action.get("status") in {"planned", "in_progress"}
         }
         appended = []
         for action in normalized:
@@ -315,6 +359,7 @@ class PlantManagementRepository:
             self.save()
         return copy.deepcopy(appended)
 
+    @serialized_repository_write("repository_path")
     def complete_action(
         self,
         planting_id: str,
@@ -324,10 +369,13 @@ class PlantManagementRepository:
         *,
         rating=None,
         attachments: list | None = None,
+        work_details: dict | None = None,
     ):
         planting = self._planting(planting_id)
         calendar = self._calendar_for_planting(planting)
         action = _find_action(calendar, action_id)
+        if action.get("status") != "in_progress":
+            raise PlantManagementValidationError("action must be in progress before completion can be recorded")
         performed_on = _date_string(performed_on, "performed_on")
         work_log = {
             "id": str(uuid.uuid4()),
@@ -344,6 +392,7 @@ class PlantManagementRepository:
             "note": _clean_string(note)[:1000],
             "rating": _optional_rating(rating),
             "attachments": _normalize_work_attachments(attachments),
+            "work_details": _normalize_work_details(work_details),
             "created_at": _utc_now(),
         }
         action["status"] = "completed"
@@ -353,6 +402,7 @@ class PlantManagementRepository:
             "note": work_log["note"],
             "rating": work_log["rating"],
             "attachments": work_log["attachments"],
+            "work_details": work_log["work_details"],
         }
         calendar["revision"] += 1
         calendar["updated_at"] = _utc_now()
@@ -362,6 +412,7 @@ class PlantManagementRepository:
         self.save()
         return copy.deepcopy(work_log)
 
+    @serialized_repository_write("repository_path")
     def record_question(self, planting_id: str, question: str, answer: str):
         planting = self._planting(planting_id)
         question = _required_string(question, "question", 2000)
@@ -389,22 +440,107 @@ class PlantManagementRepository:
         calendar = self.data["calendars"].get(planting["calendar_id"])
         return copy.deepcopy(calendar) if calendar else None
 
-    def field_bundle(self, field_id: str, today: str | None = None):
+    def search_actions(
+        self,
+        planting_id: str,
+        *,
+        query="",
+        statuses=None,
+        action_types=None,
+        date_from="",
+        date_to="",
+        page=1,
+        page_size=50,
+    ):
+        planting = self._planting(planting_id)
+        calendar = self._calendar_for_planting(planting)
+        terms = search_terms(query)
+        status_filter = {_clean_string(item) for item in (statuses or []) if _clean_string(item)}
+        type_filter = {_clean_string(item) for item in (action_types or []) if _clean_string(item)}
+        invalid_statuses = status_filter - VALID_ACTION_STATUSES
+        if invalid_statuses:
+            raise PlantManagementValidationError(f"unsupported action status: {', '.join(sorted(invalid_statuses))}")
+        invalid_types = type_filter - VALID_ACTION_TYPES
+        if invalid_types:
+            raise PlantManagementValidationError(f"unsupported action type: {', '.join(sorted(invalid_types))}")
+        date_from = _clean_string(date_from)[:10]
+        date_to = _clean_string(date_to)[:10]
+
+        actions = []
+        for action in calendar.get("actions") or []:
+            if status_filter and action.get("status") not in status_filter:
+                continue
+            if type_filter and action.get("action_type") not in type_filter:
+                continue
+            if date_from and str(action.get("window_end") or "") < date_from:
+                continue
+            if date_to and str(action.get("window_start") or "") > date_to:
+                continue
+            if not matches_search(
+                terms,
+                [
+                    action.get("title"),
+                    action.get("action_type"),
+                    action.get("priority"),
+                    action.get("reason"),
+                    action.get("instructions"),
+                    action.get("timing_label"),
+                    action.get("tags"),
+                    action.get("work_plan"),
+                    action.get("completion"),
+                ],
+            ):
+                continue
+            actions.append(copy.deepcopy(action))
+
+        status_order = {"in_progress": 0, "planned": 1, "completed": 2, "skipped": 3}
+        actions.sort(
+            key=lambda action: (
+                status_order.get(action.get("status"), 9),
+                action.get("window_start") or "",
+                action.get("window_end") or "",
+                action.get("id") or "",
+            )
+        )
+        result = paginate(actions, page=page, page_size=page_size)
+        result["calendar_id"] = calendar.get("id")
+        result["calendar_revision"] = calendar.get("revision")
+        return result
+
+    def field_bundle(
+        self,
+        field_id: str,
+        today: str | None = None,
+        *,
+        statuses=None,
+        calendar_planting_ids=None,
+        include_work_logs=True,
+    ):
+        status_filter = set(statuses or [])
+        calendar_filter = set(calendar_planting_ids) if calendar_planting_ids is not None else None
         plantings = []
         calendars = {}
         for planting in sorted(self.data["plantings"].values(), key=lambda item: (item["status"] != "active", item["planted_on"], item["id"])):
             if planting["field_id"] != field_id:
                 continue
+            if status_filter and planting.get("status") not in status_filter:
+                continue
             plantings.append(copy.deepcopy(planting))
             calendar = self.data["calendars"].get(planting.get("calendar_id"))
-            if calendar:
+            if calendar and (calendar_filter is None or planting["id"] in calendar_filter):
                 calendars[planting["id"]] = copy.deepcopy(calendar)
         return {
             "action_types": plant_action_types(),
             "plantings": plantings,
             "calendars": calendars,
             "suggestions": self.list_suggestions(field_id, today=today),
-            "work_logs": [copy.deepcopy(item) for item in self.data["work_logs"] if item["field_id"] == field_id],
+            "work_logs": [
+                copy.deepcopy(item)
+                for item in self.data["work_logs"]
+                if include_work_logs
+                and item["field_id"] == field_id
+                and (calendar_filter is None or item.get("planting_id") in calendar_filter)
+            ],
         }
 
     def list_suggestions(self, field_id: str, today: str | None = None, lead_days: int = 14):
@@ -417,7 +553,7 @@ class PlantManagementRepository:
             if not calendar:
                 continue
             for action in calendar["actions"]:
-                if action["status"] != "planned":
+                if action["status"] not in {"planned", "in_progress"}:
                     continue
                 start = _date_value(action["window_start"], "window_start")
                 end = _date_value(action["window_end"], "window_end")
@@ -496,7 +632,11 @@ def _normalize_data(value):
         if isinstance(value.get("calendars"), dict)
         else {},
         "feedback": list(value.get("feedback") or [])[-MAX_FEEDBACK:],
-        "work_logs": list(value.get("work_logs") or [])[-MAX_WORK_LOGS:],
+        "work_logs": [
+            _normalize_work_log(item)
+            for item in list(value.get("work_logs") or [])[-MAX_WORK_LOGS:]
+            if isinstance(item, dict)
+        ],
         "questions": list(value.get("questions") or [])[-MAX_QUESTIONS:],
     }
 
@@ -580,6 +720,7 @@ def _normalize_action(value, index: int):
     window_end = _date_string(value.get("window_end") or window_start, f"actions[{index}].window_end")
     if window_end < window_start:
         raise PlantManagementValidationError(f"actions[{index}].window_end must be on or after window_start")
+    legacy_plan = value.get("pest_control") if action_type == "pest_control" else None
     return {
         "id": _clean_string(value.get("id"))[:120] or str(uuid.uuid4()),
         "action_type": action_type,
@@ -591,8 +732,11 @@ def _normalize_action(value, index: int):
         "reason": _clean_string(value.get("reason"))[:1200],
         "instructions": _clean_string(value.get("instructions"))[:1200],
         "tags": _clean_string_list(value.get("tags"), limit=20, item_length=60),
+        "required_people": _bounded_int(value.get("required_people"), 1, 1, 100, f"actions[{index}].required_people"),
+        "estimated_minutes": _bounded_int(value.get("estimated_minutes"), 30, 1, 1440, f"actions[{index}].estimated_minutes"),
+        "work_plan": _normalize_action_work_plan(value.get("work_plan") or legacy_plan, action_type),
         "status": status,
-        "completion": value.get("completion") if isinstance(value.get("completion"), dict) else None,
+        "completion": _normalize_action_completion(value.get("completion")),
         "source": _clean_string(value.get("source"), "llm")[:40],
         "rule_id": _clean_string(value.get("rule_id"))[:120],
     }
@@ -787,6 +931,148 @@ def _normalize_work_attachments(value):
             }
         )
     return attachments
+
+
+def _normalize_action_work_plan(value, action_type):
+    defaults = default_action_work_plan(action_type)
+    value = value if isinstance(value, dict) else {}
+    targets = _clean_string_list(value.get("targets"), limit=20, item_length=180)
+    start_conditions = _clean_string_list(value.get("start_conditions"), limit=20, item_length=300)
+    skip_conditions = _clean_string_list(value.get("skip_conditions"), limit=20, item_length=300)
+    checkpoints = _clean_string_list(value.get("checkpoints") or value.get("observation_points"), limit=20, item_length=300)
+    methods = _normalize_work_method_options(value.get("method_options"))
+    completion_criteria = _clean_string_list(value.get("completion_criteria"), limit=20, item_length=300)
+    return {
+        "targets": targets or defaults["targets"],
+        "start_conditions": start_conditions or defaults["start_conditions"],
+        "skip_conditions": skip_conditions or defaults["skip_conditions"],
+        "checkpoints": checkpoints or defaults["checkpoints"],
+        "method_options": methods or defaults["method_options"],
+        "completion_criteria": completion_criteria or defaults["completion_criteria"],
+    }
+
+
+def _normalize_work_method_options(value):
+    if not isinstance(value, list):
+        return []
+    options = []
+    for index, item in enumerate(value[:30]):
+        if not isinstance(item, dict):
+            continue
+        method_type = _clean_string(item.get("method_type"), "other")
+        if method_type not in VALID_WORK_METHOD_TYPES:
+            method_type = "other"
+        label = _clean_string(item.get("label"))[:180]
+        if not label:
+            continue
+        instructions = _clean_string(item.get("instructions"))[:1000]
+        application_method = _clean_string(item.get("application_method"))[:1000] or instructions or label
+        procedure_steps = _clean_string_list(item.get("procedure_steps"), limit=12, item_length=500)
+        options.append(
+            {
+                "id": _clean_string(item.get("id"))[:120] or f"method-{index + 1}",
+                "label": label,
+                "method_type": method_type,
+                "material_name": _clean_string(item.get("material_name") or item.get("product_name"))[:180],
+                "registration_number": _clean_string(item.get("registration_number"))[:80],
+                "purpose": _clean_string(item.get("purpose"))[:500] or label,
+                "application_method": application_method,
+                "amount_or_rate": _clean_string(item.get("amount_or_rate"))[:300],
+                "procedure_steps": procedure_steps or [application_method],
+                "completion_checks": _clean_string_list(item.get("completion_checks"), limit=12, item_length=300),
+                "precautions": _clean_string_list(item.get("precautions"), limit=12, item_length=500),
+                "frequency": _normalize_work_frequency(item.get("frequency")),
+                "instructions": instructions,
+                "follow_up_days_default": _optional_int(
+                    item.get("follow_up_days_default") or item.get("effective_days_default"), 1, 365
+                ),
+                "source_name": _clean_string(item.get("source_name"))[:180],
+                "source_url": _safe_http_url(item.get("source_url")),
+                "source_checked_at": _clean_string(item.get("source_checked_at"))[:40],
+            }
+        )
+    return options
+
+
+def _normalize_work_frequency(value):
+    value = value if isinstance(value, dict) else {}
+    mode = _clean_string(value.get("mode"), "as_needed")
+    if mode not in VALID_WORK_FREQUENCY_MODES:
+        mode = "as_needed"
+    interval = _normalize_interval_days(
+        {
+            "min": value.get("min_interval_days"),
+            "preferred": value.get("preferred_interval_days"),
+            "max": value.get("max_interval_days"),
+        }
+    )
+    return {
+        "mode": mode,
+        "min_interval_days": interval["min"],
+        "preferred_interval_days": interval["preferred"],
+        "max_interval_days": interval["max"],
+        "max_applications": _optional_int(value.get("max_applications"), 1, 1000),
+        "basis": _clean_string(value.get("basis"))[:500],
+    }
+
+
+def _normalize_work_details(value):
+    value = value if isinstance(value, dict) else {}
+    execution = value.get("execution")
+    if not isinstance(execution, dict):
+        execution = value.get("pest_control")
+    if not isinstance(execution, dict):
+        return {}
+    method_type = _clean_string(execution.get("method_type"), "other")
+    if method_type not in VALID_WORK_METHOD_TYPES:
+        method_type = "other"
+    return {
+        "execution": {
+            "target": _clean_string(execution.get("target"))[:180],
+            "method_id": _clean_string(execution.get("method_id"))[:120],
+            "method_label": _clean_string(execution.get("method_label"))[:180],
+            "method_type": method_type,
+            "material_name": _clean_string(execution.get("material_name") or execution.get("product_name"))[:180],
+            "amount_or_rate": _clean_string(execution.get("amount_or_rate"))[:300],
+            "registration_number": _clean_string(execution.get("registration_number"))[:80],
+            "custom_method": _clean_string(execution.get("custom_method"))[:500],
+            "follow_up_days": _optional_int(execution.get("follow_up_days") or execution.get("effective_days"), 1, 365),
+            "source_name": _clean_string(execution.get("source_name"))[:180],
+            "source_url": _safe_http_url(execution.get("source_url")),
+            "source_checked_at": _clean_string(execution.get("source_checked_at"))[:40],
+        }
+    }
+
+
+def _normalize_action_completion(value):
+    if not isinstance(value, dict):
+        return None
+    performed_on = _clean_string(value.get("performed_on"))
+    try:
+        performed_on = date.fromisoformat(performed_on).isoformat()
+    except ValueError:
+        return None
+    return {
+        "work_log_id": _clean_string(value.get("work_log_id"))[:120],
+        "performed_on": performed_on,
+        "note": _clean_string(value.get("note"))[:1000],
+        "rating": _optional_rating(value.get("rating")),
+        "attachments": _normalize_work_attachments(value.get("attachments")),
+        "work_details": _normalize_work_details(value.get("work_details")),
+    }
+
+
+def _normalize_work_log(value):
+    record = copy.deepcopy(value)
+    record["work_details"] = _normalize_work_details(record.get("work_details"))
+    record["attachments"] = _normalize_work_attachments(record.get("attachments"))
+    record["rating"] = _optional_rating(record.get("rating"))
+    return record
+
+
+def _safe_http_url(value):
+    url = _clean_string(value)[:500]
+    return url if url.startswith(("https://", "http://")) else ""
 
 
 def _bounded_int(value, default: int, minimum: int, maximum: int, path: str):

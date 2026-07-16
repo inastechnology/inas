@@ -15,6 +15,7 @@ class FieldViewModelsTest(unittest.TestCase):
                     "crop_name": "ブルーベリー",
                     "timing_state": "due",
                     "action": {
+                        "id": "action-1",
                         "action_type": "施肥",
                         "title": "少量施肥",
                         "priority": "required",
@@ -36,7 +37,7 @@ class FieldViewModelsTest(unittest.TestCase):
         self.assertEqual(items[0]["action_type_label"], "追肥")
         self.assertEqual(items[0]["priority_label"], "必須")
         self.assertEqual(items[0]["title"], "ブルーベリーに今、追肥の確認が必要です")
-        self.assertEqual(items[0]["calendar_url"], "/fields/field/1/layout?calendar=planting-1")
+        self.assertEqual(items[0]["calendar_url"], "/fields/field/1/calendar?planting=planting-1&action=action-1")
 
     def test_record_calendar_deduplicates_work_logs_and_groups_measurements(self):
         field = {
@@ -89,7 +90,7 @@ class FieldViewModelsTest(unittest.TestCase):
 
     def test_status_dashboard_uses_target_for_sensor_placement(self):
         dashboard = build_field_status_dashboard(
-            {"growth_targets": {"soil_moisture_percent": {"min": 20, "max": 80}}},
+            {"id": "field-1", "growth_targets": {"soil_moisture_percent": {"min": 20, "max": 80}}},
             [
                 {
                     "device_id": "SOI-001",
@@ -101,6 +102,8 @@ class FieldViewModelsTest(unittest.TestCase):
             ],
             [
                 {
+                    "id": "planting-a",
+                    "space_id": "space-a",
                     "placement_id": "pot-a",
                     "growth_targets": {"soil_moisture_percent": {"min": 45, "max": 65}},
                 },
@@ -117,6 +120,10 @@ class FieldViewModelsTest(unittest.TestCase):
         self.assertEqual(moisture["maximum"], 65)
         self.assertEqual(moisture["state"], "low")
         self.assertEqual(moisture["scope_label"], "ブルーベリー鉢A")
+        self.assertEqual(
+            moisture["target_url"],
+            "/fields/field-1/layout?target_metric=soil_moisture_percent&space=space-a&placement=pot-a&planting=planting-a",
+        )
 
 
 if __name__ == "__main__":

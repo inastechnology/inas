@@ -6,6 +6,7 @@ from ina_device_hub.plant_action_catalog import (
     plant_action_type,
     plant_action_types,
 )
+from ina_device_hub.plant_work_catalog import ACTION_WORK_PLAN_DEFAULTS, default_action_work_plan
 
 
 class PlantActionCatalogTest(unittest.TestCase):
@@ -29,6 +30,27 @@ class PlantActionCatalogTest(unittest.TestCase):
         self.assertEqual(normalize_plant_action_type("gibberellin-application"), "gibberellin_treatment")
         self.assertEqual(normalize_plant_action_type("ジベ処理"), "gibberellin_treatment")
         self.assertEqual(plant_action_type("ジベレリン")["illustration_url"], "/static/plant-actions/gibberellin-treatment.webp")
+
+    def test_every_action_type_has_a_concrete_default_work_plan(self):
+        codes = {item["code"] for item in plant_action_types()}
+
+        self.assertEqual(codes, set(ACTION_WORK_PLAN_DEFAULTS))
+        for code in codes:
+            plan = default_action_work_plan(code)
+            self.assertTrue(plan["targets"], code)
+            self.assertTrue(plan["start_conditions"], code)
+            self.assertTrue(plan["skip_conditions"], code)
+            self.assertTrue(plan["checkpoints"], code)
+            self.assertTrue(plan["method_options"], code)
+            self.assertTrue(plan["completion_criteria"], code)
+            for method in plan["method_options"]:
+                self.assertTrue(method["purpose"], f"{code}:{method['id']}")
+                self.assertTrue(method["application_method"], f"{code}:{method['id']}")
+                self.assertTrue(method["procedure_steps"], f"{code}:{method['id']}")
+                self.assertTrue(method["completion_checks"], f"{code}:{method['id']}")
+                self.assertTrue(method["precautions"], f"{code}:{method['id']}")
+                self.assertIn(method["frequency"]["mode"], {"one_time", "as_needed", "interval", "seasonal", "continuous"})
+                self.assertTrue(method["frequency"]["basis"], f"{code}:{method['id']}")
 
 
 if __name__ == "__main__":

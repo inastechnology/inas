@@ -68,15 +68,32 @@ try {
   });
   await page.waitForFunction(() => document.querySelector(".canvas-north-marker")?.getAttribute("aria-label")?.includes("45度"));
   await page.screenshot({ path: "/tmp/ina-layout-north-settings.png" });
+  const concurrentLayout = await fetchJson(apiUrl);
+  await fetchJson(apiUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...concurrentLayout, name: "別画面で更新された設置ビュー" }),
+  });
 
   await clickPreset(page, "センサー");
-  const sensorDeviceSelect = ".device-binding-section select";
-  const sensorGroups = await page.$$eval(`${sensorDeviceSelect} optgroup`, (groups) => groups.map((group) => group.label));
+  const sensorDeviceSelect = ".device-binding-section .searchable-select";
+  assert.equal(await page.$(`${sensorDeviceSelect} .searchable-select-search`), null, "search field must stay inside the closed dropdown");
+  await page.click(`${sensorDeviceSelect} .searchable-select-control`);
+  await page.type(`${sensorDeviceSelect} input[type="search"]`, "ENV-001");
+  await page.waitForFunction(
+    (selector) => [...document.querySelectorAll(`${selector} [data-searchable-option]`)].filter((option) => option.dataset.value).length === 1,
+    {},
+    sensorDeviceSelect,
+  );
+  assert.equal(await page.$$eval(`${sensorDeviceSelect} [data-searchable-option]`, (options) => options.filter((option) => option.dataset.value).length), 1, "device search must narrow dynamic device options");
+  await replaceValue(page, `${sensorDeviceSelect} input[type="search"]`, "");
+  await page.waitForFunction((selector) => document.querySelectorAll(`${selector} .searchable-select-group[aria-label]`).length === 4, {}, sensorDeviceSelect);
+  const sensorGroups = await page.$$eval(`${sensorDeviceSelect} .searchable-select-group[aria-label]`, (groups) => groups.map((group) => group.getAttribute("aria-label")));
   assert.deepEqual(
     new Set(sensorGroups),
     new Set(["環境センサー", "土壌センサー", "日射・PARセンサー", "カメラ"]),
   );
-  await page.select(sensorDeviceSelect, "INADS-DEMO-ENV-001");
+  await page.click(`${sensorDeviceSelect} [data-searchable-option][data-value="INADS-DEMO-ENV-001"]`);
   await page.screenshot({ path: "/tmp/ina-layout-device-candidates.png" });
 
   await dragPreset(page, "ハウス");
@@ -94,50 +111,87 @@ try {
   await clickPreset(page, "潅水機");
   await replaceValue(page, ".field-grid.four label:nth-child(1) input", "4");
   await replaceValue(page, ".field-grid.four label:nth-child(2) input", "8");
-  const deviceSelect = ".device-binding-section select";
-  await page.select(deviceSelect, "INADS-DEMO-WTR-001");
-  const firstTarget = await page.$(".target-selector label input");
+  await chooseSearchableOption(page, ".device-binding-section .searchable-select", "INADS-DEMO-WTR-001");
+  assert(await page.$('.target-selector input[aria-label*="検索"]'), "the dynamic target collection must provide search");
+  await page.type('.target-selector input[aria-label*="検索"]', "一致しない培地");
+  assert(await page.$(".target-selector .collection-empty"));
+  await replaceValue(page, '.target-selector input[aria-label*="検索"]', "");
+  const firstTarget = await page.$('.target-selector input[type="checkbox"]');
   assert(firstTarget, "watering target must be selectable");
   await firstTarget.click();
   await page.screenshot({ path: "/tmp/ina-layout-device-binding.png" });
 
+  await page.click(".save-button");
+  await page.waitForSelector(".layout-conflict-dialog");
+  consumeExpectedConflict(browserErrors, "installation layout");
+  assert.match(await page.$eval(".merge-success", (element) => element.textContent || ""), /自動統合/);
+  await page.screenshot({ path: "/tmp/ina-layout-concurrent-merge.png" });
+  await page.click(".layout-conflict-dialog footer .primary");
+  await page.waitForSelector(".layout-conflict-dialog", { hidden: true });
+  assert.match(await page.$eval(".save-state", (element) => element.textContent || ""), /未保存/);
   await page.click(".save-button");
   await page.waitForFunction(() => document.querySelector(".save-state")?.textContent?.includes("保存済み"));
   await page.click(".breadcrumbs button:first-child");
   await page.waitForFunction(() => document.querySelectorAll(".breadcrumbs button").length === 1);
 
   await clickPreset(page, "鉢");
-  const wateringMethodSelect = ".watering-source-section select";
-  assert.equal(await page.$eval(wateringMethodSelect, (select) => select.value), "");
-  assert.match(await page.$eval(`${wateringMethodSelect} option:first-child`, (option) => option.textContent || ""), /手動潅水/);
-  const wateringSourceId = await page.$eval(`${wateringMethodSelect} option:nth-child(2)`, (option) => option.value);
+  const wateringMethodSelect = ".watering-source-section .searchable-select";
+  assert.match(await page.$eval(`${wateringMethodSelect} .searchable-select-control`, (button) => button.textContent || ""), /手動潅水/);
+  await page.click(`${wateringMethodSelect} .searchable-select-control`);
+  const wateringSourceId = await page.$eval(`${wateringMethodSelect} [data-searchable-option][data-value]:not([data-value=""])`, (option) => option.dataset.value);
   assert(wateringSourceId, "a placed watering device must be selectable from the medium");
-  await page.select(wateringMethodSelect, wateringSourceId);
-  assert.equal(await page.$eval(wateringMethodSelect, (select) => select.value), wateringSourceId);
+  await page.click(`${wateringMethodSelect} [data-searchable-option][data-value="${wateringSourceId}"]`);
+  assert.match(await page.$eval(`${wateringMethodSelect} .searchable-select-control`, (button) => button.textContent || ""), /潅水機/);
   await page.click(".save-button");
   await page.waitForFunction(() => document.querySelector(".save-state")?.textContent?.includes("保存済み"));
 
   await page.type('.plant-registration input[placeholder="例: ブルーベリー"]', "ブルーベリー");
   await page.type('.plant-registration input[placeholder="例: オニール"]', "オニール");
-  await page.select(".plant-registration select", "fruit_tree");
+  await page.select('.plant-registration select[name="crop_category"]', "fruit_tree");
   await page.waitForSelector('.plant-registration input[placeholder="年"]');
   await page.type('.plant-registration input[placeholder="年"]', "3");
-  await page.type('.plant-registration input[placeholder="酸性用土、培養土など"]', "ピートモス主体の酸性用土");
+  assert.equal(await page.$eval(".register-button", (button) => button.disabled), true, "AI generation must wait for required growing conditions");
+  assert.match(await page.$eval(".disabled-action-reason", (notice) => notice.textContent || ""), /用土・培地/);
+  await page.select('.plant-registration select[name="soil_or_substrate"]', "acidic_blueberry_mix");
+  await page.select('.plant-registration select[name="sunlight"]', "full_sun");
+  assert.equal(await page.$eval(".register-button", (button) => button.disabled), false, "AI generation must enable after all required inputs are present");
   await page.click(".register-button");
-  await page.waitForSelector(".calendar-action");
+  await page.waitForSelector(".calendar-kanban-card");
+  const modalRect = await page.$eval(".calendar-modal-panel", (panel) => {
+    const rect = panel.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  });
+  assert(modalRect.width >= 1439 && modalRect.height >= 899, "generated calendar must open as a full-screen modal");
   await page.screenshot({ path: "/tmp/ina-plant-calendar-desktop.png" });
 
-  await page.click(".calendar-action .complete-button");
-  await page.click(".calendar-action .work-rating label:nth-child(4)");
+  const completedCountBefore = Number(await page.$eval('[data-kanban-status="completed"] > header strong', (count) => count.textContent || "0"));
+  await page.click('[data-kanban-status="planned"] .calendar-kanban-card');
+  await page.waitForSelector(".calendar-action-detail-dialog .calendar-action.planned");
+  await page.click(".calendar-action-detail-dialog .action-state-controls > button:first-child");
+  await page.waitForSelector(".calendar-action-detail-dialog .calendar-action.in_progress");
+  assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), 1, "started work must move to the in-progress column");
+  await page.click(".calendar-action-detail-dialog .complete-button");
+  await page.click(".calendar-action-detail-dialog .work-rating label:nth-child(4)");
   await page.screenshot({ path: "/tmp/ina-plant-work-record-desktop.png" });
-  await page.click('.calendar-action .work-record-form button[type="submit"]');
-  await page.waitForSelector(".calendar-action .completed-badge");
+  await page.click('.calendar-action-detail-dialog .work-record-form button[type="submit"]');
+  await page.waitForFunction((before) => Number(document.querySelector('[data-kanban-status="completed"] > header strong')?.textContent || "0") > before, {}, completedCountBefore);
+  await page.waitForSelector(".calendar-action-detail-dialog .completed-badge");
+  assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), 0, "completed work must leave the in-progress column");
+  await page.click(".calendar-action-detail-dialog > header .icon-button");
 
   await page.type(".plant-question textarea", "追肥の前に何を確認すればよいですか？");
   await page.click('.plant-question button[type="submit"]');
   await page.waitForSelector(".question-answer");
   await page.click(".calendar-header .icon-button");
 
+  await page.$eval('.plant-target-row.enabled input[type="range"]', (input) => {
+    const current = Number(input.value);
+    const maximum = Number(input.max);
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    setter?.call(input, String(Math.min(maximum, current + Number(input.step || 1))));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   await page.click('.plant-target-editor > button[type="submit"]');
   await page.waitForFunction(() => document.querySelector(".plant-target-heading")?.textContent?.includes("保存済み"));
 
@@ -197,7 +251,7 @@ try {
         calendarActions: blueberryCalendar.actions.length,
         workLogs: plantBundle.work_logs.filter((log) => log.planting_id === blueberry.id).length,
         desktopZoom,
-        screenshots: ["/tmp/ina-layout-north-settings.png", "/tmp/ina-layout-device-candidates.png", "/tmp/ina-layout-device-binding.png", "/tmp/ina-layout-desktop.png", "/tmp/ina-layout-mobile.png", "/tmp/ina-plant-calendar-desktop.png", "/tmp/ina-plant-work-record-desktop.png"],
+        screenshots: ["/tmp/ina-layout-north-settings.png", "/tmp/ina-layout-device-candidates.png", "/tmp/ina-layout-device-binding.png", "/tmp/ina-layout-concurrent-merge.png", "/tmp/ina-layout-desktop.png", "/tmp/ina-layout-mobile.png", "/tmp/ina-plant-calendar-desktop.png", "/tmp/ina-plant-work-record-desktop.png"],
       },
       null,
       2,
@@ -210,6 +264,12 @@ try {
 async function clickPreset(page, label) {
   const button = await presetButton(page, label);
   await button.click();
+}
+
+function consumeExpectedConflict(errors, label) {
+  const index = errors.findIndex((message) => message.includes("409 (CONFLICT)"));
+  assert.notEqual(index, -1, `${label} must produce an HTTP 409 before merge`);
+  errors.splice(index, 1);
 }
 
 async function dragPreset(page, label) {
@@ -235,12 +295,20 @@ async function presetButton(page, label) {
 }
 
 async function replaceValue(page, selector, value) {
-  await page.focus(selector);
-  await page.keyboard.down("Control");
-  await page.keyboard.press("A");
-  await page.keyboard.up("Control");
-  await page.keyboard.type(value);
-  await page.keyboard.press("Tab");
+  await page.$eval(selector, (control, nextValue) => {
+    const prototype = control instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+    setter?.call(control, nextValue);
+    control.dispatchEvent(new Event("input", { bubbles: true }));
+    control.dispatchEvent(new Event("change", { bubbles: true }));
+    control.blur();
+  }, value);
+}
+
+async function chooseSearchableOption(page, rootSelector, value) {
+  if (!(await page.$(`${rootSelector}.open`))) await page.click(`${rootSelector} .searchable-select-control`);
+  await page.waitForSelector(`${rootSelector} [data-searchable-option][data-value="${value}"]`);
+  await page.click(`${rootSelector} [data-searchable-option][data-value="${value}"]`);
 }
 
 async function fetchJson(url, options) {

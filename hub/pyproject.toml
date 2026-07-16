@@ -16,7 +16,15 @@ dependencies = [
     "plotly>=6.0.0",
 ]
 readme = "README.md"
-requires-python = ">= 3.8"
+requires-python = ">= 3.11"
+
+[project.scripts]
+ina-hub = "ina_device_hub.cli:main"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.9.6",
+]
 
 [build-system]
 requires = ["hatchling"]
