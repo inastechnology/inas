@@ -3,15 +3,19 @@ import io
 import json
 import os
 import re
+import stat
 import tempfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import boto3
 import libsql
 import paho.mqtt.client as mqtt
 from dotenv import dotenv_values
+
+from ina_device_hub.mqtt_contract import MQTT_KEEPALIVE_SECONDS, MQTT_PROTOCOL, MQTT_TRANSPORT
 
 PROJECT_ROOT = Path.cwd() if (Path.cwd() / ".default.env").exists() else Path(__file__).resolve().parents[2]
 DEFAULT_ENV_PATH = PROJECT_ROOT / ".env"
@@ -57,8 +61,16 @@ FIELDS = (
     ConfigurationField("LOCAL_STORAGE_BASE_DIR", "画像等のローカル保存先", "core", "~/.ina-device-hub/storage", True),
     ConfigurationField("HUB_HTTP_HOST", "HTTP bind address", "core", "0.0.0.0", True),
     ConfigurationField("HUB_HTTP_PORT", "HTTP port", "core", "39151", True),
+    ConfigurationField("HUB_HTTP_SERVER", "HTTP server", "core", "waitress", True),
+    ConfigurationField("HUB_HTTP_THREADS", "HTTP worker threads", "core", "8", True),
+    ConfigurationField("HUB_AUTH_MODE", "認証モード", "core", "local", True),
     ConfigurationField("HUB_LOCAL_USER_EMAIL", "ローカル利用時のユーザーemail", "core", "local-user@ina.local", True),
     ConfigurationField("HUB_ADMIN_EMAILS", "アプリ設定を変更できるemail（カンマ区切り）", "core"),
+    ConfigurationField("HUB_MAX_REQUEST_BYTES", "HTTPリクエスト上限（bytes）", "core", "67108864", True),
+    ConfigurationField("FIRMWARE_MAX_UPLOAD_BYTES", "F/Wアップロード上限（bytes）", "core", "16777216", True),
+    ConfigurationField("HUB_BACKUP_DIR", "バックアップ保存先", "core", "~/.ina-device-hub/backups", True),
+    ConfigurationField("HUB_BACKUP_RETENTION", "バックアップ保持世代数", "core", "14", True),
+    ConfigurationField("HUB_READINESS_TIMEOUT_SECONDS", "起動準備タイムアウト（秒）", "core", "30", True),
     ConfigurationField("TIMELAPSE_INTERVAL", "タイムラプス間隔（秒）", "core", "600", True),
     ConfigurationField("TURSO_DATABASE_URL", "Turso database URL", "turso", required=True),
     ConfigurationField("TURSO_AUTH_TOKEN", "Turso auth token", "turso", required=True, secret=True),
@@ -224,25 +236,35 @@ def _check_core(values):
     if not 1 <= port <= 65535:
         raise ValueError("HUB_HTTP_PORT must be between 1 and 65535")
     int(values["TIMELAPSE_INTERVAL"])
+    if values["HUB_HTTP_SERVER"] not in {"waitress", "flask"}:
+        raise ValueError("HUB_HTTP_SERVER must be waitress or flask")
+    if values["HUB_AUTH_MODE"] not in {"local", "cloudflare_access"}:
+        raise ValueError("HUB_AUTH_MODE must be local or cloudflare_access")
+    for key in ("HUB_HTTP_THREADS", "HUB_MAX_REQUEST_BYTES", "FIRMWARE_MAX_UPLOAD_BYTES", "HUB_BACKUP_RETENTION", "HUB_READINESS_TIMEOUT_SECONDS"):
+        if int(values[key]) <= 0:
+            raise ValueError(f"{key} must be greater than zero")
     return "保存先への書き込みと数値設定を確認しました"
 
 
 def _check_turso(values):
     work_dir = Path(os.path.expanduser(values["WORK_DIR"]))
     work_dir.mkdir(parents=True, exist_ok=True)
-    check_path = work_dir / ".turso-connection-check.db"
-    connection = libsql.connect(
-        str(check_path),
-        sync_url=values["TURSO_DATABASE_URL"],
-        auth_token=values["TURSO_AUTH_TOKEN"],
-        sync_interval=max(1, int(values.get("TURSO_SYNC_INTERVAL") or 600)),
-    )
-    try:
-        connection.sync()
-        connection.execute("SELECT 1").fetchone()
-    finally:
-        connection.close()
-        check_path.unlink(missing_ok=True)
+    # libSQL creates metadata, WAL, and shared-memory sidecars. Keep the probe
+    # in its own directory so a failed or interrupted check cannot poison the
+    # next run with only part of the replica state left behind.
+    with tempfile.TemporaryDirectory(prefix=".turso-connection-check-", dir=work_dir) as temporary_directory:
+        check_path = Path(temporary_directory) / "replica.db"
+        connection = libsql.connect(
+            str(check_path),
+            sync_url=values["TURSO_DATABASE_URL"],
+            auth_token=values["TURSO_AUTH_TOKEN"],
+            sync_interval=max(1, int(values.get("TURSO_SYNC_INTERVAL") or 600)),
+        )
+        try:
+            connection.sync()
+            connection.execute("SELECT 1").fetchone()
+        finally:
+            connection.close()
     return "Tursoへの接続と同期を確認しました"
 
 
@@ -269,11 +291,16 @@ def _check_mqtt(values):
             result["error"] = ""
         connected.set()
 
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="ina-hub-configuration-check")
-    if values.get("MQTT_BROKER_USERNAME") or values.get("MQTT_BROKER_PASSWORD"):
+    client = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2,
+        client_id="ina-hub-configuration-check",
+        protocol=MQTT_PROTOCOL,
+        transport=MQTT_TRANSPORT,
+    )
+    if values.get("MQTT_BROKER_USERNAME"):
         client.username_pw_set(values.get("MQTT_BROKER_USERNAME", ""), values.get("MQTT_BROKER_PASSWORD", ""))
     client.on_connect = on_connect
-    client.connect(values["MQTT_BROKER_URL"], int(values["MQTT_BROKER_PORT"]), keepalive=10)
+    client.connect(values["MQTT_BROKER_URL"], int(values["MQTT_BROKER_PORT"]), keepalive=MQTT_KEEPALIVE_SECONDS)
     client.loop_start()
     try:
         if not connected.wait(timeout=7) or result["error"]:
@@ -281,7 +308,7 @@ def _check_mqtt(values):
     finally:
         client.disconnect()
         client.loop_stop()
-    return "MQTTブローカーへの認証接続を確認しました"
+    return "MQTTブローカーへの接続を確認しました"
 
 
 CHECKERS = {
@@ -302,6 +329,76 @@ def check_section(section: ConfigurationSection, values: dict) -> bool:
     except Exception as exc:  # Connection libraries expose provider-specific exception types.
         print(f"  NG: {exc}")
         return False
+
+
+def check_configuration(env_path=DEFAULT_ENV_PATH, *, production=False, skip_connections=False) -> int:
+    env_path = Path(env_path)
+    if not env_path.is_file():
+        print(f"NG: .env がありません: {env_path}")
+        return 2
+    document = EnvDocument.load(env_path)
+    values = _effective_values(document)
+    required_fields = [field for field in FIELDS if field.required and field.section in {"core", "turso", "storage", "mqtt"}]
+    missing = [field.name for field in required_fields if not values.get(field.name)]
+    if missing:
+        print(f"NG: 必須設定が未入力です: {', '.join(missing)}")
+        return 1
+
+    sections = [section for section in SECTIONS if section.key in {"core", "turso", "storage", "mqtt"}]
+    results = []
+    for section in sections:
+        if skip_connections and section.key != "core":
+            continue
+        print(f"[{section.label}]")
+        results.append(check_section(section, values))
+    if production:
+        results.append(_check_production_settings(env_path, values))
+    return 0 if all(results) else 1
+
+
+def _effective_values(document: EnvDocument) -> dict:
+    values = dict(document.values)
+    for field in FIELDS:
+        values.setdefault(field.name, field.default)
+    # Existing deployments did not have these keys. Preserve their behavior
+    # when a pulled revision reads the old .env for the first time.
+    if "HUB_HTTP_HOST" not in document.values:
+        values["HUB_HTTP_HOST"] = "0.0.0.0"
+    if "HUB_HTTP_SERVER" not in document.values:
+        values["HUB_HTTP_SERVER"] = "flask"
+    if "HUB_AUTH_MODE" not in document.values:
+        values["HUB_AUTH_MODE"] = "local"
+    if "LOCAL_STORAGE_BASE_DIR" not in document.values:
+        values["LOCAL_STORAGE_BASE_DIR"] = "./.data/storage"
+    return values
+
+
+def _check_production_settings(env_path: Path, values: dict) -> bool:
+    failures = []
+    mode = stat.S_IMODE(env_path.stat().st_mode)
+    if mode & 0o077:
+        failures.append(f".env permission must not allow group/other access (current: {mode:04o})")
+    if values.get("HUB_HTTP_SERVER") != "waitress":
+        failures.append("HUB_HTTP_SERVER must be waitress")
+    if values.get("HUB_AUTH_MODE") != "cloudflare_access":
+        failures.append("HUB_AUTH_MODE must be cloudflare_access")
+    for key in ("HUB_ADMIN_EMAILS", "CLOUDFLARE_ACCESS_TEAM_DOMAIN", "CLOUDFLARE_ACCESS_POLICY_AUD"):
+        if not str(values.get(key) or "").strip():
+            failures.append(f"{key} must be configured")
+    origin_url = str(values.get("CLOUDFLARE_TUNNEL_ORIGIN_URL") or "")
+    if origin_url and not _is_loopback_host(urlsplit(origin_url).hostname or ""):
+        failures.append("CLOUDFLARE_TUNNEL_ORIGIN_URL must target a loopback address")
+
+    if failures:
+        for failure in failures:
+            print(f"  NG: {failure}")
+        return False
+    print("  OK: 本番公開設定と秘密情報権限を確認しました")
+    return True
+
+
+def _is_loopback_host(value: str) -> bool:
+    return str(value or "").strip().lower() in {"127.0.0.1", "::1", "localhost"}
 
 
 def install(env_path=DEFAULT_ENV_PATH, skip_checks=False, input_function=input, secret_input_function=getpass.getpass):

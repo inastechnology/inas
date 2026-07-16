@@ -95,7 +95,7 @@ This repository includes a systemd template unit and installer:
 - `systemd/inas-device-hub@.service`
 - `scripts/install_service.sh`
 
-Install with:
+Install or update while preserving an existing `.env` and MQTT configuration:
 
 ```bash
 sudo ./scripts/install_service.sh
@@ -110,8 +110,10 @@ sudo ./scripts/install_service.sh --user mysvcuser --target-dir /opt/ina-device-
 Install and enable Cloudflare Tunnel service support:
 
 ```bash
-sudo ./scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
+sudo ./scripts/install_service.sh --production --target-dir "$PWD" --enable-cloudflare-tunnel
 ```
+
+Use `--production` only for the first Cloudflare production deployment or an explicit Access/Tunnel reprovision. After pulling a normal update on the server, omit it so the installer validates but does not rewrite the existing MQTT, HTTP, authentication, or Cloudflare settings. See [`doc/jp/OPERATIONS.md`](doc/jp/OPERATIONS.md) for the server pull and rollback procedure.
 
 Check service state:
 
@@ -205,22 +207,22 @@ Export untracked local files such as `.env`, device JSON files, `data/`, and
 `logs/`:
 
 ```bash
-rye run local-files list
-rye run local-files export-zip /tmp/ina-device-hub-local-files.zip
-rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --overwrite
+bash scripts/migrate_local_files.sh list
+bash scripts/migrate_local_files.sh export-zip /tmp/ina-device-hub-local-files.zip
+bash scripts/migrate_local_files.sh import-zip /tmp/ina-device-hub-local-files.zip --overwrite
 ```
 
 Include `WORK_DIR` with:
 
 ```bash
-rye run local-files export-zip /tmp/ina-device-hub-local-files.zip --include-work-dir
-rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --include-work-dir --overwrite
+bash scripts/migrate_local_files.sh export-zip /tmp/ina-device-hub-local-files.zip --include-work-dir
+bash scripts/migrate_local_files.sh import-zip /tmp/ina-device-hub-local-files.zip --include-work-dir --overwrite
 ```
 
 Move local files from an old device:
 
 ```bash
-rye run local-files move-device \
+bash scripts/migrate_local_files.sh move-device \
   --source-dir /mnt/old-device/path/to/ina-device-hub \
   --target-dir /path/to/ina-device-hub \
   --source-work-dir /mnt/old-device/path/to/.ina-device-hub \
@@ -233,13 +235,14 @@ Use `--dry-run` to preview and `--no-work-dir` to skip `WORK_DIR`.
 ## Development Workflow
 
 ```bash
-rye run format
-rye run lint
+uv run ruff format .
+uv run ruff check .
+uv run ruff format --check .
 ```
 
 ## Important Files
 
-- `pyproject.toml`: Python dependencies and rye scripts.
+- `pyproject.toml`: Python dependencies and tool configuration.
 - `src/ina_device_hub/`: hub implementation.
 - `cloudflare/`: Cloudflare Workers + Hono + Turso cloud app foundation.
 - `doc/`: hub-level design and operations docs.

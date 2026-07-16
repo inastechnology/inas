@@ -9,10 +9,12 @@
 ## 2. 認証主体
 
 - 本番のユーザーIDはCloudflare Accessが検証したemailとする。
-- Hubは `Cf-Access-Authenticated-User-Email` を読み、emailを小文字へ正規化して使用する。
-- ローカル直アクセスでは `HUB_LOCAL_USER_EMAIL` を使用する。
+- 本番では `HUB_AUTH_MODE=cloudflare_access` とし、Hub自身が `Cf-Access-Jwt-Assertion` をCloudflare JWKS、issuer、audienceで検証する。
+- JWT内emailを小文字へ正規化し、`Cf-Access-Authenticated-User-Email` がある場合は両者の一致も確認する。JWT欠落、検証失敗、不一致は`401`とする。
+- ローカル開発だけは `HUB_AUTH_MODE=local` とし、`HUB_LOCAL_USER_EMAIL` を使用する。
 - `HUB_ADMIN_EMAILS` のemailを `admin`、それ以外を `operator` とする。
 - 本番ではHubを `127.0.0.1` にbindし、Cloudflare Tunnel以外からoriginへ到達させない。外部から任意の認証ヘッダーを送れる構成は不可とする。
+- 本番の更新要求は公開originとの一致を必須とし、cross-originまたはOrigin欠落の要求を`403`とする。機器状態、runtime config、OTA/F/W管理は`admin`だけが更新できる。
 
 現行ロール境界は、`admin` がアプリ設定とAI接続確認を利用でき、`operator` は個人設定と圃場業務画面を利用できる範囲である。`HUB_ADMIN_EMAILS` が空の場合、Access経由の利用者は全員`operator`となり、ローカル直利用だけを`admin`として扱う。圃場別権限や承認フローは将来拡張とする。
 
@@ -126,4 +128,4 @@ Tursoのlocal replica初期同期とschema準備はHTTP受付前の `initialize_
 - 409応答に最新版、更新者、revisionが含まれる。
 - 重ならない配置変更は自動統合できる。
 - 同じ項目の変更は採用する版を利用者が選べる。
-- 管理者以外は `/settings` とAI接続確認APIへアクセスできない。
+- 管理者以外は`/settings`、AI接続確認、legacyを含む機器状態・runtime config・OTA/F/W更新APIへアクセスできない。

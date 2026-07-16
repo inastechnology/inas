@@ -101,17 +101,11 @@ class FirmwareArtifactRepository:
         binary = bytes(content)
         embedded_metadata = extract_firmware_manifest(binary)
         if embedded_metadata["device_kind"] != device_kind:
-            raise FirmwareArtifactValidationError(
-                f"firmware device_kind mismatch: path={device_kind} embedded={embedded_metadata['device_kind']}"
-            )
+            raise FirmwareArtifactValidationError(f"firmware device_kind mismatch: path={device_kind} embedded={embedded_metadata['device_kind']}")
         if embedded_metadata["version"] != version:
-            raise FirmwareArtifactValidationError(
-                f"firmware version mismatch: path={version} embedded={embedded_metadata['version']}"
-            )
+            raise FirmwareArtifactValidationError(f"firmware version mismatch: path={version} embedded={embedded_metadata['version']}")
         if metadata.get("build_id") and metadata["build_id"] != embedded_metadata["build_id"]:
-            raise FirmwareArtifactValidationError(
-                f"firmware build_id mismatch: request={metadata['build_id']} embedded={embedded_metadata['build_id']}"
-            )
+            raise FirmwareArtifactValidationError(f"firmware build_id mismatch: request={metadata['build_id']} embedded={embedded_metadata['build_id']}")
 
         sha256 = hashlib.sha256(binary).hexdigest()
         path = self.firmware_path(device_kind, version)

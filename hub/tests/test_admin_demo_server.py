@@ -4,7 +4,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "run_admin_demo_server.py"
 SPEC = importlib.util.spec_from_file_location("run_admin_demo_server", SCRIPT_PATH)
 run_admin_demo_server = importlib.util.module_from_spec(SPEC)

@@ -1,12 +1,11 @@
 import os
 import time
-import boto3
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime
 
+from ina_device_hub.general_log import logger
+from ina_device_hub.ina_db_connector import InaDBConnector
 from ina_device_hub.setting import setting
 from ina_device_hub.storage_connector import storage_connector
-from ina_device_hub.ina_db_connector import InaDBConnector
-from ina_device_hub.general_log import logger
 
 
 class SensorImageRepogitory:
@@ -37,7 +36,7 @@ class SensorImageRepogitory:
                     "device_id": device_id,
                     "yyyymmddhhmmss": yyyymmddhhmmss,
                     "image_path": image_path,
-                    "created_at": datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S"),
+                    "created_at": datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S"),
                 }
             )
         return sensor_images_as_dict

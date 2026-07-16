@@ -68,6 +68,7 @@ python3 "$SCRIPT_DIR/cloudflare_access_setup.py" --env-file "$ENV_FILE" --write-
 
 python3 "$SCRIPT_DIR/cloudflare_tunnel_setup.py" --env-file "$ENV_FILE" check
 python3 "$SCRIPT_DIR/cloudflare_tunnel_setup.py" --env-file "$ENV_FILE" --write-env provision
+chmod 600 "$ENV_FILE"
 
 if [[ "$INSTALL_CLOUDFLARED" == "true" ]]; then
   python3 "$SCRIPT_DIR/cloudflare_tunnel_setup.py" --env-file "$ENV_FILE" install-cloudflared >/dev/null
@@ -85,6 +86,6 @@ fi
 
 echo "Cloudflare hosted setup complete."
 echo "For systemd-managed tunnel startup, install services with:"
-echo "  sudo scripts/install_service.sh --target-dir \"$REPO_ROOT\" --enable-cloudflare-tunnel"
+echo "  sudo scripts/install_service.sh --production --target-dir \"$REPO_ROOT\" --enable-cloudflare-tunnel"
 echo "For foreground tunnel startup, run:"
 echo "  bash scripts/cloudflare_tunnel_start.sh"

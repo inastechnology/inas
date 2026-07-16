@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 from urllib.parse import urlencode
 
-
 METRIC_SPECS = (
     {
         "metric": "soil_moisture_percent",
@@ -45,11 +44,7 @@ METRIC_SPECS = (
 
 def build_field_status_dashboard(field: dict, latest_sensor_values: list, active_plantings: list | None = None):
     targets = field.get("growth_targets") if isinstance(field.get("growth_targets"), dict) else {}
-    metrics = [
-        metric
-        for spec in METRIC_SPECS
-        if (metric := _build_metric(field, spec, targets, latest_sensor_values, active_plantings or [])) is not None
-    ]
+    metrics = [metric for spec in METRIC_SPECS if (metric := _build_metric(field, spec, targets, latest_sensor_values, active_plantings or [])) is not None]
     counts = _state_counts(metrics)
     overall_state, overall_label, summary = _overall_status(metrics, counts)
     observed_at_values = [metric["observed_at"] for metric in metrics if metric.get("observed_at")]

@@ -106,7 +106,7 @@ if [[ "$NO_HUB" != "true" ]]; then
   echo "Starting local hub..."
   (
     cd "$REPO_ROOT"
-    HUB_HTTP_HOST=127.0.0.1 ./serve.sh
+    HUB_HTTP_SERVER=waitress HUB_AUTH_MODE=cloudflare_access ./serve.sh
   ) &
   hub_pid="$!"
   hub_startup_wait_seconds="${CLOUDFLARE_HOSTED_HUB_STARTUP_WAIT_SECONDS:-}"
@@ -124,6 +124,29 @@ if [[ "$NO_HUB" != "true" ]]; then
     wait "$hub_pid" || hub_status="$?"
     echo "Local hub exited during startup with status ${hub_status}. Tunnel was not started." >&2
     exit "$hub_status"
+  fi
+  hub_port="$(env_file_value HUB_HTTP_PORT || true)"
+  hub_port="${hub_port:-39151}"
+  readiness_timeout="$(env_file_value HUB_READINESS_TIMEOUT_SECONDS || true)"
+  readiness_timeout="${readiness_timeout:-30}"
+  if ! [[ "$readiness_timeout" =~ ^[0-9]+$ ]]; then
+    echo "HUB_READINESS_TIMEOUT_SECONDS must be an integer: ${readiness_timeout}" >&2
+    exit 1
+  fi
+  ready="false"
+  for ((attempt = 0; attempt < readiness_timeout; attempt++)); do
+    if curl --fail --silent "http://127.0.0.1:${hub_port}/readyz" >/dev/null; then
+      ready="true"
+      break
+    fi
+    if ! kill -0 "$hub_pid" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  if [[ "$ready" != "true" ]]; then
+    echo "Local Hub did not become ready; Cloudflare Tunnel was not started." >&2
+    exit 1
   fi
 fi
 

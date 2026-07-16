@@ -96,7 +96,7 @@ Current firmware expects `http://` OTA URLs.
 | `CLOUDFLARE_ACCESS_POLICY_ID` | Access policy ID |
 | `CLOUDFLARE_TUNNEL_ID` | Tunnel ID |
 | `CLOUDFLARE_TUNNEL_HOSTNAME` | Tunnel hostname |
-| `CLOUDFLARE_TUNNEL_ORIGIN_URL` | Local origin URL. Default `http://localhost:39151` |
+| `CLOUDFLARE_TUNNEL_ORIGIN_URL` | Local origin URL. Default `http://127.0.0.1:39151` |
 | `CLOUDFLARE_TUNNEL_TOKEN_FILE` | Local tunnel token file path |
 | `CLOUDFLARE_ZONE_ID` | DNS zone ID |
 | `CLOUDFLARE_ZONE_NAME` | DNS zone name |

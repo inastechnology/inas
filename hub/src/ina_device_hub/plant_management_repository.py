@@ -54,6 +54,7 @@ PLANTING_TARGET_RANGES = {
     "par_umol_m2_s": (0.0, 2000.0),
 }
 
+
 class PlantManagementValidationError(ValueError):
     pass
 
@@ -235,13 +236,9 @@ class PlantManagementRepository:
         if "tags" in value:
             action["tags"] = _clean_string_list(value.get("tags"), limit=20, item_length=60)
         if "required_people" in value:
-            action["required_people"] = _bounded_int(
-                value.get("required_people"), action["required_people"], 1, 100, "required_people"
-            )
+            action["required_people"] = _bounded_int(value.get("required_people"), action["required_people"], 1, 100, "required_people")
         if "estimated_minutes" in value:
-            action["estimated_minutes"] = _bounded_int(
-                value.get("estimated_minutes"), action["estimated_minutes"], 1, 1440, "estimated_minutes"
-            )
+            action["estimated_minutes"] = _bounded_int(value.get("estimated_minutes"), action["estimated_minutes"], 1, 1440, "estimated_minutes")
         if "work_plan" in value:
             action["work_plan"] = _normalize_action_work_plan(value.get("work_plan"), action["action_type"])
         elif "pest_control" in value:
@@ -537,9 +534,7 @@ class PlantManagementRepository:
             "work_logs": [
                 copy.deepcopy(item)
                 for item in self.data["work_logs"]
-                if include_work_logs
-                and item["field_id"] == field_id
-                and (calendar_filter is None or item.get("planting_id") in calendar_filter)
+                if include_work_logs and item["field_id"] == field_id and (calendar_filter is None or item.get("planting_id") in calendar_filter)
             ],
         }
 
@@ -632,11 +627,7 @@ def _normalize_data(value):
         if isinstance(value.get("calendars"), dict)
         else {},
         "feedback": list(value.get("feedback") or [])[-MAX_FEEDBACK:],
-        "work_logs": [
-            _normalize_work_log(item)
-            for item in list(value.get("work_logs") or [])[-MAX_WORK_LOGS:]
-            if isinstance(item, dict)
-        ],
+        "work_logs": [_normalize_work_log(item) for item in list(value.get("work_logs") or [])[-MAX_WORK_LOGS:] if isinstance(item, dict)],
         "questions": list(value.get("questions") or [])[-MAX_QUESTIONS:],
     }
 
@@ -983,9 +974,7 @@ def _normalize_work_method_options(value):
                 "precautions": _clean_string_list(item.get("precautions"), limit=12, item_length=500),
                 "frequency": _normalize_work_frequency(item.get("frequency")),
                 "instructions": instructions,
-                "follow_up_days_default": _optional_int(
-                    item.get("follow_up_days_default") or item.get("effective_days_default"), 1, 365
-                ),
+                "follow_up_days_default": _optional_int(item.get("follow_up_days_default") or item.get("effective_days_default"), 1, 365),
                 "source_name": _clean_string(item.get("source_name"))[:180],
                 "source_url": _safe_http_url(item.get("source_url")),
                 "source_checked_at": _clean_string(item.get("source_checked_at"))[:40],

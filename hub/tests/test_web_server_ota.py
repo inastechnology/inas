@@ -20,6 +20,7 @@ os.environ.setdefault("MQTT_BROKER_PORT", "1883")
 os.environ.setdefault("MQTT_BROKER_USERNAME", "")
 os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
+os.environ["HUB_AUTH_MODE"] = "local"
 
 from ina_device_hub import web_server  # noqa: E402
 from ina_device_hub.device_config_repository import DeviceConfigRepository  # noqa: E402
@@ -119,6 +120,21 @@ class WebServerOTATest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("force must be a boolean", response.get_json()["error"])
+
+    def test_firmware_upload_rejects_payload_above_configured_limit(self):
+        original_security = dict(setting().settings.get("security") or {})
+        setting().settings["security"] = {**original_security, "firmware_max_upload_bytes": 4}
+        try:
+            response = self.client.post(
+                "/local/api/firmware-artifacts/inspect",
+                data=b"12345",
+                content_type="application/octet-stream",
+            )
+        finally:
+            setting().settings["security"] = original_security
+
+        self.assertEqual(response.status_code, 413)
+        self.assertIn("4-byte limit", response.get_json()["error"])
 
     def test_home_page_is_field_selector_without_device_navigation(self):
         response = self.client.get("/")
@@ -266,7 +282,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('id="save-push-runtime-config"', html)
         self.assertIn('id="firmware-target-form"', html)
         self.assertIn('<select id="target-firmware-version" aria-label="更新するF/Wバージョン" data-searchable-select', html)
-        self.assertIn('/static/searchable-select.css', html)
+        self.assertIn("/static/searchable-select.css", html)
         self.assertIn('id="firmware-upload-form"', html)
         self.assertIn('id="firmware-version" name="version" type="text" value="" readonly', html)
         self.assertIn('id="inspect-firmware-manifest"', html)

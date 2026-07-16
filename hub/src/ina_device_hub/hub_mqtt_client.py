@@ -5,9 +5,20 @@ from paho.mqtt import client as mqtt_client
 from ina_device_hub.device_event_log import append_mqtt_hub_event, append_mqtt_message_event
 from ina_device_hub.discord_notification_service import discord_notification_service
 from ina_device_hub.general_log import logger
+from ina_device_hub.mqtt_contract import MQTT_KEEPALIVE_SECONDS, MQTT_PROTOCOL, MQTT_TRANSPORT
 from ina_device_hub.setting import setting
 
 client_id = setting().get("mqtt")["mqtt_client_id"]
+DEFAULT_SUBSCRIPTION_TOPICS = (
+    "farm/+/telemetry",
+    "sensor/+/#",
+    "/+/kinds/config/request",
+    "/+/kinds/agri/immediate",
+    "/+/kinds/debug/log",
+    "/+/kinds/ota/request",
+    "/+/kinds/ota/status",
+    "$SYS/broker/log/#",
+)
 
 
 class HubMQTTClient:
@@ -15,32 +26,77 @@ class HubMQTTClient:
         self.subscribed_data_queue = subscribed_data_queue
         self.message_handlers = []
         self.discord_notification_service = discord_notification_service()
+        self.client = None
+        self._connected = threading.Event()
+        self._subscriptions = set()
 
     def start(self):
-        worker_thread = threading.Thread(target=self.client.loop_forever)
-        worker_thread.daemon = True
-        worker_thread.start()
+        if self.client is None:
+            raise RuntimeError("connect_mqtt must be called before start")
+        self.client.loop_start()
         print("MQTT Client started")
-        return worker_thread
+        return self.client
+
+    def stop(self):
+        if self.client is None:
+            return
+        self.client.disconnect()
+        self.client.loop_stop()
+        self._connected.clear()
+
+    def is_connected(self) -> bool:
+        return self._connected.is_set()
 
     def connect_mqtt(self) -> None:
-        def on_connect(client, userdata, flags, rc):
-            if rc == 0:
+        def on_connect(client, _userdata, _flags, reason_code, _properties):
+            if not reason_code.is_failure:
+                self._connected.set()
                 print("Connected to MQTT Broker!")
-                append_mqtt_hub_event("mqtt_hub_connected", "outbound", topic="$SYS/ina-device-hub/mqtt", payload={"broker": setting().get("mqtt")["mqtt_broker"]})
-                self.discord_notification_service.notify_mqtt_activity("connected", "$SYS/ina-device-hub/mqtt", payload={"broker": setting().get("mqtt")["mqtt_broker"]})
+                for topic in sorted(self._subscriptions):
+                    client.subscribe(topic, qos=0)
+                append_mqtt_hub_event(
+                    "mqtt_hub_connected", "outbound", topic="$SYS/ina-device-hub/mqtt", payload={"broker": setting().get("mqtt")["mqtt_broker"]}
+                )
+                self.discord_notification_service.notify_mqtt_activity(
+                    "connected", "$SYS/ina-device-hub/mqtt", payload={"broker": setting().get("mqtt")["mqtt_broker"]}
+                )
             else:
-                print("Failed to connect, return code %d\n", rc)
-                append_mqtt_hub_event("mqtt_hub_connect_failed", "outbound", topic="$SYS/ina-device-hub/mqtt", payload={"return_code": rc}, mqtt_rc=rc)
-                self.discord_notification_service.notify_mqtt_activity("connect_failed", "$SYS/ina-device-hub/mqtt", payload={"return_code": rc})
+                self._connected.clear()
+                logger.warning("Failed to connect to MQTT broker: %s", reason_code)
+                reason_code_value = int(reason_code.value)
+                append_mqtt_hub_event(
+                    "mqtt_hub_connect_failed",
+                    "outbound",
+                    topic="$SYS/ina-device-hub/mqtt",
+                    payload={"return_code": reason_code_value},
+                    mqtt_rc=reason_code_value,
+                )
+                self.discord_notification_service.notify_mqtt_activity("connect_failed", "$SYS/ina-device-hub/mqtt", payload={"return_code": reason_code_value})
 
-        client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION1, client_id)
+        def on_disconnect(_client, _userdata, _disconnect_flags, reason_code, _properties):
+            self._connected.clear()
+            if reason_code.is_failure:
+                logger.warning("MQTT broker connection lost; reconnect will be retried: %s", reason_code)
+
+        client = mqtt_client.Client(
+            mqtt_client.CallbackAPIVersion.VERSION2,
+            client_id,
+            protocol=MQTT_PROTOCOL,
+            transport=MQTT_TRANSPORT,
+        )
         client.on_connect = on_connect
+        client.on_disconnect = on_disconnect
+        client.on_message = self._on_message
+        client.reconnect_delay_set(min_delay=1, max_delay=60)
         mqtt_settings = setting().get("mqtt")
         if mqtt_settings["mqtt_username"]:
             client.username_pw_set(mqtt_settings["mqtt_username"], mqtt_settings["mqtt_password"])
         print(f"Connecting to MQTT Broker {setting().get('mqtt')['mqtt_broker']}:{setting().get('mqtt')['mqtt_port']}")
-        client.connect(setting().get("mqtt")["mqtt_broker"], setting().get("mqtt")["mqtt_port"])
+        client.connect_async(
+            setting().get("mqtt")["mqtt_broker"],
+            setting().get("mqtt")["mqtt_port"],
+            keepalive=MQTT_KEEPALIVE_SECONDS,
+        )
         self.client = client
 
     def add_message_handler(self, handler):
@@ -100,28 +156,29 @@ class HubMQTTClient:
         return {"message_type": "unknown", "topic": topic, "payload": payload}
 
     def subscribe(self, topic: str):
-        def on_message(client, userdata, msg):
-            omitted_payload = f"{msg.payload[0:100]}..." if len(msg.payload) > 100 else msg.payload
-            print(f"Received `{omitted_payload}` from `{msg.topic}` topic")
-            parsed_message = self._parse_message(msg.topic, msg.payload)
+        self._subscriptions.add(topic)
+        if self.client is not None and self.is_connected():
+            self.client.subscribe(topic, qos=0)
 
-            for handler in self.message_handlers:
-                try:
-                    handled = handler(client, parsed_message)
-                except Exception:
-                    logger.exception("MQTT message handler failed for topic=%s", msg.topic)
-                    handled = False
-                if handled:
-                    return
+    def _on_message(self, client, _userdata, msg):
+        omitted_payload = f"{msg.payload[0:100]}..." if len(msg.payload) > 100 else msg.payload
+        print(f"Received `{omitted_payload}` from `{msg.topic}` topic")
+        parsed_message = self._parse_message(msg.topic, msg.payload)
 
-            append_mqtt_message_event(parsed_message)
-            self.discord_notification_service.notify_mqtt_activity("received", msg.topic, payload=msg.payload, parsed_message=parsed_message)
-
-            if parsed_message["message_type"] == "sensor_data":
-                self.subscribed_data_queue.put(parsed_message)
+        for handler in self.message_handlers:
+            try:
+                handled = handler(client, parsed_message)
+            except Exception:
+                logger.exception("MQTT message handler failed for topic=%s", msg.topic)
+                handled = False
+            if handled:
                 return
 
-            print("Invalid topic")
+        append_mqtt_message_event(parsed_message)
+        self.discord_notification_service.notify_mqtt_activity("received", msg.topic, payload=msg.payload, parsed_message=parsed_message)
 
-        self.client.subscribe(topic, qos=0)
-        self.client.on_message = on_message
+        if parsed_message["message_type"] == "sensor_data":
+            self.subscribed_data_queue.put(parsed_message)
+            return
+
+        print("Invalid topic")

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily INAS Device Hub state backup for %I
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+Unit=inas-device-hub-backup@%i.service
+
+[Install]
+WantedBy=timers.target

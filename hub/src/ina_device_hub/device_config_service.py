@@ -191,11 +191,7 @@ class DeviceConfigService:
                     record.get("memo"),
                     state,
                     device_kind,
-                    [
-                        [switch.get("name"), switch.get("switch_id"), switch.get("controlled_load")]
-                        for switch in switches
-                        if isinstance(switch, dict)
-                    ],
+                    [[switch.get("name"), switch.get("switch_id"), switch.get("controlled_load")] for switch in switches if isinstance(switch, dict)],
                 ],
             ):
                 continue

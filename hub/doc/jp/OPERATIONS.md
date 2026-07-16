@@ -5,13 +5,14 @@
 この文書は `ina-device-hub` を本番または現場デバイスで運用するための手順と運用上の注意をまとめたものです。インストール手順や systemd 管理、ログ/監視、バックアップ、トラブルシュート、更新手順を含みます。
 
 対象読者
-r
+
 - デバイス運用者、SRE、現場エンジニア
 
 前提
 
 - Linux（systemd）環境
 - sudo 権限
+- `git`、`uv`、`curl`が本番サーバにインストール済みであること
 - リポジトリがデバイス上にクローン済みであること（またはインストールスクリプトをリポジトリから実行できること）
 
 目次
@@ -25,12 +26,12 @@ r
 - 更新とロールバック
 - 定期メンテナンス
 
-クイックデプロイ
+初回デプロイ
 
 1. 依存を同期
 
 ```bash
-uv sync
+uv sync --locked
 ```
 
 2. 対話式に環境ファイルを作成し、接続を確認
@@ -39,13 +40,26 @@ uv sync
 uv run ina-hub install
 ```
 
-3. systemd のインストールスクリプトでデプロイ（sudo）
+3. 本番デプロイ先ホストでCloudflare Access/Tunnelを構築し、本番条件を非対話で確認
 
 ```bash
-sudo ./scripts/install_service.sh
+bash scripts/cloudflare_hosted_setup.sh --install-cloudflared
+uv run ina-hub check --production
 ```
 
-オプションで `--user` / `--target-dir` を指定できます。`--user` は既存ユーザーを指定してください。スクリプトは unit template の `@@INAS_HUB_DIR@@` / `@@INAS_HUB_USER@@` を対象環境の値に置換して `/etc/systemd/system/` に配置し、`inas-device-hub@main` を有効化・起動します。Cloudflare Tunnel を systemd 管理にする場合は `--enable-cloudflare-tunnel` を付けます。
+`check --production` は`.env`権限、HTTP公開条件、Access JWT設定、Turso、R2、既存MQTT設定での実接続を確認する。1項目でも失敗した状態でデプロイしない。
+
+開発PCや確認用PCの`.env`を本番値へ変更して、このチェックを通す運用にはしない。本番値はデプロイ先ホストの`.env`へ構成する。
+
+4. 初回だけ本番モードでsystemdへデプロイ
+
+```bash
+sudo ./scripts/install_service.sh --production --enable-cloudflare-tunnel --target-dir "$PWD"
+```
+
+`--production`は初回構築またはAccess/Tunnelを明示的に再構成するときだけ使う。Access/Tunnelを冪等にprovisionし、本番条件を検査する。通常の`git pull`更新では付けず、既存`.env`と外部接続設定を維持する。
+
+スクリプトは`uv.lock`どおりの依存同期、Turso/R2/MQTT接続確認、状態バックアップ、unit更新、Hub再起動、`/readyz`確認を順に行う。接続確認までは稼働中プロセスを停止しない。
 
 systemd 管理
 
@@ -55,16 +69,24 @@ systemd 管理
 # ステータス確認
 systemctl status inas-device-hub@main
 systemctl status inas-cloudflare-tunnel
+systemctl status inas-device-hub-backup@main.timer
 
 # ログ確認（フォロー）
 journalctl -u inas-device-hub@main -f
 journalctl -u inas-cloudflare-tunnel -f
+journalctl -u inas-device-hub-backup@main.service
 
 # 再起動 / 再読み込み
 sudo systemctl restart inas-device-hub@main
 sudo systemctl restart inas-cloudflare-tunnel
 sudo systemctl daemon-reload
+
+# liveness / readiness
+curl --fail http://127.0.0.1:39151/healthz
+curl --fail http://127.0.0.1:39151/readyz
 ```
+
+`/healthz`はHTTPプロセスの生存、`/readyz`はWeb初期化とMQTT接続を示す。外部監視は両方を監視し、`readyz=503`を運用アラートにする。
 
 テンプレート変更時
 
@@ -74,7 +96,7 @@ sudo systemctl daemon-reload
 
 環境変数とシークレット管理
 
-- 機密情報は `./.env` に保存します。ファイルパーミッションは最低でも `600` にしてください。
+- 機密情報は`./.env`に保存する。group/otherへ読み取りを許可せず、`0600`にする。設定CLI、Cloudflare setup、installerはいずれも`0600`を強制する。
 
 ```bash
 chmod 600 /path/to/ina-device-hub/.env
@@ -87,27 +109,43 @@ chmod 600 /path/to/ina-device-hub/.env
   - `TIMELAPSE_INTERVAL`
 
 - 本番では Vault（HashiCorp / cloud provider KMS）や AWS Secrets Manager 等により配布し、デバイス側で `.env` を生成する運用が推奨されます。
+- MQTT brokerはHubの外部依存である。通常更新時のインストーラーは既存のURL、port、ユーザー名、パスワードを変更せず、その設定で接続確認だけを行う。
+
+MQTT互換性
+
+- 接続はMQTT 3.1.1/TCP、keepalive 60秒、従来のHub client IDを維持する。
+- usernameが空なら認証情報を送らず、空でない場合だけ既存username/passwordを使う。
+- subscribe topicとQoS 0、device config/OTAのtopic・payload・QoS・retainを変更しない。
+- 通常更新ではTLS追加、port変更、credential生成、broker設定変更を行わない。
+- 詳細契約は[MQTT Server Integration Specification](../spec/jp/mqtt-server-spec.md)を参照する。
 
 DB とストレージのバックアップ
 
-ローカル DB
+Hub状態
 
-- アプリは `WORK_DIR`（デフォルト `~/.ina-device-hub`）下に `ina.db` を置いている可能性があります（`setting.py` を確認）。簡易バックアップ:
+圃場、設置ビュー、定植、栽培カレンダー、機器設定、F/WメタデータとF/Wバイナリは、チェックサム付きtar.gzへ保存する。systemd timerが日次実行し、`HUB_BACKUP_RETENTION`世代を保持する。手動実行は次のとおり。
+
+バックアップには`runtime-secrets.json`などのHub秘密情報も含まれる。保存ディレクトリは`0700`、archiveは`0600`を維持し、平文のまま公開バケットや共有ストレージへ置かない。ホスト障害に備える場合は、暗号化した上で別ホストまたは非公開バックアップストレージへ複製する。
 
 ```bash
-# stop service
-sudo systemctl stop inas-device-hub@main
-
-# copy database
-cp ~/.ina-device-hub/ina.db /var/backups/ina-device-hub/ina.db.$(date +%F-%T)
-
-# restart
-sudo systemctl start inas-device-hub@main
+uv run ina-hub backup
+systemctl list-timers inas-device-hub-backup@main.timer
 ```
 
-※ Turso（リモート）を利用している場合は Turso の CLI/エクスポート機能を使用してください。
+復元時はプロセス内キャッシュによる再上書きを防ぐため、必ずHubを停止する。復元処理はmanifest、パス、SHA-256を検証してからatomicに配置する。
 
-オブジェクトストレージ（S3 互換）
+```bash
+sudo systemctl stop inas-cloudflare-tunnel inas-device-hub@main
+uv run ina-hub restore ~/.ina-device-hub/backups/ina-hub-state-YYYYMMDDTHHMMSSZ.tar.gz --force
+sudo systemctl start inas-device-hub@main inas-cloudflare-tunnel
+curl --fail http://127.0.0.1:39151/readyz
+```
+
+Turso
+
+`ina.db`はTurso local replicaであり、個人設定・センサー計測・イベントの正本はTurso側に置く。Tursoのバックアップ/exportと復元手順も別途定期実行し、少なくとも四半期ごとに復元試験を行う。
+
+オブジェクトストレージ（R2/S3互換）
 
 - バケットのバージョニングを有効にし、重要データは定期的に別のロケーションへコピーしてください。例: `aws s3 sync` 互換ツールで定期バックアップ。
 
@@ -144,38 +182,55 @@ find /path/to/storage -type f -mtime +30 -delete
 
 更新とロールバック
 
-更新手順（簡易）
+サーバ上での更新手順
 
-1. リポジトリを pull するか、管理サーバから最新ファイルを rsync する
+本番サーバにclone済みのリポジトリを直接更新する。`.env`と`WORK_DIR`はGit管理外のまま維持する。
+
+1. 作業ツリーと現在revisionを確認する
 
 ```bash
 cd /path/to/ina-device-hub
-git pull origin main
-# or from central server: rsync -a ...
+command -v git uv curl
+git status --short
+PREVIOUS_REVISION="$(git rev-parse HEAD)"
+printf 'rollback revision: %s\n' "$PREVIOUS_REVISION"
 ```
 
-2. 必要なら依存を再同期
+`git status --short`に意図しない変更がある場合は更新を中止し、先に差分の所有者と扱いを確認する。
+
+2. fast-forwardだけを許可してpullする
 
 ```bash
-rye sync
+git fetch origin main
+git pull --ff-only origin main
 ```
 
-3. systemd インストールを再実行（ユニット差分を反映）
+3. 通常更新モードで反映する
 
 ```bash
-sudo ./scripts/install_service.sh --target-dir /path/to/ina-device-hub
+sudo ./scripts/install_service.sh --target-dir "$PWD"
 ```
 
-4. サービス再起動
+通常更新では`--production`を付けない。これにより既存`.env`、MQTT接続、HTTP bind、Cloudflare resourceを変更せず、依存同期と外部接続確認に成功してからバックアップ、unit更新、Hub再起動、readiness確認を行う。Cloudflare TunnelのIDが既に`.env`へある場合は、その既存serviceを維持する。
+
+4. 稼働確認
 
 ```bash
-sudo systemctl restart inas-device-hub@main
-sudo systemctl restart inas-cloudflare-tunnel
+systemctl status inas-device-hub@main --no-pager
+curl --fail http://127.0.0.1:39151/healthz
+curl --fail http://127.0.0.1:39151/readyz
+journalctl -u inas-device-hub@main --since '-10 minutes' --no-pager
 ```
+
+確認項目は、MQTT接続成功、既存deviceのtelemetry受信、runtime config応答、F/W URL到達、圃場一覧・主要画面、Turso/R2書き込みである。
 
 ロールバック
 
-- 新バージョン適用前に必ず DB と重要ファイルのバックアップを取得してください（上記参照）。問題があればバックアップを戻し、以前のリリースタグに戻してサービスを再起動します。
+- installerが作成した事前バックアップと、更新前に記録した`PREVIOUS_REVISION`を確認する。
+- 作業ツリーがcleanであることを確認し、`git switch --detach "$PREVIOUS_REVISION"`で更新前コードへ切り替える。
+- `sudo ./scripts/install_service.sh --target-dir "$PWD"`を再実行する。通常更新モードなのでMQTTやCloudflare設定は変更しない。
+- データschemaの互換性がない場合だけ`ina-hub restore`で対応するバックアップを戻す。復元後に`/readyz`、主要画面、MQTT受信を確認する。
+- 原因解消後は`git switch main`で管理branchへ戻し、再度fast-forward更新する。
 
 定期メンテナンス項目
 
@@ -189,6 +244,9 @@ sudo systemctl restart inas-cloudflare-tunnel
 - `.env` を公開リポジトリへ入れない。Secrets をコミットしないこと。
 - サービス実行ユーザーは最小権限にする。
 - S3 認証キーは必要最小限の権限にする（書き込み対象バケットに限定）。
+- Cloudflare経由で公開する本番は`HUB_AUTH_MODE=cloudflare_access`とし、Access JWTの署名、issuer、audience、emailをHubでも検証する。
+- 既存deviceへのLAN内F/W配信のため`HUB_HTTP_HOST=0.0.0.0`を使用できる。origin portはdevice LANからだけ到達可能にし、インターネットへ直接公開しない。
+- `/firmware/<device_kind>/<version>/firmware.bin`は既存deviceがAccess JWTを送れないためdevice向け公開endpointとする。管理APIと画面は同じ扱いにせず、Cloudflare Accessで保護する。
 
 最後に
 

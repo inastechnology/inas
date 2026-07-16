@@ -16,10 +16,16 @@ uv run ina-hub install
 
 - `WORK_DIR` (任意) — アプリの作業ディレクトリ。例: `~/.ina-device-hub`。
 - `LOCAL_STORAGE_BASE_DIR` (任意) — 画像などを保存するローカルディレクトリ。例: `/mnt/storage/ina`。
-- `HUB_HTTP_HOST` (任意) — local hub HTTP server の bind address。既定: `0.0.0.0`。Cloudflare hosted option の起動scriptは、Tunnelを経由しないLANからの認証回避を防ぐため `127.0.0.1` へ強制する。
+- `HUB_HTTP_HOST` (任意) — local hub HTTP serverのbind address。既定は`0.0.0.0`。既存デバイスへのLAN内F/W配信を維持するため、リポジトリ更新時に自動変更しない。origin portをインターネットへ直接公開してはならない。
+- `HUB_HTTP_SERVER` (任意) — `waitress`または開発用`flask`。新規設定の既定は`waitress`。旧`.env`にキーがない更新環境では従来の`flask`へフォールバックする。
+- `HUB_HTTP_THREADS` (任意) — Waitress worker thread数。既定: `8`。
+- `HUB_AUTH_MODE` (任意) — `local`または`cloudflare_access`。旧`.env`にキーがない場合は従来互換の`local`。Cloudflare経由で公開する新規本番は`cloudflare_access`を使う。
+- `HUB_MAX_REQUEST_BYTES` / `FIRMWARE_MAX_UPLOAD_BYTES` — HTTP全体とF/W単体の受信上限。
+- `HUB_BACKUP_DIR` / `HUB_BACKUP_RETENTION` — 状態バックアップ先と保持世代数。
+- `HUB_READINESS_TIMEOUT_SECONDS` — systemd/foreground起動で`/readyz`を待つ秒数。
 - `HUB_HTTP_PORT` (任意) — local hub HTTP server の port。既定: `39151`。
 - `HUB_LOCAL_USER_EMAIL` (任意) — Cloudflare Accessを経由しないローカル利用時のユーザーemail。既定: `local-user@ina.local`。
-- `HUB_ADMIN_EMAILS` (本番推奨) — `/settings` とAI接続確認を許可するemailのカンマ区切り。本番では明示する。未設定時はAccess利用者全員を作業者とし、ローカル直利用だけを管理者として扱う。
+- `HUB_ADMIN_EMAILS` (Cloudflare公開時は必須) — `/settings`、AI接続確認、機器状態・runtime config・OTA/F/W管理を許可するemailのカンマ区切り。本番では明示する。未設定時はAccess利用者全員を作業者とし、ローカル直利用だけを管理者として扱う。
 
 ## Turso (ローカル/リモート DB)
 
@@ -93,7 +99,9 @@ curl -X POST \
 - `MQTT_BROKER_USERNAME` (必須) — 接続ユーザー名（ブローカーにより任意）。
 - `MQTT_BROKER_PASSWORD` (必須) — 接続パスワード。
 
-注意: ブローカーが TLS を要求する場合、証明書の配置やポート（8883 など）を設定してください。
+MQTTの接続先、port、認証有無は既存デバイス・brokerとの互換条件である。リポジトリ更新時に自動変更せず、現在の`.env`をそのまま引き継ぐ。
+
+Hubの接続は従来どおりMQTT 3.1.1/TCP、keepalive 60秒、usernameが空なら認証なし、空でなければusername/password認証である。TLSへの自動切替やport変更は行わない。
 
 ## SwitchBot
 
@@ -141,7 +149,7 @@ Cloudflare hosted option を使う場合だけ設定します。値の source of
 - `CLOUDFLARE_ACCESS_API_TOKEN` — Access application / group / policy を作成・更新するための API token。Worker には渡しません。旧名 `CLOUDFLARE_API_TOKEN` も script は fallback として読みます。
 - `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME` — Access application と Tunnel の公開 hostname。例: `hub.example.com`。
 - `CLOUDFLARE_ACCESS_TEAM_DOMAIN` — Access JWT issuer。例: `https://<team-name>.cloudflareaccess.com`。`scripts/cloudflare_access_setup.py` が Zero Trust organization から補完できます。
-- `CLOUDFLARE_ACCESS_POLICY_AUD` — Access application の Audience tag。Worker の JWT 検証で使います。Access application 作成後に `scripts/cloudflare_access_setup.py` が出力します。
+- `CLOUDFLARE_ACCESS_POLICY_AUD` — Access applicationのAudience tag。WorkerとPython Hub双方のJWT検証で使う。Access application作成後に`scripts/cloudflare_access_setup.py`が出力する。
 - `CLOUDFLARE_ACCESS_GROUP_ID` — 許可 email を保持する Access group ID。script が出力します。
 - `CLOUDFLARE_ACCESS_APP_ID` — Access self-hosted application ID。script が出力します。
 - `CLOUDFLARE_ACCESS_POLICY_ID` — Access allow policy ID。script が出力します。
@@ -154,7 +162,7 @@ Cloudflare hosted option を使う場合だけ設定します。値の source of
 - `CLOUDFLARE_TUNNEL_NAME` — Cloudflare Tunnel 名。既定: `inas-hub`。
 - `CLOUDFLARE_TUNNEL_ID` — 作成された Tunnel ID。`scripts/cloudflare_tunnel_setup.sh --write-env` が出力します。
 - `CLOUDFLARE_TUNNEL_HOSTNAME` — Tunnel の DNS route hostname。通常は `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME` と同じです。
-- `CLOUDFLARE_TUNNEL_ORIGIN_URL` — Tunnel が転送する local hub URL。既定: `http://localhost:39151`。
+- `CLOUDFLARE_TUNNEL_ORIGIN_URL` — Tunnel が転送する local hub URL。既定: `http://127.0.0.1:39151`。
 - `CLOUDFLARE_TUNNEL_TOKEN_FILE` — `cloudflared tunnel run` 用 token file。`scripts/cloudflare_tunnel_setup.py --write-env provision` が `hub/.data/cloudflare/tunnel-token` に生成します。
 - `CLOUDFLARE_TUNNEL_DNS_RECORD_ID` — Tunnel 用 CNAME record ID。script が出力します。
 - `CLOUDFLARE_ZONE_ID` — DNS record を作る zone ID。未設定なら hostname から自動探索します。

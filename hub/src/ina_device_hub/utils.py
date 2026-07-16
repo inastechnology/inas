@@ -1,7 +1,6 @@
 from plotly import graph_objs as go
-from plotly.subplots import make_subplots
 from plotly.offline import plot
-from datetime import datetime, timezone
+from plotly.subplots import make_subplots
 
 
 class Utils:

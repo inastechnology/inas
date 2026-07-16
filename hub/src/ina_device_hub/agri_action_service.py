@@ -312,11 +312,7 @@ def _action_support(action_type, devices):
         }
     if action_type not in SUPPORTED_ACTIONS:
         return {"supported": True, "reason": "制御を伴わない記録です。"}
-    has_watering_device = any(
-        ((device.get("record") or {}).get("device_kind") in WATERING_DEVICE_KINDS)
-        for device in devices
-        if isinstance(device, dict)
-    )
+    has_watering_device = any(((device.get("record") or {}).get("device_kind") in WATERING_DEVICE_KINDS) for device in devices if isinstance(device, dict))
     if has_watering_device:
         return {"supported": True, "reason": "WTR/WRSデバイスで制御可能です。"}
     return {"supported": False, "reason": "灌水可能なWTR/WRSデバイスが圃場に紐づいていません。"}

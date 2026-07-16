@@ -1,7 +1,6 @@
-from logging import getLogger, Formatter, DEBUG, INFO, WARNING, ERROR, CRITICAL, Logger
-from logging.handlers import RotatingFileHandler
-from logging import StreamHandler
 import os
+from logging import DEBUG, Formatter, Logger, StreamHandler, getLogger
+from logging.handlers import RotatingFileHandler
 
 from ina_device_hub.setting import setting
 

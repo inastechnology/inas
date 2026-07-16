@@ -1,8 +1,7 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
-
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("TURSO_DATABASE_URL", "local")
@@ -22,6 +21,17 @@ from ina_device_hub import ina_db_connector  # noqa: E402
 
 
 class InaDBConnectorTest(unittest.TestCase):
+    def test_user_note_insert_uses_bound_parameters(self):
+        connector = object.__new__(ina_db_connector.InaDBConnector)
+        connector.conn = MagicMock()
+
+        connector.insert_user_note('device"; DROP TABLE user_note; --', 'note"')
+
+        connector.conn.execute.assert_called_once_with(
+            "INSERT INTO user_note (device_id, note) VALUES (?, ?)",
+            ('device"; DROP TABLE user_note; --', 'note"'),
+        )
+
     def test_remote_replica_uses_configured_background_sync_interval(self):
         connection = object()
         with patch.object(ina_db_connector.libsql, "connect", return_value=connection) as connect:

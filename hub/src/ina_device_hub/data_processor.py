@@ -1,17 +1,17 @@
-import time
-import queue
 import json
-import threading
 import math
-from datetime import datetime, timezone
+import queue
+import threading
+import time
+from datetime import UTC, datetime
 
-from ina_device_hub.sensor_device_repository import sensor_device_repository
-from ina_device_hub.sensor_data_repository import sensor_data_repository
-from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
-from ina_device_hub.sensor_data_queue import SensorDataQueue
-from ina_device_hub.ina_db_connector import InaDBConnector
 from ina_device_hub.device_event_log import append_device_event
 from ina_device_hub.general_log import logger
+from ina_device_hub.ina_db_connector import InaDBConnector
+from ina_device_hub.sensor_data_queue import SensorDataQueue
+from ina_device_hub.sensor_data_repository import sensor_data_repository
+from ina_device_hub.sensor_device_repository import sensor_device_repository
+from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
 from ina_device_hub.setting import setting
 
 
@@ -42,7 +42,7 @@ class DataProcessor:
                     {
                         "name": message["device_id"],
                         "type": message["device_id"].split("-")[0],
-                        "detected_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        "detected_at": datetime.now(UTC).isoformat(timespec="seconds"),
                     },
                 )
 
@@ -145,7 +145,7 @@ class DataProcessor:
                 "schema": "farm.telemetry.v1",
                 "device_id": topic_device_id,
                 "telemetry": payload_as_dict,
-                "received_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+                "received_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
             },
         }
 
@@ -248,7 +248,6 @@ class DataProcessor:
             # all audio data received
             print(f"[{device_id}:{seqId}] all audio data received")
             # all audio data received
-            audio_data = self.audio_buffer[device_id][seqId]["audio"].copy()
             del self.audio_buffer[device_id][seqId]
             # save audio data
             # self.sensor_audio_repogitory.save(device_id, audio_data)

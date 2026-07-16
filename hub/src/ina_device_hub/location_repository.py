@@ -17,7 +17,7 @@ class LocationRepository:
             with open(self.location_repo_path, "w") as f:
                 f.write("{}")
         try:
-            with open(self.location_repo_path, "r") as f:
+            with open(self.location_repo_path) as f:
                 self.location_dict = json.load(f)
         except FileNotFoundError:
             pass

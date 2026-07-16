@@ -51,6 +51,8 @@ systemd による自動起動（推奨）
 - リポジトリを指定ディレクトリへコピー（既定: `/home/<user>/ina-device-hub`）
 - インストール実行者（`sudo` で実行した場合は元のユーザー）をサービス実行ユーザーに設定
 - `.default.env` を `.env` にコピー（無ければ簡易テンプレートを作成）
+- 既存`.env`、MQTT設定、`WORK_DIR`内の運用データは上書きしない
+- `uv.lock`どおりの依存同期、外部接続確認、状態バックアップ、`/readyz`確認
 - `systemd/inas-device-hub@.service` を `/etc/systemd/system/` に配置し、
   テンプレート内の `@@INAS_HUB_DIR@@` と `@@INAS_HUB_USER@@` をターゲットのパス・ユーザーに置換
 - Cloudflare Tunnel 設定がある場合は `systemd/inas-cloudflare-tunnel.service` も配置・有効化
@@ -65,8 +67,10 @@ sudo ./scripts/install_service.sh
 sudo ./scripts/install_service.sh --user mysvcuser --target-dir /opt/ina-device-hub
 
 # Cloudflare Tunnel も systemd 管理にする場合
-sudo ./scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
+sudo ./scripts/install_service.sh --production --target-dir "$PWD" --enable-cloudflare-tunnel
 ```
+
+`--production`は初回のCloudflare本番構築または明示的な再構成時だけ使います。サーバで`git pull`した後の通常更新は`sudo ./scripts/install_service.sh --target-dir "$PWD"`とし、既存のMQTT・HTTP・認証・Cloudflare設定を維持します。詳細は[運用ガイド](OPERATIONS.md)を参照してください。
 
 サービス確認
 
@@ -122,7 +126,7 @@ bash scripts/cloudflare_hosted_up.sh --install-cloudflared
 
 setup は再実行可能です。`.env` に保存済みの ID を優先して既存 resource を再利用し、同名 resource が複数ある場合や、同じ hostname に別用途の DNS record がある場合は自動上書きせず停止します。
 
-`cloudflare_hosted_up.sh` は通常の `rye run serve` と同じ local hub 起動条件を使います。`WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` が書き込み可能で、MQTT broker など `.env` の接続先へ到達できる必要があります。local hub が起動直後または実行中に終了した場合は、Cloudflare Tunnel も停止します。Tunnel はデバイス側で起動するため、Worker cloud app の確認と混同しないでください。
+`cloudflare_hosted_up.sh` は `.venv` の固定依存とWaitressでlocal hubを起動します。`WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` が書き込み可能で、MQTT brokerなど `.env` の接続先へ到達できる必要があります。`/readyz` が制限時間内にMQTT接続を含む準備完了を返さなければTunnelを開始しません。Tunnelはデバイス側で起動するため、Worker cloud appの確認と混同しないでください。
 
 Cloud app 版の開発確認:
 
@@ -150,22 +154,22 @@ Git 管理外ローカルファイルの引っ越し
 `.env`、デバイス一覧 JSON、`data/`、`logs/` など Git 管理外のローカルファイルは、次のコマンドで zip に退避・復元できます。`.env` には secrets が含まれるため、zip は非公開の経路で共有してください。
 
 ```bash
-rye run local-files list
-rye run local-files export-zip /tmp/ina-device-hub-local-files.zip
-rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --overwrite
+bash scripts/migrate_local_files.sh list
+bash scripts/migrate_local_files.sh export-zip /tmp/ina-device-hub-local-files.zip
+bash scripts/migrate_local_files.sh import-zip /tmp/ina-device-hub-local-files.zip --overwrite
 ```
 
 実行時の `WORK_DIR`（既定: `~/.ina-device-hub`）も含める場合は `--include-work-dir` を付けます。
 
 ```bash
-rye run local-files export-zip /tmp/ina-device-hub-local-files.zip --include-work-dir
-rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --include-work-dir --overwrite
+bash scripts/migrate_local_files.sh export-zip /tmp/ina-device-hub-local-files.zip --include-work-dir
+bash scripts/migrate_local_files.sh import-zip /tmp/ina-device-hub-local-files.zip --include-work-dir --overwrite
 ```
 
 旧デバイスのストレージを新デバイスにマウントして直接コピーできる場合は、`move-device` で repository 配下のローカル設定と `WORK_DIR` をまとめて移せます。
 
 ```bash
-rye run local-files move-device \
+bash scripts/migrate_local_files.sh move-device \
   --source-dir /mnt/old-device/path/to/ina-device-hub \
   --target-dir /path/to/ina-device-hub \
   --source-work-dir /mnt/old-device/path/to/.ina-device-hub \
@@ -188,18 +192,19 @@ sudo systemctl enable --now inas-device-hub@main
 - フォーマット
 
 ```bash
-rye run format
+uv run ruff format .
 ```
 
 - リント
 
 ```bash
-rye run lint
+uv run ruff check .
+uv run ruff format --check .
 ```
 
 主要ファイル（概要）
 
-- `pyproject.toml` — 依存と rye スクリプト
+- `pyproject.toml` — Python依存とツール設定
 - `src/ina_device_hub/` — アプリ本体（`setting.py`, `hub_mqtt_client.py`, `camera_connector.py` など）
 - `data/instagram_caption_prompt.txt` — Instagram 投稿文生成プロンプトのテンプレート
 - `doc/AI_AGENT_ENVIRONMENT_SETUP.md` — AI Agent 向け環境構築・Cloudflare setup 手順
@@ -281,7 +286,7 @@ Instagram 自動投稿フロー
 
 貢献
 
-PR・Issue を歓迎します。作業前に依存を同期し、`rye run format` と `rye run lint` を実行してください。
+PR・Issue を歓迎します。作業前に`uv sync`で依存を同期し、`uv run ruff format .`、`uv run ruff check .`、`uv run ruff format --check .`を実行してください。
 
 デバイス設定配信
 

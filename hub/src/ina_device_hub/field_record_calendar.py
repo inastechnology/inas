@@ -3,7 +3,6 @@
 import calendar
 from datetime import datetime, timedelta
 
-
 RECORD_KIND_LABELS = {
     "event": "作業・観察",
     "note": "メモ",

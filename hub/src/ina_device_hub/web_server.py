@@ -5,12 +5,13 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from functools import lru_cache
 from html import escape
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 import plotly
 from flask import Flask, Response, jsonify, redirect, render_template, render_template_string, request, send_file, stream_template
 from plotly import graph_objs as go
 from plotly.io import to_html
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from ina_device_hub.agri_action_service import METRIC_LABELS, build_action_candidates
 from ina_device_hub.ai_content_service import ai_content_service
@@ -64,7 +65,12 @@ from ina_device_hub.sensor_measurement_repository import extract_measurements_fr
 from ina_device_hub.setting import setting
 from ina_device_hub.storage_connector import storage_connector
 from ina_device_hub.timelapse_media_service import timelapse_media_service
-from ina_device_hub.user_context import current_user_from_request
+from ina_device_hub.user_context import (
+    AccessAuthenticationError,
+    authenticate_request,
+    authentication_mode,
+    current_user_from_request,
+)
 from ina_device_hub.user_preference_repository import (
     DEFAULT_CULTIVATION_EXPERIENCE_LEVEL,
     SUPPORTED_CULTIVATION_EXPERIENCE_LEVELS,
@@ -76,7 +82,15 @@ from ina_device_hub.user_preference_repository import (
 from ina_device_hub.utils import Utils
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = int((setting().get("http") or {}).get("max_request_bytes", 64 * 1024 * 1024))
 MQTT_ADMIN_STATUS_HISTORY_LIMIT = 2000
+SAFE_HTTP_METHODS = {"GET", "HEAD", "OPTIONS"}
+PUBLIC_HEALTH_PATHS = {"/healthz", "/readyz"}
+PUBLIC_DEVICE_PATH_PREFIXES = ("/firmware/",)
+ADMIN_PATH_PREFIXES = ("/local/api/settings/", "/local/api/firmware-artifacts")
+ADMIN_MUTATION_PATH_PREFIXES = ("/local/api/mqtt-devices/", "/local/api/device-configs/", "/devices/", "/locations/")
+_web_initialized = False
+_readiness_checks = {}
 FIELD_AREA_TYPE_LABELS = {
     "section": "区画",
     "bed": "ベッド",
@@ -105,13 +119,87 @@ FIELD_ENVIRONMENT_TYPE_LABELS = dict(FIELD_ENVIRONMENT_TYPE_OPTIONS)
 FIELD_CATALOG_PAGE_SIZE = 18
 
 
+@app.before_request
+def authenticate_hub_request():
+    if request.path in PUBLIC_HEALTH_PATHS or request.path.startswith(PUBLIC_DEVICE_PATH_PREFIXES):
+        return None
+    try:
+        user = authenticate_request(request)
+    except AccessAuthenticationError as exc:
+        return _access_error_response(str(exc), 401)
+
+    if authentication_mode() == "cloudflare_access" and _admin_access_required(request.path, request.method) and user.role != "admin":
+        return _access_error_response("administrator role is required", 403)
+    if authentication_mode() == "cloudflare_access" and request.method not in SAFE_HTTP_METHODS and not _is_same_origin_request():
+        return _access_error_response("same-origin request is required", 403)
+    return None
+
+
 @app.after_request
-def prevent_settings_response_caching(response):
+def apply_security_headers(response):
     if request.path == "/settings" or request.path.startswith("/local/api/settings/"):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
-        response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'; object-src 'none'")
+    response.headers.setdefault("Permissions-Policy", "microphone=(), geolocation=()")
+    if authentication_mode() == "cloudflare_access":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def request_entity_too_large(_error):
+    if request.path.startswith("/local/api/"):
+        return jsonify({"error": "request body is too large"}), 413
+    return Response("request body is too large", status=413, mimetype="text/plain")
+
+
+def _admin_access_required(path: str, method: str) -> bool:
+    if any(path == prefix or path.startswith(prefix) for prefix in ADMIN_PATH_PREFIXES):
+        return True
+    return method not in SAFE_HTTP_METHODS and any(path.startswith(prefix) for prefix in ADMIN_MUTATION_PATH_PREFIXES)
+
+
+def _access_error_response(message: str, status: int):
+    if request.path.startswith("/local/api/"):
+        return jsonify({"error": message}), status
+    return Response(message, status=status, mimetype="text/plain")
+
+
+def _is_same_origin_request() -> bool:
+    origin = request.headers.get("Origin", "").strip()
+    if not origin:
+        return False
+    parsed = urlsplit(origin)
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip()
+    scheme = forwarded_proto or request.scheme
+    forwarded_host = request.headers.get("X-Forwarded-Host", "").split(",", 1)[0].strip()
+    host = forwarded_host or request.host
+    return parsed.scheme == scheme and parsed.netloc == host and not parsed.path.rstrip("/")
+
+
+@app.route("/healthz", methods=["GET"])
+def healthz():
+    return jsonify({"status": "ok"})
+
+
+@app.route("/readyz", methods=["GET"])
+def readyz():
+    checks = {"web": _web_initialized}
+    for name, check in _readiness_checks.items():
+        try:
+            checks[name] = bool(check())
+        except Exception:
+            checks[name] = False
+    ready = all(checks.values())
+    return jsonify({"status": "ready" if ready else "not_ready", "checks": checks}), 200 if ready else 503
+
+
+def register_readiness_check(name: str, check):
+    _readiness_checks[name] = check
 
 
 LAYOUT_PLACEMENT_LABELS = {
@@ -893,10 +981,7 @@ def _build_device_layout_context(device_id, record=None):
         layout = layout_repository.get(field_id, field_name=field.get("name") or "")
         spaces = {space.get("id"): space for space in layout.get("spaces") or [] if space.get("id")}
         placement_index = {
-            placement.get("id"): (space, placement)
-            for space in spaces.values()
-            for placement in space.get("placements") or []
-            if placement.get("id")
+            placement.get("id"): (space, placement) for space in spaces.values() for placement in space.get("placements") or [] if placement.get("id")
         }
         field_assignments = []
         for space in spaces.values():
@@ -2144,7 +2229,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
     )
     device_link_prefix = "/demo/mqtt-devices/" if demo_mode else "/mqtt-devices/"
     list_path = "/demo/mqtt-devices" if demo_mode else "/mqtt-devices"
-    device_catalog["previous_url"] = _mqtt_device_catalog_url(list_path, device_query, int(device_catalog["page"]) - 1) if device_catalog["has_previous"] else ""
+    device_catalog["previous_url"] = (
+        _mqtt_device_catalog_url(list_path, device_query, int(device_catalog["page"]) - 1) if device_catalog["has_previous"] else ""
+    )
     device_catalog["next_url"] = _mqtt_device_catalog_url(list_path, device_query, int(device_catalog["page"]) + 1) if device_catalog["has_next"] else ""
     template = """
     <!doctype html>
@@ -4528,7 +4615,10 @@ def hub_settings_page():
     }
     infrastructure = (
         {"label": "Turso", "configured": bool((setting().get("turso") or {}).get("database_url") and (setting().get("turso") or {}).get("auth_token"))},
-        {"label": "R2 / S3", "configured": bool((setting().get("storage_bucket") or {}).get("endpoint_url") and (setting().get("storage_bucket") or {}).get("bucket_name"))},
+        {
+            "label": "R2 / S3",
+            "configured": bool((setting().get("storage_bucket") or {}).get("endpoint_url") and (setting().get("storage_bucket") or {}).get("bucket_name")),
+        },
         {"label": "MQTT", "configured": bool((setting().get("mqtt") or {}).get("mqtt_broker"))},
         {"label": "AIテキストAPIキー", "configured": visible_ai["text_key_configured"]},
         {"label": "AI画像APIキー", "configured": visible_ai["image_key_configured"]},
@@ -4619,18 +4709,15 @@ def refresh_instagram_account_profile_api():
 
 def _instagram_camera_options(selected_camera_id=""):
     cameras = {}
-    for device_id, camera in (camera_connector().camera_device_repository.get_all() or {}).items():
-        camera = camera if isinstance(camera, dict) else {}
-        cameras[str(device_id)] = camera.get("name") or str(device_id)
+    for device_id, camera_record in (camera_connector().camera_device_repository.get_all() or {}).items():
+        normalized_camera = camera_record if isinstance(camera_record, dict) else {}
+        cameras[str(device_id)] = normalized_camera.get("name") or str(device_id)
     for device_id, record in (device_config_service().get_all_records() or {}).items():
         if (record or {}).get("device_kind") == "CAM":
             cameras.setdefault(str(device_id), (record or {}).get("name") or str(device_id))
     if selected_camera_id and selected_camera_id not in cameras:
         cameras[selected_camera_id] = f"{selected_camera_id}（現在の設定・未登録）"
-    return [
-        {"id": device_id, "name": name}
-        for device_id, name in sorted(cameras.items(), key=lambda item: (item[1].lower(), item[0].lower()))
-    ]
+    return [{"id": device_id, "name": name} for device_id, name in sorted(cameras.items(), key=lambda item: (item[1].lower(), item[0].lower()))]
 
 
 @app.route("/fields", methods=["GET", "POST"])
@@ -4844,12 +4931,14 @@ def update_field_layout_api(field_id):
             updated_by=user.email,
         )
     except FieldLayoutConflictError as exc:
-        return jsonify({
-            "error": str(exc),
-            "code": "revision_conflict",
-            "submitted_revision": request_body.get("revision"),
-            "current": exc.current,
-        }), 409
+        return jsonify(
+            {
+                "error": str(exc),
+                "code": "revision_conflict",
+                "submitted_revision": request_body.get("revision"),
+                "current": exc.current,
+            }
+        ), 409
     except FieldLayoutValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(layout)
@@ -4871,11 +4960,7 @@ def search_field_layout_devices_api(field_id):
     groups = set(_query_list("group"))
     include_ids = set(_query_list("include"))
     terms = search_terms(request.args.get("q", ""))
-    available_devices = [
-        device
-        for device in _field_layout_devices(field_id, field)
-        if not groups or device.get("group_label") in groups
-    ]
+    available_devices = [device for device in _field_layout_devices(field_id, field) if not groups or device.get("group_label") in groups]
     devices = [
         device
         for device in available_devices
@@ -4981,10 +5066,10 @@ def _layout_device_group_label(device_kind):
 def _query_list(name):
     values = []
     for raw_value in request.args.getlist(name):
-        for value in str(raw_value or "").split(","):
-            value = value.strip()
-            if value and value not in values:
-                values.append(value)
+        for item in str(raw_value or "").split(","):
+            normalized = item.strip()
+            if normalized and normalized not in values:
+                values.append(normalized)
     return values
 
 
@@ -5990,9 +6075,7 @@ def _build_field_context(  # noqa: PLR0915
     image_compare_groups = _field_image_compare_groups(camera_ids, compare_day)
     active_measurement_devices = {device_id: device_records[device_id] for device_id in device_ids if device_id in device_records}
     automatic_record_measurements = (
-        _field_automatic_record_measurements(active_measurement_devices, placement_rows, record_month)
-        if include_automatic_measurements
-        else []
+        _field_automatic_record_measurements(active_measurement_devices, placement_rows, record_month) if include_automatic_measurements else []
     )
     active_plantings = _build_active_planting_views(active_plantings, plant_bundle, automatic_record_measurements, layout)
 
@@ -6051,15 +6134,9 @@ def _build_field_context(  # noqa: PLR0915
         "image_compare": recent_images[:2],
         "image_compare_groups": image_compare_groups,
         "soil_moisture_chart": (
-            _build_field_soil_moisture_chart(statuses_for_chart, field_events, include_plotlyjs=False, deferred=True)
-            if statuses_for_chart
-            else ""
+            _build_field_soil_moisture_chart(statuses_for_chart, field_events, include_plotlyjs=False, deferred=True) if statuses_for_chart else ""
         ),
-        "watering_chart": (
-            _build_watering_trend_chart(statuses_for_chart, include_plotlyjs=False, deferred=True)
-            if statuses_for_chart
-            else ""
-        ),
+        "watering_chart": (_build_watering_trend_chart(statuses_for_chart, include_plotlyjs=False, deferred=True) if statuses_for_chart else ""),
         "monitoring_scopes": _build_monitoring_scopes(placement_rows, latest_sensor_values),
         "layout": layout,
         "layout_preview": _build_layout_preview(layout, active_plantings, field_id=field["id"]),
@@ -6092,12 +6169,7 @@ def _build_field_deferred_context(field: dict, primary_context: dict, record_mon
     device_records = _field_device_records(field, layout)
     active_measurement_devices = {
         device_id: device_records[device_id]
-        for device_id in {
-            row.get("device_id")
-            for row in placement_rows
-            if row.get("device_role") != "camera"
-        }
-        - {None, ""}
+        for device_id in {row.get("device_id") for row in placement_rows if row.get("device_role") != "camera"} - {None, ""}
         if device_id in device_records
     }
     automatic_measurements = _field_automatic_record_measurements(active_measurement_devices, placement_rows, record_month)
@@ -6236,9 +6308,7 @@ def _build_installation_tree(layout: dict, device_records: dict, active_planting
                     "relation": relation,
                     "relation_kind": relation_kind,
                     "href": (
-                        f"/mqtt-devices/{quote(str(device_id), safe='')}"
-                        if device_id
-                        else _layout_placement_url(field_id, space_id, placement.get("id"))
+                        f"/mqtt-devices/{quote(str(device_id), safe='')}" if device_id else _layout_placement_url(field_id, space_id, placement.get("id"))
                     ),
                     "action_label": "機器詳細を開く" if device_id else "配置詳細を開く",
                 }
@@ -6461,11 +6531,7 @@ def _build_active_planting_views(active_plantings: list, plant_bundle: dict, aut
         "herb": "ハーブ",
         "other": "その他",
     }
-    preset_by_placement = {
-        placement.get("id"): placement.get("preset")
-        for space in layout.get("spaces", [])
-        for placement in space.get("placements", [])
-    }
+    preset_by_placement = {placement.get("id"): placement.get("preset") for space in layout.get("spaces", []) for placement in space.get("placements", [])}
     cultivation_methods = {
         "ridge": [("ridge_soil", "畝・土耕"), ("ridge_mulch", "畝・マルチ栽培")],
         "tree": [("in_ground_tree", "地植え果樹・樹木")],
@@ -6849,7 +6915,7 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
         "battery_v",
         "rssi",
         "threshold",
-):  # noqa: PLR0915
+    ):  # noqa: PLR0915
         if payload.get(key) is not None:
             values[key] = payload.get(key)
     try:
@@ -7010,10 +7076,7 @@ def push_device_config(device_id):
 
 @app.route("/local/api/mqtt-devices", methods=["GET"])
 def list_mqtt_devices():
-    search_requested = any(
-        key in request.args
-        for key in ("q", "state", "device_kind", "page", "page_size")
-    )
+    search_requested = any(key in request.args for key in ("q", "state", "device_kind", "page", "page_size"))
     if not search_requested:
         return jsonify(device_config_service().get_all_records())
     try:
@@ -7196,8 +7259,10 @@ def list_firmware_artifacts():
 
 @app.route("/local/api/firmware-artifacts/inspect", methods=["POST"])
 def inspect_firmware_artifact():
-    uploaded_file = request.files.get("firmware") or request.files.get("file")
-    firmware_binary = uploaded_file.read() if uploaded_file is not None else request.get_data()
+    try:
+        firmware_binary = _read_firmware_upload()
+    except FirmwareArtifactValidationError as exc:
+        return jsonify({"error": str(exc)}), 413
     if not firmware_binary:
         return jsonify({"error": "firmware binary must not be empty"}), 400
 
@@ -7223,8 +7288,10 @@ def upsert_firmware_artifact(version):
 
 @app.route("/local/api/firmware-artifacts/<device_kind>/<version>/upload", methods=["POST", "PUT"])
 def upload_firmware_artifact(device_kind, version):
-    uploaded_file = request.files.get("firmware") or request.files.get("file")
-    firmware_binary = uploaded_file.read() if uploaded_file is not None else request.get_data()
+    try:
+        firmware_binary = _read_firmware_upload()
+    except FirmwareArtifactValidationError as exc:
+        return jsonify({"error": str(exc)}), 413
     if not firmware_binary:
         return jsonify({"error": "firmware binary must not be empty"}), 400
 
@@ -7234,6 +7301,16 @@ def upload_firmware_artifact(device_kind, version):
     except FirmwareArtifactValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(artifact), 201
+
+
+def _read_firmware_upload():
+    limit = int((setting().get("security") or {}).get("firmware_max_upload_bytes", 16 * 1024 * 1024))
+    uploaded_file = request.files.get("firmware") or request.files.get("file")
+    stream = uploaded_file.stream if uploaded_file is not None else request.stream
+    firmware_binary = stream.read(limit + 1)
+    if len(firmware_binary) > limit:
+        raise FirmwareArtifactValidationError(f"firmware binary exceeds the {limit}-byte limit")
+    return firmware_binary
 
 
 @app.route("/firmware/<device_kind>/<version>/firmware.bin", methods=["GET"])
@@ -7341,14 +7418,43 @@ def get_camera_image(image_path):
 
 def initialize_web_server():
     """Prepare the local Turso replica before accepting HTTP requests."""
+    global _web_initialized
+    if _web_initialized:
+        return
     sensor_measurement_repository()
     user_preference_repository()
+    _web_initialized = True
 
 
 def flask_run():
+    serve_http()
+
+
+def serve_http():
     initialize_web_server()
     http_settings = setting().get("http") or {}
-    app.run(host=http_settings.get("host", "0.0.0.0"), port=int(http_settings.get("port", 39151)))
+    host = http_settings.get("host", "0.0.0.0")
+    port = int(http_settings.get("port", 39151))
+    if http_settings.get("server", "waitress") == "flask":
+        app.run(host=host, port=port)
+        return
+
+    from waitress import serve
+
+    server_options = {
+        "host": host,
+        "port": port,
+        "threads": int(http_settings.get("threads", 8)),
+        "clear_untrusted_proxy_headers": True,
+        "max_request_body_size": int(http_settings.get("max_request_bytes", 64 * 1024 * 1024)),
+    }
+    if authentication_mode() == "cloudflare_access":
+        server_options.update(
+            trusted_proxy="127.0.0.1",
+            trusted_proxy_count=1,
+            trusted_proxy_headers={"x-forwarded-host", "x-forwarded-proto"},
+        )
+    serve(app, **server_options)
 
 
 def _request_limit(default: int = 100, maximum: int = 1000):

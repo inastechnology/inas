@@ -10,7 +10,6 @@ from ina_device_hub.discord_notification_service import discord_notification_ser
 from ina_device_hub.general_log import logger
 from ina_device_hub.setting import setting
 
-
 WATERING_DEVICE_KINDS = {"WTR", "WRS"}
 
 

@@ -440,7 +440,10 @@ class InaDBConnector:
         """
         センサー画像データを登録します。
         """
-        self.conn.execute(f'INSERT INTO sensor_image_data (device_id, yyyymmddhhmmss, image_path) VALUES ("{device_id}", "{yyyymmddhhmmss}", "{image_path}")')
+        self.conn.execute(
+            "INSERT INTO sensor_image_data (device_id, yyyymmddhhmmss, image_path) VALUES (?, ?, ?)",
+            (device_id, yyyymmddhhmmss, image_path),
+        )
 
     def fetch_sensor_latest_image(self, device_id: str, num: int = 1):
         """
@@ -456,7 +459,7 @@ class InaDBConnector:
         """
         ユーザーノートを登録します。
         """
-        self.conn.execute(f'INSERT INTO user_note (device_id, note) VALUES ("{device_id}", "{note}")')
+        self.conn.execute("INSERT INTO user_note (device_id, note) VALUES (?, ?)", (device_id, note))
 
     @commit_and_sync
     def upsert_sensor_info(
@@ -472,12 +475,11 @@ class InaDBConnector:
         """
         self.conn.execute(
             "INSERT INTO sensor_info (sensor_id, device_id, sensor_type, calibration_date, location) "
-            "VALUES ("
-            f'"{sensor_id}", "{device_id}", "{sensor_type}", "{calibration_date.strftime("%Y-%m-%d %H:%M:%S")}", "{location}"'
-            ") "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(sensor_id) DO UPDATE SET "
             "device_id = excluded.device_id, sensor_type = excluded.sensor_type, "
             "calibration_date = excluded.calibration_date, location = excluded.location",
+            (sensor_id, device_id, sensor_type, calibration_date.strftime("%Y-%m-%d %H:%M:%S"), location),
         )
 
     @commit_and_sync
@@ -493,10 +495,8 @@ class InaDBConnector:
         システムアラートを登録します。
         """
         self.conn.execute(
-            "INSERT INTO system_alerts (device_id, alert_type, severity, description, event_timestamp, resolved) "
-            "VALUES ("
-            f'"{device_id}", "{alert_type}", "{severity}", "{description}", "{datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")}", {resolved}'
-            ")"
+            "INSERT INTO system_alerts (device_id, alert_type, severity, description, event_timestamp, resolved) VALUES (?, ?, ?, ?, ?, ?)",
+            (device_id, alert_type, severity, description, datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"), resolved),
         )
 
     @commit_and_sync
@@ -513,10 +513,8 @@ class InaDBConnector:
         """
         maintenance_date_str_as_utc = maintenance_date.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
         self.conn.execute(
-            "INSERT INTO maintenance_logs (device_id, maintenance_date, performed_by, description, status) "
-            "VALUES ("
-            f'"{device_id}", "{maintenance_date_str_as_utc}", "{performed_by}", "{description}", "{status}"'
-            ")"
+            "INSERT INTO maintenance_logs (device_id, maintenance_date, performed_by, description, status) VALUES (?, ?, ?, ?, ?)",
+            (device_id, maintenance_date_str_as_utc, performed_by, description, status),
         )
 
     @commit_and_sync
@@ -534,13 +532,12 @@ class InaDBConnector:
         """
         self.conn.execute(
             "INSERT INTO plant_growth_data (plant_id, species, growth_stage, last_measurement_date, height, health_status) "
-            "VALUES ("
-            f'"{plant_id}", "{species}", "{growth_stage}", "{last_measurement_date.strftime("%Y-%m-%d %H:%M:%S")}", {height}, "{health_status}"'
-            ") "
+            "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(plant_id) DO UPDATE SET "
             "species = excluded.species, growth_stage = excluded.growth_stage, "
             "last_measurement_date = excluded.last_measurement_date, height = excluded.height, "
             "health_status = excluded.health_status",
+            (plant_id, species, growth_stage, last_measurement_date.strftime("%Y-%m-%d %H:%M:%S"), height, health_status),
         )
 
     @commit_and_sync
@@ -557,10 +554,9 @@ class InaDBConnector:
         """
         self.conn.execute(
             "INSERT INTO fish_tank_info (tank_id, fish_species, stocking_density, water_volume, last_maintenance_date) "
-            "VALUES ("
-            f'"{tank_id}", "{fish_species}", {stocking_density}, {water_volume}, "{last_maintenance_date.strftime("%Y-%m-%d %H:%M:%S")}"'
-            ") "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(tank_id) DO UPDATE SET "
             "fish_species = excluded.fish_species, stocking_density = excluded.stocking_density, "
-            "water_volume = excluded.water_volume, last_maintenance_date = excluded.last_maintenance_date, ",
+            "water_volume = excluded.water_volume, last_maintenance_date = excluded.last_maintenance_date",
+            (tank_id, fish_species, stocking_density, water_volume, last_maintenance_date.strftime("%Y-%m-%d %H:%M:%S")),
         )

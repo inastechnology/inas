@@ -9,7 +9,7 @@ Japanese version:
 Start in development:
 
 ```bash
-rye run serve
+uv run python src/ina_device_hub/serve.py
 ```
 
 Default URL:
@@ -20,7 +20,7 @@ http://localhost:39151
 
 ## systemd
 
-Install:
+Install or update while preserving the existing `.env` and MQTT settings:
 
 ```bash
 sudo ./scripts/install_service.sh
@@ -35,8 +35,10 @@ sudo ./scripts/install_service.sh --user mysvcuser --target-dir /opt/ina-device-
 Enable Cloudflare Tunnel service support:
 
 ```bash
-sudo ./scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
+sudo ./scripts/install_service.sh --production --target-dir "$PWD" --enable-cloudflare-tunnel
 ```
+
+Use `--production` only for the initial Cloudflare production deployment or an explicit reprovision. Omit it after a normal server-side `git pull`; upgrade mode validates the existing external connections, backs up state, updates the unit, restarts the Hub, and verifies `/readyz` without rewriting `.env` or MQTT settings.
 
 Check:
 
@@ -101,22 +103,22 @@ well.
 ## Local File Migration
 
 ```bash
-rye run local-files list
-rye run local-files export-zip /tmp/ina-device-hub-local-files.zip
-rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --overwrite
+bash scripts/migrate_local_files.sh list
+bash scripts/migrate_local_files.sh export-zip /tmp/ina-device-hub-local-files.zip
+bash scripts/migrate_local_files.sh import-zip /tmp/ina-device-hub-local-files.zip --overwrite
 ```
 
 Include `WORK_DIR`:
 
 ```bash
-rye run local-files export-zip /tmp/ina-device-hub-local-files.zip --include-work-dir
-rye run local-files import-zip /tmp/ina-device-hub-local-files.zip --include-work-dir --overwrite
+bash scripts/migrate_local_files.sh export-zip /tmp/ina-device-hub-local-files.zip --include-work-dir
+bash scripts/migrate_local_files.sh import-zip /tmp/ina-device-hub-local-files.zip --include-work-dir --overwrite
 ```
 
 Move from an old device:
 
 ```bash
-rye run local-files move-device \
+bash scripts/migrate_local_files.sh move-device \
   --source-dir /mnt/old-device/path/to/ina-device-hub \
   --target-dir /path/to/ina-device-hub \
   --source-work-dir /mnt/old-device/path/to/.ina-device-hub \

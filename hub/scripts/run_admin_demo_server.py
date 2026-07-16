@@ -134,6 +134,9 @@ DEMO_LAYOUT_DEVICES = (
 
 def _prepare_env():
     load_dotenv()
+    # The confirmation demo must remain reachable even when .env is configured
+    # for the Cloudflare Access protected production server.
+    os.environ["HUB_AUTH_MODE"] = "local"
     os.environ["WORK_DIR"] = os.environ.get("HUB_DEMO_WORK_DIR", "/tmp/ina-device-hub-demo/work")
     os.environ["LOCAL_STORAGE_BASE_DIR"] = os.environ.get("HUB_DEMO_LOCAL_STORAGE_BASE_DIR", "/tmp/ina-device-hub-demo/storage")
     # Never inherit the production Turso replica in the UI demo. A non-URL
@@ -180,8 +183,8 @@ def main():
     sys.path.insert(0, str(root / "src"))
     _prepare_env()
 
-    from ina_device_hub.device_config_service import device_config_service
     from ina_device_hub.ai_content_service import ai_content_service
+    from ina_device_hub.device_config_service import device_config_service
     from ina_device_hub.field_layout_repository import field_layout_repository
     from ina_device_hub.field_repository import field_repository
     from ina_device_hub.plant_management_repository import plant_management_repository
@@ -238,11 +241,7 @@ def main():
         )
 
     layout = field_layout_repository().get("demo-strawberry-field", field_name="イチゴ実証圃場")
-    valid_placement_ids = {
-        placement.get("id")
-        for space in layout.get("spaces", [])
-        for placement in space.get("placements", [])
-    }
+    valid_placement_ids = {placement.get("id") for space in layout.get("spaces", []) for placement in space.get("placements", [])}
     plant_repository = plant_management_repository()
     for planting in plant_repository.field_bundle("demo-strawberry-field")["plantings"]:
         if planting.get("status") == "active" and planting.get("placement_id") not in valid_placement_ids:

@@ -7,7 +7,6 @@ from ina_device_hub.general_log import logger
 from ina_device_hub.plant_work_catalog import default_action_work_plan
 from ina_device_hub.setting import setting
 
-
 EXPERIENCE_PROMPT_INSTRUCTIONS = {
     "beginner": (
         "対象利用者は農業初心者です。専門用語には短い説明を添え、準備、実施、終了確認の順で3〜7段階の手順にしてください。"
@@ -956,15 +955,11 @@ class AIContentService:
                     else defaults["start_conditions"]
                 ),
                 "skip_conditions": (
-                    plan.get("skip_conditions")
-                    if isinstance(plan.get("skip_conditions"), list) and plan["skip_conditions"]
-                    else defaults["skip_conditions"]
+                    plan.get("skip_conditions") if isinstance(plan.get("skip_conditions"), list) and plan["skip_conditions"] else defaults["skip_conditions"]
                 ),
                 "checkpoints": plan.get("checkpoints") if isinstance(plan.get("checkpoints"), list) and plan["checkpoints"] else defaults["checkpoints"],
                 "method_options": (
-                    plan.get("method_options")
-                    if isinstance(plan.get("method_options"), list) and plan["method_options"]
-                    else defaults["method_options"]
+                    plan.get("method_options") if isinstance(plan.get("method_options"), list) and plan["method_options"] else defaults["method_options"]
                 ),
                 "completion_criteria": (
                     plan.get("completion_criteria")

@@ -33,6 +33,11 @@ except KeyError:
 
 HUB_HTTP_HOST = os.environ.get("HUB_HTTP_HOST", "0.0.0.0").strip() or "0.0.0.0"
 HUB_HTTP_PORT = _int_env("HUB_HTTP_PORT", 39151)
+HUB_HTTP_SERVER = os.environ.get("HUB_HTTP_SERVER", "flask").strip().lower() or "flask"
+HUB_HTTP_THREADS = _int_env("HUB_HTTP_THREADS", 8)
+HUB_AUTH_MODE = os.environ.get("HUB_AUTH_MODE", "local").strip().lower() or "local"
+HUB_MAX_REQUEST_BYTES = _int_env("HUB_MAX_REQUEST_BYTES", 64 * 1024 * 1024)
+FIRMWARE_MAX_UPLOAD_BYTES = _int_env("FIRMWARE_MAX_UPLOAD_BYTES", 16 * 1024 * 1024)
 
 # work directory
 try:
@@ -40,6 +45,9 @@ try:
     WORK_DIR = os.path.expanduser(WORK_DIR)
 except KeyError:
     WORK_DIR = os.path.expanduser("~/.ina-device-hub")
+
+HUB_BACKUP_DIR = os.path.expanduser(os.environ.get("HUB_BACKUP_DIR", os.path.join(WORK_DIR, "backups")))
+HUB_BACKUP_RETENTION = _int_env("HUB_BACKUP_RETENTION", 14)
 
 if not os.path.exists(WORK_DIR):
     os.makedirs(WORK_DIR)
@@ -184,6 +192,17 @@ DEFAULT_SETTINGS = {
     "http": {
         "host": HUB_HTTP_HOST,
         "port": HUB_HTTP_PORT,
+        "server": HUB_HTTP_SERVER,
+        "threads": HUB_HTTP_THREADS,
+        "max_request_bytes": HUB_MAX_REQUEST_BYTES,
+    },
+    "security": {
+        "auth_mode": HUB_AUTH_MODE,
+        "firmware_max_upload_bytes": FIRMWARE_MAX_UPLOAD_BYTES,
+    },
+    "backup": {
+        "directory": HUB_BACKUP_DIR,
+        "retention": HUB_BACKUP_RETENTION,
     },
     "turso": {
         "database_url": TURSO_DATABASE_URL,
@@ -330,11 +349,7 @@ def _runtime_settings_from(values):
         runtime_settings[section] = {key: source[key] for key in allowed_fields if key in source}
     legacy_ai = values.get("ai")
     instagram = runtime_settings.setdefault("instagram", {})
-    if (
-        "post_schedule_start" not in instagram
-        and isinstance(legacy_ai, dict)
-        and "agent_schedule_start" in legacy_ai
-    ):
+    if "post_schedule_start" not in instagram and isinstance(legacy_ai, dict) and "agent_schedule_start" in legacy_ai:
         instagram["post_schedule_start"] = legacy_ai["agent_schedule_start"]
     if not instagram:
         runtime_settings.pop("instagram", None)

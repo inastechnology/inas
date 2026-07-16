@@ -229,9 +229,7 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
     if details.get("soil_calibration_dry_raw") is not None and details.get("soil_calibration_wet_raw") is not None:
         lines.append(f"現在の校正値: dry={details['soil_calibration_dry_raw']} wet={details['soil_calibration_wet_raw']}")
     if details.get("soil_calibration_suggested_dry_raw") is not None and details.get("soil_calibration_suggested_wet_raw") is not None:
-        lines.append(
-            f"候補の校正値: dry={details['soil_calibration_suggested_dry_raw']} wet={details['soil_calibration_suggested_wet_raw']}"
-        )
+        lines.append(f"候補の校正値: dry={details['soil_calibration_suggested_dry_raw']} wet={details['soil_calibration_suggested_wet_raw']}")
     if details.get("soil_calibration_applied") is not None:
         lines.append(f"device反映: {_format_value(details['soil_calibration_applied'], 'soil_calibration_applied')}")
 

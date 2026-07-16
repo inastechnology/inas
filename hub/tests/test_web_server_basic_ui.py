@@ -22,6 +22,7 @@ os.environ.setdefault("MQTT_BROKER_PORT", "1883")
 os.environ.setdefault("MQTT_BROKER_USERNAME", "")
 os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
+os.environ["HUB_AUTH_MODE"] = "local"
 
 from ina_device_hub import web_server  # noqa: E402
 from ina_device_hub.field_layout_repository import FieldLayoutRepository  # noqa: E402
@@ -191,16 +192,21 @@ class FakeUserPreferenceRepository:
         self.records = {}
 
     def get(self, user_email):
-        return deepcopy(self.records.get(user_email.lower(), {
-            "user_email": user_email.lower(),
-            "locale": "ja",
-            "timezone": "Asia/Tokyo",
-            "date_format": "yyyy-MM-dd",
-            "preferences": {"cultivation_experience": "standard"},
-            "version": 0,
-            "created_at": "",
-            "updated_at": "",
-        }))
+        return deepcopy(
+            self.records.get(
+                user_email.lower(),
+                {
+                    "user_email": user_email.lower(),
+                    "locale": "ja",
+                    "timezone": "Asia/Tokyo",
+                    "date_format": "yyyy-MM-dd",
+                    "preferences": {"cultivation_experience": "standard"},
+                    "version": 0,
+                    "created_at": "",
+                    "updated_at": "",
+                },
+            )
+        )
 
     def update(self, user_email, value, expected_version):
         current = self.get(user_email)
@@ -380,8 +386,8 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('name="post_schedule_start"', html)
         self.assertIn('name="camera_id"', html)
         self.assertIn('id="instagram-camera-select"', html)
-        self.assertIn('data-searchable-select', html)
-        self.assertIn('/static/searchable-select.css', html)
+        self.assertIn("data-searchable-select", html)
+        self.assertIn("/static/searchable-select.css", html)
         self.assertIn('name="plant_position_prompt"', html)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertIn("接続を確認", html)
@@ -1135,9 +1141,7 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(edited.get_json()["required_people"], 2)
         self.assertEqual(edited.get_json()["estimated_minutes"], 45)
 
-        action_search = self.client.get(
-            f"/local/api/plantings/{planting['id']}/calendar/actions?q=葉色&status=in_progress&page_size=1"
-        )
+        action_search = self.client.get(f"/local/api/plantings/{planting['id']}/calendar/actions?q=葉色&status=in_progress&page_size=1")
         self.assertEqual(action_search.status_code, 200)
         self.assertEqual(action_search.get_json()["total"], 1)
         self.assertEqual(action_search.get_json()["items"][0]["id"], action["id"])
@@ -1204,15 +1208,13 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn("年間カレンダーを開く", html)
         self.assertIn("直近の履歴", html)
         self.assertIn("少量施肥", html)
-        self.assertIn('/static/plant-actions/fertilization.webp', html)
-        self.assertIn(f'/fields/{field["id"]}/calendar?planting={planting["id"]}', html)
+        self.assertIn("/static/plant-actions/fertilization.webp", html)
+        self.assertIn(f"/fields/{field['id']}/calendar?planting={planting['id']}", html)
 
     def test_planting_generation_rejects_missing_ai_context_before_creating_record(self):
         field = self.field_repository.upsert(None, {"name": "入力確認圃場"})
         layout = self.field_layout_repository.get(field["id"], field_name=field["name"])
-        layout["spaces"][0]["placements"].append(
-            {"id": "pot-a", "preset": "pot", "name": "鉢A", "x": 2, "y": 3, "width": 2, "height": 2}
-        )
+        layout["spaces"][0]["placements"].append({"id": "pot-a", "preset": "pot", "name": "鉢A", "x": 2, "y": 3, "width": 2, "height": 2})
         self.field_layout_repository.upsert(field["id"], layout, field_name=field["name"])
 
         response = self.client.post(

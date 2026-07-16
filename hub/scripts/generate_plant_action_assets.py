@@ -13,7 +13,6 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = REPO_ROOT / "data" / "plant_action_image_jobs.json"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "src" / "ina_device_hub" / "static" / "plant-actions"

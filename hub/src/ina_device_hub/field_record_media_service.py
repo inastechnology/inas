@@ -20,14 +20,17 @@ class FieldRecordMediaStorageError(RuntimeError):
 
 class FieldRecordMediaService:
     def __init__(self, connector=None):
-        self.connector = connector or storage_connector()
+        self.connector = connector
 
     def upload_images(self, field_id: str, occurred_at: str, files: list):
         uploads = [file for file in files if file and getattr(file, "filename", "")]
         if len(uploads) > MAX_IMAGES_PER_RECORD:
             raise FieldRecordMediaValidationError(f"images must contain {MAX_IMAGES_PER_RECORD} files or less")
+        if not uploads:
+            return []
 
         prepared = [self._prepare_image(file) for file in uploads]
+        connector = self._connector()
         uploaded_keys = []
         attachments = []
         record_day = _record_day(occurred_at)
@@ -36,7 +39,7 @@ class FieldRecordMediaService:
             for image in prepared:
                 attachment_id = str(uuid.uuid4())
                 object_key = f"field-records/{field_key}/{record_day}/{attachment_id}.{image['extension']}"
-                saved_key = self.connector.save_bytes_to_cloud(object_key, image["bytes"], image["content_type"])
+                saved_key = connector.save_bytes_to_cloud(object_key, image["bytes"], image["content_type"])
                 if not saved_key:
                     raise FieldRecordMediaStorageError("failed to upload an image to R2")
                 uploaded_keys.append(saved_key)
@@ -53,7 +56,7 @@ class FieldRecordMediaService:
                 )
         except Exception:
             for object_key in uploaded_keys:
-                self.connector.delete_from_cloud(object_key)
+                connector.delete_from_cloud(object_key)
             raise
         return attachments
 
@@ -61,10 +64,15 @@ class FieldRecordMediaService:
         object_key = str(attachment.get("object_key") or "")
         if not object_key.startswith("field-records/"):
             raise FieldRecordMediaValidationError("invalid field record image key")
-        image_bytes = self.connector.fetch_from_cloud_as_bytes(object_key)
+        image_bytes = self._connector().fetch_from_cloud_as_bytes(object_key)
         if image_bytes is None:
             raise FieldRecordMediaStorageError("failed to read an image from R2")
         return image_bytes
+
+    def _connector(self):
+        if self.connector is None:
+            self.connector = storage_connector()
+        return self.connector
 
     def _prepare_image(self, file):
         image_bytes = file.read(MAX_IMAGE_BYTES + 1)

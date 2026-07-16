@@ -9,8 +9,18 @@ WorkingDirectory=@@INAS_HUB_DIR@@
 ExecStart=@@INAS_HUB_DIR@@/serve.sh %I
 Environment=PYTHONUNBUFFERED=1
 User=@@INAS_HUB_USER@@
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
 Restart=on-failure
 RestartSec=10
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

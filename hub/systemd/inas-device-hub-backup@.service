@@ -1,0 +1,13 @@
+[Unit]
+Description=INAS Device Hub state backup for %I
+After=inas-device-hub@%i.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@@INAS_HUB_DIR@@
+ExecStart=@@INAS_HUB_DIR@@/.venv/bin/ina-hub backup --env-file @@INAS_HUB_DIR@@/.env
+User=@@INAS_HUB_USER@@
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full

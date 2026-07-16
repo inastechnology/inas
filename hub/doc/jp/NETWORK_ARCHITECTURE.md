@@ -14,7 +14,7 @@
 ## 重要な前提
 
 - Tunnel はデバイス側で起動する。この PC では起動しない。
-- `CLOUDFLARE_TUNNEL_ORIGIN_URL` の既定は `http://localhost:39151`。
+- `CLOUDFLARE_TUNNEL_ORIGIN_URL` の既定は `http://127.0.0.1:39151`。
 - Cloudflare Access の public hostname は UI 用の HTTPS/認証付き入口であり、現状の OTA firmware download URL には使わない。
 - 現状の device firmware は OTA download で `http://` のみ受け付ける。HTTPS はデバイス側に証明書検証を入れてから有効化する。
 - Cloudflare Workers は現仕様では hub UI 配信に使わない。Cloud app 版は別の hosted 管理アプリとして扱う。

@@ -5,7 +5,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-
 SCRIPTS_PATH = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_PATH))
 
@@ -25,7 +24,7 @@ class CloudflareSetupCommonTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             env_file = Path(temporary_directory) / ".env"
             env_file.write_text(
-                "# comment\nexport ACCOUNT_ID=account-1\nDISPLAY_NAME=\"Ina Hub\"\nIGNORED\n",
+                '# comment\nexport ACCOUNT_ID=account-1\nDISPLAY_NAME="Ina Hub"\nIGNORED\n',
                 encoding="utf-8",
             )
 

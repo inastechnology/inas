@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# load rye env
-if [[ -f "$HOME/.rye/env" ]]; then
-  # shellcheck disable=SC1090
-  source "$HOME/.rye/env"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "Hub virtual environment is missing. Run: uv sync --frozen --no-dev" >&2
+  exit 1
 fi
 
-# start rye server
-exec rye run serve
+exec "$PYTHON_BIN" -m ina_device_hub.serve

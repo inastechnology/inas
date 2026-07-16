@@ -4,7 +4,6 @@ import math
 import re
 import unicodedata
 
-
 _SEPARATOR_RE = re.compile(r"[\s\u3000・_\-/]+")
 
 

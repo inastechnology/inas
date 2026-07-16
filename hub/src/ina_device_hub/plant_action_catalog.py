@@ -1,6 +1,5 @@
 import copy
 
-
 _ACTION_TYPES = (
     {
         "code": "fertilization",

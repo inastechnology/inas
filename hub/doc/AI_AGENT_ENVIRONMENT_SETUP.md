@@ -22,10 +22,9 @@ Treat `.env` as the source of truth and never print secrets.
 
 ```bash
 cd hub
-rye sync
+uv sync
 cp .default.env .env
-rye run db:create
-rye run serve
+uv run python src/ina_device_hub/serve.py
 ```
 
 Default local URL:
@@ -111,7 +110,7 @@ camera, scheduler, or local filesystem features.
 
 ## Verification Checklist
 
-- `rye run serve` starts the local hub.
+- `uv run python src/ina_device_hub/serve.py` starts the local hub.
 - Admin UI is reachable on `http://localhost:39151`.
 - Demo UI works without MQTT.
 - Cloudflare provisioning reuses existing IDs from `.env`.

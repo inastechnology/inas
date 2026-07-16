@@ -147,9 +147,7 @@ def _normalize_preferences(user_email: str, value: dict):
         raise UserPreferenceValidationError("unsupported timezone")
     if date_format not in SUPPORTED_DATE_FORMATS:
         raise UserPreferenceValidationError("unsupported date format")
-    cultivation_experience = str(
-        preferences.get("cultivation_experience") or DEFAULT_CULTIVATION_EXPERIENCE_LEVEL
-    )
+    cultivation_experience = str(preferences.get("cultivation_experience") or DEFAULT_CULTIVATION_EXPERIENCE_LEVEL)
     if cultivation_experience not in SUPPORTED_CULTIVATION_EXPERIENCE_LEVELS:
         raise UserPreferenceValidationError("unsupported cultivation experience level")
     preferences = {**preferences, "cultivation_experience": cultivation_experience}
@@ -172,9 +170,7 @@ def _row_to_preferences(row):
         preferences = {}
     if not isinstance(preferences, dict):
         preferences = {}
-    cultivation_experience = str(
-        preferences.get("cultivation_experience") or DEFAULT_CULTIVATION_EXPERIENCE_LEVEL
-    )
+    cultivation_experience = str(preferences.get("cultivation_experience") or DEFAULT_CULTIVATION_EXPERIENCE_LEVEL)
     if cultivation_experience not in SUPPORTED_CULTIVATION_EXPERIENCE_LEVELS:
         cultivation_experience = DEFAULT_CULTIVATION_EXPERIENCE_LEVEL
     preferences["cultivation_experience"] = cultivation_experience

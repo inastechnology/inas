@@ -31,6 +31,17 @@ MQTT broker自体は標準的なMQTT brokerで構いません。アプリケー�
 
 デバイスはusernameが空の場合、username/passwordなしで接続します。usernameが空でない場合、username/passwordありで接続します。
 
+### 2.1 既存運用との互換契約
+
+Hub更新では、次の項目を自動変更しません。
+
+- `.env`の`MQTT_BROKER_URL`、`MQTT_BROKER_PORT`、`MQTT_BROKER_USERNAME`、`MQTT_BROKER_PASSWORD`
+- MQTT 3.1.1/TCP、keepalive 60秒、TLSなしという接続条件
+- Hub client IDの生成方法
+- subscribe/publish topic、payload schema、QoS、retain条件
+
+インストーラーは現在の`.env`を維持し、その値で接続確認だけを行います。上記を変更する場合は通常のリポジトリ更新に含めず、brokerと既存デバイスを含む個別の移行として扱ってください。
+
 ## 3. Topic形式
 
 すべてのアプリケーションtopicは以下の形式です。

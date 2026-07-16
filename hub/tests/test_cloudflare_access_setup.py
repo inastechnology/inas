@@ -3,7 +3,6 @@ import sys
 import unittest
 from pathlib import Path
 
-
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "cloudflare_access_setup.py"
 sys.path.insert(0, str(SCRIPT_PATH.parent))
 SPEC = importlib.util.spec_from_file_location("cloudflare_access_setup", SCRIPT_PATH)

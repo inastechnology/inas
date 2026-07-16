@@ -60,7 +60,7 @@ PY
 
 ## ローカル起動の前提
 
-local hub は通常の `rye run serve` と同じ条件で起動する。
+local hub は通常の `uv run python src/ina_device_hub/serve.py` と同じ条件で起動する。
 
 - `WORK_DIR` が書き込み可能。
 - `LOCAL_STORAGE_BASE_DIR` が書き込み可能。
@@ -75,10 +75,10 @@ restricted な Agent 実行環境では、`~/.ina-device-hub` など `$HOME` 配
 env \
   WORK_DIR="$PWD/.data/work" \
   LOCAL_STORAGE_BASE_DIR="$PWD/.data/storage" \
-  rye run serve
+  uv run python src/ina_device_hub/serve.py
 ```
 
-MQTT broker が起動していない環境では local hub が `ConnectionRefusedError` で終了する。これは Cloudflare 設定とは別問題として扱う。
+MQTT broker が起動していない環境でもHTTPプロセスは起動し、再接続を継続する。この間は`/healthz`が200、`/readyz`が503になる。MQTT停止はCloudflare設定とは別問題として扱う。
 
 ## Cloudflare hosted option の env
 
@@ -156,7 +156,7 @@ Cloudflare hosted setup 後、hub と tunnel の systemd unit を配置して有
 
 ```bash
 cd hub
-sudo scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
+sudo scripts/install_service.sh --production --target-dir "$PWD" --enable-cloudflare-tunnel
 ```
 
 この script は以下を行う。
@@ -274,9 +274,10 @@ local hub が `Read-only file system` で落ちる
 - Agent 実行環境の書き込み制限であることが多い。
 - 実運用 `.env` を変更せず、検証コマンドだけ `WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` を workspace 内に override する。
 
-local hub が MQTT `ConnectionRefusedError` で落ちる
+local hub の `/readyz` がMQTT未接続で503になる
 
 - MQTT broker が起動していない、または `.env` の接続先へ到達できない。
+- Hubは終了せず再接続する。broker復旧後に`/readyz`が200へ戻ることを確認する。
 - Cloudflare tunnel の問題ではない。
 
 `cloudflared` の ICMP proxy warning

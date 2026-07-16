@@ -1,10 +1,11 @@
 import os
 import threading
+
 from apscheduler.schedulers.background import BlockingScheduler
 
-from ina_device_hub.setting import setting
-from ina_device_hub.general_log import logger
 from ina_device_hub.camera_connector import camera_connector
+from ina_device_hub.general_log import logger
+from ina_device_hub.setting import setting
 from ina_device_hub.storage_connector import storage_connector
 from ina_device_hub.timelapse_media_service import timelapse_media_service
 
@@ -33,9 +34,11 @@ class TimelapseTask:
 
     def stop(self):
         if self.routin_scheduler.running:
-            self.routin_scheduler.shutdown
+            self.routin_scheduler.shutdown(wait=False)
 
-        self.worker_thread.join()
+        worker_thread = getattr(self, "worker_thread", None)
+        if worker_thread:
+            worker_thread.join(timeout=10)
 
     def __routin(self):
         camera = camera_connector()

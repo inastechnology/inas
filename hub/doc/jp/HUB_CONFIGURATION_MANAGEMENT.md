@@ -10,7 +10,7 @@
 
 | レイヤ | 保存先 | 変更手段 | 主な値 |
 |---|---|---|---|
-| 導入・接続設定 | `hub/.env` | `uv run ina-hub install` / `uv run ina-hub configure` | Turso、R2/S3、MQTT、HTTP bind、保存先、Instagram認証、管理者email |
+| 導入・接続設定 | `hub/.env` | `uv run ina-hub install` / `uv run ina-hub configure` | Turso、R2/S3、MQTT、HTTP/認証モード、保存先、バックアップ、Instagram認証、管理者email |
 | システム設定 | `WORK_DIR/config.json` | 管理者用 `/settings` | AI有効/無効、Base URL、モデル、Instagram投稿設定 |
 | GUI秘密設定 | `WORK_DIR/runtime-secrets.json` | 管理者用 `/settings` | Text/Image AI APIキー |
 | 個人設定 | Turso/libSQL `user_preferences` | 全ユーザー用 `/preferences` | タイムゾーン、日付形式、ユーザー別UI設定 |
@@ -74,6 +74,7 @@ Hubの画面とAI回答は日本語を正規言語とし、言語設定および
 ```bash
 uv sync
 uv run ina-hub install
+uv run ina-hub check --production
 ```
 
 対話入力は既存値を表示し、秘密値はマスクする。Enterだけを入力した場合は既存値または既定値を維持する。入力後は次を確認できる。
@@ -88,6 +89,8 @@ uv run ina-hub install
 ```bash
 uv run ina-hub install --skip-checks
 ```
+
+`check --production` は通常のTurso、R2、MQTT接続に加え、`.env` がgroup/otherから読めないこと、`127.0.0.1` bind、Waitress、`cloudflare_access`認証、管理者email、Access issuer/audience、Tunnel originを検証する。失敗中はデプロイしない。
 
 ## 8. 再設定
 
@@ -110,5 +113,5 @@ uv run ina-hub configure --env-file /path/to/.env
 - AI APIキーの正本はGUIで初回更新後の `runtime-secrets.json` とし、`.env` は移行前の初期値に限定する。
 - `.env` の変更権限はHubホストの管理者に限定する。
 - Cloudflare AccessはHTTPアクセス制御であり、ホスト上の設定ファイル権限を代替しない。
-- `Cf-Access-Authenticated-User-Email` はAccess/Tunnelを通過したリクエストでだけ信頼する。Hub originを外部や認証されていないLANへ直接公開しない。
+- 本番ではAccess email headerだけを信頼せず、HubでもAccess JWTの署名、issuer、audience、emailを検証する。Hub originを外部や認証されていないLANへ直接公開しない。
 - Access経由では `HUB_ADMIN_EMAILS` に指定したemailだけが `/settings` とAI接続確認APIを利用できる。未指定時はAccess利用者全員を作業者とし、ローカル直利用だけを管理者として扱う。本番では管理者emailを明示する。

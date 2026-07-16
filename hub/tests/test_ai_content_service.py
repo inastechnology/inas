@@ -10,6 +10,11 @@ os.environ.setdefault("S3_BUCKET_NAME", "x")
 os.environ.setdefault("S3_BUCKET_REGION", "auto")
 os.environ.setdefault("S3_ACCESS_KEY", "x")
 os.environ.setdefault("S3_SECRET_KEY", "x")
+os.environ.setdefault("MQTT_BROKER_URL", "localhost")
+os.environ.setdefault("MQTT_BROKER_PORT", "1883")
+os.environ.setdefault("MQTT_BROKER_USERNAME", "")
+os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
+os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
 from ina_device_hub.ai_content_service import AIContentService  # noqa: E402
 
@@ -75,9 +80,11 @@ class AIContentServiceTest(unittest.TestCase):
             "text_analyze_base_url": "https://example.test/v1",
             "text_analyze_model": "test-model",
         }
-        self.service._chat_completion = lambda **kwargs: """```json
+        self.service._chat_completion = lambda **kwargs: (
+            """```json
 {"actions":[{"action_type":"fertilization","title":"追肥判断","priority":"recommended","window_start":"2026-08-01","window_end":"2026-08-10","timing_label":"8月上旬","reason":"樹勢維持","instructions":"葉色を確認","tags":["追肥"]}]}
 ```"""
+        )
 
         result = self.service.generate_plant_calendar(self.context, guidance_examples=[{"changes": {"priority": {"after": "recommended"}}}])
 
@@ -90,10 +97,12 @@ class AIContentServiceTest(unittest.TestCase):
 
     def test_calendar_sanitizes_out_of_domain_generated_targets(self):
         self.service.ai_settings = {"text_analyze_api_key": "test", "text_analyze_model": "test-model"}
-        self.service._chat_completion = lambda **kwargs: """
+        self.service._chat_completion = lambda **kwargs: (
+            """
         {"growth_targets":{"soil_moisture_percent":{"min":-1,"max":900},"soil_ph":{"min":4.5,"max":5.5}},
          "actions":[{"action_type":"observation","title":"観察","priority":"recommended","window_start":"2026-08-01","window_end":"2026-08-02"}]}
         """
+        )
 
         result = self.service.generate_plant_calendar(self.context)
 
@@ -167,9 +176,7 @@ class AIContentServiceTest(unittest.TestCase):
 
     def test_initial_and_follow_up_prompts_apply_the_selected_experience_level(self):
         beginner_context = {**self.context, "audience": {"experience_level": "beginner"}}
-        initial_prompt = "\n".join(
-            message["content"] for message in self.service._initial_plant_plan_messages(beginner_context, [])
-        )
+        initial_prompt = "\n".join(message["content"] for message in self.service._initial_plant_plan_messages(beginner_context, []))
         self.assertIn("対象利用者は農業初心者です", initial_prompt)
         self.assertIn("準備、実施、終了確認", initial_prompt)
         self.assertIn("procedure_steps", initial_prompt)
@@ -180,9 +187,7 @@ class AIContentServiceTest(unittest.TestCase):
             "audience": {"experience_level": "professional"},
             "task_rule": {"recurrence_type": "interval_after_completion"},
         }
-        follow_up_prompt = "\n".join(
-            message["content"] for message in self.service._follow_up_task_messages(professional_context)
-        )
+        follow_up_prompt = "\n".join(message["content"] for message in self.service._follow_up_task_messages(professional_context))
         self.assertIn("対象利用者は農業・園芸の実務経験者です", follow_up_prompt)
         self.assertIn("判断閾値", follow_up_prompt)
         self.assertIn("frequency", follow_up_prompt)

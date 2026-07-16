@@ -30,7 +30,7 @@ For the current cross-project diagram, see:
 
 - The Tunnel connector runs on the device side. Do not start it from a separate
   development PC unless that PC is the intended origin.
-- `CLOUDFLARE_TUNNEL_ORIGIN_URL` defaults to `http://localhost:39151`.
+- `CLOUDFLARE_TUNNEL_ORIGIN_URL` defaults to `http://127.0.0.1:39151`.
 - Cloudflare Access public hostnames are for authenticated hub UI/API access.
   They are not used for current OTA firmware download URLs.
 - Current firmware accepts only `http://` OTA download URLs. HTTPS OTA requires

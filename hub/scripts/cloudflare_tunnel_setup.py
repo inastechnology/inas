@@ -24,7 +24,7 @@ from cloudflare_setup_common import ScriptError, merged_env, quote_env_value, re
 
 API_BASE_URL = "https://api.cloudflare.com/client/v4"
 DEFAULT_TUNNEL_NAME = "inas-hub"
-DEFAULT_ORIGIN_URL = "http://localhost:39151"
+DEFAULT_ORIGIN_URL = "http://127.0.0.1:39151"
 MANAGED_DNS_COMMENT = "Managed by ina-device-hub Cloudflare hosted setup"
 
 
@@ -371,7 +371,8 @@ def cmd_provision(args: argparse.Namespace) -> None:
         token_file = str(token_path)
 
     updates = {
-        "HUB_HTTP_HOST": "127.0.0.1",
+        "HUB_HTTP_SERVER": "waitress",
+        "HUB_AUTH_MODE": "cloudflare_access",
         "CLOUDFLARE_TUNNEL_NAME": name,
         "CLOUDFLARE_TUNNEL_ID": tunnel_id,
         "CLOUDFLARE_TUNNEL_HOSTNAME": hostname,

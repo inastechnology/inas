@@ -4,17 +4,13 @@ from urllib.parse import urlencode
 
 from ina_device_hub.plant_action_catalog import plant_action_type
 
-
 TIMING_LABELS = {"overdue": "期限超過", "due": "今やる", "upcoming": "そろそろ"}
 TIMING_PHRASES = {"overdue": "期限を過ぎています。", "due": "今、", "upcoming": "そろそろ"}
 PRIORITY_LABELS = {"required": "必須", "should": "やった方がよい", "recommended": "おすすめ", "optional": "好みで"}
 
 
 def build_calendar_todo_items(field_id: str, plant_bundle: dict, limit: int = 20):
-    return [
-        _calendar_todo_item(field_id, suggestion)
-        for suggestion in (plant_bundle.get("suggestions") or [])[:limit]
-    ]
+    return [_calendar_todo_item(field_id, suggestion) for suggestion in (plant_bundle.get("suggestions") or [])[:limit]]
 
 
 def _calendar_todo_item(field_id: str, suggestion: dict):

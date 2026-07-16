@@ -145,7 +145,7 @@ instead of relying only on `/user/tokens/verify`.
 
 - The Tunnel connector runs on the device-side host that can reach the local
   hub.
-- `CLOUDFLARE_TUNNEL_ORIGIN_URL` defaults to `http://localhost:39151`.
+- `CLOUDFLARE_TUNNEL_ORIGIN_URL` defaults to `http://127.0.0.1:39151`.
 - The Tunnel hostname is for UI/API access, not current OTA firmware downloads.
 - Current firmware downloads use `http://` URLs generated from
   `FIRMWARE_BASE_URL` / `FIRMWARE_HOSTNAME` / host name values.

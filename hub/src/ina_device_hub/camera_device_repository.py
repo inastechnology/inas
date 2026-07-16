@@ -18,7 +18,7 @@ class CameraDeviceRepository:
             with open(self.camera_device_repo_path, "w") as f:
                 f.write("{}")
         try:
-            with open(self.camera_device_repo_path, "r") as f:
+            with open(self.camera_device_repo_path) as f:
                 self.camera_dict = json.load(f)
         except FileNotFoundError:
             pass
@@ -30,7 +30,8 @@ class CameraDeviceRepository:
     def get(self, key):
         return self.camera_dict.get(key)
 
-    def add(self, device_id: str = None, info: dict = {}):
+    def add(self, device_id: str = None, info: dict | None = None):
+        info = dict(info or {})
         if device_id is None:
             # generate new device_id
             device_id = f"INACD-{str(uuid.uuid4())}"

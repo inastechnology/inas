@@ -1,0 +1,71 @@
+name: Hub CI
+
+on:
+  pull_request:
+    paths:
+      - "hub/**"
+      - ".github/workflows/hub-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "hub/**"
+      - ".github/workflows/hub-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hub
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.11"
+          working-directory: hub
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: PYTHON_DOTENV_DISABLED=1 uv run python -m unittest discover -s tests
+      - run: uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file /tmp/ina-hub-requirements.txt
+      - run: uvx pip-audit -r /tmp/ina-hub-requirements.txt --disable-pip
+      - run: bash -n serve.sh
+      - run: find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+
+  admin-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hub/admin-ui
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: hub/admin-ui/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm run build
+      - run: npm run test:merge
+
+  cloudflare-worker:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hub/cloudflare
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: hub/cloudflare/package-lock.json
+      - run: npm ci
+      - run: npm audit --omit=dev
+      - run: npm run typecheck
+      - run: npm test

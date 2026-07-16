@@ -80,6 +80,7 @@ def upsert_env_file(path: Path, updates: dict[str, str]) -> None:
             output.append(f"{key}={quote_env_value(value)}")
 
     path.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
+    path.chmod(0o600)
 
 
 def require_value(env: dict[str, str], key: str) -> str:

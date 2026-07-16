@@ -1,10 +1,10 @@
 # sensor data repository
 
-from datetime import datetime, timezone, timedelta
 import json
+from datetime import UTC, datetime, timedelta
 
-from ina_device_hub.ina_db_connector import InaDBConnector
 from ina_device_hub.general_log import logger
+from ina_device_hub.ina_db_connector import InaDBConnector
 from ina_device_hub.setting import setting
 
 
@@ -25,7 +25,7 @@ class SensorDataRepository:
         if device_id not in self.tmp_sensor_data_dict:
             self.tmp_sensor_data_dict[device_id] = {}
 
-        current_yyyymmdd_hh = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+        current_yyyymmdd_hh = datetime.now(UTC).strftime("%Y%m%d%H")
         if current_yyyymmdd_hh not in self.tmp_sensor_data_dict[device_id]:
             self.tmp_sensor_data_dict[device_id][current_yyyymmdd_hh] = []
 
@@ -37,7 +37,7 @@ class SensorDataRepository:
         # whether aggregate or not
         # older than 1hours
         for yyyymmdd_hh in list(self.tmp_sensor_data_dict[device_id].keys()):
-            if datetime.strptime(yyyymmdd_hh, "%Y%m%d%H").replace(tzinfo=timezone.utc) < (datetime.now(timezone.utc) - timedelta(hours=1)):
+            if datetime.strptime(yyyymmdd_hh, "%Y%m%d%H").replace(tzinfo=UTC) < (datetime.now(UTC) - timedelta(hours=1)):
                 logger.info(f"aggregate data: device_id={device_id}, yyyymmdd_hh={yyyymmdd_hh}")
                 aggregated_data = self.__aggregate_data(device_id, yyyymmdd_hh)
                 if aggregated_data:
@@ -65,8 +65,8 @@ class SensorDataRepository:
             "dissolved_oxygen": data_as_tupple[5],
             "ammonia": data_as_tupple[6],
             "nitrate": data_as_tupple[7],
-            "created_at": datetime.strptime(data_as_tupple[8], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).astimezone(),
-            "updated_at": datetime.strptime(data_as_tupple[9], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).astimezone(),
+            "created_at": datetime.strptime(data_as_tupple[8], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).astimezone(),
+            "updated_at": datetime.strptime(data_as_tupple[9], "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC).astimezone(),
             "extra": extra,
             "telemetry": telemetry,
         }
@@ -93,7 +93,7 @@ class SensorDataRepository:
                     "dissolved_oxygen": d[5],
                     "ammonia": d[6],
                     "nitrate": d[7],
-                    "yyyymmddhh": datetime.strptime(str(d[8]), "%Y%m%d%H").replace(tzinfo=timezone.utc).astimezone(),
+                    "yyyymmddhh": datetime.strptime(str(d[8]), "%Y%m%d%H").replace(tzinfo=UTC).astimezone(),
                     "created_at": d[9],
                     "extra": extra,
                 }
@@ -166,7 +166,7 @@ class SensorDataRepository:
 
     def __load_tmp_sensor_data(self):
         try:
-            with open(self.tmp_file_path, "r") as f:
+            with open(self.tmp_file_path) as f:
                 self.tmp_sensor_data_dict = json.load(f)
         except Exception as e:
             logger.error(f"Failed to load tmp sensor data: {e}")
