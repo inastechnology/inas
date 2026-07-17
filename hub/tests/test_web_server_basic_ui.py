@@ -1493,6 +1493,24 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('"time": "09:30"', html)
         self.assertIn('"time": "11:30"', html)
 
+        self.fake_user_preference_repository.records["local-user@ina.local"] = {
+            "user_email": "local-user@ina.local",
+            "locale": "ja",
+            "timezone": "UTC",
+            "date_format": "yyyy-MM-dd",
+            "preferences": {"cultivation_experience": "standard"},
+            "version": 1,
+            "created_at": "",
+            "updated_at": "2026-07-18 00:00:00",
+        }
+        utc_detail = self.client.get(f"/fields/{field['id']}?record_month=2026-07#records")
+        utc_html = utc_detail.get_data(as_text=True)
+
+        self.assertEqual(utc_detail.status_code, 200)
+        self.assertIn('"time": "00:30"', utc_html)
+        self.assertIn('"time": "02:30"', utc_html)
+        self.assertNotIn('"time": "09:30"', utc_html)
+
 
 if __name__ == "__main__":
     unittest.main()

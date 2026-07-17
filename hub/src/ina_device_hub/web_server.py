@@ -6,9 +6,10 @@ from functools import lru_cache
 from html import escape
 from pathlib import Path
 from urllib.parse import quote, urlencode, urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import plotly
-from flask import Flask, Response, jsonify, redirect, render_template, render_template_string, request, send_file, stream_template
+from flask import Flask, Response, g, has_request_context, jsonify, redirect, render_template, render_template_string, request, send_file, stream_template
 from plotly import graph_objs as go
 from plotly.io import to_html
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -333,7 +334,25 @@ DEVICE_ROLE_LABELS = {
 
 
 def _local_timezone():
-    return datetime.now().astimezone().tzinfo
+    default_timezone_name = "Asia/Tokyo"
+    if not has_request_context():
+        return ZoneInfo(default_timezone_name)
+    cached = getattr(g, "ina_display_timezone", None)
+    if cached is not None:
+        return cached
+    timezone_name = default_timezone_name
+    try:
+        user = current_user_from_request(request)
+        timezone_name = str(_current_user_preferences(user.email).get("timezone") or default_timezone_name)
+    except Exception:  # noqa: BLE001
+        app.logger.warning("Unable to load the current user's display timezone; using Asia/Tokyo")
+    try:
+        resolved = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        app.logger.warning(f"Unknown display timezone {timezone_name!r}; using Asia/Tokyo")
+        resolved = ZoneInfo(default_timezone_name)
+    g.ina_display_timezone = resolved
+    return resolved
 
 
 def _to_local_datetime(value):
