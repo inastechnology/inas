@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import date, timedelta
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
@@ -74,6 +75,34 @@ class AIContentServiceTest(unittest.TestCase):
 
         self.assertEqual(result["generation"]["source"], "fallback")
 
+    def test_existing_planting_fallback_starts_from_today_and_respects_monthly_manual_work(self):
+        self.service.ai_settings = {"text_analyze_api_key": ""}
+        today = date.today()
+        context = {
+            "planting": {
+                "crop_name": "ライチ",
+                "cultivar": "ジャカパット",
+                "planted_on": (today - timedelta(days=115)).isoformat(),
+                "conditions": {"notes": "定植時と4/15に施肥。6/24に防除。"},
+            },
+            "planning": {
+                "start_date": (today - timedelta(days=115)).isoformat(),
+                "current_date": today.isoformat(),
+                "notes": "１か月に１回の作業。それ以外は自動潅水とカメラでの監視。",
+            },
+        }
+
+        result = self.service.generate_plant_calendar(context)
+
+        starts = [date.fromisoformat(action["window_start"]) for action in result["actions"]]
+        self.assertTrue(all(start >= today for start in starts))
+        self.assertEqual(result["actions"][0]["title"], "現在の生育状態と直近作業を確認")
+        self.assertNotIn("定植後の活着確認", [action["title"] for action in result["actions"]])
+        self.assertTrue(all((right - left).days >= 30 for left, right in zip(starts, starts[1:])))
+        self.assertFalse(any(action["action_type"] == "watering" for action in result["actions"]))
+        self.assertEqual(len(result["actions"]), 12)
+        self.assertTrue(result["generation"]["quality_report"]["passed"])
+
     def test_calendar_parses_json_code_fence_from_llm(self):
         self.service.ai_settings = {
             "text_analyze_api_key": "test",
@@ -108,6 +137,23 @@ class AIContentServiceTest(unittest.TestCase):
 
         self.assertEqual(result["growth_targets"]["soil_moisture_percent"], {"min": 35, "max": 65})
         self.assertEqual(result["growth_targets"]["soil_ph"], {"min": 4.5, "max": 5.5})
+
+    def test_calendar_rejects_llm_actions_before_planning_start(self):
+        self.service.ai_settings = {"text_analyze_api_key": "test", "text_analyze_model": "test-model"}
+        today = date.today()
+        self.service._chat_completion = lambda **kwargs: (
+            '{"actions":[{"action_type":"observation","title":"期限切れ作業","priority":"required",'
+            f'"window_start":"{(today - timedelta(days=10)).isoformat()}","window_end":"{(today - timedelta(days=5)).isoformat()}"}}]}}'
+        )
+        context = {
+            **self.context,
+            "planning": {"start_date": today.isoformat(), "current_date": today.isoformat()},
+        }
+
+        result = self.service.generate_plant_calendar(context)
+
+        self.assertEqual(result["generation"]["source"], "fallback")
+        self.assertTrue(all(action["window_start"] >= today.isoformat() for action in result["actions"]))
 
     def test_question_fallback_references_registered_calendar(self):
         self.service.ai_settings = {"text_analyze_api_key": ""}
@@ -182,6 +228,10 @@ class AIContentServiceTest(unittest.TestCase):
         self.assertIn("procedure_steps", initial_prompt)
         self.assertIn("validated_pesticide_candidates", initial_prompt)
         self.assertIn("収穫前日数", initial_prompt)
+        self.assertIn("planning.start_dateは今回作成する予定の開始下限", initial_prompt)
+        self.assertIn("過去の日付の作業", initial_prompt)
+        self.assertIn("実施済み履歴", initial_prompt)
+        self.assertIn("自動潅水やカメラ監視", initial_prompt)
 
         professional_context = {
             "audience": {"experience_level": "professional"},
@@ -192,6 +242,38 @@ class AIContentServiceTest(unittest.TestCase):
         self.assertIn("判断閾値", follow_up_prompt)
         self.assertIn("frequency", follow_up_prompt)
         self.assertIn("同じ肥料、農薬、資材、方法の再実施を自動決定しない", follow_up_prompt)
+
+    def test_custom_plant_calendar_prompt_template_wraps_required_inputs(self):
+        self.service.ai_settings = {
+            "plant_calendar_prompt_template": (
+                "圃場担当者向けの優先順位を先に決める。\n{default_instructions}\n"
+                "CONTEXT={context_json}\nEXAMPLES={guidance_json}\nLEVEL={experience_instruction}"
+            )
+        }
+        context = {**self.context, "audience": {"experience_level": "professional"}}
+
+        messages = self.service._initial_plant_plan_messages(context, [{"changes": {"title": "修正例"}}])
+
+        self.assertIn("圃場担当者向けの優先順位", messages[1]["content"])
+        self.assertIn("ブルーベリー", messages[1]["content"])
+        self.assertIn("修正例", messages[1]["content"])
+        self.assertIn("実務経験者", messages[1]["content"])
+        self.assertIn("過去の日付の作業", messages[1]["content"])
+
+    def test_blank_custom_prompt_uses_default_template(self):
+        self.service.ai_settings = {"plant_calendar_prompt_template": ""}
+
+        messages = self.service._initial_plant_plan_messages(self.context, [])
+
+        self.assertIn("登録条件(JSON)", messages[1]["content"])
+
+    def test_invalid_persisted_custom_prompt_uses_default_template(self):
+        self.service.ai_settings = {"plant_calendar_prompt_template": "必須項目のない壊れた設定"}
+
+        messages = self.service._initial_plant_plan_messages(self.context, [])
+
+        self.assertIn("登録条件(JSON)", messages[1]["content"])
+        self.assertIn("過去の日付の作業", messages[1]["content"])
 
     def test_unknown_experience_level_uses_standard_prompt(self):
         context = {**self.context, "audience": {"experience_level": "unknown"}}

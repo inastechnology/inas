@@ -1,0 +1,83 @@
+{
+  "cases": [
+    {
+      "id": "established-lychee-monthly",
+      "description": "過去に定植し、施肥・防除履歴と月1回の手作業上限がある鉢植えライチ",
+      "planted_days_ago": 115,
+      "context": {
+        "planting": {
+          "crop_name": "ライチ",
+          "cultivar": "ジャカパット",
+          "crop_category": "fruit_tree",
+          "tree_age_years": 4,
+          "plant_count": 1,
+          "cultivation_method": "container",
+          "conditions": {
+            "environment": "日陰・軒下",
+            "soil_or_substrate": "ブルーベリー用酸性用土",
+            "sunlight": "半日なた（直射3〜6時間）",
+            "notes": "定植時と4/15に8:8:8の肥料を追肥。定植時と6/24にオルトラン顆粒で防除。"
+          }
+        },
+        "planning": {
+          "horizon_months": 12,
+          "notes": "１か月に１回の作業。それ以外は自動潅水とカメラでの監視。"
+        },
+        "audience": {"experience_level": "standard"}
+      },
+      "expectations": {
+        "minimum_score": 90,
+        "max_actions_per_30_days": 1,
+        "forbidden_action_types": ["watering"],
+        "forbidden_title_terms": ["活着確認"]
+      }
+    },
+    {
+      "id": "new-blueberry-container",
+      "description": "新規定植の鉢植えブルーベリー。初心者にも判断可能な作業手順を求める",
+      "planted_days_ago": 0,
+      "context": {
+        "planting": {
+          "crop_name": "ブルーベリー",
+          "cultivar": "オニール",
+          "crop_category": "fruit_tree",
+          "tree_age_years": 2,
+          "plant_count": 1,
+          "cultivation_method": "container",
+          "conditions": {
+            "environment": "屋外",
+            "soil_or_substrate": "ブルーベリー用酸性用土",
+            "sunlight": "日なた（直射6時間以上）",
+            "notes": "購入苗を10号鉢へ定植。"
+          }
+        },
+        "planning": {"horizon_months": 12, "notes": "週末にまとめて作業したい。"},
+        "audience": {"experience_level": "beginner"}
+      },
+      "expectations": {"minimum_score": 80, "min_action_types": 4}
+    },
+    {
+      "id": "automated-hydroponic-tomato",
+      "description": "潅水・養液制御が自動化された水耕トマト。人手は観察と判断を中心にする",
+      "planted_days_ago": 21,
+      "context": {
+        "planting": {
+          "crop_name": "ミニトマト",
+          "cultivar": "不明",
+          "crop_category": "vegetable",
+          "plant_count": 4,
+          "cultivation_method": "hydroponic",
+          "conditions": {
+            "environment": "簡易温室",
+            "soil_or_substrate": "水耕養液",
+            "sunlight": "日なた（直射6時間以上）",
+            "notes": "養液ECと潅水はコントローラで自動管理。"
+          }
+        },
+        "planning": {"horizon_months": 12, "notes": "自動潅水。人は週1回のカメラ・着花・病害虫確認だけ行う。"},
+        "audience": {"experience_level": "professional"}
+      },
+      "expectations": {"minimum_score": 80, "forbidden_action_types": ["watering"]}
+    }
+  ]
+}

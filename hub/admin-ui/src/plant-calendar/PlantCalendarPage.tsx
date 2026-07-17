@@ -15,7 +15,7 @@ import { errorMessage } from "../formatters";
 import type { PlantBundle, PlantCalendarAction } from "../types";
 import { PlantCalendarDrawer } from "./PlantCalendarDrawer";
 
-const EMPTY_BUNDLE: PlantBundle = { action_types: [], plantings: [], calendars: {}, suggestions: [], work_logs: [] };
+const EMPTY_BUNDLE: PlantBundle = { action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [] };
 const searchCalendarActions = (plantingId: string, query: string, page: number, signal: AbortSignal) => (
   searchPlantActions(plantingId, { query, page, pageSize: 50, signal })
 );
@@ -48,6 +48,19 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
     return nextBundle;
   };
 
+  const generationPollingKey = bundle.generation_tasks
+    .filter((task) => task.status === "queued" || task.status === "running")
+    .map((task) => `${task.id}:${task.status}:${task.updated_at}`)
+    .join("|");
+
+  useEffect(() => {
+    if (!generationPollingKey) return undefined;
+    const timer = window.setInterval(() => {
+      void refresh().catch((caught) => setError(errorMessage(caught)));
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [fieldId, generationPollingKey, selectedPlantingId]);
+
   useEffect(() => {
     setLoading(true);
     setError("");
@@ -68,6 +81,17 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
       throw caught;
     } finally {
       setBusy(false);
+    }
+  };
+
+  const regenerate = async (plantingId: string, startDate: string, planningNotes: string) => {
+    setError("");
+    try {
+      await regeneratePlantCalendar(plantingId, { start_date: startDate, planning_notes: planningNotes });
+      await refresh(plantingId);
+    } catch (caught) {
+      setError(errorMessage(caught));
+      throw caught;
     }
   };
 
@@ -112,9 +136,7 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
           await completePlantAction(plantingId, actionId, payload);
         })}
         onAskQuestion={(plantingId, question) => execute(() => askPlantQuestion(plantingId, question), false)}
-        onRegenerate={(plantingId, startDate, planningNotes) => execute(async () => {
-          await regeneratePlantCalendar(plantingId, { start_date: startDate, planning_notes: planningNotes });
-        })}
+        onRegenerate={regenerate}
         onAddAction={(plantingId, payload: Partial<PlantCalendarAction>) => execute(async () => {
           await addPlantAction(plantingId, payload);
         })}

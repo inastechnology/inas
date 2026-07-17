@@ -11,6 +11,7 @@ import {
   Droplets,
   ExternalLink,
   Leaf,
+  LoaderCircle,
   Minus,
   Plus,
   Redo2,
@@ -56,6 +57,7 @@ import type {
   PlacementPreset,
   PlantActionCompletionPayload,
   PlantBundle,
+  PlantCalendarGenerationTask,
   PlantCalendarAction,
   Planting,
 } from "./types";
@@ -67,7 +69,7 @@ interface AppProps {
 }
 
 const HISTORY_LIMIT = 40;
-const EMPTY_PLANT_BUNDLE: PlantBundle = { action_types: [], plantings: [], calendars: {}, suggestions: [], work_logs: [] };
+const EMPTY_PLANT_BUNDLE: PlantBundle = { action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [] };
 const PLANTABLE_PRESETS = new Set<PlacementPreset>(["ridge", "tree", "pot", "hydroponic_bed"]);
 const SPACE_TARGET_PRESETS = new Set<PlacementPreset>(["greenhouse", "open_field", "shade_area"]);
 const TARGETABLE_PRESETS = new Set<PlacementPreset>(["greenhouse", "open_field", "shade_area", ...PLANTABLE_PRESETS]);
@@ -214,6 +216,19 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     return nextBundle;
   };
 
+  const generationPollingKey = plantBundle.generation_tasks
+    .filter((task) => task.status === "queued" || task.status === "running")
+    .map((task) => `${task.id}:${task.status}:${task.updated_at}`)
+    .join("|");
+
+  useEffect(() => {
+    if (!generationPollingKey) return undefined;
+    const timer = window.setInterval(() => {
+      void refreshPlants(calendarPlantingId).catch((caught) => setError(errorMessage(caught)));
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [calendarPlantingId, fieldId, generationPollingKey]);
+
   const registerPlanting = async (payload: Record<string, unknown>) => {
     setPlantBusy(true);
     setError("");
@@ -250,7 +265,6 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
   };
 
   const regenerateCalendar = async (plantingId: string, startDate: string, planningNotes: string) => {
-    setPlantBusy(true);
     setError("");
     try {
       await regeneratePlantCalendar(plantingId, { start_date: startDate, planning_notes: planningNotes });
@@ -258,8 +272,6 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     } catch (caught) {
       setError(errorMessage(caught));
       throw caught;
-    } finally {
-      setPlantBusy(false);
     }
   };
 
@@ -668,6 +680,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
               wateringSourceIds={wateringSources.filter((source) => source.targetPlacementIds.includes(selectedPlacement.id)).map((source) => source.id)}
               usedDeviceIds={usedDeviceIds}
               planting={selectedPlanting}
+              generationTask={selectedPlanting ? plantBundle.generation_tasks.find((task) => task.planting_id === selectedPlanting.id) ?? null : null}
               targetMetric={REQUESTED_TARGET_METRIC}
               fieldDetailUrl={fieldDetailUrl}
               layoutDirty={dirty}
@@ -794,6 +807,7 @@ interface PlacementInspectorProps {
   wateringSourceIds: string[];
   usedDeviceIds: Set<string>;
   planting: Planting | null;
+  generationTask: PlantCalendarGenerationTask | null;
   targetMetric: string;
   fieldDetailUrl: string;
   calendarUrl: string;
@@ -817,6 +831,7 @@ function PlacementInspector({
   wateringSourceIds,
   usedDeviceIds,
   planting,
+  generationTask,
   targetMetric,
   fieldDetailUrl,
   calendarUrl,
@@ -855,6 +870,7 @@ function PlacementInspector({
     targetIds.includes(target.id) || matchesSearch(targetQuery, [target.name, PRESET_BY_ID[target.preset].label, target.spaceName])
   ));
   const spaceLocation = space.space_type === "field" ? "圃場（屋外）" : `${space.name}内`;
+  const generationActive = generationTask?.status === "queued" || generationTask?.status === "running";
 
   useEffect(() => {
     setDeviceQuery("");
@@ -1044,8 +1060,12 @@ function PlacementInspector({
               <dt>株数</dt><dd>{planting.plant_count}株</dd>
             </dl>
             <PlantTargetEditor planting={planting} busy={plantBusy} focusMetric={targetMetric} onSave={onUpdatePlanting} />
+            {generationTask?.status === "failed" && <p className="generation-status failed" role="alert">AI計画の作成に失敗しました。カレンダー画面から再実行できます。{generationTask.error && ` (${generationTask.error})`}</p>}
             <div className="planting-links">
-              <a href={calendarUrl}><CalendarDays size={16} />カレンダーを開く</a>
+              <a href={calendarUrl} className={generationActive ? "generation-active" : undefined}>
+                {generationActive ? <LoaderCircle className="spin" size={16} /> : <CalendarDays size={16} />}
+                {generationActive ? "AI計画を作成中..." : "カレンダーを開く"}
+              </a>
               <a href={`${fieldDetailUrl}?planting=${encodeURIComponent(planting.id)}#cultivation`} title="栽培タブで定植情報を編集"><ExternalLink size={16} />作物情報を編集</a>
             </div>
           </section>

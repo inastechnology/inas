@@ -251,6 +251,11 @@
       .record-extras { border-top: 1px solid #dce2dd; }
       .record-extras summary { padding: 10px 2px; color: #506159; font-size: 11px; font-weight: 800; cursor: pointer; }
       .record-extras > div { display: grid; gap: 10px; padding: 2px 0 8px; }
+      .record-tags { display: grid; gap: 7px; }
+      .record-tag-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
+      .record-tag-chips, .timeline-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+      .record-tag-chip, .timeline-tag { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid #b9cec1; border-radius: 999px; color: #315845; background: #edf6f0; font-size: 11px; }
+      .record-tag-chip button { width: 18px; height: 18px; padding: 0; border: 0; color: #49685a; background: transparent; font-size: 16px; line-height: 1; cursor: pointer; }
       .record-submit-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
       .record-submit-row .stateful-reason { margin-right: auto; }
       .record-submit-row .primary-button { min-width: 170px; }
@@ -497,8 +502,9 @@
           <section class="recent-record-items" id="recent-record-items"{% if not context.recent_record_items %} hidden{% endif %}><div class="record-subheading"><strong>過去に選択</strong></div><div class="recent-item-list" id="recent-record-item-list">{% for item in context.recent_record_items %}<button type="button" data-add-record-item="{{ item.key }}"><span aria-hidden="true">＋</span>{{ item.label }}</button>{% endfor %}</div></section>
           <div class="record-value-list" id="record-value-list"><p class="record-value-empty">記録項目はまだ追加されていません。</p></div>
           <button class="record-item-search-open" id="record-item-search-open" type="button"><span aria-hidden="true">＋</span>記録項目を追加</button>
+          <div class="record-tags"><label>タグ<div class="record-tag-input"><input id="record-tag-input" type="text" list="record-tag-options" placeholder="既存タグを選択、または新しいタグを入力" autocomplete="off"><button id="record-tag-add" type="button">追加</button></div></label><datalist id="record-tag-options">{% for tag in context.record_tags %}<option value="{{ tag }}">{% endfor %}</datalist><div class="record-tag-chips" id="record-tag-chips" aria-live="polite"></div></div>
           <details class="record-extras"><summary>メモ・評価・画像</summary><div><label>メモ<textarea name="description"></textarea></label><fieldset class="rating-fieldset"><legend>評価</legend><div class="rating-options">{% for value, emoji, label in [(1, '😞', 'とても悪い'), (2, '😕', '悪い'), (3, '😐', '普通'), (4, '😊', '良い'), (5, '😄', 'とても良い')] %}<label class="rating-option" title="{{ label }}"><input type="radio" name="rating" value="{{ value }}" aria-label="{{ value }}: {{ label }}"><span aria-hidden="true">{{ emoji }}</span></label>{% endfor %}</div></fieldset><label>画像<input name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple></label></div></details>
-          <div class="record-submit-row"><p class="stateful-reason" id="record-submit-reason">記録項目、メモ、評価、画像のいずれかを追加してください。</p><button class="primary-button" type="submit" data-stateful-submit>この内容で記録</button></div>
+          <div class="record-submit-row"><p class="stateful-reason" id="record-submit-reason">記録項目、タグ、メモ、評価、画像のいずれかを追加してください。</p><button class="primary-button" type="submit" data-stateful-submit>この内容で記録</button></div>
         </form>
       </section>
 
@@ -512,7 +518,7 @@
           <button type="submit">検索</button>
         </form>
         <p class="record-history-status" id="record-history-status" role="status" aria-live="polite"></p>
-        <div class="timeline" id="record-history-list">{% for item in context.timeline %}<article><p class="meta">{{ item.at or '時刻なし' }} / {{ item.kind }}</p><h3>{{ item.title }}{% if item.rating_emoji %}<span class="timeline-rating">{{ item.rating_emoji }}</span>{% endif %}</h3>{% if item.body %}<p>{{ item.body }}</p>{% endif %}{% if item.attachments %}<div class="timeline-images">{% for attachment in item.attachments %}<a href="{{ attachment.url }}" target="_blank" rel="noopener" title="{{ attachment.original_filename }}"><img src="{{ attachment.url }}" alt="{{ attachment.original_filename }}" loading="lazy"></a>{% endfor %}</div>{% endif %}</article>{% else %}<p class="empty-state">記録はまだありません。</p>{% endfor %}</div>
+        <div class="timeline" id="record-history-list">{% for item in context.timeline %}<article><p class="meta">{{ item.at or '時刻なし' }} / {{ item.kind }}</p><h3>{{ item.title }}{% if item.rating_emoji %}<span class="timeline-rating">{{ item.rating_emoji }}</span>{% endif %}</h3>{% if item.body %}<p>{{ item.body }}</p>{% endif %}{% if item.tags %}<div class="timeline-tags">{% for tag in item.tags %}<span class="timeline-tag">{{ tag }}</span>{% endfor %}</div>{% endif %}{% if item.attachments %}<div class="timeline-images">{% for attachment in item.attachments %}<a href="{{ attachment.url }}" target="_blank" rel="noopener" title="{{ attachment.original_filename }}"><img src="{{ attachment.url }}" alt="{{ attachment.original_filename }}" loading="lazy"></a>{% endfor %}</div>{% endif %}</article>{% else %}<p class="empty-state">記録はまだありません。</p>{% endfor %}</div>
         <button class="record-history-more" id="record-history-more" type="button"{% if not context.record_search_has_next %} hidden{% endif %}>さらに20件を表示</button>
       </section>
 
@@ -726,6 +732,17 @@
           body.textContent = item.body;
           article.append(body);
         }
+        if (Array.isArray(item.tags) && item.tags.length) {
+          const tags = document.createElement("div");
+          tags.className = "timeline-tags";
+          item.tags.forEach((tag) => {
+            const chip = document.createElement("span");
+            chip.className = "timeline-tag";
+            chip.textContent = tag;
+            tags.append(chip);
+          });
+          article.append(tags);
+        }
         if (Array.isArray(item.attachments) && item.attachments.length) {
           const images = document.createElement("div");
           images.className = "timeline-images";
@@ -812,6 +829,9 @@
       const selectedRecordItems = new Set();
       const recordSubmit = recordForm.querySelector("button[type='submit']");
       const recordSubmitReason = document.getElementById("record-submit-reason");
+      const recordTagInput = document.getElementById("record-tag-input");
+      const recordTagChips = document.getElementById("record-tag-chips");
+      const selectedRecordTags = new Set();
       const recentStorageKey = "ina-field-record-items:" + {{ field.id|tojson }};
       let activeRecordCategory = "";
       let selectedRecordDate = "";
@@ -827,19 +847,59 @@
         const hasDescription = Boolean(recordForm.querySelector("[name='description']").value.trim());
         const hasRating = Boolean(recordForm.querySelector("[name='rating']:checked"));
         const hasImages = recordForm.querySelector("[name='images']").files.length > 0;
-        const hasContent = selectedRecordItems.size > 0 || hasDescription || hasRating || hasImages;
+        const hasContent = selectedRecordItems.size > 0 || selectedRecordTags.size > 0 || hasDescription || hasRating || hasImages;
         const valid = recordForm.checkValidity();
         recordSubmit.disabled = !hasContent || !valid;
         recordSubmit.setAttribute("aria-disabled", recordSubmit.disabled ? "true" : "false");
         recordSubmitReason.hidden = hasContent && valid;
         recordSubmitReason.textContent = !hasContent
-          ? "記録項目、メモ、評価、画像のいずれかを追加してください。"
+          ? "記録項目、タグ、メモ、評価、画像のいずれかを追加してください。"
           : !valid ? "追加した記録項目の値を入力してください。" : "";
         recordSubmit.title = recordSubmit.disabled ? `実行できません: ${recordSubmitReason.textContent}` : "";
       };
       recordForm.addEventListener("input", syncRecordSubmitAvailability);
       recordForm.addEventListener("change", syncRecordSubmitAvailability);
       recordForm.addEventListener("stateful-action-state", syncRecordSubmitAvailability);
+
+      const renderRecordTags = () => {
+        recordTagChips.replaceChildren();
+        selectedRecordTags.forEach((tag) => {
+          const chip = document.createElement("span");
+          chip.className = "record-tag-chip";
+          chip.append(document.createTextNode(tag));
+          const hidden = document.createElement("input");
+          hidden.type = "hidden";
+          hidden.name = "tags";
+          hidden.value = tag;
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.textContent = "×";
+          remove.title = `${tag}を削除`;
+          remove.setAttribute("aria-label", `${tag}を削除`);
+          remove.addEventListener("click", () => {
+            selectedRecordTags.delete(tag);
+            renderRecordTags();
+            syncRecordSubmitAvailability();
+          });
+          chip.append(hidden, remove);
+          recordTagChips.append(chip);
+        });
+      };
+      const addRecordTag = () => {
+        const tag = recordTagInput.value.trim().replace(/^#/, "").slice(0, 40);
+        if (!tag || selectedRecordTags.has(tag)) return;
+        selectedRecordTags.add(tag);
+        recordTagInput.value = "";
+        renderRecordTags();
+        syncRecordSubmitAvailability();
+        recordTagInput.focus();
+      };
+      document.getElementById("record-tag-add").addEventListener("click", addRecordTag);
+      recordTagInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== ",") return;
+        event.preventDefault();
+        addRecordTag();
+      });
 
       const storedRecentKeys = () => {
         try {
@@ -1127,6 +1187,17 @@
               values.append(item);
             });
             article.append(values);
+          }
+          if (record.tags?.length) {
+            const tags = document.createElement("div");
+            tags.className = "timeline-tags";
+            record.tags.forEach((tag) => {
+              const chip = document.createElement("span");
+              chip.className = "timeline-tag";
+              chip.textContent = tag;
+              tags.append(chip);
+            });
+            article.append(tags);
           }
           if (record.detail) {
             const detail = document.createElement("p");

@@ -126,8 +126,8 @@ Canvas の右上には常に方位マークを表示する。方位マークは�
 | GET | `/local/api/fields/<field_id>/layout` | レイアウト取得。未保存時は既定レイアウトを返す |
 | PUT | `/local/api/fields/<field_id>/layout` | レイアウト全体を保存 |
 | GET | `/local/api/fields/<field_id>/layout/devices` | 紐付け候補デバイスと MOSFET SW を取得 |
-| GET | `/local/api/fields/<field_id>/plantings` | 定植、カレンダー、サジェスト、作業記録を取得 |
-| POST | `/local/api/fields/<field_id>/plantings` | 保存済み配置へ定植し、カレンダーを作成 |
+| GET | `/local/api/fields/<field_id>/plantings` | 定植、カレンダー、生成タスク、サジェスト、作業記録を取得 |
+| POST | `/local/api/fields/<field_id>/plantings` | 保存済み配置へ定植し、カレンダー生成タスクを登録して HTTP 202 を返す |
 
 PUT は `revision` による楽観ロックを行う。保存済み revision と送信 revision が異なる場合は HTTP 409 を返す。
 

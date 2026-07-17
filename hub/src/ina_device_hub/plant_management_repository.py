@@ -20,10 +20,14 @@ MAX_ACTIONS_PER_CALENDAR = 100
 MAX_FEEDBACK = 3000
 MAX_WORK_LOGS = 5000
 MAX_QUESTIONS = 1000
+MAX_GENERATION_TASKS = 500
 
 VALID_PLANTING_STATUSES = {"active", "harvested", "removed"}
 VALID_CROP_CATEGORIES = {"vegetable", "fruit_tree", "flower", "herb", "other"}
 VALID_ACTION_STATUSES = {"planned", "in_progress", "completed", "skipped"}
+VALID_GENERATION_TASK_STATUSES = {"queued", "running", "succeeded", "failed"}
+ACTIVE_GENERATION_TASK_STATUSES = {"queued", "running"}
+VALID_GENERATION_TASK_KINDS = {"initial", "regenerate"}
 ACTION_STATUS_TRANSITIONS = {
     "planned": {"in_progress", "skipped"},
     "in_progress": {"planned", "skipped"},
@@ -60,6 +64,10 @@ class PlantManagementValidationError(ValueError):
 
 
 class PlantManagementNotFoundError(ValueError):
+    pass
+
+
+class PlantManagementConflictError(ValueError):
     pass
 
 
@@ -194,6 +202,145 @@ class PlantManagementRepository:
         self.data["plantings"][planting_id] = planting
         self.save()
         return copy.deepcopy(record)
+
+    @serialized_repository_write("repository_path")
+    def enqueue_calendar_generation(
+        self,
+        planting_id: str,
+        *,
+        kind: str,
+        start_date: str,
+        planning_notes: str = "",
+        audience: dict | None = None,
+    ):
+        planting = self._planting(planting_id)
+        kind = _clean_string(kind)
+        if kind not in VALID_GENERATION_TASK_KINDS:
+            raise PlantManagementValidationError("unsupported calendar generation kind")
+        for task in self.data["generation_tasks"]:
+            if task.get("planting_id") == planting_id and task.get("status") in ACTIVE_GENERATION_TASK_STATUSES:
+                raise PlantManagementConflictError("calendar generation is already in progress")
+
+        now = _utc_now()
+        task = {
+            "id": str(uuid.uuid4()),
+            "field_id": planting["field_id"],
+            "planting_id": planting_id,
+            "kind": kind,
+            "status": "queued",
+            "start_date": _date_string(start_date, "start_date"),
+            "planning_notes": _clean_string(planning_notes)[:2000],
+            "audience": copy.deepcopy(audience) if isinstance(audience, dict) else {},
+            "attempts": 0,
+            "error": "",
+            "created_at": now,
+            "started_at": "",
+            "finished_at": "",
+            "updated_at": now,
+        }
+        self.data["generation_tasks"].append(task)
+        self.data["generation_tasks"] = _trim_generation_tasks(self.data["generation_tasks"])
+        self.save()
+        return copy.deepcopy(task)
+
+    @serialized_repository_write("repository_path")
+    def claim_next_calendar_generation(self):
+        queued = [task for task in self.data["generation_tasks"] if task.get("status") == "queued"]
+        if not queued:
+            return None
+        task = min(queued, key=lambda item: (item.get("created_at") or "", item.get("id") or ""))
+        now = _utc_now()
+        task["status"] = "running"
+        task["attempts"] = int(task.get("attempts") or 0) + 1
+        task["started_at"] = now
+        task["finished_at"] = ""
+        task["error"] = ""
+        task["updated_at"] = now
+        self.save()
+        return copy.deepcopy(task)
+
+    @serialized_repository_write("repository_path")
+    def recover_interrupted_calendar_generations(self):
+        recovered = []
+        now = _utc_now()
+        for task in self.data["generation_tasks"]:
+            if task.get("status") != "running":
+                continue
+            task["status"] = "queued"
+            task["started_at"] = ""
+            task["updated_at"] = now
+            recovered.append(copy.deepcopy(task))
+        if recovered:
+            self.save()
+        return recovered
+
+    @serialized_repository_write("repository_path")
+    def complete_calendar_generation(self, task_id: str, generated: dict):
+        task = self._generation_task(task_id)
+        if task.get("status") != "running":
+            raise PlantManagementConflictError("calendar generation task is not running")
+        if not isinstance(generated, dict):
+            raise PlantManagementValidationError("generated calendar must be an object")
+        actions = generated.get("actions")
+        if not isinstance(actions, list) or not actions:
+            raise PlantManagementValidationError("calendar actions must be a non-empty array")
+        if len(actions) > MAX_ACTIONS_PER_CALENDAR:
+            raise PlantManagementValidationError(f"calendar actions must contain {MAX_ACTIONS_PER_CALENDAR} entries or less")
+
+        planting = self._planting(task["planting_id"])
+        planting["growth_targets"] = _normalize_growth_targets(generated.get("growth_targets") or planting.get("growth_targets") or {})
+        planting["updated_at"] = _utc_now()
+        calendar = self.data["calendars"].get(planting.get("calendar_id"))
+        if calendar is None:
+            calendar_id = str(uuid.uuid4())
+            now = _utc_now()
+            calendar = {
+                "id": calendar_id,
+                "planting_id": planting["id"],
+                "field_id": planting["field_id"],
+                "revision": 1,
+                "actions": [_normalize_action(action, index) for index, action in enumerate(actions)],
+                "care_profile": _normalize_care_profile(generated.get("care_profile")),
+                "task_rules": _normalize_task_rules(generated.get("task_rules")),
+                "generation": _normalize_generation(generated.get("generation")),
+                "created_at": now,
+                "updated_at": now,
+            }
+            planting["calendar_id"] = calendar_id
+        else:
+            calendar = copy.deepcopy(calendar)
+            preserved = [copy.deepcopy(action) for action in calendar["actions"] if action.get("status") != "planned"]
+            regenerated = [_normalize_action(action, index) for index, action in enumerate(actions)]
+            calendar["actions"] = preserved + regenerated
+            calendar["care_profile"] = _normalize_care_profile(generated.get("care_profile"))
+            calendar["task_rules"] = _normalize_task_rules(generated.get("task_rules"))
+            calendar["generation"] = _normalize_generation(generated.get("generation"))
+            calendar["revision"] += 1
+            calendar["updated_at"] = _utc_now()
+
+        self.data["plantings"][planting["id"]] = planting
+        self.data["calendars"][calendar["id"]] = calendar
+        task = self._generation_task(task_id)
+        task["status"] = "succeeded"
+        task["error"] = ""
+        task["finished_at"] = _utc_now()
+        task["updated_at"] = task["finished_at"]
+        self._replace_generation_task(task)
+        self.save()
+        return {"task": copy.deepcopy(task), "planting": copy.deepcopy(planting), "calendar": copy.deepcopy(calendar)}
+
+    @serialized_repository_write("repository_path")
+    def fail_calendar_generation(self, task_id: str, error: str):
+        task = self._generation_task(task_id)
+        if task.get("status") not in ACTIVE_GENERATION_TASK_STATUSES:
+            return copy.deepcopy(task)
+        task["status"] = "failed"
+        task["error"] = _clean_string(error)[:500] or "calendar generation failed"
+        task["finished_at"] = _utc_now()
+        task["updated_at"] = task["finished_at"]
+        self._replace_generation_task(task)
+        self.save()
+        return copy.deepcopy(task)
 
     @serialized_repository_write("repository_path")
     def update_action(self, planting_id: str, action_id: str, value: dict, *, use_as_guidance: bool = False):
@@ -526,10 +673,18 @@ class PlantManagementRepository:
             calendar = self.data["calendars"].get(planting.get("calendar_id"))
             if calendar and (calendar_filter is None or planting["id"] in calendar_filter):
                 calendars[planting["id"]] = copy.deepcopy(calendar)
+        latest_generation_tasks = {}
+        for task in self.data["generation_tasks"]:
+            if task.get("field_id") != field_id:
+                continue
+            current = latest_generation_tasks.get(task.get("planting_id"))
+            if current is None or (task.get("created_at") or "", task.get("id") or "") > (current.get("created_at") or "", current.get("id") or ""):
+                latest_generation_tasks[task.get("planting_id")] = task
         return {
             "action_types": plant_action_types(),
             "plantings": plantings,
             "calendars": calendars,
+            "generation_tasks": [copy.deepcopy(task) for task in latest_generation_tasks.values()],
             "suggestions": self.list_suggestions(field_id, today=today),
             "work_logs": [
                 copy.deepcopy(item)
@@ -602,9 +757,18 @@ class PlantManagementRepository:
             raise PlantManagementNotFoundError("plant calendar not found")
         return copy.deepcopy(calendar)
 
+    def _generation_task(self, task_id: str):
+        task = next((item for item in self.data["generation_tasks"] if item.get("id") == task_id), None)
+        if task is None:
+            raise PlantManagementNotFoundError("calendar generation task not found")
+        return copy.deepcopy(task)
+
+    def _replace_generation_task(self, replacement: dict):
+        self.data["generation_tasks"] = [replacement if task.get("id") == replacement.get("id") else task for task in self.data["generation_tasks"]]
+
 
 def _empty_data():
-    return {"schema_version": 1, "plantings": {}, "calendars": {}, "feedback": [], "work_logs": [], "questions": []}
+    return {"schema_version": 1, "plantings": {}, "calendars": {}, "generation_tasks": [], "feedback": [], "work_logs": [], "questions": []}
 
 
 def _normalize_data(value):
@@ -626,6 +790,9 @@ def _normalize_data(value):
         }
         if isinstance(value.get("calendars"), dict)
         else {},
+        "generation_tasks": _trim_generation_tasks(
+            [_normalize_generation_task(item) for item in list(value.get("generation_tasks") or []) if isinstance(item, dict)]
+        ),
         "feedback": list(value.get("feedback") or [])[-MAX_FEEDBACK:],
         "work_logs": [_normalize_work_log(item) for item in list(value.get("work_logs") or [])[-MAX_WORK_LOGS:] if isinstance(item, dict)],
         "questions": list(value.get("questions") or [])[-MAX_QUESTIONS:],
@@ -639,6 +806,37 @@ def _normalize_planting_record(planting_id: str, value: dict):
     record["tree_age_years"] = _tree_age(record.get("tree_age_years"), record["crop_category"])
     record["growth_targets"] = _normalize_growth_targets(record.get("growth_targets"))
     return record
+
+
+def _normalize_generation_task(value: dict):
+    record = copy.deepcopy(value)
+    status = _clean_string(record.get("status"), "failed")
+    kind = _clean_string(record.get("kind"), "initial")
+    return {
+        "id": _clean_string(record.get("id"))[:120] or str(uuid.uuid4()),
+        "field_id": _clean_string(record.get("field_id"))[:120],
+        "planting_id": _clean_string(record.get("planting_id"))[:120],
+        "kind": kind if kind in VALID_GENERATION_TASK_KINDS else "initial",
+        "status": status if status in VALID_GENERATION_TASK_STATUSES else "failed",
+        "start_date": _clean_string(record.get("start_date"))[:10],
+        "planning_notes": _clean_string(record.get("planning_notes"))[:2000],
+        "audience": copy.deepcopy(record.get("audience")) if isinstance(record.get("audience"), dict) else {},
+        "attempts": max(0, _bounded_int(record.get("attempts"), 0, 0, 1000, "generation_task.attempts")),
+        "error": _clean_string(record.get("error"))[:500],
+        "created_at": _clean_string(record.get("created_at"))[:40],
+        "started_at": _clean_string(record.get("started_at"))[:40],
+        "finished_at": _clean_string(record.get("finished_at"))[:40],
+        "updated_at": _clean_string(record.get("updated_at"))[:40],
+    }
+
+
+def _trim_generation_tasks(tasks: list):
+    active_ids = {task.get("id") for task in tasks if task.get("status") in ACTIVE_GENERATION_TASK_STATUSES}
+    inactive_slots = max(0, MAX_GENERATION_TASKS - len(active_ids))
+    inactive_tasks = [task for task in tasks if task.get("status") not in ACTIVE_GENERATION_TASK_STATUSES]
+    inactive_ids = {task.get("id") for task in inactive_tasks[-inactive_slots:]} if inactive_slots else set()
+    keep_ids = active_ids | inactive_ids
+    return [task for task in tasks if task.get("id") in keep_ids]
 
 
 def _normalize_calendar_record(calendar_id: str, value: dict):

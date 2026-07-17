@@ -46,7 +46,7 @@ def build_field_record_calendar(field: dict, plant_bundle: dict, month_value: st
 def _collect_record_items(field: dict, plant_bundle: dict):
     items_by_date = {}
 
-    def add_item(value, label, kind, detail="", *, item_id="", rating=None, attachments=None, record_values=None, target_name=""):
+    def add_item(value, label, kind, detail="", *, item_id="", rating=None, attachments=None, record_values=None, target_name="", tags=None):
         day_value = str(value or "")[:10]
         try:
             datetime.fromisoformat(day_value)
@@ -66,6 +66,7 @@ def _collect_record_items(field: dict, plant_bundle: dict):
                 "attachments": _browser_attachments(attachments),
                 "record_values": record_values or [],
                 "target_name": target_name,
+                "tags": tags or [],
             }
         )
 
@@ -80,6 +81,7 @@ def _collect_record_items(field: dict, plant_bundle: dict):
             attachments=event.get("attachments"),
             record_values=event.get("record_values"),
             target_name=event.get("target_name") or "",
+            tags=event.get("tags") or [],
         )
     for note in field.get("notes") or []:
         add_item(

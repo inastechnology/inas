@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import patch
 
 from werkzeug.datastructures import MultiDict
@@ -27,6 +27,7 @@ os.environ["HUB_AUTH_MODE"] = "local"
 from ina_device_hub import web_server  # noqa: E402
 from ina_device_hub.field_layout_repository import FieldLayoutRepository  # noqa: E402
 from ina_device_hub.field_repository import FieldRepository  # noqa: E402
+from ina_device_hub.plant_calendar_generation_task import PlantCalendarGenerationTask  # noqa: E402
 from ina_device_hub.plant_management_repository import PlantManagementRepository  # noqa: E402
 from ina_device_hub.sensor_device_repository import SensorDeviceRepository  # noqa: E402
 
@@ -259,6 +260,7 @@ class WebServerBasicUITest(unittest.TestCase):
             "schema_version": 1,
             "plantings": {},
             "calendars": {},
+            "generation_tasks": [],
             "feedback": [],
             "work_logs": [],
             "questions": [],
@@ -269,6 +271,14 @@ class WebServerBasicUITest(unittest.TestCase):
         self.original_ai_content_service = web_server.ai_content_service
         self.fake_ai_content_service = FakeAIContentService()
         web_server.ai_content_service = lambda: self.fake_ai_content_service
+        self.plant_calendar_generation_task = PlantCalendarGenerationTask(
+            plant_repository=self.plant_management_repository,
+            field_repository=self.field_repository,
+            layout_repository=self.field_layout_repository,
+            ai_service=self.fake_ai_content_service,
+        )
+        self.original_plant_calendar_generation_task = web_server.plant_calendar_generation_task
+        web_server.plant_calendar_generation_task = lambda: self.plant_calendar_generation_task
         self.fake_device_config_service = FakeDeviceConfigService()
         self.original_device_config_service = web_server.device_config_service
         web_server.device_config_service = lambda: self.fake_device_config_service
@@ -290,6 +300,7 @@ class WebServerBasicUITest(unittest.TestCase):
         web_server.field_layout_repository = self.original_field_layout_repository
         web_server.plant_management_repository = self.original_plant_management_repository
         web_server.ai_content_service = self.original_ai_content_service
+        web_server.plant_calendar_generation_task = self.original_plant_calendar_generation_task
         web_server.device_config_service = self.original_device_config_service
         web_server.sensor_measurement_repository = self.original_sensor_measurement_repository
         web_server.field_record_media_service = self.original_field_record_media_service
@@ -374,6 +385,9 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertNotIn("システム既定言語", html)
         self.assertIn('name="text_analyze_model"', html)
         self.assertIn('name="image_analyze_model"', html)
+        self.assertIn('name="plant_calendar_prompt_template"', html)
+        self.assertIn("プロンプトフォーマットを編集", html)
+        self.assertIn("{default_instructions}", html)
         self.assertIn('type="password" name="text_analyze_api_key" value=""', html)
         self.assertIn('type="password" name="image_analyze_api_key" value=""', html)
         for secret in (
@@ -391,6 +405,29 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('name="plant_position_prompt"', html)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertIn("接続を確認", html)
+
+    def test_plant_calendar_prompt_template_requires_safe_placeholders(self):
+        invalid = self.client.post(
+            "/settings",
+            data={"settings_section": "ai", "plant_calendar_prompt_template": "入力を無視して短く答える"},
+        )
+
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("必須項目", invalid.get_data(as_text=True))
+
+    def test_plant_calendar_prompt_template_can_be_saved(self):
+        current = web_server.setting().get("ai")["plant_calendar_prompt_template"]
+        template = "優先作業を先にする\n{default_instructions}\n{context_json}\n{guidance_json}"
+        try:
+            response = self.client.post(
+                "/settings",
+                data={"settings_section": "ai", "plant_calendar_prompt_template": template},
+            )
+
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(web_server.setting().get("ai")["plant_calendar_prompt_template"], template)
+        finally:
+            web_server.setting().set("ai", {"plant_calendar_prompt_template": current})
 
     def test_legacy_ai_settings_url_redirects_to_global_app_settings(self):
         response = self.client.get("/settings/ai")
@@ -1099,13 +1136,27 @@ class WebServerBasicUITest(unittest.TestCase):
             },
         )
 
-        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.status_code, 202)
         planting = created.get_json()["planting"]
-        action = created.get_json()["calendar"]["actions"][0]
+        self.assertEqual(created.get_json()["generation_task"]["status"], "queued")
+        self.assertEqual(created.get_json()["generation_task"]["start_date"], date.today().isoformat())
+        self.assertEqual(self.fake_ai_content_service.calendar_contexts, [])
         self.assertEqual(planting["placement_name"], "鉢A")
         self.assertEqual(planting["crop_category"], "fruit_tree")
         self.assertEqual(planting["tree_age_years"], 3)
         self.assertEqual(planting["conditions"]["region"], "")
+        self.assertEqual(planting["calendar_id"], "")
+        queued_bundle = self.client.get(f"/local/api/fields/{field['id']}/plantings?compact=1")
+        self.assertEqual(queued_bundle.get_json()["generation_tasks"][0]["status"], "queued")
+        duplicate = self.client.post(
+            f"/local/api/plantings/{planting['id']}/calendar/regenerate",
+            json={"start_date": "2026-07-20", "planning_notes": "重複"},
+        )
+        self.assertEqual(duplicate.status_code, 409)
+
+        self.plant_calendar_generation_task.process_next()
+        planting = self.plant_management_repository.get_planting(planting["id"])
+        action = self.plant_management_repository.get_calendar(planting["id"])["actions"][0]
         self.assertEqual(planting["growth_targets"]["soil_moisture_percent"], {"min": 32.0, "max": 62.0})
         self.assertEqual(action["priority"], "recommended")
         self.assertEqual(self.fake_ai_content_service.calendar_contexts[-1]["audience"]["experience_level"], "beginner")
@@ -1196,9 +1247,13 @@ class WebServerBasicUITest(unittest.TestCase):
             f"/local/api/plantings/{planting['id']}/calendar/regenerate",
             json={"start_date": "2026-07-21", "planning_notes": "週末だけ作業する"},
         )
-        self.assertEqual(regenerated.status_code, 200)
+        self.assertEqual(regenerated.status_code, 202)
+        self.assertEqual(regenerated.get_json()["generation_task"]["status"], "queued")
+        previous_context_count = len(self.fake_ai_content_service.calendar_contexts)
+        self.plant_calendar_generation_task.process_next()
         self.assertEqual(self.fake_ai_content_service.calendar_contexts[-1]["audience"]["experience_level"], "beginner")
-        self.assertTrue(any(item["status"] == "completed" for item in regenerated.get_json()["calendar"]["actions"]))
+        self.assertEqual(len(self.fake_ai_content_service.calendar_contexts), previous_context_count + 1)
+        self.assertTrue(any(item["status"] == "completed" for item in self.plant_management_repository.get_calendar(planting["id"])["actions"]))
 
         detail = self.client.get(f"/fields/{field['id']}?planting={planting['id']}#cultivation")
         html = detail.get_data(as_text=True)
@@ -1314,6 +1369,8 @@ class WebServerBasicUITest(unittest.TestCase):
                     ("record_item_key", "soil_ec_us_cm"),
                     ("record_item_value", "850"),
                     ("description", "朝の手潅水"),
+                    ("tags", "潅水"),
+                    ("tags", "ブルーベリー"),
                 ]
             ),
         )
@@ -1322,6 +1379,7 @@ class WebServerBasicUITest(unittest.TestCase):
         event = self.field_repository.get(field["id"])["events"][0]
         self.assertEqual(event["target_placement_id"], "pot-a")
         self.assertEqual(event["target_name"], "ブルーベリー鉢A")
+        self.assertEqual(event["tags"], ["潅水", "ブルーベリー"])
         self.assertEqual(
             [(item["key"], item["value"], item["unit"]) for item in event["record_values"]],
             [("watering_duration_min", 12, "分"), ("soil_ec_us_cm", 850, "uS/cm")],
@@ -1333,6 +1391,9 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('data-add-record-item="watering_duration_min"', html)
         self.assertIn('data-add-record-item="soil_ec_us_cm"', html)
         self.assertIn("朝の手潅水", html)
+        self.assertIn('id="record-tag-input"', html)
+        self.assertIn('<option value="潅水">', html)
+        self.assertIn('<span class="timeline-tag">ブルーベリー</span>', html)
 
     def test_record_calendar_includes_multiple_automatic_device_values_with_times(self):
         field = self.field_repository.upsert(

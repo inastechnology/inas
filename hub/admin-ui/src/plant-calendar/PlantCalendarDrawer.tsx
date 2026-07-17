@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, Leaf, MessageCircle, Plus, RefreshCw, Search, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Leaf, LoaderCircle, MessageCircle, Plus, RefreshCw, Search, Sparkles, X } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
 import { errorMessage, formatDate, todayString } from "../formatters";
@@ -71,6 +71,9 @@ export function PlantCalendarDrawer({
   const activePlantings = bundle.plantings.filter((planting) => planting.status === "active");
   const planting = activePlantings.find((item) => item.id === selectedPlantingId) ?? activePlantings[0] ?? null;
   const calendar = planting ? bundle.calendars[planting.id] : null;
+  const generationTask = planting ? bundle.generation_tasks.find((task) => task.planting_id === planting.id) ?? null : null;
+  const generationActive = generationTask?.status === "queued" || generationTask?.status === "running";
+  const calendarMutationBusy = busy || generationActive;
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [questionError, setQuestionError] = useState("");
@@ -93,6 +96,7 @@ export function PlantCalendarDrawer({
   const actionSearchCache = useRef(new Map<string, ActionSearchPage>());
   const regenerationBlockingReasons = [
     ...(!generationStart ? ["計画開始日を選択してください"] : []),
+    ...(generationActive ? ["AI計画を作成中です"] : []),
     ...(busy ? ["現在のAI処理が完了するまでお待ちください"] : []),
   ];
   const questionBlockingReasons = [
@@ -213,7 +217,7 @@ export function PlantCalendarDrawer({
       ?? actions.find((item) => item.id === draggedActionId);
     setDragOverColumn(null);
     setDraggedActionId(null);
-    if (!action || !planting || busy || !canDropAction(action, destination)) return;
+    if (!action || !planting || calendarMutationBusy || !canDropAction(action, destination)) return;
     try {
       if (destination === "completed") {
         if (action.status === "planned") {
@@ -295,13 +299,27 @@ export function PlantCalendarDrawer({
 
             <SuggestionSummary suggestions={suggestions} />
             {calendar && <CareProfileSummary calendar={calendar} />}
-            <AnnualCalendarGantt actions={actions} onActionSelect={openActionFromGantt} />
+            {calendar && <AnnualCalendarGantt actions={actions} onActionSelect={openActionFromGantt} />}
 
             <section className="calendar-generation" aria-label="計画の生成設定">
               <div className="calendar-section-heading">
                 <div><Sparkles size={17} /><strong>AI計画</strong></div>
-                <button type="button" onClick={() => setGenerationOpen((value) => !value)}><RefreshCw size={15} />条件を編集して再生成</button>
+                <button type="button" disabled={generationActive} onClick={() => setGenerationOpen((value) => !value)}>
+                  {generationActive ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+                  {generationActive ? "AI計画を作成中..." : calendar ? "条件を編集して再生成" : "条件を編集して作成"}
+                </button>
               </div>
+              {generationActive && (
+                <div className="generation-status active" role="status" aria-live="polite">
+                  <LoaderCircle className="spin" size={18} />
+                  <div><strong>{generationTask.status === "queued" ? "AI計画の作成を待っています" : "AI計画を作成しています"}</strong><p>この画面を離れても処理は続きます。他の作業を進めてかまいません。</p></div>
+                </div>
+              )}
+              {generationTask?.status === "failed" && (
+                <div className="generation-status failed" role="alert">
+                  <div><strong>AI計画を作成できませんでした</strong><p>{generationTask.error || "時間をおいてもう一度お試しください。"}</p></div>
+                </div>
+              )}
               {generationOpen && (
                 <form onSubmit={(event) => void regenerate(event)}>
                   <label>計画開始日<input type="date" required value={generationStart} onChange={(event) => setGenerationStart(event.target.value)} /></label>
@@ -311,24 +329,24 @@ export function PlantCalendarDrawer({
                   {generationError && <p className="form-error">{generationError}</p>}
                   <div className="form-actions">
                     <button type="button" onClick={() => setGenerationOpen(false)}>キャンセル</button>
-                    <button type="submit" disabled={regenerationBlockingReasons.length > 0} aria-describedby={regenerationBlockingReasons.length > 0 ? "calendar-regeneration-blocked" : undefined} title={disabledActionTitle(regenerationBlockingReasons)}><Sparkles size={15} />12か月計画を再生成</button>
+                    <button type="submit" disabled={regenerationBlockingReasons.length > 0} aria-describedby={regenerationBlockingReasons.length > 0 ? "calendar-regeneration-blocked" : undefined} title={disabledActionTitle(regenerationBlockingReasons)}><Sparkles size={15} />12か月計画を{calendar ? "再生成" : "作成"}</button>
                   </div>
                 </form>
               )}
             </section>
 
-            <section className="calendar-action-list" aria-label="管理作業">
+            {calendar && <section className="calendar-action-list" aria-label="管理作業">
               <div className="calendar-section-heading">
                 <div><strong>管理作業</strong><span>{actions.length}件を状態別に管理</span></div>
                 <div>
                   {calendar && <small>r{calendar.revision} / {calendar.generation.source === "llm" ? "AI生成" : "標準提案"}</small>}
-                  {!addingAction && <button type="button" onClick={() => setAddingAction(true)} disabled={busy} title={busy ? "現在の処理が完了するまでお待ちください" : "管理作業を追加"}><Plus size={15} />作業を追加</button>}
+                  {!addingAction && <button type="button" onClick={() => setAddingAction(true)} disabled={calendarMutationBusy} title={calendarMutationBusy ? "AI計画の作成または現在の操作が完了するまでお待ちください" : "管理作業を追加"}><Plus size={15} />作業を追加</button>}
                 </div>
               </div>
               {addingAction && (
                 <NewCalendarActionForm
                   actionTypes={actionTypes}
-                  busy={busy}
+                  busy={calendarMutationBusy}
                   onCancel={() => setAddingAction(false)}
                   onSave={async (payload) => {
                     await onAddAction(planting.id, payload);
@@ -363,7 +381,7 @@ export function PlantCalendarDrawer({
                         onDragOver={(event) => {
                           const action = filteredActions.find((item) => item.id === draggedActionId)
                             ?? actions.find((item) => item.id === draggedActionId);
-                          if (!action || busy || !canDropAction(action, column.id)) return;
+                          if (!action || calendarMutationBusy || !canDropAction(action, column.id)) return;
                           event.preventDefault();
                           event.dataTransfer.dropEffect = "move";
                           setDragOverColumn(column.id);
@@ -384,7 +402,7 @@ export function PlantCalendarDrawer({
                               actionType={actionTypeByCode.get(action.action_type) ?? actionTypeByCode.get("other") ?? FALLBACK_ACTION_TYPES[FALLBACK_ACTION_TYPES.length - 1]}
                               timingState={suggestionByActionId.get(action.id)}
                               onOpen={() => { setRecordActionId(null); setSelectedActionId(action.id); }}
-                              draggable={!busy && action.status !== "completed"}
+                              draggable={!calendarMutationBusy && action.status !== "completed"}
                               onDragStart={(event) => {
                                 setDraggedActionId(action.id);
                                 setDropMessage("");
@@ -401,7 +419,7 @@ export function PlantCalendarDrawer({
                   })}
                 </div>
               </div>
-            </section>
+            </section>}
 
             <section className="plant-question">
               <div className="calendar-section-heading"><div><MessageCircle size={17} /><strong>この作物について質問</strong></div></div>
@@ -429,7 +447,7 @@ export function PlantCalendarDrawer({
                       actionType={actionTypeByCode.get(selectedAction.action_type) ?? actionTypeByCode.get("other") ?? FALLBACK_ACTION_TYPES[FALLBACK_ACTION_TYPES.length - 1]}
                       actionTypes={actionTypes}
                       timingState={suggestionByActionId.get(selectedAction.id)}
-                      busy={busy}
+                      busy={calendarMutationBusy}
                       initialRecording={recordActionId === selectedAction.id}
                       onEdit={onEditAction}
                       onComplete={onCompleteAction}

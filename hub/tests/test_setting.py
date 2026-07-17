@@ -75,6 +75,16 @@ class SettingTest(unittest.TestCase):
             self.assertNotIn("text_analyze_api_key", persisted["ai"])
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
 
+    def test_plant_calendar_prompt_template_is_runtime_editable(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.json"
+            current = Setting(path)
+            template = "追加指示\n{default_instructions}\n{context_json}\n{guidance_json}"
+
+            current.set("ai", {"plant_calendar_prompt_template": template})
+
+            self.assertEqual(Setting(path).get("ai")["plant_calendar_prompt_template"], template)
+
     def test_non_runtime_section_cannot_be_saved(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             current = Setting(Path(temporary_directory) / "config.json")

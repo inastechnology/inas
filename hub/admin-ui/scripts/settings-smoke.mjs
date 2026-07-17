@@ -67,6 +67,11 @@ try {
   assert(await page.$('input[name="text_analyze_model"]'));
   assert(await page.$('input[type="password"][name="text_analyze_api_key"]'));
   assert(await page.$('input[type="password"][name="image_analyze_api_key"]'));
+  assert(await page.$('textarea[name="plant_calendar_prompt_template"]'));
+  assert.match(
+    await page.$eval('textarea[name="plant_calendar_prompt_template"]', (textarea) => textarea.value),
+    /\{default_instructions\}.*\{context_json\}.*\{guidance_json\}/s,
+  );
   assert.equal(await page.$eval('input[name="text_analyze_api_key"]', (input) => input.value), "");
   assert.equal(await page.$eval('input[name="image_analyze_api_key"]', (input) => input.value), "");
   assert(await page.$('input[name="post_schedule_start"]'));

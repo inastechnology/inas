@@ -9,6 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from ina_device_hub.json_repository_io import atomic_write_json, repository_file_lock
+from ina_device_hub.plant_calendar_prompt import DEFAULT_PLANT_CALENDAR_PROMPT_TEMPLATE
 
 load_dotenv()
 
@@ -278,6 +279,7 @@ DEFAULT_SETTINGS = {
         "text_analyze_api_key": AI_TEXT_ANALYZE_API_KEY,
         "text_analyze_base_url": AI_TEXT_ANALYZE_BASE_URL,
         "text_analyze_model": AI_TEXT_ANALYZE_MODEL,
+        "plant_calendar_prompt_template": DEFAULT_PLANT_CALENDAR_PROMPT_TEMPLATE,
     },
     "sensor": {
         "save_image": SENSOR_SAVE_IMAGE,
@@ -319,6 +321,7 @@ RUNTIME_SETTING_FIELDS = {
         "image_analyze_model",
         "text_analyze_base_url",
         "text_analyze_model",
+        "plant_calendar_prompt_template",
     },
     "instagram": {
         "post_schedule_start",

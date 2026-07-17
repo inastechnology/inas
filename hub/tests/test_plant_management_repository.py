@@ -12,6 +12,7 @@ os.environ.setdefault("S3_ACCESS_KEY", "x")
 os.environ.setdefault("S3_SECRET_KEY", "x")
 
 from ina_device_hub.plant_management_repository import (  # noqa: E402
+    PlantManagementConflictError,
     PlantManagementRepository,
     PlantManagementValidationError,
 )
@@ -389,6 +390,61 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         self.assertEqual(second, [])
         calendar = self.repository.get_calendar(planting["id"])
         self.assertEqual(sum(action["window_start"] == "2026-09-01" for action in calendar["actions"]), 1)
+
+    def test_calendar_generation_task_is_durable_and_commits_generated_calendar(self):
+        planting = self._create_blueberry()
+        queued = self.repository.enqueue_calendar_generation(
+            planting["id"],
+            kind="initial",
+            start_date="2026-07-14",
+            planning_notes="週末に作業する",
+            audience={"experience_level": "beginner"},
+        )
+
+        with self.assertRaises(PlantManagementConflictError):
+            self.repository.enqueue_calendar_generation(planting["id"], kind="regenerate", start_date="2026-07-20")
+
+        claimed = self.repository.claim_next_calendar_generation()
+        result = self.repository.complete_calendar_generation(
+            claimed["id"],
+            {
+                "growth_targets": {"soil_moisture_percent": {"min": 30, "max": 60}},
+                "actions": [
+                    {
+                        "action_type": "observation",
+                        "title": "葉色を確認",
+                        "window_start": "2026-07-14",
+                        "window_end": "2026-07-20",
+                    }
+                ],
+                "generation": {"source": "test"},
+            },
+        )
+
+        self.assertEqual(queued["status"], "queued")
+        self.assertEqual(claimed["status"], "running")
+        self.assertEqual(result["task"]["status"], "succeeded")
+        self.assertEqual(result["calendar"]["actions"][0]["title"], "葉色を確認")
+        bundle = self.repository.field_bundle("field-1")
+        self.assertEqual(bundle["generation_tasks"][0]["status"], "succeeded")
+        self.assertEqual(bundle["plantings"][0]["growth_targets"]["soil_moisture_percent"], {"min": 30.0, "max": 60.0})
+
+    def test_interrupted_calendar_generation_is_requeued_and_failed_task_can_be_retried(self):
+        planting = self._create_blueberry()
+        first = self.repository.enqueue_calendar_generation(planting["id"], kind="initial", start_date="2026-07-14")
+        self.repository.claim_next_calendar_generation()
+
+        recovered = self.repository.recover_interrupted_calendar_generations()
+        claimed_again = self.repository.claim_next_calendar_generation()
+        failed = self.repository.fail_calendar_generation(claimed_again["id"], "AI connection timed out")
+        retry = self.repository.enqueue_calendar_generation(planting["id"], kind="initial", start_date="2026-07-15")
+
+        self.assertEqual(recovered[0]["id"], first["id"])
+        self.assertEqual(recovered[0]["status"], "queued")
+        self.assertEqual(claimed_again["attempts"], 2)
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["error"], "AI connection timed out")
+        self.assertEqual(retry["status"], "queued")
 
 
 if __name__ == "__main__":

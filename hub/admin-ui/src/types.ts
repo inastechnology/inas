@@ -315,10 +315,27 @@ export interface PlantWorkLog {
   work_details: PlantActionWorkDetails;
 }
 
+export interface PlantCalendarGenerationTask {
+  id: string;
+  field_id: string;
+  planting_id: string;
+  kind: "initial" | "regenerate";
+  status: "queued" | "running" | "succeeded" | "failed";
+  start_date: string;
+  planning_notes: string;
+  attempts: number;
+  error: string;
+  created_at: string;
+  started_at: string;
+  finished_at: string;
+  updated_at: string;
+}
+
 export interface PlantBundle {
   action_types: PlantActionTypeDefinition[];
   plantings: Planting[];
   calendars: Record<string, PlantCalendar>;
+  generation_tasks: PlantCalendarGenerationTask[];
   suggestions: PlantSuggestion[];
   work_logs: PlantWorkLog[];
 }

@@ -137,6 +137,16 @@
                 </div>
               </div>
               {% endfor %}
+              <div class="setting-row" data-setting-row data-search="上級者 栽培計画 prompt プロンプト template テンプレート JSON">
+                <div class="setting-label">AI栽培計画プロンプト<small>上級者向け。既定の安全・日付・出力検証は変更せず、モデルへ渡す入力の構成と追加指示を調整します。</small></div>
+                <div class="setting-control">
+                  <details>
+                    <summary>プロンプトフォーマットを編集</summary>
+                    <textarea name="plant_calendar_prompt_template" maxlength="{{ plant_calendar_prompt_max_length }}" spellcheck="false" aria-describedby="plant-calendar-prompt-help">{{ ai.plant_calendar_prompt_template }}</textarea>
+                  </details>
+                  <span class="inline-help" id="plant-calendar-prompt-help"><code>{default_instructions}</code>、<code>{context_json}</code>、<code>{guidance_json}</code> は必須です。<code>{experience_instruction}</code> は任意です。空欄は既定フォーマットへ戻します。管理者の追加指示より、サーバ固定の安全条件と日付検証が優先されます。</span>
+                </div>
+              </div>
             </div>
             <div class="section-actions"><p class="disabled-reason" data-stateful-reason></p><button class="primary" type="submit" data-stateful-submit>AI設定を保存</button></div>
           </form>

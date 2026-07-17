@@ -187,6 +187,7 @@ def main():
     from ina_device_hub.device_config_service import device_config_service
     from ina_device_hub.field_layout_repository import field_layout_repository
     from ina_device_hub.field_repository import field_repository
+    from ina_device_hub.plant_calendar_generation_task import plant_calendar_generation_task
     from ina_device_hub.plant_management_repository import plant_management_repository
     from ina_device_hub.web_server import app, initialize_web_server
 
@@ -268,6 +269,7 @@ def main():
     host = os.environ.get("HUB_DEMO_HOST", "127.0.0.1")
     port = int(os.environ.get("HUB_DEMO_PORT", "39251"))
     initialize_web_server()
+    plant_calendar_generation_task().start()
     print(f"Field selector: http://{host}:{port}/")
     print(f"Admin UI demo: http://{host}:{port}/demo/mqtt-devices")
     print(f"Installation layout: http://{host}:{port}/fields/demo-strawberry-field/layout")

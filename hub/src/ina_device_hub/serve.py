@@ -5,6 +5,7 @@ from ina_device_hub.health_monitor_task import health_monitor_task
 from ina_device_hub.hub_mqtt_client import DEFAULT_SUBSCRIPTION_TOPICS, HubMQTTClient
 from ina_device_hub.instagram_post_task import instagram_post_task
 from ina_device_hub.ota_update_service import ota_update_service
+from ina_device_hub.plant_calendar_generation_task import plant_calendar_generation_task
 from ina_device_hub.timelapse_task import timelapse_task
 from ina_device_hub.weather_record_task import weather_record_task
 
@@ -33,6 +34,7 @@ def run():
     weather_record_task().start()
     instagram_post_task().start()
     health_monitor_task().start()
+    plant_calendar_generation_task().start()
 
     # Flaskサーバーを起動
     web_server.serve_http()

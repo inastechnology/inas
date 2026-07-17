@@ -207,6 +207,8 @@ uv run ruff format --check .
 - `pyproject.toml` — Python依存とツール設定
 - `src/ina_device_hub/` — アプリ本体（`setting.py`, `hub_mqtt_client.py`, `camera_connector.py` など）
 - `data/instagram_caption_prompt.txt` — Instagram 投稿文生成プロンプトのテンプレート
+- `data/plant_calendar_evaluation_cases.json` — AI栽培計画の代表評価ケース
+- `scripts/evaluate_plant_calendars.py` — 栽培計画の安全性・作業負荷・具体性・年間網羅性を採点（`--live` で保存済みAI設定を使用）
 - `doc/AI_AGENT_ENVIRONMENT_SETUP.md` — AI Agent 向け環境構築・Cloudflare setup 手順
 - `doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` — Cloudflare Workers cloud app の実装方針
 - `doc/CLOUDFLARE_HOSTED_OPTION.md` — Cloudflare hosted option の実装方針

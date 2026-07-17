@@ -294,6 +294,14 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .active-planting dd { margin: 0; color: #31473a; }
 .planting-links { display: grid !important; grid-template-columns: 1fr 1fr; gap: 7px !important; }
 .planting-links a { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 38px; padding: 7px; border: 1px solid #4f796a; border-radius: 5px; color: #315f4d; background: #fff; text-decoration: none; font-size: 11px; font-weight: 800; }
+.planting-links a.generation-active { border-color: #8a7a3d; color: #6e5d20; background: #fff9df; }
+.generation-status { display: flex; align-items: flex-start; gap: 9px; margin: 0; padding: 10px; border: 1px solid #c5d2c9; border-radius: 5px; font-size: 11px; line-height: 1.5; }
+.generation-status div { display: grid; gap: 2px; }
+.generation-status strong, .generation-status p { margin: 0; }
+.generation-status.active { border-color: #d5c982; color: #695b22; background: #fffbea; }
+.generation-status.failed { border-color: #d9aaa5; color: #8a342e; background: #fff1ef; }
+.spin { animation: ina-spin 1s linear infinite; }
+@keyframes ina-spin { to { transform: rotate(360deg); } }
 
 .plant-target-editor { display: grid; gap: 9px; padding-top: 10px; border-top: 1px solid #ccd9c8; }
 .plant-target-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

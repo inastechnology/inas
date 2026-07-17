@@ -4,6 +4,8 @@ from pathlib import Path
 from urllib import error, request
 
 from ina_device_hub.general_log import logger
+from ina_device_hub.plant_calendar_prompt import render_plant_calendar_prompt_template
+from ina_device_hub.plant_calendar_quality import evaluate_plant_calendar
 from ina_device_hub.plant_work_catalog import default_action_work_plan
 from ina_device_hub.setting import setting
 
@@ -171,6 +173,7 @@ class AIContentService:
             "model": "",
             "context_snapshot": context,
             "guidance_count": len(guidance_examples),
+            "quality_report": evaluate_plant_calendar(context, {"actions": fallback_actions}),
         }
         if not self._channel_enabled("text_analyze"):
             return {
@@ -205,17 +208,19 @@ class AIContentService:
                 task_rules = fallback_rules
             self._assign_action_rule_ids(actions[:24], task_rules[:40])
             self._ensure_action_work_plans(actions[:24])
-            self._validate_calendar_actions(actions[:24])
+            self._validate_calendar_actions(actions[:24], minimum_start=self._calendar_start_date(context))
             self._validate_task_rules(task_rules[:40])
+            normalized_targets = self._normalize_generated_growth_targets(growth_targets, fallback_targets)
             return {
                 "actions": actions[:24],
-                "growth_targets": self._normalize_generated_growth_targets(growth_targets, fallback_targets),
+                "growth_targets": normalized_targets,
                 "care_profile": care_profile,
                 "task_rules": task_rules[:40],
                 "generation": {
                     **generation,
                     "source": "llm",
                     "model": self.ai_settings.get("text_analyze_model") or "",
+                    "quality_report": evaluate_plant_calendar(context, {"actions": actions[:24]}),
                 },
             }
         except (RuntimeError, ValueError, json.JSONDecodeError):
@@ -281,6 +286,50 @@ class AIContentService:
         prompt_context = json.dumps(context, ensure_ascii=False, indent=2, default=str)
         guidance = json.dumps(guidance_examples[:8], ensure_ascii=False, indent=2, default=str)
         experience_instruction = self._experience_instruction(context)
+        default_instructions = (
+            "基準日から12か月分の初期栽培計画を作成してください。"
+            "すべてのactionsのwindow_startとwindow_endはplanning.start_date以降にしてください。過去の日付の作業、期限切れから始まる作業、過去作業の追認タスクは禁止です。"
+            "定植日がplanning.start_dateより前なら、定植直後ではなくplanning.start_date時点の生育段階から計画を開始してください。"
+            "conditions.notesに日付付きの施肥・防除等があれば実施済み履歴として扱い、その日を次回要否確認の起点にしてください。同じ作業を重複して予定しないでください。"
+            "planning.notesに手作業頻度の上限があれば従い、自動潅水やカメラ監視として指定された日常管理を手作業actionへ展開しないでください。"
+            "ユーザーが次に何を観察し、どの条件なら実施・延期・見送りと判断するかが分かるサジェストにしてください。"
+            "重要度と適期を優先し、目的が重複する作業を増やさず、利用者の作業可能頻度の範囲で季節変化を計画全体に配分してください。"
+            "トップレベルはcare_profile, growth_targets, task_rules, actionsにしてください。\n"
+            "care_profileはsummary, assumptions, knowledge_sources, irrigation, fertilization, stage_notesを含めてください。"
+            "irrigationはstrategy, baseline_interval_days(min/preferred/max), decision_factors, skip_conditions、"
+            "fertilizationはstrategy, ec_management, ph_management, decision_factors, skip_conditionsを含めます。"
+            "knowledge_sourcesには入力として与えられた根拠だけを記載し、根拠がなければ空配列にしてください。\n"
+            "growth_targetsはsoil_moisture_percent, soil_ec_us_cm, soil_ph, air_humidity_percent, par_umol_m2_sを含め、"
+            "適用項目をmin/maxの数値、判断不能な項目をnullにしてください。ECはuS/cm、PARはumol/m2/sです。\n"
+            "task_rulesの各要素はrule_id, action_type, title, recurrence_type, anchor, interval_days, active_months, conditions, skip_conditions, notesを含めてください。"
+            "recurrence_typeはone_time, interval_after_completion, seasonal, condition_based, continuous_review、"
+            "anchorはplanting_date, completion_date, calendar_date, observationのいずれかです。"
+            "追肥など実施間隔が前回実施日に依存する作業はinterval_after_completionとcompletion_dateにしてください。"
+            "センサー閾値で判断する作業はcondition_basedとし、固定日で実施を強制しないでください。\n"
+            "actionsは最大24件とし、各要素にrule_id, action_type, title, priority, window_start, window_end, timing_label, reason, instructions, tags, required_people, estimated_minutes, work_planを含めてください。"
+            "required_peopleは同時に必要な1〜100人の整数、estimated_minutesは1回の作業に必要な1〜1440分の整数とし、初心者が安全確認と記録まで行う時間を含めて現実的に見積もってください。"
+            "priorityはrequired, should, recommended, optional、action_typeはfertilization, pest_control, pruning, girdling, pollination, gibberellin_treatment, harvest, repotting, watering, observation, winter_care, otherです。"
+            f"{WORK_PLAN_OUTPUT_CONTRACT}"
+            "ジベレリン処理は作物、品種、目的、処理時期が適合すると判断できる場合だけ候補にし、登録のある資材ラベルと地域指導の確認をinstructionsへ含めてください。"
+            "各予定には開始判断と見送れる条件を記載し、必須でない作業をrequiredにしないでください。"
+        )
+        try:
+            user_prompt = render_plant_calendar_prompt_template(
+                str(self.ai_settings.get("plant_calendar_prompt_template") or ""),
+                default_instructions=default_instructions,
+                experience_instruction=experience_instruction,
+                context_json=prompt_context,
+                guidance_json=guidance,
+            )
+        except ValueError:
+            logger.warning("Invalid plant calendar prompt template; using the default template")
+            user_prompt = render_plant_calendar_prompt_template(
+                "",
+                default_instructions=default_instructions,
+                experience_instruction=experience_instruction,
+                context_json=prompt_context,
+                guidance_json=guidance,
+            )
         return [
             {
                 "role": "system",
@@ -291,6 +340,8 @@ class AIContentService:
                     "不足情報を断定せずassumptionsに明記し、数値は単位と栽培方式を整合させてください。"
                     "潅水は固定間隔だけで断定せず、培地、季節、鉢容量、降雨、土壌水分、排液ECなどの開始・見送り条件を示してください。"
                     "施肥は実施日を次回計画の起点にできる反復規則とし、生育休止期、樹勢、葉色、EC、収穫時期による見送り条件を示してください。"
+                    "planting.planted_onは過去の定植履歴、planning.start_dateは今回作成する予定の開始下限です。両者を同じ日付として扱ってはいけません。"
+                    "定植日からplanning.current_dateまでに経過した日数とconditions.notesの実施履歴を読み、すでに終わった活着確認、施肥、防除などを新規予定として再作成しないでください。"
                     "すべての作業は『確認する』『作業する』だけで終わらせず、作物、地域、季節、生育段階に応じた対象、確認点、方法候補を具体化してください。"
                     "追肥は対象部位、葉色・樹勢・EC等の判断点、肥料・施肥方法候補、剪定は対象枝、残す枝・花芽、剪定方法候補、潅水は対象培地、水分・排水、手動または設備の方法候補を示してください。"
                     "防除は作物、地域、季節から確認対象となる病害虫名と観察箇所を具体化してください。"
@@ -303,28 +354,7 @@ class AIContentService:
             },
             {
                 "role": "user",
-                "content": (
-                    "基準日から12か月分の初期栽培計画を作成してください。"
-                    "トップレベルはcare_profile, growth_targets, task_rules, actionsにしてください。\n"
-                    "care_profileはsummary, assumptions, knowledge_sources, irrigation, fertilization, stage_notesを含めてください。"
-                    "irrigationはstrategy, baseline_interval_days(min/preferred/max), decision_factors, skip_conditions、"
-                    "fertilizationはstrategy, ec_management, ph_management, decision_factors, skip_conditionsを含めます。"
-                    "knowledge_sourcesには入力として与えられた根拠だけを記載し、根拠がなければ空配列にしてください。\n"
-                    "growth_targetsはsoil_moisture_percent, soil_ec_us_cm, soil_ph, air_humidity_percent, par_umol_m2_sを含め、"
-                    "適用項目をmin/maxの数値、判断不能な項目をnullにしてください。ECはuS/cm、PARはumol/m2/sです。\n"
-                    "task_rulesの各要素はrule_id, action_type, title, recurrence_type, anchor, interval_days, active_months, conditions, skip_conditions, notesを含めてください。"
-                    "recurrence_typeはone_time, interval_after_completion, seasonal, condition_based, continuous_review、"
-                    "anchorはplanting_date, completion_date, calendar_date, observationのいずれかです。"
-                    "追肥など実施間隔が前回実施日に依存する作業はinterval_after_completionとcompletion_dateにしてください。"
-                    "センサー閾値で判断する作業はcondition_basedとし、固定日で実施を強制しないでください。\n"
-                    "actionsは最大24件とし、各要素にrule_id, action_type, title, priority, window_start, window_end, timing_label, reason, instructions, tags, required_people, estimated_minutes, work_planを含めてください。"
-                    "required_peopleは同時に必要な1〜100人の整数、estimated_minutesは1回の作業に必要な1〜1440分の整数とし、初心者が安全確認と記録まで行う時間を含めて現実的に見積もってください。"
-                    "priorityはrequired, should, recommended, optional、action_typeはfertilization, pest_control, pruning, girdling, pollination, gibberellin_treatment, harvest, repotting, watering, observation, winter_care, otherです。"
-                    f"{WORK_PLAN_OUTPUT_CONTRACT}"
-                    "ジベレリン処理は作物、品種、目的、処理時期が適合すると判断できる場合だけ候補にし、登録のある資材ラベルと地域指導の確認をinstructionsへ含めてください。"
-                    "各予定には開始判断と見送れる条件を記載し、必須でない作業をrequiredにしないでください。\n\n"
-                    f"登録条件:\n{prompt_context}\n\n採用済みユーザー編集例:\n{guidance}"
-                ),
+                "content": user_prompt,
             },
         ]
 
@@ -557,28 +587,45 @@ class AIContentService:
     def _fallback_plant_calendar(self, context: dict):
         planting = context.get("planting") if isinstance(context.get("planting"), dict) else context
         planning = context.get("planning") if isinstance(context.get("planning"), dict) else {}
-        planted_on = self._safe_date(planning.get("start_date") or planting.get("planted_on"))
+        planted_on = self._safe_date(planting.get("planted_on"))
+        plan_start = self._calendar_start_date(context)
+        established = (plan_start - planted_on).days > 30
+        planning_notes = str(planning.get("notes") or "")
+        normalized_notes = planning_notes.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+        monthly_manual_work = any(token in normalized_notes for token in ("1か月に1回", "1ヶ月に1回", "月1回", "月に1回"))
+        offsets = (0, 30, 60, 90, 120, 150) if monthly_manual_work else (0, 14, 7, 60, 120, 180)
+        durations = (7, 7, 7, 7, 7, 7) if monthly_manual_work else (14, 21, 38, 40, 30, 40)
         crop_name = str(planting.get("crop_name") or "植物")
         actions = [
             self._calendar_action(
                 "observation",
-                "定植後の活着確認",
+                "現在の生育状態と直近作業を確認" if established else "定植後の活着確認",
                 "required",
-                planted_on,
-                planted_on + timedelta(days=14),
-                "定植後2週間",
-                "萎れ、葉色、用土の乾き方を確認し、根が新しい環境へ適応しているか判断するためです。",
-                "過湿と乾燥を避け、異常があれば写真と症状を記録します。",
-                ["活着", "観察", "樹勢維持"],
+                plan_start + timedelta(days=offsets[0]),
+                plan_start + timedelta(days=offsets[0] + durations[0]),
+                "今回の計画開始時" if established else "定植後2週間",
+                (
+                    "定植後の経過と入力された施肥・防除履歴を現在の樹勢、葉色、用土の状態と照合し、次の作業要否を判断するためです。"
+                    if established
+                    else "萎れ、葉色、用土の乾き方を確認し、根が新しい環境へ適応しているか判断するためです。"
+                ),
+                (
+                    "過去の作業を再実施扱いにせず、現在の状態と直近作業日を写真・メモで記録します。"
+                    if established
+                    else "過湿と乾燥を避け、異常があれば写真と症状を記録します。"
+                ),
+                ["観察", "樹勢維持", "作業履歴確認"] if established else ["活着", "観察", "樹勢維持"],
             ),
             self._calendar_action(
                 "fertilization",
-                "活着後の追肥要否を判断",
+                "直近施肥後の追肥要否を判断" if established else "活着後の追肥要否を判断",
                 "recommended",
-                planted_on + timedelta(days=14),
-                planted_on + timedelta(days=35),
-                "活着確認後",
-                "根が十分に活着する前の施肥を避け、樹勢と葉色を見て必要量を判断するためです。",
+                plan_start + timedelta(days=offsets[1]),
+                plan_start + timedelta(days=offsets[1] + durations[1]),
+                "直近施肥と現在の樹勢を確認後" if established else "活着確認後",
+                "入力された直近施肥日を起点に、樹勢と葉色を見て次の施肥が必要か判断するためです。"
+                if established
+                else "根が十分に活着する前の施肥を避け、樹勢と葉色を見て必要量を判断するためです。",
                 "作物、品種、培地に適合する肥料かを確認し、少量から判断します。",
                 ["追肥", "樹勢維持"],
             ),
@@ -586,9 +633,9 @@ class AIContentService:
                 "pest_control",
                 "病害虫を観察して防除要否を判断",
                 "should",
-                planted_on + timedelta(days=7),
-                planted_on + timedelta(days=45),
-                "定植後から定期確認",
+                plan_start + timedelta(days=offsets[2]),
+                plan_start + timedelta(days=offsets[2] + durations[2]),
+                "直近防除後の再発確認" if established else "定植後から定期確認",
                 "病斑、食害、害虫を早期に見つけ、被害拡大前に対応を選べるようにするためです。",
                 "葉裏、若芽、株元を確認します。農薬を使う場合は対象作物の登録、ラベル、希釈倍率、収穫前日数を確認します。",
                 ["防除", "病害虫予防", "観察"],
@@ -597,9 +644,9 @@ class AIContentService:
                 "pruning",
                 "枝葉の混み具合を確認",
                 "optional",
-                planted_on + timedelta(days=60),
-                planted_on + timedelta(days=100),
-                "生育が安定した頃",
+                plan_start + timedelta(days=offsets[3]),
+                plan_start + timedelta(days=offsets[3] + durations[3]),
+                "現在から樹形変化を確認" if established else "生育が安定した頃",
                 "風通し、採光、樹形を整える必要があるか判断するためです。",
                 "作物と品種の剪定適期を確認し、不要な剪定は行いません。",
                 ["剪定", "樹形", "病害虫予防"],
@@ -608,9 +655,9 @@ class AIContentService:
                 "fertilization",
                 "中期の追肥と樹勢を見直す",
                 "recommended",
-                planted_on + timedelta(days=120),
-                planted_on + timedelta(days=150),
-                "定植4〜5か月後",
+                plan_start + timedelta(days=offsets[4]),
+                plan_start + timedelta(days=offsets[4] + durations[4]),
+                "計画開始約4か月後" if established else "定植4〜5か月後",
                 "生育量、葉色、結実状況に対して養分が不足または過剰でないか確認するためです。",
                 "センサー値、葉色、伸長量を確認し、施肥する場合は作物に適合する資材を選びます。",
                 ["追肥", "樹勢維持", "結実"],
@@ -619,28 +666,45 @@ class AIContentService:
                 "winter_care",
                 "季節変化に合わせた管理を確認",
                 "recommended",
-                planted_on + timedelta(days=180),
-                planted_on + timedelta(days=220),
-                "定植約6〜7か月後",
+                plan_start + timedelta(days=offsets[5]),
+                plan_start + timedelta(days=offsets[5] + durations[5]),
+                "計画開始約6か月後" if established else "定植約6〜7か月後",
                 "気温、休眠、生育速度の変化に合わせて水やりと施肥を見直すためです。",
                 "地域の気候と栽培環境を確認し、低温・高温・乾燥への対策要否を判断します。",
                 ["季節管理", "休眠", "樹勢維持"],
             ),
         ]
-        if "ブルーベリー" in crop_name:
+        review_offsets = range(180, 360, 30) if monthly_manual_work else (270, 330)
+        for offset in review_offsets:
             actions.append(
                 self._calendar_action(
-                    "pollination",
-                    "開花と受粉条件を確認",
+                    "observation",
+                    "季節の生育変化と次の重点作業を確認",
                     "recommended",
-                    planted_on + timedelta(days=240),
-                    planted_on + timedelta(days=330),
-                    "開花期が近づいたら",
-                    "品種の組み合わせ、訪花昆虫、開花時期が結実に影響するためです。",
-                    "実際の花芽と開花を基準に時期を調整し、受粉樹の有無も確認します。",
-                    ["結実", "受粉", "開花"],
+                    plan_start + timedelta(days=offset),
+                    plan_start + timedelta(days=offset + 7),
+                    f"計画開始約{offset // 30}か月後",
+                    "葉色、新梢、花芽・果実、根域の変化と直近の作業記録から、次の1か月で優先する作業を絞るためです。",
+                    "同じ位置の写真と直近作業日を確認し、異常や季節変化がなければ不要な施肥・防除は追加しません。",
+                    ["月次確認", "観察", "作業計画"],
                 )
             )
+        if "ブルーベリー" in crop_name:
+            pollination_action = self._calendar_action(
+                "pollination",
+                "開花と受粉条件を確認",
+                "recommended",
+                plan_start + timedelta(days=240),
+                plan_start + timedelta(days=247 if monthly_manual_work else 330),
+                "開花期が近づいたら",
+                "品種の組み合わせ、訪花昆虫、開花時期が結実に影響するためです。",
+                "実際の花芽と開花を基準に時期を調整し、受粉樹の有無も確認します。",
+                ["結実", "受粉", "開花"],
+            )
+            if monthly_manual_work:
+                actions = [pollination_action if action["window_start"] == (plan_start + timedelta(days=240)).isoformat() else action for action in actions]
+            else:
+                actions.append(pollination_action)
         return actions
 
     def _fallback_growth_targets(self, context: dict):
@@ -923,7 +987,7 @@ class AIContentService:
             raise ValueError("AI response must be a JSON object")
         return value
 
-    def _validate_calendar_actions(self, actions: list):
+    def _validate_calendar_actions(self, actions: list, *, minimum_start: date | None = None):
         for action in actions:
             if not isinstance(action, dict) or not str(action.get("title") or "").strip():
                 raise ValueError("calendar action title is required")
@@ -931,6 +995,14 @@ class AIContentService:
             end = date.fromisoformat(str(action.get("window_end") or action.get("window_start") or ""))
             if end < start:
                 raise ValueError("calendar action date range is invalid")
+            if minimum_start is not None and start < minimum_start:
+                raise ValueError("calendar action starts before the planning start date")
+
+    def _calendar_start_date(self, context: dict):
+        planting = context.get("planting") if isinstance(context.get("planting"), dict) else context
+        planning = context.get("planning") if isinstance(context.get("planning"), dict) else {}
+        requested_start = self._safe_date(planning.get("start_date") or planting.get("planted_on"))
+        return max(requested_start, date.today())
 
     def _ensure_action_work_plans(self, actions: list):
         for action in actions:

@@ -53,7 +53,14 @@ from ina_device_hub.instagram_client import InstagramClient
 from ina_device_hub.instagram_post_task import reload_instagram_post_task_settings
 from ina_device_hub.location_repository import location_repository
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
+from ina_device_hub.plant_calendar_generation_task import plant_calendar_generation_task
+from ina_device_hub.plant_calendar_prompt import (
+    DEFAULT_PLANT_CALENDAR_PROMPT_TEMPLATE,
+    PLANT_CALENDAR_PROMPT_MAX_LENGTH,
+    validate_plant_calendar_prompt_template,
+)
 from ina_device_hub.plant_management_repository import (
+    PlantManagementConflictError,
     PlantManagementNotFoundError,
     PlantManagementValidationError,
     plant_management_repository,
@@ -4552,6 +4559,10 @@ def hub_settings_page():
     if request.method == "POST":
         section = request.form.get("settings_section", "ai")
         if section == "ai":
+            try:
+                plant_calendar_prompt_template = validate_plant_calendar_prompt_template(request.form.get("plant_calendar_prompt_template", ""))
+            except ValueError as exc:
+                return str(exc), 400
             setting().set(
                 "ai",
                 {
@@ -4560,6 +4571,7 @@ def hub_settings_page():
                     "text_analyze_model": request.form.get("text_analyze_model", "").strip(),
                     "image_analyze_base_url": request.form.get("image_analyze_base_url", "").strip(),
                     "image_analyze_model": request.form.get("image_analyze_model", "").strip(),
+                    "plant_calendar_prompt_template": plant_calendar_prompt_template,
                 },
             )
             for channel in ("text", "image"):
@@ -4601,6 +4613,7 @@ def hub_settings_page():
         "text_analyze_model": current_ai.get("text_analyze_model", ""),
         "image_analyze_base_url": current_ai.get("image_analyze_base_url", ""),
         "image_analyze_model": current_ai.get("image_analyze_model", ""),
+        "plant_calendar_prompt_template": current_ai.get("plant_calendar_prompt_template", DEFAULT_PLANT_CALENDAR_PROMPT_TEMPLATE),
         "text_key_configured": setting().secret_configured("ai", "text_analyze_api_key"),
         "image_key_configured": setting().secret_configured("ai", "image_analyze_api_key"),
     }
@@ -4627,6 +4640,7 @@ def hub_settings_page():
         render_template(
             "hub_settings.html",
             ai=visible_ai,
+            plant_calendar_prompt_max_length=PLANT_CALENDAR_PROMPT_MAX_LENGTH,
             instagram=visible_instagram,
             instagram_camera_options=_instagram_camera_options(current_instagram.get("camera_id", "")),
             infrastructure=infrastructure,
@@ -5123,26 +5137,18 @@ def create_field_planting_api(field_id):
     try:
         _validate_planting_generation_input(planting_data)
         planting = repository.create_planting(field_id, planting_data)
-        context = _build_plant_generation_context(field, layout, space, placement, planting)
-        context["audience"] = _current_plant_advice_profile()
-        context["planning"] = {
-            "start_date": planting["planted_on"],
-            "horizon_months": 12,
-            "notes": str(request_body.get("planning_notes") or "")[:2000],
-        }
-        guidance = repository.guidance_examples(planting["crop_name"])
-        generated = ai_content_service().generate_plant_calendar(context, guidance_examples=guidance)
-        planting = repository.update_planting(planting["id"], {"growth_targets": generated.get("growth_targets") or {}})
-        calendar = repository.create_calendar(
+        generation_task = plant_calendar_generation_task().enqueue(
             planting["id"],
-            generated["actions"],
-            generated.get("generation"),
-            care_profile=generated.get("care_profile"),
-            task_rules=generated.get("task_rules"),
+            kind="initial",
+            start_date=max(date.fromisoformat(planting["planted_on"]), date.today()).isoformat(),
+            planning_notes=str(request_body.get("planning_notes") or "")[:2000],
+            audience=_current_plant_advice_profile(),
         )
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify({"planting": repository.get_planting(planting["id"]), "calendar": calendar}), 201
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"planting": repository.get_planting(planting["id"]), "generation_task": generation_task}), 202
 
 
 @app.route("/local/api/plantings/<planting_id>/calendar/actions", methods=["GET"])
@@ -5220,27 +5226,19 @@ def regenerate_plant_calendar_api(planting_id):
     placement = next((item for item in (space or {}).get("placements", []) if item["id"] == planting["placement_id"]), None)
     if space is None or placement is None:
         return jsonify({"error": "planting placement was not found in the field layout"}), 400
-    context = _build_plant_generation_context(field, layout, space, placement, planting)
-    context["audience"] = _current_plant_advice_profile()
-    context["planning"] = {
-        "start_date": str(request_body.get("start_date") or date.today().isoformat()),
-        "horizon_months": 12,
-        "notes": str(request_body.get("planning_notes") or "")[:2000],
-    }
     try:
-        guidance = repository.guidance_examples(planting["crop_name"])
-        generated = ai_content_service().generate_plant_calendar(context, guidance_examples=guidance)
-        repository.update_planting(planting_id, {"growth_targets": generated.get("growth_targets") or planting.get("growth_targets") or {}})
-        calendar = repository.replace_calendar(
+        generation_task = plant_calendar_generation_task().enqueue(
             planting_id,
-            generated["actions"],
-            generated.get("generation"),
-            care_profile=generated.get("care_profile"),
-            task_rules=generated.get("task_rules"),
+            kind="regenerate" if repository.get_calendar(planting_id) is not None else "initial",
+            start_date=str(request_body.get("start_date") or date.today().isoformat()),
+            planning_notes=str(request_body.get("planning_notes") or "")[:2000],
+            audience=_current_plant_advice_profile(),
         )
     except (PlantManagementNotFoundError, PlantManagementValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify({"planting": repository.get_planting(planting_id), "calendar": calendar})
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify({"planting": repository.get_planting(planting_id), "generation_task": generation_task}), 202
 
 
 @app.route("/local/api/plantings/<planting_id>/calendar/actions", methods=["POST"])
@@ -5440,8 +5438,11 @@ def add_field_event(field_id):
         record_values = _field_record_values_from_form(request.form)
         target_placement_id = request.form.get("target_placement_id", "").strip()
         target_name = _field_record_target_name(field_id, target_placement_id)
-        if request.form.get("event_type") == "daily_record" and not any((record_values, request.form.get("description", "").strip(), rating, attachments)):
-            raise FieldValidationError("記録項目、メモ、評価、画像のいずれかを入力してください")
+        tags = [tag.strip() for value in request.form.getlist("tags") for tag in _split_lines_or_commas(value) if tag.strip()]
+        if request.form.get("event_type") == "daily_record" and not any(
+            (record_values, tags, request.form.get("description", "").strip(), rating, attachments)
+        ):
+            raise FieldValidationError("記録項目、タグ、メモ、評価、画像のいずれかを入力してください")
         field_repository().add_event(
             field_id,
             {
@@ -5458,7 +5459,7 @@ def add_field_event(field_id):
                 "human_evaluation": request.form.get("human_evaluation", ""),
                 "rating": rating,
                 "attachments": attachments,
-                "tags": _split_lines_or_commas(request.form.get("tags", "")),
+                "tags": tags,
             },
         )
     except (FieldValidationError, FieldRecordMediaValidationError) as exc:
@@ -5972,34 +5973,6 @@ def _find_field_record_attachment(field: dict, attachment_id: str):
     return None
 
 
-def _build_plant_generation_context(field, layout, space, placement, planting):
-    return {
-        "planting": planting,
-        "placement": {
-            "id": placement.get("id"),
-            "name": placement.get("name"),
-            "preset": placement.get("preset"),
-            "space_id": space.get("id"),
-            "space_name": space.get("name"),
-            "space_type": space.get("space_type"),
-            "grid_cell_size_m": (space.get("grid") or {}).get("cell_size_m"),
-        },
-        "field": {
-            "id": field.get("id"),
-            "name": field.get("name"),
-            "location": field.get("location") or {},
-            "crop_profile": field.get("crop_profile") or {},
-            "cultivation_context": field.get("cultivation_context") or {},
-            "growth_targets": field.get("growth_targets") or {},
-            "control_policy": field.get("control_policy") or {},
-        },
-        "layout": {
-            "space_type": space.get("space_type"),
-            "root_space_id": layout.get("root_space_id"),
-        },
-    }
-
-
 def _plant_action_event_type(action_type):
     return {
         "fertilization": "fertilizer",
@@ -6128,6 +6101,9 @@ def _build_field_context(  # noqa: PLR0915
         "timeline": timeline,
         "record_search_total": record_search_page["total"],
         "record_search_has_next": record_search_page["has_next"],
+        "record_tags": sorted(
+            {tag for record in [*(field.get("events") or []), *(field.get("notes") or [])] for tag in record.get("tags") or []}, key=str.casefold
+        ),
         "recent_notes": list(field.get("notes") or [])[-20:],
         "recent_images": recent_images[:12],
         "compare_date": compare_day.strftime("%Y-%m-%d"),
