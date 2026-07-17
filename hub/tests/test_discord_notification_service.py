@@ -2,6 +2,7 @@ import os
 import struct
 import tempfile
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
@@ -17,10 +18,26 @@ os.environ.setdefault("MQTT_BROKER_USERNAME", "")
 os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
+from ina_device_hub import discord_notification_service  # noqa: E402
 from ina_device_hub.discord_notification_service import DISCORD_CONTENT_LIMIT, format_health_alert, format_mqtt_activity, format_new_device  # noqa: E402
 
 
 class DiscordNotificationServiceTest(unittest.TestCase):
+    def test_singleton_accessor_reuses_one_service(self):
+        previous = discord_notification_service.__dict__["__instance"]
+        service = object()
+        discord_notification_service.__dict__["__instance"] = None
+        try:
+            with patch.object(discord_notification_service, "DiscordNotificationService", return_value=service) as constructor:
+                first = discord_notification_service.discord_notification_service()
+                second = discord_notification_service.discord_notification_service()
+
+            self.assertIs(first, service)
+            self.assertIs(second, service)
+            constructor.assert_called_once_with()
+        finally:
+            discord_notification_service.__dict__["__instance"] = previous
+
     def test_format_mqtt_activity_shows_config_request_in_japanese(self):
         content = format_mqtt_activity(
             "received",

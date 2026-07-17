@@ -1,5 +1,6 @@
 import os
 import tempfile
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -21,8 +22,24 @@ from ina_device_hub import ina_db_connector  # noqa: E402
 
 
 class InaDBConnectorTest(unittest.TestCase):
+    def test_singleton_accessor_reuses_one_connector(self):
+        previous = ina_db_connector.__dict__["__instance"]
+        connector = object()
+        ina_db_connector.__dict__["__instance"] = None
+        try:
+            with patch.object(ina_db_connector, "InaDBConnector", return_value=connector) as constructor:
+                first = ina_db_connector.ina_db_connector()
+                second = ina_db_connector.ina_db_connector()
+
+            self.assertIs(first, connector)
+            self.assertIs(second, connector)
+            constructor.assert_called_once_with()
+        finally:
+            ina_db_connector.__dict__["__instance"] = previous
+
     def test_user_note_insert_uses_bound_parameters(self):
         connector = object.__new__(ina_db_connector.InaDBConnector)
+        connector._operation_lock = threading.RLock()
         connector.conn = MagicMock()
 
         connector.insert_user_note('device"; DROP TABLE user_note; --', 'note"')
@@ -31,6 +48,28 @@ class InaDBConnectorTest(unittest.TestCase):
             "INSERT INTO user_note (device_id, note) VALUES (?, ?)",
             ('device"; DROP TABLE user_note; --', 'note"'),
         )
+
+    def test_database_operations_share_one_lock(self):
+        connector = object.__new__(ina_db_connector.InaDBConnector)
+        connector._operation_lock = threading.RLock()
+        connector.conn = MagicMock()
+        started = threading.Event()
+        completed = threading.Event()
+
+        def insert_note():
+            started.set()
+            connector.insert_user_note("device", "note")
+            completed.set()
+
+        with connector.operation():
+            worker = threading.Thread(target=insert_note)
+            worker.start()
+            self.assertTrue(started.wait(timeout=1))
+            self.assertFalse(completed.wait(timeout=0.05))
+
+        self.assertTrue(completed.wait(timeout=1))
+        worker.join(timeout=1)
+        self.assertFalse(worker.is_alive())
 
     def test_remote_replica_uses_configured_background_sync_interval(self):
         connection = object()

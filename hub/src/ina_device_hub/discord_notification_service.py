@@ -626,5 +626,11 @@ def _payload_preview(payload):
     return text
 
 
+__instance = None
+
+
 def discord_notification_service():
-    return DiscordNotificationService()
+    global __instance  # noqa: PLW0603
+    if not __instance:
+        __instance = DiscordNotificationService()
+    return __instance

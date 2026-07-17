@@ -6,7 +6,10 @@
 # - センサーデータをデータベースから取得する
 
 import json
+import threading
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from functools import wraps
 
 import libsql
 
@@ -18,18 +21,29 @@ def commit_and_sync(func):
     関数実行後、必ず commit と sync を実行するデコレーター
     """
 
+    @wraps(func)
     def wrapper(self, *args, **kwargs):
-        try:
-            result = func(self, *args, **kwargs)
-            return result
-        except Exception as e:
-            # エラーハンドリング（必要に応じてログ出力等）
-            print("Error occurred:", e)
-            raise
-        finally:
-            print("Commit and sync")
-            self.conn.commit()
-            _sync_if_supported(self.conn)
+        with self._operation_lock:
+            try:
+                result = func(self, *args, **kwargs)
+                return result
+            except Exception as e:
+                # エラーハンドリング（必要に応じてログ出力等）
+                print("Error occurred:", e)
+                raise
+            finally:
+                print("Commit and sync")
+                self.conn.commit()
+                _sync_if_supported(self.conn)
+
+    return wrapper
+
+
+def serialized_operation(func):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        with self._operation_lock:
+            return func(self, *args, **kwargs)
 
     return wrapper
 
@@ -59,6 +73,7 @@ def _connect_database(db_path: str, url: str | None, auth_token: str, sync_inter
 
 class InaDBConnector:
     def __init__(self):
+        self._operation_lock = threading.RLock()
         turso_settings = setting().get("turso")
         db_path = turso_settings.get("local_db_path")
         url = turso_settings.get("database_url")
@@ -69,6 +84,12 @@ class InaDBConnector:
         self.ensure_device_event_table()
         self.ensure_sensor_measurement_tables()
 
+    @contextmanager
+    def operation(self):
+        with self._operation_lock:
+            yield self.conn
+
+    @serialized_operation
     def ensure_device_event_table(self):
         self.conn.execute(
             """
@@ -97,6 +118,7 @@ class InaDBConnector:
         self.conn.commit()
         _sync_if_supported(self.conn)
 
+    @serialized_operation
     def ensure_sensor_measurement_tables(self):
         self.conn.execute(
             """
@@ -196,11 +218,13 @@ class InaDBConnector:
                 ),
             )
 
+    @serialized_operation
     def fetch_sensor_measurement_definitions(self):
         return self.conn.execute(
             "SELECT metric, display_name, unit, category, device_kinds, value_type, description FROM sensor_measurement_definitions ORDER BY metric"
         ).fetchall()
 
+    @serialized_operation
     def fetch_latest_sensor_measurements(self, device_id: str, limit: int = 100):
         return self.conn.execute(
             """
@@ -213,6 +237,7 @@ class InaDBConnector:
             (device_id, limit),
         ).fetchall()
 
+    @serialized_operation
     def fetch_sensor_measurements_for_devices(self, device_ids: list[str], start_at: str, end_at: str, limit: int = 5000):
         device_ids = list(dict.fromkeys(str(device_id) for device_id in device_ids if device_id))
         if not device_ids:
@@ -256,6 +281,7 @@ class InaDBConnector:
             ),
         )
 
+    @serialized_operation
     def fetch_device_events(
         self,
         *,
@@ -339,7 +365,6 @@ class InaDBConnector:
                 location,
             ),
         )
-        self.conn.sync()
 
     @commit_and_sync
     def upsert_device_status(self, device_id: str, status: str):
@@ -405,6 +430,7 @@ class InaDBConnector:
             ),
         )
 
+    @serialized_operation
     def fetch_latest_sensor_data(self, device_id: str):
         """
         最新センサーデータを取得します。
@@ -415,6 +441,7 @@ class InaDBConnector:
             (device_id,),
         ).fetchone()
 
+    @serialized_operation
     def fetch_latest_aggregated_sensor_data(self, device_id: str, limit: int = 50):
         """
         最新集計済センサーデータを取得します。
@@ -425,6 +452,7 @@ class InaDBConnector:
             (device_id, limit),
         ).fetchall()
 
+    @serialized_operation
     def fetch_aggregated_sensor_data_by_range(self, device_id: str, start: str, end: str):
         """
         集計済センサーデータを取得します。
@@ -445,6 +473,7 @@ class InaDBConnector:
             (device_id, yyyymmddhhmmss, image_path),
         )
 
+    @serialized_operation
     def fetch_sensor_latest_image(self, device_id: str, num: int = 1):
         """
         センサー画像データを取得します。
@@ -560,3 +589,13 @@ class InaDBConnector:
             "water_volume = excluded.water_volume, last_maintenance_date = excluded.last_maintenance_date",
             (tank_id, fish_species, stocking_density, water_volume, last_maintenance_date.strftime("%Y-%m-%d %H:%M:%S")),
         )
+
+
+__instance = None
+
+
+def ina_db_connector():
+    global __instance  # noqa: PLW0603
+    if not __instance:
+        __instance = InaDBConnector()
+    return __instance

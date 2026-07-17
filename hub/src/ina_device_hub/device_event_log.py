@@ -175,9 +175,9 @@ def _fetch_device_events_from_turso(
 
 @lru_cache(maxsize=1)
 def _device_event_db_connector():
-    from ina_device_hub.ina_db_connector import InaDBConnector
+    from ina_device_hub.ina_db_connector import ina_db_connector
 
-    return InaDBConnector()
+    return ina_db_connector()
 
 
 def _fetch_device_events_from_jsonl(

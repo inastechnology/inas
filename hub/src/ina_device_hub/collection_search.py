@@ -54,7 +54,7 @@ def _flatten_search_values(value):
             flattened.extend(_flatten_search_values(key))
             flattened.extend(_flatten_search_values(item))
         return flattened
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, list | tuple | set):
         flattened = []
         for item in value:
             flattened.extend(_flatten_search_values(item))

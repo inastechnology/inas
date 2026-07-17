@@ -1,9 +1,10 @@
 import json
 import threading
+from contextlib import nullcontext
 from copy import deepcopy
 from functools import lru_cache
 
-from ina_device_hub.ina_db_connector import InaDBConnector, _sync_if_supported
+from ina_device_hub.ina_db_connector import InaDBConnector, _sync_if_supported, ina_db_connector
 
 SUPPORTED_TIMEZONES = {"Asia/Tokyo", "UTC"}
 SUPPORTED_DATE_FORMATS = {"yyyy-MM-dd", "yyyy/MM/dd", "MM/dd/yyyy"}
@@ -27,41 +28,32 @@ class UserPreferenceRepository:
         self._write_lock = threading.RLock()
         self._ensure_table()
 
+    def _database_operation(self):
+        operation = getattr(self.db_connector, "operation", None)
+        return operation() if operation else nullcontext(self.db_connector.conn)
+
     def _ensure_table(self):
-        self.db_connector.conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_preferences (
-                user_email TEXT PRIMARY KEY,
-                locale TEXT NOT NULL DEFAULT 'ja',
-                timezone TEXT NOT NULL DEFAULT 'Asia/Tokyo',
-                date_format TEXT NOT NULL DEFAULT 'yyyy-MM-dd',
-                preferences_json TEXT NOT NULL DEFAULT '{}',
-                version INTEGER NOT NULL DEFAULT 1,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        with self._database_operation() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    user_email TEXT PRIMARY KEY,
+                    locale TEXT NOT NULL DEFAULT 'ja',
+                    timezone TEXT NOT NULL DEFAULT 'Asia/Tokyo',
+                    date_format TEXT NOT NULL DEFAULT 'yyyy-MM-dd',
+                    preferences_json TEXT NOT NULL DEFAULT '{}',
+                    version INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
             )
-            """
-        )
-        self.db_connector.conn.commit()
-        _sync_if_supported(self.db_connector.conn)
+            connection.commit()
+            _sync_if_supported(connection)
 
     def get(self, user_email: str):
         with self._write_lock:
-            row = self.db_connector.conn.execute(
-                """
-                SELECT user_email, locale, timezone, date_format, preferences_json, version, created_at, updated_at
-                FROM user_preferences WHERE lower(user_email) = lower(?)
-                """,
-                (user_email,),
-            ).fetchone()
-        return _row_to_preferences(row) if row else _default_preferences(user_email)
-
-    def update(self, user_email: str, value: dict, expected_version: int):
-        normalized = _normalize_preferences(user_email, value)
-        with self._write_lock:
-            connection = self.db_connector.conn
-            try:
-                connection.execute("BEGIN IMMEDIATE")
+            with self._database_operation() as connection:
                 row = connection.execute(
                     """
                     SELECT user_email, locale, timezone, date_format, preferences_json, version, created_at, updated_at
@@ -69,54 +61,69 @@ class UserPreferenceRepository:
                     """,
                     (user_email,),
                 ).fetchone()
-                current = _row_to_preferences(row) if row else _default_preferences(user_email)
-                if current["version"] != expected_version:
-                    connection.rollback()
-                    raise UserPreferenceConflictError(current)
+        return _row_to_preferences(row) if row else _default_preferences(user_email)
 
-                next_version = expected_version + 1
-                if row:
-                    connection.execute(
+    def update(self, user_email: str, value: dict, expected_version: int):
+        normalized = _normalize_preferences(user_email, value)
+        with self._write_lock:
+            with self._database_operation() as connection:
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                    row = connection.execute(
                         """
-                        UPDATE user_preferences
-                        SET locale = ?, timezone = ?, date_format = ?, preferences_json = ?,
-                            version = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE lower(user_email) = lower(?) AND version = ?
+                        SELECT user_email, locale, timezone, date_format, preferences_json, version, created_at, updated_at
+                        FROM user_preferences WHERE lower(user_email) = lower(?)
                         """,
-                        (
-                            normalized["locale"],
-                            normalized["timezone"],
-                            normalized["date_format"],
-                            json.dumps(normalized["preferences"], ensure_ascii=False, separators=(",", ":")),
-                            next_version,
-                            user_email,
-                            expected_version,
-                        ),
-                    )
-                else:
-                    connection.execute(
-                        """
-                        INSERT INTO user_preferences (
-                            user_email, locale, timezone, date_format, preferences_json, version
-                        ) VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            user_email,
-                            normalized["locale"],
-                            normalized["timezone"],
-                            normalized["date_format"],
-                            json.dumps(normalized["preferences"], ensure_ascii=False, separators=(",", ":")),
-                            next_version,
-                        ),
-                    )
-                connection.commit()
-            except UserPreferenceConflictError:
-                raise
-            except Exception:
-                if connection.in_transaction:
-                    connection.rollback()
-                raise
-            _sync_if_supported(connection)
+                        (user_email,),
+                    ).fetchone()
+                    current = _row_to_preferences(row) if row else _default_preferences(user_email)
+                    if current["version"] != expected_version:
+                        connection.rollback()
+                        raise UserPreferenceConflictError(current)
+
+                    next_version = expected_version + 1
+                    if row:
+                        connection.execute(
+                            """
+                            UPDATE user_preferences
+                            SET locale = ?, timezone = ?, date_format = ?, preferences_json = ?,
+                                version = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE lower(user_email) = lower(?) AND version = ?
+                            """,
+                            (
+                                normalized["locale"],
+                                normalized["timezone"],
+                                normalized["date_format"],
+                                json.dumps(normalized["preferences"], ensure_ascii=False, separators=(",", ":")),
+                                next_version,
+                                user_email,
+                                expected_version,
+                            ),
+                        )
+                    else:
+                        connection.execute(
+                            """
+                            INSERT INTO user_preferences (
+                                user_email, locale, timezone, date_format, preferences_json, version
+                            ) VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                user_email,
+                                normalized["locale"],
+                                normalized["timezone"],
+                                normalized["date_format"],
+                                json.dumps(normalized["preferences"], ensure_ascii=False, separators=(",", ":")),
+                                next_version,
+                            ),
+                        )
+                    connection.commit()
+                except UserPreferenceConflictError:
+                    raise
+                except Exception:
+                    if connection.in_transaction:
+                        connection.rollback()
+                    raise
+                _sync_if_supported(connection)
         return self.get(user_email)
 
 
@@ -189,4 +196,4 @@ def _row_to_preferences(row):
 
 @lru_cache(maxsize=1)
 def user_preference_repository(db_connector: InaDBConnector | None = None):
-    return UserPreferenceRepository(db_connector or InaDBConnector())
+    return UserPreferenceRepository(db_connector or ina_db_connector())

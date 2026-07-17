@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 
 from ina_device_hub.device_event_log import append_device_event
 from ina_device_hub.general_log import logger
-from ina_device_hub.ina_db_connector import InaDBConnector
+from ina_device_hub.ina_db_connector import InaDBConnector, ina_db_connector
 from ina_device_hub.sensor_data_queue import SensorDataQueue
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
@@ -18,7 +18,7 @@ from ina_device_hub.setting import setting
 class DataProcessor:
     def __init__(self, db_connector: InaDBConnector = None):
         if db_connector is None:
-            db_connector = InaDBConnector()
+            db_connector = ina_db_connector()
 
         self.sensor_data_queue = SensorDataQueue()
         self.sensor_device_repository = sensor_device_repository()
@@ -152,7 +152,7 @@ class DataProcessor:
     def _safe_number(self, value):
         if isinstance(value, bool):
             return None
-        if isinstance(value, (int, float)) and math.isfinite(value):
+        if isinstance(value, int | float) and math.isfinite(value):
             return float(value)
         return None
 

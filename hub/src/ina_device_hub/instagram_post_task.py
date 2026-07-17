@@ -9,7 +9,7 @@ from apscheduler.schedulers.background import BlockingScheduler
 from ina_device_hub.ai_content_service import ai_content_service
 from ina_device_hub.camera_device_repository import camera_device_repository
 from ina_device_hub.general_log import logger
-from ina_device_hub.ina_db_connector import InaDBConnector
+from ina_device_hub.ina_db_connector import ina_db_connector
 from ina_device_hub.instagram_client import InstagramClient
 from ina_device_hub.instagram_feedback_policy import (
     collect_comment_feedback,
@@ -43,7 +43,7 @@ class InstagramPostTask:
         self.instagram_settings = self.settings.get("instagram")
         self.storage_connector = storage_connector()
         self.timelapse_media_service = timelapse_media_service()
-        self.sensor_data_repository = sensor_data_repository(InaDBConnector())
+        self.sensor_data_repository = sensor_data_repository(ina_db_connector())
         self.camera_repository = camera_device_repository()
         self.ai_content_service = ai_content_service()
         self.weather_forecast_service = weather_forecast_service(

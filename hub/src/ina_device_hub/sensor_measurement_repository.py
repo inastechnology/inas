@@ -3,7 +3,7 @@ import math
 from functools import lru_cache
 
 from ina_device_hub.general_log import logger
-from ina_device_hub.ina_db_connector import InaDBConnector
+from ina_device_hub.ina_db_connector import InaDBConnector, ina_db_connector
 
 SENSOR_MEASUREMENT_DEFINITIONS = [
     {
@@ -245,7 +245,7 @@ def _measurement_row_to_dict(row):
 @lru_cache(maxsize=1)
 def sensor_measurement_repository(db_connector: InaDBConnector | None = None):
     if db_connector is None:
-        db_connector = InaDBConnector()
+        db_connector = ina_db_connector()
     return SensorMeasurementRepository(db_connector)
 
 
