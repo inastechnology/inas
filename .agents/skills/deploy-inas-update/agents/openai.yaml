@@ -1,0 +1,4 @@
+interface:
+  display_name: "Deploy INA Update"
+  short_description: "INA Hubの最新実装を安全に取得・検証して本番環境へ反映"
+  default_prompt: "Use $deploy-inas-update to pull the latest INA implementation, test it, and deploy it safely."
