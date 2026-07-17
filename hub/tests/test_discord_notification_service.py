@@ -19,10 +19,35 @@ os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
 from ina_device_hub import discord_notification_service  # noqa: E402
-from ina_device_hub.discord_notification_service import DISCORD_CONTENT_LIMIT, format_health_alert, format_mqtt_activity, format_new_device  # noqa: E402
+from ina_device_hub.discord_notification_service import (  # noqa: E402
+    DISCORD_CONTENT_LIMIT,
+    format_health_alert,
+    format_mqtt_activity,
+    format_new_device,
+    format_plant_task_digest,
+)
 
 
 class DiscordNotificationServiceTest(unittest.TestCase):
+    def test_plant_task_digest_uses_visual_embed_groups(self):
+        item = {
+            "field_name": "西条圃場1",
+            "crop_name": "ライチ",
+            "cultivar": "ジャカパット",
+            "placement_name": "植木鉢1",
+            "is_new": True,
+            "action": {"title": "防寒対策", "window_start": "2026-11-01", "window_end": "2026-11-08"},
+        }
+
+        payload = format_plant_task_digest({"date": "2026-10-25", "due": [], "upcoming": [item], "new": []})
+
+        self.assertEqual(payload["username"], "INA Device Hub")
+        embed = payload["embeds"][0]
+        self.assertEqual(embed["title"], "🌿 今日の栽培作業")
+        self.assertIn("⏳ 7日以内に開始（1件）", embed["fields"][0]["name"])
+        self.assertIn("西条圃場1｜ライチ（ジャカパット）", embed["fields"][0]["value"])
+        self.assertIn("🆕", embed["fields"][0]["value"])
+
     def test_singleton_accessor_reuses_one_service(self):
         previous = discord_notification_service.__dict__["__instance"]
         service = object()

@@ -103,8 +103,16 @@ class DiscordNotificationService:
         worker_thread = threading.Thread(target=self._post, args=(content,), daemon=True)
         worker_thread.start()
 
+    def notify_plant_task_digest(self, digest: dict):
+        if not self.enabled() or not self.notification_enabled("plant_tasks"):
+            return False
+        return self._post_payload(format_plant_task_digest(digest))
+
     def _post(self, content: str):
-        body = json.dumps({"content": content}, ensure_ascii=False).encode("utf-8")
+        return self._post_payload({"content": content})
+
+    def _post_payload(self, payload: dict):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = request.Request(
             self.webhook_url,
             data=body,
@@ -115,10 +123,58 @@ class DiscordNotificationService:
             with request.urlopen(req, timeout=5) as response:
                 if response.status >= 300:
                     logger.warning("Discord webhook returned status=%s", response.status)
+                    return False
+                return True
         except error.HTTPError as exc:
             logger.warning("Discord webhook failed with status=%s", exc.code)
         except Exception:
             logger.exception("Discord webhook notification failed")
+        return False
+
+
+def format_plant_task_digest(digest: dict):
+    digest_date = str(digest.get("date") or "")
+    fields = []
+    groups = (
+        ("due", "🌱 作業期間中"),
+        ("upcoming", "⏳ 7日以内に開始"),
+        ("new", "➕ 新しく追加"),
+    )
+    for key, label in groups:
+        items = digest.get(key) if isinstance(digest.get(key), list) else []
+        if not items:
+            continue
+        lines = [_plant_task_digest_line(item) for item in items[:12]]
+        if len(items) > len(lines):
+            lines.append(f"ほか {len(items) - len(lines)} 件")
+        value = "\n".join(lines)
+        fields.append({"name": f"{label}（{len(items)}件）", "value": value[:1024], "inline": False})
+    return {
+        "username": "INA Device Hub",
+        "allowed_mentions": {"parse": []},
+        "embeds": [
+            {
+                "title": "🌿 今日の栽培作業",
+                "description": f"{digest_date} 04:00 時点の作業を、圃場・作物ごとにまとめました。",
+                "color": 0x2E7D32,
+                "fields": fields,
+                "footer": {"text": "作業期間の7日前から毎朝通知します"},
+            }
+        ],
+    }
+
+
+def _plant_task_digest_line(item: dict):
+    action = item.get("action") if isinstance(item.get("action"), dict) else {}
+    field_name = item.get("field_name") or item.get("field_id") or "圃場未設定"
+    crop = item.get("crop_name") or "作物未設定"
+    cultivar = f"（{item['cultivar']}）" if item.get("cultivar") else ""
+    placement = f" / {item['placement_name']}" if item.get("placement_name") else ""
+    new_badge = " 🆕" if item.get("is_new") else ""
+    return (
+        f"**{field_name}｜{crop}{cultivar}{placement}**{new_badge}\n"
+        f"{action.get('title') or '名称未設定'}  ` {action.get('window_start') or '?'}〜{action.get('window_end') or '?'} `"
+    )
 
 
 def format_mqtt_activity(direction: str, topic: str, payload=None, parsed_message: dict | None = None, mqtt_rc: int | None = None):

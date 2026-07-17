@@ -33,6 +33,9 @@ try {
   await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   await page.goto(`${baseUrl}/mqtt-devices`, { waitUntil: "networkidle0" });
   assert(await page.$("#device-list-search"), "the device collection must provide a search field");
+  assert(await page.$('.device-guide img[src$="/device-family.png"]'), "the device collection must share the field-view visual language");
+  assert.equal(await page.$$('.nav a[href="/demo/mqtt-devices"]').then((items) => items.length), 0, "the demo must not compete in normal navigation");
+  await page.screenshot({ path: "/tmp/ina-device-list.png", fullPage: true });
   const deviceCount = await page.$$("#device-list-grid .device-tile").then((items) => items.length);
   assert(deviceCount > 1, "the demo must expose multiple devices for filtering");
   await Promise.all([
@@ -50,11 +53,13 @@ try {
   assert.match(wateringDecisionText, /土壌水分しきい値/);
   assert.match(wateringDecisionText, /現在の土壌水分/);
   assert.equal(await page.$$eval("h2", (headings) => headings.filter((heading) => heading.textContent?.trim() === "設置ビュー").length), 0);
+  assert.equal(await page.$$eval('a[href="/mqtt-devices"]', (links) => links.length), 1, "detail must expose one catalog return path");
   assert(await page.$(".location-path a"), "the irrigation device must link to its field placement");
   await assertSelectedTab("monitoring");
   await page.click('.tab-button[data-tab-key="overview"]');
   await assertSelectedTab("overview");
   assert.equal(await page.$eval("#tab-overview", (panel) => panel.hidden), false);
+  assert.equal(await page.$$(".readiness-card").then((items) => items.length), 4, "overview must make operational readiness scannable");
   await page.screenshot({ path: "/tmp/ina-device-wtr-overview.png", fullPage: true });
   await page.click('.tab-button[data-tab-key="monitoring"]');
   await assertSelectedTab("monitoring");
@@ -82,6 +87,8 @@ try {
   });
   assert.equal(await page.$eval('#runtime-config-form button[type="submit"]', (button) => button.disabled), false, "changed runtime config must be saveable");
   assert.equal(await page.$eval("#save-push-runtime-config", (button) => button.disabled), false, "changed config on an active device must be saveable and sendable");
+  assert(await page.$("#mosfet-switch-map"), "watering settings must visualize controller outputs");
+  assert.equal(await page.$$("#mosfet-switch-map .switch-output").then((items) => items.length), 2);
 
   await page.click('.tab-button[data-tab-key="diagnostics"]');
   await assertSelectedTab("diagnostics");
@@ -99,6 +106,8 @@ try {
   await page.waitForSelector("#target-firmware-version + .static-searchable-select input[type=\"search\"]", { visible: true });
   await page.keyboard.press("Escape");
   assert(await page.$("#firmware-upload-form"));
+  assert(await page.$("#firmware-dropzone"), "firmware registration must start with a drag-and-drop target");
+  assert(await page.$('img[src$="/firmware-care.png"]'), "firmware flow must include its visual guide");
   await page.screenshot({ path: "/tmp/ina-device-wtr-firmware.png", fullPage: true });
 
   await page.goto(`${baseUrl}/mqtt-devices/INADS-DEMO-WTR-003?tab=diagnostics`, { waitUntil: "networkidle0" });
@@ -153,6 +162,7 @@ try {
     mobileOverflow: overflow,
     screenshots: [
       "/tmp/ina-device-wtr-monitoring.png",
+      "/tmp/ina-device-list.png",
       "/tmp/ina-device-wtr-overview.png",
       "/tmp/ina-device-wtr-firmware.png",
       "/tmp/ina-device-pending-diagnostics.png",

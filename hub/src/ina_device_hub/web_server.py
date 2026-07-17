@@ -25,6 +25,7 @@ from ina_device_hub.device_config_repository import (
 )
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.device_event_log import list_device_events
+from ina_device_hub.device_removal_service import DeviceRemovalConflictError, device_removal_service
 from ina_device_hub.field_calendar_view import build_calendar_todo_items as _build_calendar_todo_items
 from ina_device_hub.field_layout_repository import (
     FieldLayoutConflictError,
@@ -441,8 +442,10 @@ def get_device_info(device_id):
 
     template = """
     <html>
-      <body>
-        <h1>INA Device Hub</h1>
+      <head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/hub-ui.css"></head>
+      <body class="hub-shell hub-legacy">
+        <p><a href="/fields">圃場一覧</a> / <a href="/mqtt-devices">機器保守</a></p>
+        <h1>旧センサー詳細</h1>
         <h2>{{ device_id }}</h2>
           <li>Name: {{ info.name }}</li>
           <li>Location: {{ info.location }}</li>
@@ -531,9 +534,9 @@ def edit_device_info(device_id):
     device_info_text = device_info.get("info", "")
     template = """
     <html>
-      <body>
-        <h1>INA Device Hub</h1>
-        <h2>Edit Device Info</h2>
+      <head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/hub-ui.css"></head>
+      <body class="hub-shell hub-legacy">
+        <h1>旧センサー情報を編集</h1>
         <form method="post">
           <label for="name">Name</label>
           <input type="text" id="name" name="name" value="{{ device_name }}">
@@ -589,9 +592,9 @@ def get_location_list():
     locations = location_repository().get_all()
     template = """
     <html>
-      <body>
-        <h1>INA Device Hub</h1>
-        <h2>Locations</h2>
+      <head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/hub-ui.css"></head>
+      <body class="hub-shell hub-legacy">
+        <h1>旧ロケーション一覧</h1>
         <ul>
           {% for location_id, info in locations.items() %}
           <li>
@@ -629,9 +632,9 @@ def add_location():
 
     template = """
     <html>
-      <body>
-        <h1>INA Device Hub</h1>
-        <h2>Add Location</h2>
+      <head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/hub-ui.css"></head>
+      <body class="hub-shell hub-legacy">
+        <h1>旧ロケーションを追加</h1>
         <form method="post" enctype="multipart/form-data">
           <label for="location_name">Location Name</label>
           <input type="text" id="location_name" name="location_name">
@@ -663,6 +666,7 @@ def preview_camera(device_id):
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Camera Stream - {{ device_id }}</title>
+        <link rel="stylesheet" href="/static/hub-ui.css">
         <style>
             body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
             h1 { text-align: center; margin-bottom: 20px; }
@@ -670,8 +674,8 @@ def preview_camera(device_id):
             .video-container img { width: 100%; max-width: 800px; height: auto; }
         </style>
     </head>
-    <body>
-        <h1>Device: {{ device_id }}</h1>
+    <body class="hub-shell hub-legacy">
+        <h1>カメラライブ / {{ device_id }}</h1>
         <div class="video-container">
             <img src="/local/api/camera/{{ device_id }}/video_feed" alt="Camera Stream">
         </div>
@@ -702,6 +706,7 @@ def camera_images(device_id):
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Camera Images</title>
+        <link rel="stylesheet" href="/static/hub-ui.css">
         <style>
           body { font-family: Arial, sans-serif; margin: 0; background: #f7f8fa; color: #20242a; }
           header { padding: 16px 20px; background: #ffffff; border-bottom: 1px solid #dfe3e8; }
@@ -718,7 +723,7 @@ def camera_images(device_id):
           a { color: #1f6feb; text-decoration: none; }
         </style>
       </head>
-      <body>
+      <body class="hub-shell hub-legacy">
         <header>
           <h1>Camera Images</h1>
           <div>{{ camera_name }} / {{ device_id }}</div>
@@ -962,6 +967,33 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
     location = layout_context.get("primary_path") or record.get("location") or "未設置"
     soil_moisture = _first_numeric_value(payload, ("soil_moisture_percent", "last_soil_moisture"))
     threshold = payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")
+    enabled_outputs = [switch for switch in config.get("mosfet_switches") or [] if isinstance(switch, dict) and switch.get("enabled") is not False]
+    readiness_checks = [
+        {
+            "label": "機器と通信",
+            "value": _format_age(record.get("last_seen_at") or record.get("last_status_at"), now),
+            "class": "good" if record.get("last_seen_at") or record.get("last_status_at") else "warn",
+            "hint": "直近の状態を受信済み" if record.get("last_seen_at") or record.get("last_status_at") else "まだ通信を確認できません",
+        },
+        {
+            "label": "設定の受信",
+            "value": "受信済み" if payload.get("config_received") is True else "確認待ち",
+            "class": "good" if payload.get("config_received") is True else "warn",
+            "hint": "機器がHub設定を読み込みました" if payload.get("config_received") is True else "設定送信後、次回起動を待ちます",
+        },
+        {
+            "label": "時刻合わせ",
+            "value": "同期済み" if payload.get("time_synced") is True else "確認待ち",
+            "class": "good" if payload.get("time_synced") is True else "warn",
+            "hint": "予約時刻の基準は正常です" if payload.get("time_synced") is True else "次回起動時に時刻同期を確認します",
+        },
+        {
+            "label": "出力先",
+            "value": f"{len(enabled_outputs)} 系統",
+            "class": "good" if enabled_outputs else "muted",
+            "hint": "有効なポンプ・バルブ・電源" if enabled_outputs else "出力先が未設定です",
+        },
+    ]
     return {
         "id": device_id,
         "title": record.get("name") or device_id,
@@ -994,6 +1026,7 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "watering_history": _build_watering_history(statuses),
         "wake_history": _build_wake_history(statuses),
         "ota_history": _build_ota_history(ota_statuses),
+        "readiness_checks": readiness_checks,
     }
 
 
@@ -2218,7 +2251,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             device_catalog = page_result
     else:
         if is_detail_page:
-            selected_record = device_config_service().get_record(device_id)
+            selected_record = device_config_service().find_record(device_id)
             devices = {device_id: selected_record} if selected_record is not None else {}
         else:
             try:
@@ -2269,13 +2302,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         <link rel="stylesheet" href="/static/searchable-select.css">
         <style>
           :root {
-            --bg: #f6f7f9;
+            --bg: #f1f4f0;
             --panel: #ffffff;
-            --line: #d8dee7;
-            --text: #1f2933;
-            --muted: #64748b;
-            --blue: #1d4ed8;
-            --green: #166534;
+            --line: #d3ddd5;
+            --text: #1d2a22;
+            --muted: #65736a;
+            --blue: #1f6b52;
+            --green: #1f6b52;
             --green-bg: #e9f7ef;
             --yellow: #8a5a00;
             --yellow-bg: #fff7df;
@@ -2291,15 +2324,17 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             font-family: Arial, "Yu Gothic", "Meiryo", sans-serif;
             line-height: 1.45;
           }
-          a { color: var(--blue); text-decoration: none; }
+          a { color: #176b55; text-decoration: none; }
           a:hover { text-decoration: underline; }
-          .page { max-width: 1440px; margin: 0 auto; padding: 24px; }
+          .page { max-width: 1240px; margin: 0 auto; padding: 22px 28px 46px; }
           .topbar {
             display: flex;
             align-items: flex-start;
             justify-content: space-between;
             gap: 16px;
             margin-bottom: 18px;
+            padding: 14px 0 18px;
+            border-bottom: 1px solid var(--line);
           }
           h1 { margin: 0; font-size: 28px; letter-spacing: 0; }
           h2 { margin: 0 0 12px; font-size: 20px; letter-spacing: 0; }
@@ -2347,6 +2382,14 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             background: #fff;
             padding: 7px 10px;
           }
+          .device-guide { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); min-height: 190px; overflow: hidden; border: 1px solid #c9d8ce; border-radius: 10px; background: linear-gradient(120deg, #f9fcf9, #eaf3ed); margin-bottom: 18px; }
+          .device-guide-copy { align-self: center; padding: 24px 26px; }
+          .device-guide-copy span { color: #2c745c; font-size: 11px; font-weight: 800; letter-spacing: .06em; }
+          .device-guide-copy h2 { margin: 5px 0 0; color: #20372b; font-size: 25px; }
+          .device-guide-copy p { max-width: 620px; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
+          .device-guide img { width: 100%; height: 100%; min-height: 190px; object-fit: cover; border-left: 1px solid #c9d8ce; }
+          .developer-tools { margin-top: 18px; color: var(--muted); font-size: 12px; }
+          .developer-tools summary { padding: 9px 11px; }
           .quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
           .quick-actions a {
             display: inline-flex;
@@ -2476,6 +2519,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             animation: spin .8s linear infinite;
           }
           .result { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 10px 12px; margin: 0 0 18px; min-height: 40px; color: var(--muted); }
+          .result[hidden] { display: none; }
           .error { border-color: #fecdd3; background: var(--red-bg); color: var(--red); }
           .ok { border-color: #bbf7d0; background: var(--green-bg); color: var(--green); }
           .panel {
@@ -2491,6 +2535,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             justify-content: space-between;
             gap: 16px;
           }
+          .device-identity { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 18px; align-items: center; }
+          .device-identity img { width: 220px; aspect-ratio: 2 / 1; object-fit: cover; border: 1px solid var(--line); border-radius: 8px; }
           .detail-header h2 { margin-bottom: 4px; }
           .detail-tabs {
             display: grid;
@@ -2526,6 +2572,12 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .priority-panel { border-top: 4px solid #166534; }
           .priority-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 10px; }
           .priority-heading h3 { margin: 0; font-size: 16px; }
+          .readiness-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+          .readiness-card { min-height: 104px; padding: 12px; border: 1px solid #d7e0d9; border-top: 4px solid #98a69d; border-radius: 7px; background: #fff; }
+          .readiness-card.good { border-top-color: #2b805c; }
+          .readiness-card.warn { border-top-color: #c27b2d; }
+          .readiness-card span, .readiness-card small { display: block; color: var(--muted); }
+          .readiness-card strong { display: block; margin: 5px 0; font-size: 18px; }
           .metric.priority { border-color: #166534; background: #f0f8f2; }
           .metric.priority .value { color: #14532d; font-size: 28px; }
           .location-list { display: grid; border-top: 1px solid var(--line); }
@@ -2558,15 +2610,16 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .select-filter { display: grid; gap: 5px; max-width: 520px; margin: 0 0 9px; color: var(--muted); font-size: 12px; }
           .select-filter-empty { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
           .device-tile {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 10px;
+            position: relative;
             border: 1px solid var(--line);
             border-radius: 8px;
-            padding: 14px;
             background: #fff;
+            overflow: hidden;
           }
           .device-tile[aria-current="true"] { border-color: var(--blue); box-shadow: inset 3px 0 0 var(--blue); }
+          .device-tile-link { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px 14px 52px; color: inherit; }
+          .device-delete-button { position: absolute; right: 14px; bottom: 12px; min-height: 30px; border-color: var(--line); color: var(--muted); background: #fff; font-size: 12px; }
+          .device-delete-button:hover { border-color: #fecdd3; color: var(--red); background: var(--red-bg); }
           .device-title { font-size: 16px; font-weight: 700; }
           .device-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
           .tile-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
@@ -2624,6 +2677,21 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           }
           .schedule strong { display: block; font-size: 20px; }
           .config-form { display: grid; gap: 14px; }
+          .firmware-workbench { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(420px, 1.25fr); gap: 16px; align-items: start; }
+          .firmware-current { display: grid; align-content: start; gap: 12px; padding: 18px; border: 1px solid #c8d8ce; border-radius: 9px; background: linear-gradient(145deg, #f8fcf9, #eaf3ed); }
+          .firmware-current .version { color: #173f30; font-size: 34px; font-weight: 850; line-height: 1; }
+          .firmware-current img { width: 100%; max-height: 150px; margin-top: auto; object-fit: cover; border-radius: 7px; }
+          .firmware-upload-card { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+          .firmware-dropzone { display: grid; place-items: center; min-height: 154px; padding: 18px; border: 2px dashed #79a68d; border-radius: 9px; color: #315d4c; background: #f4faf6; text-align: center; cursor: pointer; transition: .15s ease; }
+          .firmware-dropzone:hover, .firmware-dropzone.dragover { border-color: #1f6b52; background: #e7f3eb; transform: translateY(-1px); }
+          .firmware-dropzone strong { display: block; font-size: 16px; }
+          .firmware-dropzone span { margin-top: 5px; color: var(--muted); font-size: 12px; }
+          .firmware-dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+          .firmware-advanced { margin: 0; }
+          .firmware-meta { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+          .firmware-meta > div { padding: 9px; border-radius: 6px; background: #f5f7f5; }
+          .firmware-meta span { display: block; color: var(--muted); font-size: 10px; }
+          .firmware-meta strong { display: block; margin-top: 3px; overflow-wrap: anywhere; font-size: 12px; }
           .config-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
           .config-field { min-width: 180px; flex: 1; }
           .threshold-control { display: grid; grid-template-columns: 1fr 86px; gap: 8px; align-items: center; }
@@ -2639,6 +2707,19 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           }
           .switch-row input { width: auto; }
           .schedule-editor, .mosfet-switch-editor { display: grid; gap: 10px; }
+          .output-routing { display: grid; grid-template-columns: minmax(220px, .65fr) minmax(360px, 1.35fr); gap: 14px; margin-top: 9px; padding: 14px; border: 1px solid #cddbd2; border-radius: 9px; background: #f8fbf8; }
+          .output-routing > img { width: 100%; height: 100%; min-height: 210px; object-fit: cover; border-radius: 7px; }
+          .switch-flow-board { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 16px; align-items: center; }
+          .controller-node { display: grid; place-items: center; min-height: 112px; padding: 12px; border: 2px solid #4d846b; border-radius: 12px; color: #245740; background: #e4f1e8; font-weight: 800; text-align: center; }
+          .switch-output-list { position: relative; display: grid; gap: 8px; }
+          .switch-output { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 9px; align-items: center; min-height: 58px; padding: 9px 10px; border: 1px solid #d4ddd6; border-radius: 7px; background: #fff; }
+          .switch-output::before { content: ""; position: absolute; left: -17px; width: 16px; border-top: 2px solid #8eb39e; }
+          .switch-output-dot { width: 10px; height: 10px; border-radius: 50%; background: #a6b0aa; }
+          .switch-output.enabled .switch-output-dot { background: #2a8a5e; box-shadow: 0 0 0 4px #e2f3e9; }
+          .switch-output strong, .switch-output small { display: block; }
+          .switch-output small { margin-top: 2px; color: var(--muted); }
+          .switch-output .terminal { color: #587067; font-family: ui-monospace, monospace; font-size: 11px; }
+          .output-editor-details { grid-column: 1 / -1; margin: 0; }
           .schedule-row {
             display: grid;
             grid-template-columns: minmax(120px, .8fr) minmax(130px, .8fr) minmax(130px, .8fr) auto;
@@ -2739,37 +2820,43 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .ridge-meta { justify-content: flex-start; }
             .schedule-row, .mosfet-switch-row { grid-template-columns: 1fr; }
             .tab-list { margin-inline: -16px; border-radius: 0; padding-inline: 16px; }
+            .device-guide, .device-identity { grid-template-columns: 1fr; }
+            .firmware-workbench { grid-template-columns: 1fr; }
+            .firmware-meta { grid-template-columns: 1fr; }
+            .readiness-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .output-routing, .switch-flow-board { grid-template-columns: 1fr; }
+            .switch-output::before { display: none; }
+            .device-guide img { max-height: 190px; border-top: 1px solid #c9d8ce; border-left: 0; }
+            .device-identity img { width: 100%; max-height: 180px; }
           }
         </style>
+        <link rel="stylesheet" href="/static/hub-ui.css">
       </head>
-      <body>
+      <body class="hub-shell hub-device-maintenance">
         <div class="page">
           <div id="global-progress" class="progress-banner" role="status" aria-live="polite">
             <span class="progress-dot" aria-hidden="true"></span>
             <span id="global-progress-message">処理中...</span>
           </div>
+          {% set page_selected = admin_view.selected %}
           <div class="topbar">
             <div>
-              <h1>機器管理</h1>
-              <p class="lead">設置場所、計測値、稼働状態、設定、F/Wを機器ごとに確認します。</p>
+              <p class="muted">{% if is_detail_page %}<a href="{{ list_path }}">機器一覧</a> / {{ page_selected.title }}{% else %}<a href="/fields">圃場一覧</a> / 機器保守{% endif %}</p>
+              <h1>{{ page_selected.title if is_detail_page else '機器保守' }}</h1>
+              <p class="lead">{{ '現在値、出力先、設定、ファームウェアを確認します。' if is_detail_page else '圃場で使う機器を、設置場所と現在状態から探します。' }}</p>
             </div>
             <nav class="nav" aria-label="ページ移動">
-              <a href="{{ list_path }}">機器一覧</a>
-              {% if demo_mode %}
-              <a href="/mqtt-devices">実データ</a>
-              {% else %}
-              <a href="/demo/mqtt-devices">UI デモ</a>
-              {% endif %}
-              <a href="/">ホーム</a>
+              <a href="/fields">圃場一覧</a>
             </nav>
           </div>
           {% if demo_mode %}
-          <div class="notice"><strong>デモデータ表示中</strong> 操作は保存されません。UI/UX 確認専用です。</div>
+          <div class="notice"><strong>デモデータ表示中</strong> 操作は保存されません。UI/UX 確認専用です。<a href="/mqtt-devices">実データへ戻る</a></div>
           {% endif %}
           {% if is_detail_page %}
-          <div id="action-result" class="result">{{ "デモモードです。操作しても保存されません。" if demo_mode else "操作結果がここに表示されます。" }}</div>
-          <div class="back-link"><a href="{{ list_path }}">機器一覧へ戻る</a></div>
+          <div id="action-result" class="result"{% if not demo_mode %} hidden{% endif %}>{{ "デモモードです。操作しても保存されません。" if demo_mode else "" }}</div>
           {% endif %}
+
+          {% if not is_detail_page %}<section class="device-guide"><div class="device-guide-copy"><span>DEVICE CARE</span><h2>まず、場所と状態を見る</h2><p>日常の確認は圃場ビューから。ここでは機器を横断検索し、交換・設定・更新などの保守を行います。</p></div><img src="/static/ui-illustrations/device-family.png" alt="圃場で使うセンサーと制御機器のイラスト"></section>{% endif %}
 
           {% if not is_detail_page and admin_view.field_zones %}
           <section class="field-section" aria-label="圃場ビュー">
@@ -2820,7 +2907,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             {% if admin_view.devices %}
             <div class="device-grid" id="device-list-grid">
               {% for device in admin_view.devices %}
-              <a class="device-tile" href="{{ device_link_prefix }}{{ device.id }}" aria-current="{{ 'true' if device.id == selected_device_id else 'false' }}">
+              <article class="device-tile" aria-current="{{ 'true' if device.id == selected_device_id else 'false' }}" data-device-id="{{ device.id }}">
+                <a class="device-tile-link" href="{{ device_link_prefix }}{{ device.id }}">
                 <div>
                   <div class="device-title">{{ device.name }}</div>
                   <div class="device-sub">{{ device.kind_label }} / {{ device.location }}</div>
@@ -2832,7 +2920,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 <div class="tile-metrics">
                   {% for metric in device.operational_metrics %}<div class="mini"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>{% endfor %}
                 </div>
-              </a>
+                </a>
+                {% if not demo_mode %}<button type="button" class="device-delete-button" data-delete-device="{{ device.id }}" data-delete-device-name="{{ device.name }}">一覧から削除</button>{% endif %}
+              </article>
               {% endfor %}
             </div>
             {% else %}
@@ -2840,19 +2930,20 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             {% endif %}
             {% if device_catalog.has_previous or device_catalog.has_next %}<nav class="device-pagination" aria-label="機器一覧ページ">{% if device_catalog.previous_url %}<a href="{{ device_catalog.previous_url }}">前へ</a>{% endif %}<span>{{ device_catalog.page }} / {{ device_catalog.page_count }}</span>{% if device_catalog.next_url %}<a href="{{ device_catalog.next_url }}">次へ</a>{% endif %}</nav>{% endif %}
           </section>
+          {% if not demo_mode %}<details class="developer-tools"><summary>開発・画面確認</summary><div class="detail-body"><p>実データを変更せずに画面構成を確認できます。</p><a href="/demo/mqtt-devices">UIデモを開く</a></div></details>{% endif %}
           {% endif %}
 
           {% if is_detail_page and admin_view.selected %}
           {% set selected = admin_view.selected %}
           <section class="panel priority-panel">
-            <div class="detail-header">
+            <div class="device-identity"><div class="detail-header">
               <div>
                 <h2>{{ selected.title }}</h2>
                 <p class="lead">{{ selected.kind_label }} / {% if selected.location_href %}<a href="{{ selected.location_href }}">{{ selected.location }}</a>{% else %}{{ selected.location }}{% endif %} / {{ selected.id }}</p>
                 {% if selected.memo %}<p>{{ selected.memo }}</p>{% endif %}
               </div>
               <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span>
-            </div>
+            </div><img src="/static/ui-illustrations/device-family.png" alt="農業用センサーと制御機器のイラスト"></div>
             <div class="priority-heading"><h3>{{ selected.operational_heading }}</h3><span class="muted">運用判断に必要な情報</span></div>
             <div class="metrics">
               {% for metric in selected.operational_metrics %}
@@ -2870,8 +2961,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <button type="button" class="tab-button" data-tab-key="overview" data-tab-target="tab-overview" role="tab" aria-controls="tab-overview" aria-selected="true" tabindex="0">概要</button>
               <button type="button" class="tab-button" data-tab-key="monitoring" data-tab-target="tab-monitoring" role="tab" aria-controls="tab-monitoring" aria-selected="false" tabindex="-1">計測・稼働</button>
               <button type="button" class="tab-button" data-tab-key="settings" data-tab-target="tab-config" role="tab" aria-controls="tab-config" aria-selected="false" tabindex="-1">動作設定</button>
-              <button type="button" class="tab-button" data-tab-key="firmware" data-tab-target="tab-firmware" role="tab" aria-controls="tab-firmware" aria-selected="false" tabindex="-1">F/W更新</button>
-              <button type="button" class="tab-button" data-tab-key="diagnostics" data-tab-target="tab-diagnostics" role="tab" aria-controls="tab-diagnostics" aria-selected="false" tabindex="-1">履歴・診断</button>
+              <button type="button" class="tab-button" data-tab-key="firmware" data-tab-target="tab-firmware" role="tab" aria-controls="tab-firmware" aria-selected="false" tabindex="-1">ファームウェア</button>
+              <button type="button" class="tab-button" data-tab-key="diagnostics" data-tab-target="tab-diagnostics" role="tab" aria-controls="tab-diagnostics" aria-selected="false" tabindex="-1">保守・診断</button>
             </div>
 
             <section id="tab-overview" class="tab-panel" role="tabpanel">
@@ -2903,6 +2994,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 {% endif %}
               </section>
 
+              <section class="panel" aria-label="動作確認">
+                <div class="field-head"><div><h2>動作確認</h2><p class="lead">通信、設定、時刻、出力先を順番に確認します。橙色の項目だけ対応すれば運用を始められます。</p></div><a href="{{ device_link_prefix }}{{ selected.id }}?tab=settings">設定を確認</a></div>
+                <div class="readiness-grid">{% for check in selected.readiness_checks %}<div class="readiness-card {{ check.class }}"><span>{{ check.label }}</span><strong>{{ check.value }}</strong><small>{{ check.hint }}</small></div>{% endfor %}</div>
+              </section>
+
               <div class="section-grid">
                 {% if selected.supports_irrigation %}
                 <section class="panel">
@@ -2923,11 +3019,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 {% endif %}
 
                 <section class="panel">
-                  <h2>通信・F/W状態</h2>
+                  <h2>通信・ファームウェア</h2>
                   <div class="compact-grid">
                     <div class="mini"><span>最終通信</span><strong>{{ selected.last_seen_age }}</strong></div>
                     <div class="mini"><span>次回起動</span><strong>{{ selected.next_wake }}</strong></div>
-                    <div class="mini"><span>F/W</span><strong>{{ selected.firmware }}</strong></div>
+                    <div class="mini"><span>現在のバージョン</span><strong>{{ selected.firmware }}</strong></div>
                     <div class="mini"><span>更新状態</span><strong>{{ selected.ota_state }}</strong></div>
                   </div>
                 </section>
@@ -2964,16 +3060,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <span class="value"><span id="schedule-count-display">{{ selected.config_summary.schedule_count }}</span></span>
                   <div class="hint">最大 8 件まで登録できます</div>
                 </div>
-                <div class="metric">
-                  <span class="label">デバッグログ</span>
-                  <span class="value"><span id="debug-log-display">{{ selected.config_summary.debug_log }}</span></span>
-                  <div class="hint">次回起床時にMQTTへ転送します</div>
-                </div>
-                <div class="metric">
-                  <span class="label">OTA確認間隔</span>
-                  <span class="value"><span id="ota-interval-display">{{ selected.config_summary.ota_interval }}</span></span>
-                  <div class="hint">最大sleep時間の上限です</div>
-                </div>
+                <span id="debug-log-display" hidden>{{ selected.config_summary.debug_log }}</span><span id="ota-interval-display" hidden>{{ selected.config_summary.ota_interval }}</span>
               </div>
 
               <div class="config-toolbar">
@@ -2984,43 +3071,17 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                     <input id="moisture-threshold-number" type="number" min="0" max="100" step="1">
                   </div>
                 </div>
-                <div class="config-field">
-                  <label for="timezone-offset">時刻基準</label>
-                  <select id="timezone-offset">
-                    <option value="32400">JST UTC+09:00</option>
-                    <option value="0">UTC</option>
-                  </select>
-                </div>
-                <div class="config-field">
-                  <label for="ntp-server">NTP サーバー</label>
-                  <input id="ntp-server" type="text" autocomplete="off">
-                </div>
                 <label class="switch-row" for="force-watering"{% if not selected.supports_irrigation %} hidden{% endif %}>
                   <input id="force-watering" type="checkbox">
-                  強制灌水
+                  予約時刻には水分条件を無視して灌水する
                 </label>
-                <label class="switch-row" for="debug-log-on-wake">
-                  <input id="debug-log-on-wake" type="checkbox">
-                  デバッグログ転送
-                </label>
-                <div class="config-field">
-                  <label for="ota-check-interval">OTA確認間隔</label>
-                  <select id="ota-check-interval">
-                    <option value="3600">1時間</option>
-                    <option value="10800">3時間</option>
-                    <option value="21600">6時間</option>
-                    <option value="43200">12時間</option>
-                    <option value="86400">24時間</option>
-                  </select>
-                </div>
               </div>
+              <details><summary>通信・開発者向け設定</summary><div class="detail-body"><p class="lead">通常は変更不要です。時刻同期、保守確認間隔、デバッグ送信を調整します。</p><div class="config-toolbar"><div class="config-field"><label for="timezone-offset">機器の時刻基準</label><select id="timezone-offset"><option value="32400">日本時間（UTC+09:00）</option><option value="0">UTC</option></select></div><div class="config-field"><label for="ntp-server">時刻同期サーバー（NTP）</label><input id="ntp-server" type="text" autocomplete="off"></div><label class="switch-row" for="debug-log-on-wake"><input id="debug-log-on-wake" type="checkbox">次回起動時に診断ログを送る</label><div class="config-field"><label for="ota-check-interval">更新確認の間隔</label><select id="ota-check-interval"><option value="3600">1時間</option><option value="10800">3時間</option><option value="21600">6時間</option><option value="43200">12時間</option><option value="86400">24時間</option></select></div></div></div></details>
 
               <div{% if not selected.supports_irrigation %} hidden{% endif %}>
-                <h3>MOSFET SW 管理</h3>
-                <div id="mosfet-switch-editor" class="mosfet-switch-editor"></div>
-                <div class="actions">
-                  <button type="button" id="add-mosfet-switch">＋ SW を追加</button>
-                </div>
+                <h3>どの出力が、何を動かすか</h3>
+                <p class="lead">ポンプ、バルブ、センサー電源へのつながりを先に確認できます。MOSFETやmaskなどの技術値は詳細編集にまとめています。</p>
+                <div class="output-routing"><img src="/static/ui-illustrations/controller-flow.png" alt="制御機器から灌水設備やセンサーへつながるイラスト" loading="lazy"><div class="switch-flow-board"><div class="controller-node">制御<br>ボックス</div><div id="mosfet-switch-map" class="switch-output-list" aria-live="polite"></div></div><details class="output-editor-details"><summary>出力先と端子を詳しく編集</summary><div class="detail-body"><div id="mosfet-switch-editor" class="mosfet-switch-editor"></div><div class="actions"><button type="button" id="add-mosfet-switch">＋ 出力先を追加</button></div></div></details></div>
               </div>
 
               <div{% if not selected.supports_irrigation %} hidden{% endif %}>
@@ -3210,8 +3271,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <div class="actions">
                 <span class="muted" data-stateful-reason></span>
                 <button type="submit" data-stateful-submit>設定を保存</button>
-                <button type="button" id="save-push-runtime-config" class="primary" data-requires-dirty{% if selected_device.state != 'active' %} data-state-blocked="true" disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>保存して device に送信</button>
-                <button type="button" id="push-runtime-config"{% if selected_device.state != 'active' %} disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>保存済み設定を送信</button>
+                <button type="button" id="save-push-runtime-config" class="primary" data-requires-dirty{% if selected_device.state != 'active' %} data-state-blocked="true" disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>保存して機器へ反映</button>
+                <button type="button" id="push-runtime-config"{% if selected_device.state != 'active' %} disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>保存済み設定をもう一度反映</button>
               </div>
               {% if selected_device.state == 'retired' %}<p class="empty" id="device-push-disabled">廃止済みのため、動作設定は閲覧のみです。</p>{% elif selected_device.state != 'active' %}<p class="empty" id="device-push-disabled">現在は{{ selected.state_label }}です。設定は保存できますが、機器への送信は稼働状態へ変更してから行ってください。</p>{% endif %}
             </form>
@@ -3293,24 +3354,28 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
             <section id="tab-firmware" class="tab-panel" role="tabpanel" hidden>
           <section id="ota-target" class="panel">
-            <h2>F/W更新</h2>
-            <div class="metrics">
-              <div class="metric"><span class="label">現在のF/W</span><span class="value">{{ selected.firmware }}</span><div class="hint">機器から取得</div></div>
-              <div class="metric"><span class="label">更新目標</span><span class="value">{{ selected.target_firmware }}</span><div class="hint">次回OTA確認時に適用</div></div>
-              <div class="metric"><span class="label">更新状態</span><span class="value"><span class="badge {{ selected.ota_class }}">{{ selected.ota_state }}</span></span><div class="hint">{{ selected.ota_error or "問題なし" }}</div></div>
-            </div>
-            <form id="firmware-target-form" data-stateful-form data-pristine-message="更新対象は変更されていません。"{% if selected_device.state == 'retired' %} data-state-blocked="true" data-blocked-message="廃止済みのF/W対象は変更できません。"{% endif %}>
-              <label for="target-firmware-version">更新するF/Wバージョン</label>
-              <select id="target-firmware-version" aria-label="更新するF/Wバージョン" data-searchable-select data-search-placeholder="バージョン、ビルドを検索" data-empty-message="一致するF/W候補はありません。">
-                <option value="">設定なし</option>
-                {% for artifact in firmware_target_options %}
-                <option value="{{ artifact.version }}" {% if selected_device.target_firmware_version == artifact.version %}selected{% endif %}>{{ artifact.label }}</option>
-                {% endfor %}
-              </select>
-              <div class="actions">
-                <span class="muted" data-stateful-reason></span><button type="submit" class="primary" data-stateful-submit>更新対象に設定</button>
-                <button type="button" id="clear-firmware-target"{% if not selected_device.target_firmware_version or selected_device.state == 'retired' %} disabled title="{{ '廃止済みの機器は変更できません' if selected_device.state == 'retired' else '解除する更新対象はありません' }}"{% endif %}>更新対象を解除</button>
+            <div class="field-head"><div><h2>ファームウェア</h2><p class="lead">現在のバージョン確認、新しいファイルの登録、更新予約をここで完了できます。</p></div><span class="badge {{ selected.ota_class }}">{{ selected.ota_state }}</span></div>
+            <div class="firmware-workbench">
+              <div class="firmware-current">
+                <span class="muted">現在のバージョン</span><div class="version">{{ selected.firmware }}</div>
+                <div><span class="muted">更新予約</span><strong>{{ selected.target_firmware }}</strong></div>
+                {% if selected.ota_error %}<div class="notice error">{{ selected.ota_error }}</div>{% endif %}
+                <img src="/static/ui-illustrations/firmware-care.png" alt="機器のファームウェアを安全に更新するイラスト" loading="lazy">
               </div>
+              <form id="firmware-upload-form" class="firmware-upload-card" enctype="multipart/form-data" data-stateful-form data-pristine-message="firmware.binを選択してください。">
+                <div><h3>新しいファームウェアを登録</h3><p class="lead">ファイルを置くと、対応機種とバージョンを自動で読み取ります。</p></div>
+                <label class="firmware-dropzone" id="firmware-dropzone" for="firmware-file"><strong>firmware.bin をここへドロップ</strong><span>またはクリックして選択</span><input id="firmware-file" name="firmware" type="file" accept=".bin,application/octet-stream" required></label>
+                <div id="firmware-manifest-summary" class="empty">まだファイルが選択されていません。</div>
+                <div class="firmware-meta"><div><span>対応機種</span><strong id="firmware-device-kind-display">-</strong></div><div><span>バージョン</span><strong id="firmware-version-display">-</strong></div><div><span>ビルド</span><strong id="firmware-build-id-display">-</strong></div></div>
+                <input id="firmware-device-kind" name="device_kind" type="hidden" value="{{ selected_device.device_kind if selected_device and selected_device.device_kind else 'WTR' }}">
+                <input id="firmware-version" name="version" type="hidden"><input id="firmware-build-id" name="build_id" type="hidden">
+                <details class="firmware-advanced"><summary>配信オプション</summary><div class="detail-body"><label for="firmware-rollout-state">配信状態</label><select id="firmware-rollout-state" name="rollout_state"><option value="active">配信中</option><option value="paused">一時停止</option><option value="revoked">取り消し</option></select><label class="switch-row"><input id="firmware-force" name="force" type="checkbox">同じバージョンでも置き換える</label><label class="switch-row"><input id="firmware-allow-downgrade" name="allow_downgrade" type="checkbox">古いバージョンへの更新を許可</label><button type="button" id="inspect-firmware-manifest">ファイル情報を再読込</button></div></details>
+                <div class="actions"><span class="muted" data-stateful-reason></span><button type="submit" class="primary" data-stateful-submit>登録する</button></div>
+              </form>
+            </div>
+            <form id="firmware-target-form" data-stateful-form data-pristine-message="更新予約は変更されていません。"{% if selected_device.state == 'retired' %} data-state-blocked="true" data-blocked-message="廃止済みの更新予約は変更できません。"{% endif %}>
+              <label for="target-firmware-version">この機器に適用するバージョン</label><select id="target-firmware-version" aria-label="更新するファームウェアバージョン" data-searchable-select data-search-placeholder="バージョン、ビルドを検索" data-empty-message="一致する候補はありません。"><option value="">更新予約なし</option>{% for artifact in firmware_target_options %}<option value="{{ artifact.version }}" {% if selected_device.target_firmware_version == artifact.version %}selected{% endif %}>{{ artifact.label }}</option>{% endfor %}</select>
+              <div class="actions"><span class="muted" data-stateful-reason></span><button type="submit" class="primary" data-stateful-submit>このバージョンへ更新予約</button><button type="button" id="clear-firmware-target"{% if not selected_device.target_firmware_version or selected_device.state == 'retired' %} disabled title="{{ '廃止済みの機器は変更できません' if selected_device.state == 'retired' else '解除する更新予約はありません' }}"{% endif %}>予約を解除</button></div>
             </form>
           </section>
 
@@ -3331,47 +3396,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           </section>
 
           <section id="firmware-maintenance" class="panel">
-            <h2>F/Wファイル管理</h2>
-            <details open>
-              <summary>firmware.bin を登録する</summary>
-              <div class="detail-body">
-                <form id="firmware-upload-form" enctype="multipart/form-data" data-stateful-form data-pristine-message="firmware.binを選択してください。">
-                  <div class="form-grid">
-                    <div>
-                      <label for="firmware-device-kind">デバイス種別</label>
-                      <input id="firmware-device-kind" name="device_kind" type="text" value="{{ selected_device.device_kind if selected_device and selected_device.device_kind else 'WTR' }}" maxlength="3" readonly>
-                    </div>
-                    <div>
-                      <label for="firmware-version">バージョン</label>
-                      <input id="firmware-version" name="version" type="text" value="" readonly>
-                    </div>
-                    <div>
-                      <label for="firmware-build-id">ビルド ID</label>
-                      <input id="firmware-build-id" name="build_id" type="text" readonly>
-                    </div>
-                    <div>
-                      <label for="firmware-rollout-state">配信状態</label>
-                      <select id="firmware-rollout-state" name="rollout_state">
-                        <option value="active">配信中</option>
-                        <option value="paused">一時停止</option>
-                        <option value="revoked">取り消し</option>
-                      </select>
-                    </div>
-                  </div>
-                  <label for="firmware-file">firmware.bin</label>
-                  <input id="firmware-file" name="firmware" type="file" required>
-                  <div id="firmware-manifest-summary" class="empty">firmware.bin を選択すると、埋め込みmanifestからデバイス種別・バージョン・ビルドIDを読み取ります。</div>
-                  <div class="actions">
-                    <button type="button" id="inspect-firmware-manifest">manifest再読み取り</button>
-                    <label><input id="firmware-force" name="force" type="checkbox">強制更新</label>
-                    <label><input id="firmware-allow-downgrade" name="allow_downgrade" type="checkbox">古いバージョンへの更新を許可</label>
-                    <span class="muted" data-stateful-reason></span><button type="submit" class="primary" data-stateful-submit>アップロードして登録</button>
-                  </div>
-                </form>
-              </div>
-            </details>
+            <h2>登録済みファームウェア</h2>
             <details>
-              <summary>登録済みファームウェア</summary>
+              <summary>配信ファイルの詳細を表示</summary>
               <div class="detail-body">
                 <table>
                   <thead><tr><th>キー</th><th>バージョン</th><th>種別</th><th>ビルドID</th><th>Manifest</th><th>状態</th><th>サイズ</th><th>SHA-256</th><th>URL</th><th>更新日時</th></tr></thead>
@@ -3399,9 +3426,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
             <section id="tab-diagnostics" class="tab-panel" role="tabpanel" hidden>
           <section class="panel">
-            <h2>履歴・診断</h2>
-            <details open>
-              <summary>機器状態の管理</summary>
+            <h2>保守・診断</h2>
+            <p class="lead">利用停止や開発者向けデータは、必要なときだけ開いてください。</p>
+            <details>
+              <summary>機器の利用状態を変更</summary>
               <div class="detail-body">
                 <p>現在: <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span></p>
                 {% if selected_device.state == 'pending' %}
@@ -3431,13 +3459,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 <div class="actions">
                   <button type="button" id="apply-runtime-json">JSON をフォームに反映</button>
                   <button type="button" id="save-runtime-json">JSON で保存</button>
-                  <button type="button" id="save-push-runtime-json" class="primary"{% if selected_device.state != 'active' %} disabled title="稼働中の機器にだけ送信できます"{% endif %}>JSON で保存して device に送信</button>
+                  <button type="button" id="save-push-runtime-json" class="primary"{% if selected_device.state != 'active' %} disabled title="稼働中の機器にだけ送信できます"{% endif %}>JSONで保存して機器へ反映</button>
                 </div>
               </div>
             </details>
 
             <details>
-              <summary>Status / OTA / MQTT raw履歴</summary>
+              <summary>開発者向けの生データ（Status / OTA / MQTT）</summary>
               <div class="detail-body">
                 <h3>Status History</h3>
                 <table><thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead><tbody>{% for status in selected_statuses | reverse %}<tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>{% endfor %}</tbody></table>
@@ -3478,6 +3506,25 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             });
           }
 
+          document.querySelectorAll("[data-delete-device]").forEach((button) => {
+            button.addEventListener("click", async () => {
+              const deviceId = button.getAttribute("data-delete-device");
+              const deviceName = button.getAttribute("data-delete-device-name") || deviceId;
+              const confirmed = window.confirm(
+                deviceName + "（" + deviceId + "）を一覧から削除しますか？\\n\\n計測履歴は残ります。圃場で使用中の機器は削除できません。再接続すると再び認識されます。",
+              );
+              if (!confirmed) return;
+              button.disabled = true;
+              try {
+                await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(deviceId), { method: "DELETE" }, "デバイスを削除しています...");
+                window.location.reload();
+              } catch (error) {
+                button.disabled = false;
+                window.alert("削除できませんでした: " + error.message);
+              }
+            });
+          });
+
           if (selectedDeviceState === "retired") {
             document.querySelectorAll("#metadata-form input, #metadata-form select, #metadata-form textarea, #metadata-form button, #runtime-config-form input, #runtime-config-form select, #runtime-config-form textarea, #runtime-config-form button, #runtime-config-json, #apply-runtime-json, #save-runtime-json, #save-push-runtime-json, #firmware-target-form select, #firmware-target-form button, #clear-firmware-target").forEach((control) => {
               control.disabled = true;
@@ -3496,6 +3543,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           function showResult(message, ok) {
             const box = resultBox();
+            box.hidden = false;
             box.className = "result " + (ok ? "ok" : "error");
             box.textContent = message;
           }
@@ -3899,14 +3947,14 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const row = document.createElement("div");
             row.className = "mosfet-switch-row";
             row.innerHTML = [
-              '<label class="switch-row"><input data-mosfet-enabled type="checkbox">有効</label>',
-              '<div><label>SW ID</label><input data-mosfet-id type="text" maxlength="32" required></div>',
-              '<div><label>表示名</label><input data-mosfet-name type="text" maxlength="64" required></div>',
-              '<div><label>役割</label><select data-mosfet-role><option value="irrigation">灌水</option><option value="sensor_power">センサー電源</option><option value="other">その他</option></select></div>',
-              '<div><label>端子</label><input data-mosfet-terminal type="text" maxlength="32"></div>',
-              '<div><label>制御対象</label><input data-mosfet-load type="text" maxlength="96"></div>',
-              '<div><label>mask</label><input data-mosfet-mask type="number" min="0" max="4294967295" step="1"></div>',
-              '<button type="button" class="icon-button" data-remove-mosfet-switch aria-label="SW を削除">－</button>',
+              '<label class="switch-row"><input data-mosfet-enabled type="checkbox">使用する</label>',
+              '<div><label>内部ID</label><input data-mosfet-id type="text" maxlength="32" required></div>',
+              '<div><label>画面に出す名前</label><input data-mosfet-name type="text" maxlength="64" required></div>',
+              '<div><label>用途</label><select data-mosfet-role><option value="irrigation">灌水</option><option value="sensor_power">センサー電源</option><option value="other">その他</option></select></div>',
+              '<div><label>接続端子</label><input data-mosfet-terminal type="text" maxlength="32"></div>',
+              '<div><label>動かす設備</label><input data-mosfet-load type="text" maxlength="96"></div>',
+              '<div><label>系統番号（mask）</label><input data-mosfet-mask type="number" min="0" max="4294967295" step="1"></div>',
+              '<button type="button" class="icon-button" data-remove-mosfet-switch aria-label="出力先を削除">－</button>',
             ].join("");
             row.querySelector("[data-mosfet-enabled]").checked = sw.enabled !== false;
             row.querySelector("[data-mosfet-id]").value = sw.switch_id || "";
@@ -3918,14 +3966,40 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             row.querySelector("[data-remove-mosfet-switch]").addEventListener("click", () => {
               row.remove();
               refreshScheduleChannelOptions();
+              renderMosfetFlow(collectMosfetSwitches());
               refreshRuntimeConfigPreview();
               document.getElementById("runtime-config-form")?.dispatchEvent(new Event("change", { bubbles: true }));
             });
             row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", () => {
               refreshScheduleChannelOptions();
+              renderMosfetFlow(collectMosfetSwitches());
               refreshRuntimeConfigPreview();
             }));
             return row;
+          }
+
+          function renderMosfetFlow(switches) {
+            const map = document.getElementById("mosfet-switch-map");
+            if (!map) return;
+            map.innerHTML = "";
+            normalizeMosfetSwitches(switches).forEach((sw) => {
+              const item = document.createElement("div");
+              item.className = "switch-output " + (sw.enabled !== false ? "enabled" : "disabled");
+              const dot = document.createElement("span");
+              dot.className = "switch-output-dot";
+              const copy = document.createElement("div");
+              const title = document.createElement("strong");
+              title.textContent = sw.name || sw.switch_id;
+              const target = document.createElement("small");
+              target.textContent = sw.controlled_load || ({ irrigation: "灌水設備", sensor_power: "センサー電源" }[sw.role] || "接続先未設定");
+              copy.append(title, target);
+              const terminal = document.createElement("span");
+              terminal.className = "terminal";
+              terminal.textContent = sw.terminal || "端子未設定";
+              item.append(dot, copy, terminal);
+              map.appendChild(item);
+            });
+            if (!map.children.length) map.textContent = "出力先はまだ登録されていません。";
           }
 
           function renderMosfetSwitches(switches) {
@@ -3934,6 +4008,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             editor.innerHTML = "";
             currentMosfetSwitches = normalizeMosfetSwitches(switches);
             currentMosfetSwitches.forEach((sw) => editor.appendChild(createMosfetSwitchRow(sw)));
+            renderMosfetFlow(currentMosfetSwitches);
           }
 
           function collectMosfetSwitches() {
@@ -4313,6 +4388,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 notes: "",
               }));
               refreshScheduleChannelOptions();
+              renderMosfetFlow(collectMosfetSwitches());
               refreshRuntimeConfigPreview();
               runtimeConfigForm?.dispatchEvent(new Event("change", { bubbles: true }));
             });
@@ -4378,6 +4454,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const firmwareFileInput = document.getElementById("firmware-file");
             const firmwareManifestSummary = document.getElementById("firmware-manifest-summary");
             const inspectFirmwareManifestButton = document.getElementById("inspect-firmware-manifest");
+            const firmwareDropzone = document.getElementById("firmware-dropzone");
 
             function firmwareFileKey(file) {
               return file ? [file.name, file.size, file.lastModified].join(":") : "";
@@ -4415,6 +4492,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 document.getElementById("firmware-device-kind").value = manifest.device_kind || "";
                 document.getElementById("firmware-version").value = manifest.version || "";
                 document.getElementById("firmware-build-id").value = manifest.build_id || "";
+                document.getElementById("firmware-device-kind-display").textContent = manifest.device_kind || "-";
+                document.getElementById("firmware-version-display").textContent = manifest.version || "-";
+                document.getElementById("firmware-build-id-display").textContent = manifest.build_id || "-";
                 setFirmwareManifestSummary(
                   "読み取り済み: " +
                     "device_kind=" + (manifest.device_kind || "-") +
@@ -4430,6 +4510,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 inspectedFirmwareFileKey = "";
                 document.getElementById("firmware-version").value = "";
                 document.getElementById("firmware-build-id").value = "";
+                document.getElementById("firmware-device-kind-display").textContent = "-";
+                document.getElementById("firmware-version-display").textContent = "-";
+                document.getElementById("firmware-build-id-display").textContent = "-";
                 setFirmwareManifestSummary(error.message, false);
                 throw error;
               }
@@ -4442,6 +4525,26 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 firmwareFileInput.value = "";
               });
               firmwareFileInput.addEventListener("change", () => {
+                inspectSelectedFirmware().catch((error) => showResult(error.message, false));
+              });
+            }
+            if (firmwareDropzone && firmwareFileInput) {
+              ["dragenter", "dragover"].forEach((eventName) => firmwareDropzone.addEventListener(eventName, (event) => {
+                event.preventDefault();
+                firmwareDropzone.classList.add("dragover");
+              }));
+              ["dragleave", "drop"].forEach((eventName) => firmwareDropzone.addEventListener(eventName, (event) => {
+                event.preventDefault();
+                firmwareDropzone.classList.remove("dragover");
+              }));
+              firmwareDropzone.addEventListener("drop", (event) => {
+                const file = event.dataTransfer?.files?.[0];
+                if (!file) return;
+                const transfer = new DataTransfer();
+                transfer.items.add(file);
+                firmwareFileInput.files = transfer.files;
+                inspectedFirmwareManifest = null;
+                inspectedFirmwareFileKey = "";
                 inspectSelectedFirmware().catch((error) => showResult(error.message, false));
               });
             }
@@ -7089,10 +7192,22 @@ def list_mqtt_devices():
 
 @app.route("/local/api/mqtt-devices/<device_id>", methods=["GET"])
 def get_mqtt_device(device_id):
-    record = device_config_service().get_record(device_id)
+    record = device_config_service().find_record(device_id)
     if record is None:
         return jsonify({"error": "device not found"}), 404
     return jsonify(record)
+
+
+@app.route("/local/api/mqtt-devices/<device_id>", methods=["DELETE"])
+def delete_mqtt_device(device_id):
+    user = current_user_from_request(request)
+    try:
+        deleted = device_removal_service().delete(device_id, deleted_by=user.email or "local-operator")
+    except DeviceRemovalConflictError as exc:
+        return jsonify({"error": str(exc), "references": exc.references}), 409
+    if deleted is None:
+        return jsonify({"error": "device not found"}), 404
+    return jsonify({"deleted": True, "device_id": device_id})
 
 
 @app.route("/local/api/mqtt-devices/<device_id>", methods=["PATCH"])

@@ -86,8 +86,9 @@
         .test-row { align-items:stretch; flex-direction:column; }
       }
     </style>
+    <link rel="stylesheet" href="/static/hub-ui.css">
   </head>
-  <body>
+  <body class="hub-shell hub-settings">
     <header class="page-header">
       <div class="header-inner">
         <div><a class="brand" href="/">INA Device Hub</a><h1>アプリ設定</h1></div>
@@ -105,6 +106,7 @@
         <p class="source-note">運用設定とAIキーはこの画面、基盤接続情報は <code>.env</code> で管理します。保存済みの秘密値は表示しません。</p>
       </aside>
       <div class="settings-content" id="settings-content">
+        <section class="hub-guide-banner" aria-label="アプリ設定の案内"><div class="hub-guide-copy"><span class="eyebrow">APP SETTINGS</span><h2>Hub全体の接続先を整える</h2><p>AIや外部サービスなど、管理者がときどき変更する項目をまとめています。</p></div><img class="hub-guide-image" src="/static/ui-illustrations/controller-flow.png" alt="機器と設備のつながりを示すイラスト"></section>
         {% if saved %}<p class="notice" role="status">設定を保存しました。</p>{% endif %}
         <section class="settings-section" id="ai" data-settings-section="ai" data-search="AI 人工知能 OpenAI テキスト 画像 栽培計画 モデル API 接続">
           <div class="section-heading"><div><h2>AI</h2><p>栽培計画と画像解析に使用するOpenAI互換APIを設定します。</p></div></div>

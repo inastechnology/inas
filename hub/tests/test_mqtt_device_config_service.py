@@ -82,6 +82,19 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertNotIn("ota_status_history", summary)
         self.assertNotIn("runtime_config", summary)
 
+    def test_repository_delete_removes_only_requested_device(self):
+        first = "INADS-DELETE-001"
+        second = "INADS-DELETE-002"
+        self.repository.get_or_create(first, self.service.default_config())
+        self.repository.get_or_create(second, self.service.default_config())
+
+        deleted = self.repository.delete(first)
+
+        self.assertEqual(deleted["device_id"], first)
+        self.assertIsNone(self.repository.get(first))
+        self.assertIsNotNone(self.repository.get(second))
+        self.assertIsNone(self.repository.delete(first))
+
     def test_config_request_registers_pending_device_and_replies_default_threshold(self):
         handled = self.service.handle_mqtt_message(
             None,

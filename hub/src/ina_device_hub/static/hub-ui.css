@@ -1,0 +1,31 @@
+:root {
+  --hub-ink: #1d2a22;
+  --hub-muted: #65736a;
+  --hub-line: #d3ddd5;
+  --hub-surface: #ffffff;
+  --hub-canvas: #f1f4f0;
+  --hub-green: #1f6b52;
+  --hub-green-deep: #155441;
+  --hub-green-soft: #e8f2ec;
+  --hub-earth: #a56636;
+  --hub-water: #397b8f;
+  --hub-radius: 10px;
+  --hub-shadow: 0 8px 26px rgba(31, 55, 42, 0.08);
+}
+body.hub-shell { color: var(--hub-ink); background: var(--hub-canvas); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.hub-shell :focus-visible { outline: 3px solid rgba(31, 107, 82, 0.24); outline-offset: 2px; }
+.hub-shell .page-header, .hub-shell .field-header { border-color: var(--hub-line); background: rgba(255, 255, 255, 0.97); }
+.hub-shell button, .hub-shell .primary, .hub-shell .primary-button { border-radius: 7px; }
+.hub-guide-banner { position: relative; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr); min-height: 176px; margin: 0 0 18px; overflow: hidden; border: 1px solid #c9d8ce; border-radius: var(--hub-radius); background: linear-gradient(120deg, #f9fcf9 0%, #edf5ef 100%); box-shadow: 0 3px 14px rgba(31, 70, 47, 0.06); }
+.hub-guide-copy { align-self: center; padding: 24px 26px; }
+.hub-guide-copy .eyebrow { display: block; margin-bottom: 6px; color: var(--hub-green); font-size: 11px; font-weight: 850; letter-spacing: 0.06em; text-transform: uppercase; }
+.hub-guide-copy h2 { margin: 0; color: #20372b; font-size: clamp(19px, 2.4vw, 27px); }
+.hub-guide-copy p { max-width: 620px; margin: 8px 0 0; color: var(--hub-muted); font-size: 13px; line-height: 1.65; }
+.hub-guide-image { width: 100%; height: 100%; min-height: 176px; object-fit: cover; object-position: center; border-left: 1px solid rgba(118, 151, 129, 0.25); }
+body.hub-settings .settings-section, body.hub-preferences .settings-section, body.hub-media .image-container { border-radius: var(--hub-radius); box-shadow: 0 2px 12px rgba(35, 63, 47, 0.05); }
+body.hub-legacy { width: min(1100px, calc(100% - 32px)); margin: 0 auto; padding: 22px 0 44px; }
+.hub-legacy h1 { margin: 0 0 16px; font-size: 25px; }
+.hub-legacy h2 { margin-top: 22px; color: #294438; }
+.hub-legacy form, .hub-legacy > ul, .hub-legacy > div, .hub-legacy > p { padding: 14px; border: 1px solid var(--hub-line); border-radius: 8px; background: #fff; }
+.hub-legacy input, .hub-legacy textarea, .hub-legacy select { width: 100%; max-width: 620px; min-height: 38px; padding: 7px 9px; border: 1px solid #b9c5bc; border-radius: 6px; }
+@media (max-width: 720px) { .hub-guide-banner { grid-template-columns: 1fr; } .hub-guide-image { max-height: 180px; border-top: 1px solid rgba(118, 151, 129, 0.25); border-left: 0; } }

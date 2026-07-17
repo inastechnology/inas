@@ -349,8 +349,9 @@
         .record-history-filter .wide { grid-column:auto; }
       }
     </style>
+    <link rel="stylesheet" href="/static/hub-ui.css">
   </head>
-  <body>
+  <body class="hub-shell hub-field-detail">
     <header class="field-header">
       <div class="header-inner">
         <div><p class="breadcrumb"><a href="/fields">圃場一覧</a> / {{ field.name }}</p><h1>{{ field.name }}</h1><p class="meta">{{ field.location.prefecture }}{{ field.location.municipality }}{% if field.location.locality %} {{ field.location.locality }}{% endif %} / {{ environment_labels.get(field.location.environment_type, '環境未設定') }}</p></div>

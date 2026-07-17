@@ -29,6 +29,15 @@ from ina_device_hub.ota_update_service import FirmwareArtifactRepository, OTAUpd
 from ina_device_hub.setting import setting  # noqa: E402
 
 
+class _DeviceRemoval:
+    def __init__(self, repository):
+        self.repository = repository
+
+    def delete(self, device_id, deleted_by="unknown"):
+        del deleted_by
+        return self.repository.delete(device_id)
+
+
 class WebServerOTATest(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
@@ -55,9 +64,11 @@ class WebServerOTATest(unittest.TestCase):
         self.device_service = DeviceConfigService(repository=self.device_repository)
         self.service = OTAUpdateService(repository=self.device_repository, artifact_repository=self.artifact_repository)
         self.original_device_config_service = web_server.device_config_service
+        self.original_device_removal_service = web_server.device_removal_service
         self.original_ota_update_service = web_server.ota_update_service
         self.original_list_device_events = web_server.list_device_events
         web_server.device_config_service = lambda: self.device_service
+        web_server.device_removal_service = lambda: _DeviceRemoval(self.device_repository)
         web_server.ota_update_service = lambda: self.service
         web_server.list_device_events = lambda *args, **kwargs: []
         self.client = web_server.app.test_client()
@@ -65,6 +76,7 @@ class WebServerOTATest(unittest.TestCase):
     def tearDown(self):
         setting().settings["firmware"] = self.original_firmware_settings
         web_server.device_config_service = self.original_device_config_service
+        web_server.device_removal_service = self.original_device_removal_service
         web_server.ota_update_service = self.original_ota_update_service
         web_server.list_device_events = self.original_list_device_events
         self.tmp_dir.cleanup()
@@ -174,8 +186,44 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("灌水中", html)
         self.assertIn("42%", html)
         self.assertIn(f'href="/mqtt-devices/{device_id}"', html)
+        self.assertIn(f'data-delete-device="{device_id}"', html)
         self.assertNotIn("灌水推移", html)
         self.assertNotIn('id="metadata-form"', html)
+
+    def test_mqtt_device_can_be_deleted_without_recreating_detail_record(self):
+        device_id = "INADS-OLD-FIRMWARE-ID"
+        self.device_repository.get_or_create(device_id, self.device_service.default_config())
+
+        deleted = self.client.delete(f"/local/api/mqtt-devices/{device_id}")
+        detail = self.client.get(f"/mqtt-devices/{device_id}")
+        deleted_again = self.client.delete(f"/local/api/mqtt-devices/{device_id}")
+
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.get_json(), {"deleted": True, "device_id": device_id})
+        self.assertEqual(detail.status_code, 404)
+        self.assertIsNone(self.device_repository.get(device_id))
+        self.assertEqual(deleted_again.status_code, 404)
+
+    def test_mqtt_device_delete_returns_references_when_bound(self):
+        device_id = "INADS-BOUND-DEVICE"
+        self.device_repository.get_or_create(device_id, self.device_service.default_config())
+
+        class _BoundRemoval:
+            def delete(self, _device_id, deleted_by="unknown"):
+                del deleted_by
+                raise web_server.DeviceRemovalConflictError([{"type": "field", "field_id": "field-1", "field_name": "西条圃場"}])
+
+        bound_removal = _BoundRemoval()
+        web_server.device_removal_service = lambda: bound_removal
+        try:
+            response = self.client.delete(f"/local/api/mqtt-devices/{device_id}")
+        finally:
+            web_server.device_removal_service = lambda: _DeviceRemoval(self.device_repository)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("参照されているため削除できません", response.get_json()["error"])
+        self.assertEqual(response.get_json()["references"][0]["field_name"], "西条圃場")
+        self.assertIsNotNone(self.device_repository.get(device_id))
 
     def test_mqtt_devices_detail_exposes_existing_device_and_ota_operations(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000201"
@@ -234,7 +282,8 @@ class WebServerOTATest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         self.assertIn("Hub 管理パネル", html)
-        self.assertIn("機器一覧へ戻る", html)
+        self.assertNotIn("機器一覧へ戻る", html)
+        self.assertEqual(html.count('href="/mqtt-devices"'), 1)
         self.assertNotIn("圃場ビュー", html)
         self.assertNotIn("デバイス API", html)
         self.assertNotIn("イベント API", html)
@@ -246,8 +295,8 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('data-tab-target="tab-diagnostics"', html)
         self.assertIn(">計測・稼働</button>", html)
         self.assertIn(">動作設定</button>", html)
-        self.assertIn(">F/W更新</button>", html)
-        self.assertIn(">履歴・診断</button>", html)
+        self.assertIn(">ファームウェア</button>", html)
+        self.assertIn(">保守・診断</button>", html)
         self.assertIn("設置場所・関連先", html)
         self.assertNotIn("<h2>設置ビュー</h2>", html)
         self.assertIn("現在の潅水判断", html)
@@ -281,15 +330,24 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('id="runtime-config-json"', html)
         self.assertIn('id="save-push-runtime-config"', html)
         self.assertIn('id="firmware-target-form"', html)
-        self.assertIn('<select id="target-firmware-version" aria-label="更新するF/Wバージョン" data-searchable-select', html)
+        self.assertIn(
+            '<select id="target-firmware-version" aria-label="更新するファームウェアバージョン" data-searchable-select',
+            html,
+        )
         self.assertIn("/static/searchable-select.css", html)
         self.assertIn('id="firmware-upload-form"', html)
-        self.assertIn('id="firmware-version" name="version" type="text" value="" readonly', html)
+        self.assertIn('id="firmware-dropzone"', html)
+        self.assertIn("firmware.bin をここへドロップ", html)
+        self.assertIn("/static/ui-illustrations/firmware-care.png", html)
+        self.assertIn('id="firmware-version" name="version" type="hidden"', html)
         self.assertIn('id="inspect-firmware-manifest"', html)
-        self.assertIn("firmware.bin を選択すると", html)
+        self.assertIn("ファイルを置くと、対応機種とバージョンを自動で読み取ります", html)
         self.assertIn("2026-07-01T00:00:00Z+abcdef0", html)
         self.assertIn("/local/api/firmware-artifacts/", html)
         self.assertIn("OTA Status History", html)
+        self.assertIn('id="mosfet-switch-map"', html)
+        self.assertIn("/static/ui-illustrations/controller-flow.png", html)
+        self.assertIn('aria-label="動作確認"', html)
         self.assertIn("watering-device-1.1.0-aaaaaaaa", html)
         self.assertIn("http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin", html)
 
@@ -348,7 +406,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('id="metadata-form" data-stateful-form', html)
         self.assertIn('data-blocked-message="廃止済みの機器情報は変更できません。"', html)
         self.assertIn('data-blocked-message="廃止済みの動作設定は変更できません。"', html)
-        self.assertIn('data-blocked-message="廃止済みのF/W対象は変更できません。"', html)
+        self.assertIn('data-blocked-message="廃止済みの更新予約は変更できません。"', html)
 
         metadata_response = self.client.patch(
             f"/local/api/mqtt-devices/{device_id}",
@@ -413,6 +471,7 @@ class WebServerOTATest(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertIn("デモデータ表示中", html)
         self.assertIn("操作は保存されません", html)
+        self.assertIn('href="/mqtt-devices">実データへ戻る</a>', html)
         self.assertIn("圃場ビュー", html)
         self.assertIn("北ハウス 1号", html)
         self.assertIn("南ハウス 2号", html)
@@ -430,7 +489,8 @@ class WebServerOTATest(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertIn("デモデータ表示中", html)
         self.assertIn("操作は保存されません", html)
-        self.assertIn("機器一覧へ戻る", html)
+        self.assertNotIn("機器一覧へ戻る", html)
+        self.assertIn('href="/mqtt-devices">実データへ戻る</a>', html)
         self.assertNotIn("圃場ビュー", html)
         self.assertNotIn("デバイス API", html)
         self.assertIn('role="tablist"', html)

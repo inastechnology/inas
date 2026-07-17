@@ -693,7 +693,7 @@ class PlantManagementRepository:
             ],
         }
 
-    def list_suggestions(self, field_id: str, today: str | None = None, lead_days: int = 14):
+    def list_suggestions(self, field_id: str, today: str | None = None, lead_days: int = 7):
         current = _date_value(today or date.today().isoformat(), "today")
         suggestions = []
         for planting in self.data["plantings"].values():
@@ -731,6 +731,38 @@ class PlantManagementRepository:
                 item["action"]["window_start"],
             ),
         )
+
+    def list_notification_actions(self, today: str | None = None, lead_days: int = 7):
+        current = _date_value(today or date.today().isoformat(), "today")
+        actions = []
+        for planting in self.data["plantings"].values():
+            if planting.get("status") != "active":
+                continue
+            calendar = self.data["calendars"].get(planting.get("calendar_id"))
+            if not calendar:
+                continue
+            for action in calendar["actions"]:
+                if action.get("status") not in {"planned", "in_progress"}:
+                    continue
+                start = _date_value(action["window_start"], "window_start")
+                end = _date_value(action["window_end"], "window_end")
+                timing_state = None
+                if start - timedelta(days=lead_days) <= current < start:
+                    timing_state = "upcoming"
+                elif start <= current <= end:
+                    timing_state = "due"
+                actions.append(
+                    {
+                        "field_id": planting["field_id"],
+                        "planting_id": planting["id"],
+                        "crop_name": planting["crop_name"],
+                        "cultivar": planting["cultivar"],
+                        "placement_name": planting["placement_name"],
+                        "timing_state": timing_state,
+                        "action": copy.deepcopy(action),
+                    }
+                )
+        return sorted(actions, key=lambda item: (item["action"]["window_start"], item["action"]["priority"], item["action"]["title"]))
 
     def guidance_examples(self, crop_name: str, limit: int = 8):
         normalized_crop = _clean_string(crop_name).casefold()

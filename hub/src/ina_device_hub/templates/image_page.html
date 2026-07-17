@@ -72,10 +72,10 @@
         }
       }
     </style>
+    <link rel="stylesheet" href="/static/hub-ui.css">
   </head>
-  <body>
-    <h1>Latest Image</h1>
-    <p>Device ID: {{ device_id }}</p>
+  <body class="hub-shell hub-media">
+    <header><a href="/fields">圃場一覧</a><h1>定点画像</h1><p>機器 {{ device_id }} が撮影した画像を時刻順に確認します。</p></header>
 
     <select id="imageSelect" onchange="displayImage()" aria-label="表示する画像" data-searchable-select data-search-placeholder="撮影日時、画像パスを検索" data-empty-message="一致する画像はありません。">
       {% for image in sensor_images %}

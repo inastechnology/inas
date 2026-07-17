@@ -171,8 +171,9 @@
         .search-actions > * { flex: 1; }
       }
     </style>
+    <link rel="stylesheet" href="/static/hub-ui.css">
   </head>
-  <body>
+  <body class="hub-shell hub-field-catalog">
     <header class="page-header">
       <div class="header-inner">
         <div>
@@ -191,6 +192,7 @@
     </header>
 
     <main>
+      <section class="hub-guide-banner" aria-label="圃場管理の案内"><div class="hub-guide-copy"><span class="eyebrow">FIELD WORKSPACE</span><h2>今日見る圃場から始める</h2><p>圃場を開くと、環境値、作業TODO、設置機器、栽培記録を場所の文脈で確認できます。</p></div><img class="hub-guide-image" src="/static/ui-illustrations/field-operations.png" alt="圃場と栽培設備を見渡すイラスト"></section>
       <form class="catalog-toolbar" method="get" action="{{ catalog_path }}" role="search">
         <label>圃場名・市区町村・地区
           <input name="q" value="{{ filters.query }}" placeholder="例: 伊那、東圃場">

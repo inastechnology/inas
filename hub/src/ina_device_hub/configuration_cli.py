@@ -127,6 +127,7 @@ FIELDS = (
     ConfigurationField("DISCORD_NOTIFY_NEW_DEVICE", "新規device通知", "notification", "true"),
     ConfigurationField("DISCORD_NOTIFY_DEVICE_OFFLINE", "device offline通知", "notification", "true"),
     ConfigurationField("DISCORD_NOTIFY_WATERING_MISSING", "潅水なし通知", "notification", "true"),
+    ConfigurationField("DISCORD_NOTIFY_PLANT_TASKS", "栽培作業の日次通知", "notification", "true"),
     ConfigurationField("HEALTH_MONITOR_ENABLED", "health monitor有効化", "notification", "false"),
     ConfigurationField("HEALTH_MONITOR_INTERVAL_SECONDS", "health monitor間隔（秒）", "notification", "1800"),
     ConfigurationField("HEALTH_DEVICE_OFFLINE_AFTER_HOURS", "offline判定時間", "notification", "12"),

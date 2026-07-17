@@ -66,6 +66,14 @@ class DeviceConfigRepository:
         return {device_id: copy.deepcopy(_normalize_device_record(device_id, record)) for device_id, record in self.device_configs.items()}
 
     @serialized_repository_write("device_config_path")
+    def delete(self, device_id: str):
+        record = self.device_configs.pop(device_id, None)
+        if record is None:
+            return None
+        self.save()
+        return copy.deepcopy(_normalize_device_record(device_id, record))
+
+    @serialized_repository_write("device_config_path")
     def upsert(self, device_id: str, config: dict):
         validated = validate_device_config(config)
         record = self._get_or_new_record(device_id)

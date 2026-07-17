@@ -110,6 +110,17 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         self.assertEqual(calendar["actions"][0]["required_people"], 1)
         self.assertEqual(calendar["actions"][0]["estimated_minutes"], 30)
 
+    def test_suggestions_start_seven_days_before_work_window(self):
+        planting = self._create_blueberry()
+        self._create_calendar(planting["id"])
+
+        eight_days_before = self.repository.list_suggestions("field-1", today="2026-07-12")
+        seven_days_before = self.repository.list_suggestions("field-1", today="2026-07-13")
+
+        title = "活着後の追肥判断"
+        self.assertNotIn(title, {item["action"]["title"] for item in eight_days_before})
+        self.assertIn(title, {item["action"]["title"] for item in seven_days_before})
+
     def test_rejects_second_active_planting_at_same_placement(self):
         self._create_blueberry()
 

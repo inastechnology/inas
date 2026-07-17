@@ -140,6 +140,9 @@ AI有効/無効、APIキー、テキスト/画像のBase URLとモデルは管�
 ## Discord / 通知
 
 - `DISCORD_WEBHOOK_URL` (任意) — Discord に通知を送るための Webhook URL。取得方法: Discord チャンネルで Webhook を作成して URL をコピー。
+- `DISCORD_NOTIFY_PLANT_TASKS` (既定 `true`) — AI栽培計画の新規作業と、開始7日前から作業期間中までの作業を、毎朝04:00（Asia/Tokyo）にEmbed形式で日次集約通知します。`false` でこの通知だけを停止できます。
+
+栽培作業通知は `WORK_DIR/.plant_task_notification_state.json` に通知済み日と既知の作業IDを保存します。更新後の初回実行では既存作業を「新規」として一括通知せず、作業期間中のものだけを通知します。Discord送信に失敗した場合、新規作業は通知済みにせず翌日に再試行します。
 
 ## Cloudflare hosted option（任意）
 

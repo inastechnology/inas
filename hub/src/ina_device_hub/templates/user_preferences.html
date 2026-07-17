@@ -79,8 +79,9 @@
         .section-actions { align-items: stretch; flex-direction: column; }
       }
     </style>
+    <link rel="stylesheet" href="/static/hub-ui.css">
   </head>
-  <body>
+  <body class="hub-shell hub-preferences">
     <header class="page-header">
       <div class="header-inner">
         <div><a class="brand" href="/">INA Device Hub</a><h1>個人設定</h1></div>
@@ -93,6 +94,7 @@
         <div class="account"><span>ログイン中</span><strong>{{ user.email }}</strong><small>権限</small><span class="role">{{ '管理者' if user.role == 'admin' else '作業者' }}</span></div>
       </aside>
       <div class="content" id="preference-content">
+        <section class="hub-guide-banner" aria-label="個人設定の案内"><div class="hub-guide-copy"><span class="eyebrow">MY EXPERIENCE</span><h2>見やすさと説明の詳しさを、自分に合わせる</h2><p>日時表示とAI栽培アドバイスの説明量だけを調整します。機器や圃場の設定には影響しません。</p></div><img class="hub-guide-image" src="/static/ui-illustrations/field-operations.png" alt="圃場をタブレットで確認するイラスト"></section>
         <form class="settings-section" id="preference-form" data-stateful-form data-pristine-message="個人設定は変更されていません。" data-search="日時 timezone タイムゾーン 日付 date format 栽培 アドバイス 初心者 標準 プロ">
           <div class="section-heading"><h2>表示と栽培アドバイス</h2><p>この設定はログイン中のユーザーだけに適用され、別の端末でも引き継がれます。</p></div>
           <div class="setting-list">
