@@ -320,6 +320,17 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertNotIn("表示言語", html)
         self.assertIn('name="cultivation_experience"', html)
         self.assertIn("初心者 - 手順を詳しく", html)
+        self.assertIn('id="advice-help-open"', html)
+        self.assertIn('id="advice-help-dialog"', html)
+        self.assertIn("同じ「トマトの追肥」", html)
+        self.assertIn("初心者 — 小学生でも分かる言葉", html)
+        self.assertIn("標準 — 大人向けの一般的な説明", html)
+        self.assertIn("プロ — 専門用語と判断根拠", html)
+        self.assertIn("つぶの肥料", html)
+        self.assertIn("下の葉の色が薄くなったり、育つ速さが遅くなった場合は追肥が必要です", html)
+        self.assertIn("実際に葉の色と育つ速さを確認してください", html)
+        self.assertIn("固形肥料", html)
+        self.assertIn("培地EC・pH、原水EC、排液率", html)
 
         saved = self.client.patch(
             "/local/api/me/preferences",

@@ -33,7 +33,10 @@
       .setting-list { display: grid; }
       .setting-row { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 280px); align-items: center; gap: 20px; min-height: 76px; padding: 13px 18px; border-bottom: 1px solid #e5e9e6; }
       .setting-label { font-size: 12px; font-weight: 800; }
+      .setting-label-heading { display: flex; align-items: center; gap: 6px; }
       .setting-label small { display: block; margin-top: 4px; color: #758078; font-size: 10px; font-weight: 500; line-height: 1.45; }
+      .help-button { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid #9fb3a7; border-radius: 50%; color: #24654f; background: #f5faf7; font-size: 12px; font-weight: 900; cursor: pointer; }
+      .help-button:hover, .help-button:focus-visible { border-color: #24654f; outline: 2px solid #b8d8ca; outline-offset: 1px; background: #e9f4ee; }
       .section-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; background: #f7f9f7; }
       .save-state { min-height: 18px; color: #627068; font-size: 11px; }
       .save-state.error { color: #a33d35; font-weight: 800; }
@@ -54,6 +57,20 @@
       .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid #dce3de; background: #f7f9f7; }
       .dialog-actions button { min-height: 36px; padding: 7px 11px; border: 1px solid #aebbb2; border-radius: 5px; color: #3f5147; background: #fff; font-weight: 800; cursor: pointer; }
       .dialog-actions .primary { color: #fff; background: #176b50; }
+      .advice-examples { display: grid; gap: 10px; max-height: min(620px, calc(100vh - 190px)); padding: 15px 18px; overflow-y: auto; }
+      .advice-example { padding: 12px 13px; border: 1px solid #d4ddd6; border-left: 4px solid #648a77; border-radius: 6px; background: #fbfcfb; }
+      .advice-example.beginner { border-left-color: #3e8a67; }
+      .advice-example.standard { border-left-color: #39788b; }
+      .advice-example.professional { border-left-color: #775d92; }
+      .advice-example header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+      .advice-example h3 { margin: 0; font-size: 13px; }
+      .advice-example h4 { margin: 0 0 8px; color: #263c31; font-size: 14px; }
+      .advice-example header span { color: #6b7770; font-size: 10px; font-weight: 800; }
+      .advice-example p { margin: 5px 0; color: #435149; font-size: 11px; line-height: 1.55; }
+      .advice-example ol, .advice-example ul { margin: 7px 0 0; padding-left: 20px; color: #34473d; font-size: 11px; line-height: 1.55; }
+      .example-judgment { padding: 7px 9px; border-radius: 4px; background: #edf3ef; }
+      .example-block { margin-top: 9px; }
+      .example-block > strong { display: block; margin-bottom: 3px; color: #526158; font-size: 10px; letter-spacing: .03em; }
       @media (max-width: 720px) {
         .header-inner, main { width: min(100% - 20px, 980px); }
         main { grid-template-columns: 1fr; }
@@ -81,7 +98,7 @@
           <div class="setting-list">
             <label class="setting-row" data-search="timezone タイムゾーン 時刻"><span class="setting-label">タイムゾーン<small>カレンダーと記録時刻の表示基準です。</small></span><select name="timezone"><option value="Asia/Tokyo"{% if preferences.timezone == 'Asia/Tokyo' %} selected{% endif %}>Asia/Tokyo</option><option value="UTC"{% if preferences.timezone == 'UTC' %} selected{% endif %}>UTC</option></select></label>
             <label class="setting-row" data-search="date format 日付 表示形式"><span class="setting-label">日付形式</span><select name="date_format"><option value="yyyy-MM-dd"{% if preferences.date_format == 'yyyy-MM-dd' %} selected{% endif %}>2026-07-15</option><option value="yyyy/MM/dd"{% if preferences.date_format == 'yyyy/MM/dd' %} selected{% endif %}>2026/07/15</option><option value="MM/dd/yyyy"{% if preferences.date_format == 'MM/dd/yyyy' %} selected{% endif %}>07/15/2026</option></select></label>
-            <label class="setting-row" data-search="栽培 アドバイス 習熟度 初心者 標準 プロ beginner professional"><span class="setting-label">栽培アドバイスの詳しさ<small>AIが作る作業手順の説明量と専門性を調整します。農業上の判断基準や安全条件はどの設定でも省略しません。</small></span><select name="cultivation_experience"><option value="beginner"{% if preferences.preferences.get('cultivation_experience') == 'beginner' %} selected{% endif %}>初心者 - 手順を詳しく</option><option value="standard"{% if preferences.preferences.get('cultivation_experience', 'standard') == 'standard' %} selected{% endif %}>標準 - 必要情報を簡潔に</option><option value="professional"{% if preferences.preferences.get('cultivation_experience') == 'professional' %} selected{% endif %}>プロ - 判断・数値・根拠を優先</option></select></label>
+            <div class="setting-row" data-search="栽培 アドバイス 習熟度 初心者 標準 プロ beginner professional 追肥 例"><div class="setting-label"><span class="setting-label-heading" id="cultivation-experience-label">栽培アドバイスの詳しさ<button class="help-button" id="advice-help-open" type="button" aria-label="栽培アドバイスの詳しさの例を見る" aria-haspopup="dialog">?</button></span><small>AIが作る作業手順の説明量と専門性を調整します。農業上の判断基準や安全条件はどの設定でも省略しません。</small></div><select id="cultivation-experience" name="cultivation_experience" aria-labelledby="cultivation-experience-label"><option value="beginner"{% if preferences.preferences.get('cultivation_experience') == 'beginner' %} selected{% endif %}>初心者 - 手順を詳しく</option><option value="standard"{% if preferences.preferences.get('cultivation_experience', 'standard') == 'standard' %} selected{% endif %}>標準 - 必要情報を簡潔に</option><option value="professional"{% if preferences.preferences.get('cultivation_experience') == 'professional' %} selected{% endif %}>プロ - 判断・数値・根拠を優先</option></select></div>
           </div>
           <div class="section-actions"><span id="save-state" class="save-state" role="status" data-stateful-reason></span><button class="primary" type="submit" data-stateful-submit>個人設定を保存</button></div>
         </form>
@@ -98,11 +115,22 @@
       <div class="dialog-actions"><button id="use-server" type="button">最新版を使う</button><button id="retry-local" class="primary" type="button">入力内容で再保存</button></div>
     </dialog>
 
+    <dialog id="advice-help-dialog" aria-labelledby="advice-help-title">
+      <div class="dialog-heading"><h2 id="advice-help-title">詳しさで作業アイテムはどう変わる？</h2><p>同じ「トマトの追肥」を提案する場合の表示例です。安全条件と製品ラベルの確認は、どの設定でも省略しません。</p></div>
+      <div class="advice-examples">
+        <section class="advice-example beginner" aria-labelledby="beginner-example-title"><header><h3 id="beginner-example-title">初心者 — 小学生でも分かる言葉</h3><span>どれを選ぶかから案内</span></header><h4>作業：トマトの肥料を追加するか確認する</h4><p class="example-judgment"><strong>追肥の目安：</strong>下の葉の色が薄くなったり、育つ速さが遅くなった場合は追肥が必要です。実際に葉の色と育つ速さを確認してください。土がぬれたままの場合や、状態が分からない場合は、肥料を追加せず「見送る」を選んでください。</p><div class="example-block"><strong>確認した後に選ぶ</strong><p>ふだんの肥料をゆっくり長く効かせたいなら「つぶの肥料」を選びます。葉の色が前より薄く、早めに栄養を足したいと確認できたなら「水に混ぜる肥料」を選びます。土がぬれたまま、暑さでぐったりしている、判断できない場合は「見送る」を選びます。</p></div><div class="example-block"><strong>選んだ後にすること</strong><ol><li>商品の袋やボトルに「トマトに使える」と書かれているか見ます。</li><li>書かれている量を超えないように量ります。</li><li>「つぶの肥料」は茎から少し離して土の上へ置きます。「水に混ぜる肥料」は書かれた倍率で薄め、株元へ与えます。</li><li>終わったら、使った肥料と量を記録します。</li></ol></div><div class="example-block"><strong>終わった後</strong><p>翌日と3日後に、葉の色、しおれ、葉先の傷みを見ます。悪くなったときは、もう一度肥料をあげずに原因を確認します。</p></div></section>
+        <section class="advice-example standard" aria-labelledby="standard-example-title"><header><h3 id="standard-example-title">標準 — 大人向けの一般的な説明</h3><span>用途と選択理由を簡潔に</span></header><h4>作業：トマトの追肥要否と方法を確認する</h4><div class="example-block"><strong>最初に確認</strong><p>下葉が以前より退色しているか、生育が鈍化しているか、培地が過湿ではないかを実物と記録で確認してください。確認できない場合は追肥を見送ります。</p></div><div class="example-block"><strong>方法の選択</strong><p>安定した肥効を継続させる場合は固形肥料、葉色低下を確認でき、速やかに対応しながら施用量を調整したい場合は液体肥料を選択する。過湿、高温による萎れ、前回施肥からの間隔不足がある場合は追肥を見送る。</p></div><div class="example-block"><strong>実施</strong><p>トマトへの適用、追肥時の施用量・希釈倍率・使用間隔を製品ラベルで確認する。固形肥料は株元へ接触させず指定量を施用する。液体肥料は指定倍率に希釈し、葉や茎を避けて根域へ均一に施用する。</p></div><div class="example-block"><strong>完了・次回判断</strong><p>使用した肥料、施用量、作業日を記録する。翌日と3日後の葉色、しおれ、葉先障害を確認し、改善がなければ連続施用せず別原因を再確認する。</p></div></section>
+        <section class="advice-example professional" aria-labelledby="professional-example-title"><header><h3 id="professional-example-title">プロ — 専門用語と判断根拠</h3><span>適用条件と選択差を明確に</span></header><h4>作業：トマトの追肥要否と施肥方法を選定する</h4><div class="example-block"><strong>診断項目</strong><p>下位葉の退色、生育量低下、根域含水状態を実測または観察記録で確認する。直近の施肥履歴、培地EC・pH、原水EC、排液率と照合し、養分不足を示す根拠が確認できない場合は追肥を保留する。</p></div><div class="example-block"><strong>施肥方法の選択</strong><p>基肥の肥効切れを確認し、持続的な養分供給を狙う場合は固形肥料、培地ECを確認しながら即効性と施用濃度を調整する場合は液肥を選択する。</p></div><div class="example-block"><strong>見送り条件</strong><p>培地ECが管理上限以上、根域過湿、根傷みが疑われる場合、高温時の一時的萎れ、または製品指定の最短施用間隔未満では追肥しない。</p></div><div class="example-block"><strong>処理・記録</strong><p>肥料種、N-P-K組成、希釈倍率または株当たり施用量をラベルと管理目標から決定する。固形肥料は施肥位置と量、液肥は施用液EC、排液EC、排液率、株当たり施用量を記録する。</p></div><div class="example-block"><strong>次回判断</strong><p>翌日・3日後の葉色、生長点、葉先障害、培地ECの推移から、再施用、濃度調整、施肥方法変更、原因再診断を選択する。</p></div></section>
+      </div>
+      <div class="dialog-actions"><button id="advice-help-close" class="primary" type="button">閉じる</button></div>
+    </dialog>
+
     <script src="/static/stateful-actions.js"></script>
     <script>
       const form = document.getElementById("preference-form");
       const saveState = document.getElementById("save-state");
       const conflictDialog = document.getElementById("conflict-dialog");
+      const adviceHelpDialog = document.getElementById("advice-help-dialog");
       let version = {{ preferences.version }};
       let storedPreferences = {{ preferences.preferences | tojson }};
       let pendingLocal = null;
@@ -123,6 +151,9 @@
       };
       const experienceLabel = (value) => ({ beginner: "初心者", standard: "標準", professional: "プロ" }[value] || "標準");
       const comparisonMarkup = (value) => `<dt>タイムゾーン</dt><dd>${value.timezone}</dd><dt>日付</dt><dd>${value.date_format}</dd><dt>栽培アドバイス</dt><dd>${experienceLabel(value.preferences?.cultivation_experience)}</dd>`;
+      document.getElementById("advice-help-open").addEventListener("click", () => adviceHelpDialog.showModal());
+      document.getElementById("advice-help-close").addEventListener("click", () => adviceHelpDialog.close());
+      adviceHelpDialog.addEventListener("click", (event) => { if (event.target === adviceHelpDialog) adviceHelpDialog.close(); });
 
       async function savePreferences(value) {
         form.dispatchEvent(new CustomEvent("stateful-form-busy", { detail: true }));

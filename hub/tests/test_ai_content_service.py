@@ -242,6 +242,8 @@ class AIContentServiceTest(unittest.TestCase):
         self.assertIn("判断閾値", follow_up_prompt)
         self.assertIn("frequency", follow_up_prompt)
         self.assertIn("同じ肥料、農薬、資材、方法の再実施を自動決定しない", follow_up_prompt)
+        self.assertIn("未確認の状態", follow_up_prompt)
+        self.assertIn("作業を見送る条件をskip_conditionsへ必ず入れてください", follow_up_prompt)
 
     def test_custom_plant_calendar_prompt_template_wraps_required_inputs(self):
         self.service.ai_settings = {
@@ -280,7 +282,11 @@ class AIContentServiceTest(unittest.TestCase):
 
         prompt = "\n".join(message["content"] for message in self.service._initial_plant_plan_messages(context, []))
 
-        self.assertIn("対象利用者は基本的な栽培作業ができる標準レベルです", prompt)
+        self.assertIn("対象利用者は基本的な栽培作業ができる成人の標準レベルです", prompt)
+        self.assertIn("根拠がない作物状態を事実として断定してはいけません", prompt)
+        self.assertIn("利用者が実物、記録または測定値を確認する文章", prompt)
+        self.assertIn("一般的な作業判断の目安と、入力から確認済みの事実を区別", prompt)
+        self.assertIn("どの確認結果ならその方法を選ぶか", prompt)
 
     def test_pest_follow_up_uses_recorded_follow_up_days(self):
         self.service.ai_settings = {"text_analyze_api_key": ""}

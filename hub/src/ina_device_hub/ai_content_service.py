@@ -11,16 +11,20 @@ from ina_device_hub.setting import setting
 
 EXPERIENCE_PROMPT_INSTRUCTIONS = {
     "beginner": (
-        "対象利用者は農業初心者です。専門用語には短い説明を添え、準備、実施、終了確認の順で3〜7段階の手順にしてください。"
+        "対象利用者は農業初心者です。小学生でも理解できる語句を使い、専門用語には短い説明を添えてください。"
+        "複数の作業方法から利用者が選ぶ場合は、各方法がどんな状態に向くか、どれを選ぶとよいかを平易な理由とともに示してください。"
+        "準備、実施、終了確認の順で3〜7段階の手順にしてください。"
         "『適量』『適宜』『様子を見る』だけで済ませず、どこを見て開始・中止・完了を判断するかを平易に示してください。"
         "ただし安全条件、製品ラベル確認、数値、登録条件を省略または単純化してはいけません。"
     ),
     "standard": (
-        "対象利用者は基本的な栽培作業ができる標準レベルです。作業前判断、2〜6段階の実施手順、終了確認、次回判断を簡潔に示してください。"
+        "対象利用者は基本的な栽培作業ができる成人の標準レベルです。複数の作業方法は、用途と選択理由を一般的な栽培用語で簡潔に示してください。"
+        "作業前判断、2〜6段階の実施手順、終了確認、次回判断を簡潔に示してください。"
         "一般語で説明しつつ、EC、pH、希釈倍率など作業に必要な用語と単位は維持してください。"
     ),
     "professional": (
-        "対象利用者は農業・園芸の実務経験者です。初歩的な説明を繰り返さず、適用条件、判断閾値、処理量、頻度、見送り条件、根拠を優先してください。"
+        "対象利用者は農業・園芸の実務経験者です。初歩的な説明を繰り返さず、専門用語を用いて各作業方法の適用条件と選択差を明確にしてください。"
+        "判断閾値、処理量、頻度、見送り条件、根拠を優先してください。"
         "入力または根拠情報にない数値は推測せずnullまたは確認事項として残し、代替案の判断差も簡潔に示してください。"
     ),
 }
@@ -29,6 +33,11 @@ WORK_PLAN_OUTPUT_CONTRACT = (
     "各actionのwork_planは必ずtargets, start_conditions, skip_conditions, checkpoints, method_options, completion_criteriaを持ちます。"
     "targetsは具体的な部位・培地・設備・病害虫、start_conditionsは開始判断、skip_conditionsは延期・中止条件、"
     "checkpointsは作業前後に見る状態、completion_criteriaは作業完了の確認事項です。"
+    "入力に観察記録、画像診断、センサー値などの根拠がない現在状態を『葉色が薄い』『生育が遅い』などと断定してはいけません。"
+    "未確認の状態は『下葉の色が以前より薄いか確認してください』のような利用者の確認行動としてstart_conditionsまたはcheckpointsへ入れてください。"
+    "reasonでは一般的な作業判断の目安と、入力から確認済みの事実を区別してください。確認済みでない目安は条件形で記述してください。"
+    "方法を選択させる場合は、各method_optionsのpurposeまたはinstructionsに、どの確認結果ならその方法を選ぶかを記載してください。"
+    "必要な状態を利用者が確認できない場合は、作業を見送る条件をskip_conditionsへ必ず入れてください。"
     "method_optionsの各要素はid, label, method_type, material_name, registration_number, purpose, application_method, amount_or_rate, "
     "procedure_steps, completion_checks, precautions, frequency, instructions, follow_up_days_default, source_name, source_url, source_checked_atを持ちます。"
     "method_typeはobservation, manual, device, material_application, chemical, physical, biological, cultural, otherです。"
@@ -63,7 +72,12 @@ class AIContentService:
     def _experience_instruction(context: dict):
         audience = context.get("audience") if isinstance(context.get("audience"), dict) else {}
         level = str(audience.get("experience_level") or "standard")
-        return EXPERIENCE_PROMPT_INSTRUCTIONS.get(level, EXPERIENCE_PROMPT_INSTRUCTIONS["standard"])
+        observation_policy = (
+            "入力された観察記録、画像診断、センサー値などの根拠がない作物状態を事実として断定してはいけません。"
+            "不明な情報は推測せず、作業判断の目安を条件形で示して、利用者が実物、記録または測定値を確認する文章にしてください。"
+            "安全に判断できない場合は、作業を見送る選択肢を示してください。"
+        )
+        return observation_policy + EXPERIENCE_PROMPT_INSTRUCTIONS.get(level, EXPERIENCE_PROMPT_INSTRUCTIONS["standard"])
 
     def generate_instagram_caption(self, media_context: dict):
         visual_summary = self._summarize_visuals(media_context)
