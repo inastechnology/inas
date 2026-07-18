@@ -12,7 +12,7 @@ Users can register and place a camera, capture time-lapse frames, and compare im
 - [x] (2026-07-19) Defined and implemented the bounded assessment model, repository, AI contract, and monitoring service.
 - [x] (2026-07-19) Added authenticated API endpoints and a field growth-monitoring UI.
 - [x] (2026-07-19) Added focused regression coverage and ran the complete Hub validation suite.
-- [ ] Commit, push `main`, deploy through the standard update workflow, and verify readiness.
+- [x] (2026-07-19) Committed and pushed `main`, deployed through the standard update workflow, and verified readiness and the live Reolink capture path.
 
 ## Surprises & Discoveries
 
@@ -58,3 +58,7 @@ Validation completed before deployment on 2026-07-19:
 - The complete Hub unittest suite passed: 307 tests.
 - Ruff lint and formatting checks passed for all changed Python files.
 - The React TypeScript check and Vite production build passed.
+- Commit `64b45e6` was pushed to `origin/main` and deployed with a pre-start state backup.
+- Production `healthz` returned `ok`; `readyz` returned `ready` with MQTT and Web checks true.
+- The production growth-monitoring page resolved `garden` as ready for analysis, while the history API remained empty because deployment did not trigger a paid image analysis.
+- A bounded production capture from the existing Reolink camera returned a valid 238,047-byte JPEG without saving or sending it to AI.
