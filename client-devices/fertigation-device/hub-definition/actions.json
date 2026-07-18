@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "actions": [
+    {
+      "id": "start_batch",
+      "label": "液肥づくりを開始",
+      "kind": "fertigation"
+    },
+    {
+      "id": "acknowledge_recovery",
+      "label": "安全確認して再開",
+      "kind": "recovery"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "send_keys": [
+    "ntp_server",
+    "timezone_offset_sec",
+    "sleep_sec",
+    "debug_log_on_wake",
+    "ota_check_interval_sec",
+    "fgt",
+    "schedules"
+  ]
+}

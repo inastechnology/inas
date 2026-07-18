@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "definition_version": "1.0.0",
+  "device": {
+    "kind": "SOI",
+    "product_name": "土壌水分センサー",
+    "category": "sensor",
+    "icon": "🌱"
+  },
+  "files": {
+    "runtime_config": "runtime-config.schema.json",
+    "status": "status.schema.json",
+    "ui": "ui.json",
+    "actions": "actions.json"
+  },
+  "sensor_slots": [
+    {
+      "id": "soil_moisture",
+      "label": "土壌水分",
+      "status_keys": [
+        "soil_moisture_percent",
+        "last_soil_moisture"
+      ],
+      "unit": "%",
+      "digits": 1,
+      "slot_id": "soil",
+      "enabled_path": "",
+      "chart": {
+        "kind": "soil_moisture",
+        "title": "土壌水分推移",
+        "empty_message": "土壌水分の時系列データはまだありません。"
+      }
+    }
+  ],
+  "output_slots": [],
+  "runtime_sections": [
+    "soil_calibration",
+    "advanced"
+  ]
+}

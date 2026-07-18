@@ -3,6 +3,7 @@
 Device firmware project は device type ごとに分かれている。
 
 全体仕様は [../../../docs/jp/SYSTEM_SPECIFICATION.md](../../../docs/jp/SYSTEM_SPECIFICATION.md) を参照する。
+デバイスが Hub へ伝える決まり事は [../../../docs/jp/DEVICE_DEFINITION_SPECIFICATION.md](../../../docs/jp/DEVICE_DEFINITION_SPECIFICATION.md) を参照する。
 XIAO ESP32S3 の device 別 pin assignment は [pin_assignments.md](pin_assignments.md) にある。
 
 ```text
@@ -10,6 +11,7 @@ client-devices/
   common/lib/ina-client-common/
   watering-device/              # WTR
   watering-rs485-device/        # WRS
+  fertigation-device/           # FGT
   soil-sensor-device/           # SOI
   environment-sensor-device/    # ENV
 ```
@@ -33,6 +35,7 @@ device project には watering logic、sensor sampling、pin mapping、runtime c
 4. shared library を device の `lib/` へ link する。
 5. `platformio.ini` に 3 文字 uppercase の device kind code を割り当てる。
 6. device directory で build と検証を行う。
+7. `hub-definition/` を追加し、Hub の表示と送信する Runtime Config を実装済み firmware に合わせる。
 
 ## Development Environment
 
@@ -52,6 +55,7 @@ Linux または WSL2 を使う。Native Windows build は symbolic link の扱�
 - [XIAO ESP32S3 pin assignments](pin_assignments.md)
 - [RS485 sensor device specification](rs485_sensor_device_spec.md)
 - [RS485 sensor device implementation plan](rs485_sensor_device_implementation_plan.md)
+- [FGT 液肥づくり・潅水装置 設計概要](../../fertigation-device/docs/jp/README.md)
 
 ## 生成図
 

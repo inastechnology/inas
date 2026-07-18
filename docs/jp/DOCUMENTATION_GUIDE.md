@@ -74,7 +74,7 @@ python3 client-devices/docs/generate_xiao_pin_assignment_diagrams.py
 - 簡潔で、実装判断に使える文章を優先する。
 - 現在の仕様と将来予定を分けて書く。
 - コマンド例はコピーして実行できる形にする。
-- device kind は `WTR`、`WRS`、`SOI`、`ENV` のような安定した名前を使う。
+- device kind は `WTR`、`WRS`、`FGT`、`SOI`、`ENV` のような安定した名前を使う。
 - 環境変数、topic、ファイルパス、API path は monospace で書く。
 - 営農者向けの説明では、変数名より先に「何が分かるか」「何を判断できるか」を書く。
 - 概要文書に実装詳細を詰め込みすぎない。詳細仕様へリンクする。

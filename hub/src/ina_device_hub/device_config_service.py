@@ -10,6 +10,7 @@ from ina_device_hub.device_config_repository import (
     validate_device_config,
 )
 from ina_device_hub.device_event_log import append_device_event
+from ina_device_hub.device_definition_registry import project_runtime_config
 from ina_device_hub.discord_notification_service import discord_notification_service
 from ina_device_hub.general_log import logger
 from ina_device_hub.sensor_measurement_repository import safe_record_status_measurements
@@ -33,6 +34,7 @@ class DeviceConfigService:
             "moisture_threshold": device_config_defaults["moisture_threshold"],
             "force_watering": True,
             "debug_log_on_wake": False,
+            "sleep_sec": 300,
             "ota_check_interval_sec": 21600,
             "watering_pattern": {
                 "enabled": False,
@@ -112,6 +114,10 @@ class DeviceConfigService:
                     "power_settle_ms": 800,
                 },
             },
+            # Optional overlay. Existing rows without this key remain valid;
+            # new FGT records are normalized to firmware-safe defaults with
+            # automatic dosing disabled.
+            "fgt": {},
             "mosfet_switches": [
                 {
                     "switch_id": "irr1",
@@ -153,6 +159,10 @@ class DeviceConfigService:
 
     def get_config(self, device_id: str):
         return self.get_record(device_id)["config"]
+
+    def get_runtime_config_payload(self, device_id: str):
+        record = self.get_record(device_id)
+        return project_runtime_config(record.get("device_kind"), record.get("config"))
 
     def get_all_records(self):
         return self.repository.get_all()
@@ -235,14 +245,17 @@ class DeviceConfigService:
     def _config_for_reply(self, device_id: str):
         record = self.repository.record_config_request(device_id, self.default_config())
         if record["state"] == "active" and record.get("config"):
-            return validate_device_config(record["config"])
-        return self.default_config()
+            stored = validate_device_config(record["config"])
+            return project_runtime_config(record.get("device_kind"), stored)
+        return project_runtime_config(record.get("device_kind"), self.default_config())
 
     def publish_config(self, device_id: str, action: str, config: dict | None = None, retain: bool = False):
         if self.mqtt_client is None:
             raise RuntimeError("mqtt client is not attached")
 
-        config = validate_device_config(config or self.get_config(device_id))
+        record = self.get_record(device_id)
+        stored_config = validate_device_config(config or record.get("config") or self.default_config())
+        config = project_runtime_config(record.get("device_kind"), stored_config)
         topic = f"/{device_id}/kinds/config/{action}"
         payload = json.dumps(config, ensure_ascii=True, separators=(",", ":"))
         result = self.mqtt_client.publish(topic, payload, qos=0, retain=retain)

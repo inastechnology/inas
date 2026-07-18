@@ -18,7 +18,7 @@ python3 docs/assets/generate_system_diagrams.py
 
 INAS は、小規模な営農者が水やり、土壌状態、環境状態、作物前提、作業結果を一つの文脈で確認し、次のアクションを科学的に判断するためのシステムである。
 
-現時点で hub から実行できる制御は WTR/WRS の灌水である。将来は液肥、噴霧、画像診断、外部研究データの参照を追加する。ただし、最初から自動化しすぎず、観察、提案、承認、実行、評価の記録を積み上げることを優先する。
+hub の汎用即時制御は WTR/WRS の灌水を対象とする。FGT firmware は、デバイス内の安全インターロックを通して、スケジュールされた液肥作成・潅水・水洗浄を実行する。hub は FGT レシピを保存し、状態と潅水履歴を取り込めるが、営農者向けの FGT レシピ編集・手動実行 UI は今後の対象である。噴霧、画像診断、外部研究データの参照も将来対象とする。ただし、最初から自動化しすぎず、観察、提案、承認、実行、評価の記録を積み上げることを優先する。
 
 ## 全体構成
 
@@ -32,6 +32,7 @@ INAS は、小規模な営農者が水やり、土壌状態、環境状態、作
 | MQTT broker | デバイスの status、runtime config、OTA offer/status、灌水指示などの制御経路 |
 | WTR | 水やり全部入りデバイス。潅水、土壌水分、RS485 センサー、12V センサー電源 MOSFET を持つ |
 | WRS | RS485 前提の水やり全部入りデバイス。灌水と RS485 土壌/PAR/日射センサーを同じ bus で扱う |
+| FGT | 液肥作成・潅水デバイス。原水、A/B液、攪拌、潅水、水洗浄をデバイス内の安全状態機械で順番に制御する |
 | SOI | 18650 バッテリー前提の土壌水分専用ノード |
 | ENV | 12V 電源前提の RS485 環境センサーデバイス |
 | Turso/libSQL | Cloud app 版や同期境界で使う共有 DB |
@@ -77,10 +78,13 @@ device kind ごとに接続センサーと payload schema を固定する。`cap
 |---|---|---|---|
 | `WTR` | `client-devices/watering-device` | 小規模向け全部入り水やり機。灌水制御、土壌水分、RS485、センサー電源 MOSFET | 既定は 12V 系で、ESP32S3 は 12V -> 5V DCDC 後に給電。payload contract が同じ低電圧 H/W profile も WTR として扱う |
 | `WRS` | `client-devices/watering-rs485-device` | RS485 前提の全部入り水やり機。灌水出力と RS485 土壌/PAR/日射センサーを同一 bus で扱う | 12V 系を前提。ESP32S3 は 12V -> 5V DCDC 後に給電 |
+| `FGT` | `client-devices/fertigation-device` | 計量した水へ A/B 原液を別々に投入して攪拌し、潅水後に清水で洗浄する。RS485 土壌/PAR センサーも扱う | 3S battery/12V actuator 系。XIAO ESP32-S3 と A/B pump 用に 5V へ変換 |
 | `SOI` | `client-devices/soil-sensor-device` | 土壌に複数設置する土壌水分専用ノード | 18650 バッテリー |
 | `ENV` | `client-devices/environment-sensor-device` | RS485 Modbus の環境・土壌複合センサー、日射/PAR センサー | 12V |
 
 WTR は個人用の全部入りデバイスとして実績を積むために残す。WRS はよりマッチョな全部入りの方向で、灌水出力はデバイス内に持ち、センサー拡張境界を RS485 bus に固定する。SOI/ENV は、データ取得デバイスとアクションデバイスを分ける方針の実装である。土壌フィードバックと低電圧の水やり出力を同じ小型ノードに置く場合も、WTR と同じ local irrigation + soil feedback の責務なら WTR の H/W profile として扱い、新しい device kind は作らない。
+
+FGT は液肥レシピ、異常状態、停電・reset 後の再開禁止ルールが WRS と大きく異なるため、別 device kind とする。WTR/WRS の汎用即時潅水 command は受け付けず、すべての actuator 遷移を FGT 状態機械に通す。詳細は [client-devices/fertigation-device/README.md](../../client-devices/fertigation-device/README.md) を参照する。
 
 イチゴ点滴栽培のような作物別システムは、新しい巨大な単一デバイスではなく、hub が複数デバイスを束ねる構成として扱う。プラグやポンプスイッチのような灌水アクチュエータは、同じベッド、畝、または代表測点の土壌水分センサーとペアにし、灌水によって根域水分が実際に増えたかを hub が検証できるようにする。
 

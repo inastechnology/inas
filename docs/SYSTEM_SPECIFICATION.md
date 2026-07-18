@@ -28,9 +28,12 @@ control, but a repeatable improvement loop: observe, interpret, propose an
 action, approve or execute it, evaluate the result, and feed the result back
 into the next decision.
 
-The only action currently executable from the hub is WTR/WRS irrigation. Liquid
-fertilizer control, misting/humidity control, image diagnosis, and external
-research data integration are future extensions.
+The hub currently executes generic WTR/WRS irrigation. FGT firmware executes a
+local, scheduled fertilizer-mixing batch with device-side safety interlocks;
+the hub can store its recipe, ingest status, and monitor watering history, while
+a farmer-facing FGT recipe/action UI remains future work. Misting/humidity
+control, image diagnosis, and external research data integration are also future
+extensions.
 
 ## System Architecture
 
@@ -42,6 +45,7 @@ research data integration are future extensions.
 | MQTT broker | Device status, runtime config, OTA offer/status, and irrigation command transport |
 | WTR | All-in-one watering device for small installations. Handles irrigation, soil moisture, RS485 sensors, and switched 12V sensor power |
 | WRS | RS485-first all-in-one watering device. Handles irrigation and treats RS485 soil/PAR/irradiance sensors as the primary sensor bus |
+| FGT | Fertilizer mixing and irrigation device. Sequences water, A/B concentrate, mixing, irrigation, and clean-water rinse with local safety interlocks |
 | SOI | Battery-powered soil moisture node |
 | ENV | 12V RS485 environmental sensor hub |
 | Turso/libSQL | Shared database boundary for the Cloud app option and future sync |
@@ -101,6 +105,7 @@ contract stay the same.
 |---|---|---|---|
 | `WTR` | `client-devices/watering-device` | Small-scale all-in-one watering device. Irrigation, soil moisture, RS485, and switched sensor power | Default 12V system with 12V -> 5V conversion. Documented low-voltage hardware profiles remain WTR when the payload contract stays the same |
 | `WRS` | `client-devices/watering-rs485-device` | RS485-first all-in-one watering device. Irrigation output plus RS485 soil, PAR, and irradiance sensors on one bus | 12V system. ESP32S3 is powered after 12V -> 5V conversion |
+| `FGT` | `client-devices/fertigation-device` | Mixes A/B concentrate into a measured water batch, irrigates, and rinses. Also reads RS485 soil and PAR sensors | 3S battery/12V actuator system with 12V -> 5V conversion for XIAO ESP32-S3 and A/B pumps |
 | `SOI` | `client-devices/soil-sensor-device` | Soil moisture node placed at multiple soil points | 18650 battery |
 | `ENV` | `client-devices/environment-sensor-device` | RS485 Modbus environmental and soil sensor hub | 12V |
 
@@ -111,6 +116,12 @@ and ENV implement the direction of separating data collection devices from
 action devices. If a small independent watering node has the same local
 irrigation-plus-soil-feedback behavior as WTR, define it as a WTR hardware
 profile rather than a new device kind.
+
+FGT is separate from WRS because nutrient dosing introduces a materially
+different recipe, fault model, and interrupted-batch recovery rule. It never
+accepts the generic WTR/WRS immediate irrigation command path; all actuator
+changes pass through the FGT state machine. See
+[client-devices/fertigation-device/README.md](../client-devices/fertigation-device/README.md).
 
 Crop-specific systems such as strawberry drip cultivation are hub-orchestrated
 compositions, not new monolithic device types. An irrigation actuator such as a

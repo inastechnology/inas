@@ -7,6 +7,9 @@ firmware, Cloudflare hosted options, field data, OTA, and operational model.
   system-level specification.
 - [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md): system-wide
   layer boundaries for hub, firmware, contracts, storage, UI, and adapters.
+- [DEVICE_DEFINITION_SPECIFICATION.md](DEVICE_DEFINITION_SPECIFICATION.md):
+  firmware-owned Hub metadata, definition-driven device UI, Runtime Config
+  projection, and database compatibility.
 - [DOCUMENTATION_GUIDE.md](DOCUMENTATION_GUIDE.md): documentation writing,
   localization, linking, and asset rules.
 - [CULTIVATION_SYSTEM_ORCHESTRATION.md](CULTIVATION_SYSTEM_ORCHESTRATION.md):

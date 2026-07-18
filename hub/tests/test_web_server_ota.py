@@ -471,7 +471,9 @@ class WebServerOTATest(unittest.TestCase):
         )
         soil_html = self.client.get(f"/mqtt-devices/{soil_device_id}?tab=settings").get_data(as_text=True)
         self.assertIn('data-env-sensor-card="par" hidden', soil_html)
-        self.assertIn('data-env-sensor-card="soil">', soil_html)
+        self.assertIn('data-env-sensor-card="soil" hidden', soil_html)
+        self.assertIn('id="soil-moisture-reference" class="setup-stage calibration-stage">', soil_html)
+        self.assertIn("土壌水分計の基準合わせ", soil_html)
         self.assertIn(f'href="/mqtt-devices/{soil_device_id}?tab=monitoring#soil-moisture-chart" aria-label="土壌水分の履歴を見る"', soil_html)
 
         light_device_id = "INADS-00000000-0000-4000-8000-000000000208"

@@ -10,6 +10,7 @@
 
 - [SYSTEM_SPECIFICATION.md](SYSTEM_SPECIFICATION.md): INAS 全体仕様。hub、Cloudflare、デバイス種別、圃場データ、OTA の関係をまとめる。
 - [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md): hub、firmware、contract、storage、UI、adapter の全体レイヤ境界。
+- [DEVICE_DEFINITION_SPECIFICATION.md](DEVICE_DEFINITION_SPECIFICATION.md): 各ファームウェアが Hub へ伝えるデバイスの決まり事、定義駆動 UI、Runtime Config、既存 DB との互換方針。
 - [CULTIVATION_SYSTEM_ORCHESTRATION.md](CULTIVATION_SYSTEM_ORCHESTRATION.md): イチゴ点滴栽培のような作物別システムを、複数デバイスと hub のオーケストレーションとして扱う設計方針。
 - [../../hub/doc/jp/README.md](../../hub/doc/jp/README.md): hub の日本語ドキュメント入口。
 - [../../client-devices/docs/jp/README.md](../../client-devices/docs/jp/README.md): client device firmware と配線・製造ドキュメントの日本語入口。
@@ -25,6 +26,7 @@ client-devices/
       ina-client-common/      # Shared PlatformIO library
   watering-device/            # Watering device firmware, device kind: WTR
   watering-rs485-device/      # RS485 watering device firmware, device kind: WRS
+  fertigation-device/         # 液肥作成・潅水 device firmware, device kind: FGT
   soil-sensor-device/         # Soil sensor device firmware, device kind: SOI
   environment-sensor-device/  # Environment sensor device firmware, device kind: ENV
 ```

@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "definition_version": "1.0.0",
+  "device": {
+    "kind": "ENV",
+    "product_name": "環境センサー",
+    "category": "sensor",
+    "icon": "☀️"
+  },
+  "files": {
+    "runtime_config": "runtime-config.schema.json",
+    "status": "status.schema.json",
+    "ui": "ui.json",
+    "actions": "actions.json"
+  },
+  "sensor_slots": [
+    {
+      "id": "air_temperature",
+      "label": "気温",
+      "status_keys": [
+        "air_temperature_c"
+      ],
+      "unit": "℃",
+      "digits": 1,
+      "slot_id": "built_in",
+      "enabled_path": "",
+      "chart": {
+        "kind": "air_temperature",
+        "title": "気温推移",
+        "empty_message": "気温の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "air_humidity",
+      "label": "湿度",
+      "status_keys": [
+        "air_humidity_percent"
+      ],
+      "unit": "%",
+      "digits": 1,
+      "slot_id": "built_in",
+      "enabled_path": "",
+      "chart": {
+        "kind": "air_humidity",
+        "title": "湿度推移",
+        "empty_message": "湿度の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_moisture",
+      "label": "土壌水分",
+      "status_keys": [
+        "soil_moisture_percent"
+      ],
+      "unit": "%",
+      "digits": 1,
+      "slot_id": "soil",
+      "enabled_path": "env_sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_moisture",
+        "title": "土壌水分推移",
+        "empty_message": "土壌水分の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_temperature",
+      "label": "地温",
+      "status_keys": [
+        "soil_temperature_c"
+      ],
+      "unit": "℃",
+      "digits": 1,
+      "slot_id": "soil",
+      "enabled_path": "env_sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_temperature",
+        "title": "地温推移",
+        "empty_message": "地温の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_ec",
+      "label": "土壌EC",
+      "status_keys": [
+        "soil_ec_us_cm"
+      ],
+      "unit": "µS/cm",
+      "digits": 0,
+      "slot_id": "soil",
+      "enabled_path": "env_sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_ec",
+        "title": "土壌EC推移",
+        "empty_message": "土壌ECの時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_ph",
+      "label": "土壌pH",
+      "status_keys": [
+        "soil_ph"
+      ],
+      "unit": "",
+      "digits": 1,
+      "slot_id": "soil",
+      "enabled_path": "env_sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_ph",
+        "title": "土壌pH推移",
+        "empty_message": "土壌pHの時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_n",
+      "label": "土壌窒素",
+      "status_keys": [
+        "soil_n_mg_kg"
+      ],
+      "unit": "mg/kg",
+      "digits": 0,
+      "slot_id": "soil",
+      "enabled_path": "env_sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_n",
+        "title": "土壌窒素推移",
+        "empty_message": "土壌窒素の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_p",
+      "label": "土壌リン",
+      "status_keys": [
+        "soil_p_mg_kg"
+      ],
+      "unit": "mg/kg",
+      "digits": 0,
+      "slot_id": "soil",
+      "enabled_path": "env_sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_p",
+        "title": "土壌リン推移",
+        "empty_message": "土壌リンの時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_k",
+      "label": "土壌カリウム",
+      "status_keys": [
+        "soil_k_mg_kg"
+      ],
+      "unit": "mg/kg",
+      "digits": 0,
+      "slot_id": "soil",
+      "enabled_path": "env_sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_k",
+        "title": "土壌カリウム推移",
+        "empty_message": "土壌カリウムの時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "par",
+      "label": "光合成に使える光",
+      "status_keys": [
+        "par_umol_m2_s"
+      ],
+      "unit": "µmol/m²/s",
+      "digits": 0,
+      "slot_id": "par",
+      "enabled_path": "env_sensors.par.enabled",
+      "chart": {
+        "kind": "par",
+        "title": "光合成に使える光推移",
+        "empty_message": "光合成に使える光の時系列データはまだありません。"
+      }
+    }
+  ],
+  "output_slots": [],
+  "runtime_sections": [
+    "sensor_connections",
+    "calibration",
+    "advanced"
+  ]
+}

@@ -112,6 +112,30 @@ class HealthMonitorTaskTest(unittest.TestCase):
     def test_wrs_is_treated_as_watering_device(self):
         self.assertTrue(_is_watering_device({"device_kind": "WRS"}))
 
+    def test_fgt_batch_start_counts_as_watering(self):
+        self.assertTrue(_is_watering_device({"device_kind": "FGT"}))
+        self.task.device_repository = FakeDeviceRepository(
+            {
+                "device-fgt": {
+                    "device_id": "device-fgt",
+                    "state": "active",
+                    "first_seen_at": "2026-07-01T00:00:00+00:00",
+                    "last_seen_at": "2026-07-04T00:00:00+00:00",
+                    "device_kind": "FGT",
+                    "status_history": [
+                        {
+                            "received_at": "2026-07-03T12:00:00+00:00",
+                            "payload": {"batch_started": True, "batch_completed": True},
+                        }
+                    ],
+                }
+            }
+        )
+
+        self.task.run_once(datetime(2026, 7, 4, 0, 0, tzinfo=UTC))
+
+        self.assertFalse(any(alert[0] == "watering_missing" for alert in self.notification_service.alerts))
+
 
 if __name__ == "__main__":
     unittest.main()

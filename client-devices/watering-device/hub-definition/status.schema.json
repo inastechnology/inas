@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "metrics": [
+    {
+      "id": "soil_moisture",
+      "label": "土壌水分",
+      "status_keys": [
+        "soil_moisture_percent",
+        "last_soil_moisture"
+      ],
+      "unit": "%",
+      "digits": 1,
+      "slot_id": "soil",
+      "enabled_path": "",
+      "chart": {
+        "kind": "soil_moisture",
+        "title": "土壌水分推移",
+        "empty_message": "土壌水分の時系列データはまだありません。"
+      }
+    }
+  ]
+}

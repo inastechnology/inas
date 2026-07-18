@@ -133,9 +133,11 @@ try {
   assert.equal(await page.$eval('#runtime-config-form button[type="submit"]', (button) => button.disabled), false, "applied route edits must make the setup saveable");
   assert(await page.$("#output-connection-map .switch-output-icon svg"), "the current route must retain an illustrated endpoint");
   const routePreview = await page.$eval("#runtime-config-json", (textarea) => JSON.parse(textarea.value));
-  assert.match(routePreview.mosfet_switches[0].notes, /デモ用/, "legacy notes must survive visual editing");
-  assert.match(routePreview.mosfet_switches[0].notes, /equipment_type=sprinkler/, "the selected picture must fit the existing notes schema");
-  assert.equal("equipment_type" in routePreview.mosfet_switches[0], false, "the saved device schema must not gain a new field");
+  assert.equal("mosfet_switches" in routePreview, false, "Hub installation metadata must not be sent to firmware");
+  const storedRouteDraft = await page.evaluate(() => collectRuntimeConfigFromForm());
+  assert.match(storedRouteDraft.mosfet_switches[0].notes, /デモ用/, "legacy notes must survive visual editing in Hub storage");
+  assert.match(storedRouteDraft.mosfet_switches[0].notes, /equipment_type=sprinkler/, "the selected picture must fit the existing Hub notes schema");
+  assert.equal("equipment_type" in storedRouteDraft.mosfet_switches[0], false, "the stored Hub schema must not gain a new field");
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
   await new Promise((resolve) => setTimeout(resolve, 250));
   const wateringSettingsOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

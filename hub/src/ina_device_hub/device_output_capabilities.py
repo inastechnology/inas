@@ -1,6 +1,8 @@
 import copy
 import re
 
+from ina_device_hub.device_definition_registry import get_device_definition
+
 _EQUIPMENT_TYPES = {
     "irrigation": (
         {"value": "pump", "label": "ポンプ", "description": "水をくみ上げて送る"},
@@ -76,11 +78,34 @@ _DEVICE_OUTPUT_CAPABILITIES = {
 
 
 def device_output_capabilities(device_kind: str | None):
+    definition_slots = get_device_definition(device_kind).get("output_slots") or []
+    if definition_slots:
+        capabilities = []
+        for slot in definition_slots:
+            role = str(slot.get("role") or "")
+            equipment_types = _EQUIPMENT_TYPES.get(role, ())
+            allowed = set(slot.get("allowed_load_types") or [])
+            presets = tuple(item["label"] for item in equipment_types if not allowed or item["value"] in allowed)
+            capabilities.append(
+                {
+                    "number": slot.get("number"),
+                    "switch_id": slot.get("id"),
+                    "terminal": slot.get("terminal") or "",
+                    "channel_mask": slot.get("channel_mask") or 0,
+                    "role": role,
+                    "role_label": slot.get("role_label") or "設備",
+                    "default_name": slot.get("default_name") or slot.get("role_label") or "設備",
+                    "equipment_presets": presets,
+                    "assignable": slot.get("assignable") is True,
+                    "fixed": slot.get("assignable") is not True,
+                }
+            )
+        return capabilities
     return copy.deepcopy(list(_DEVICE_OUTPUT_CAPABILITIES.get(str(device_kind or "").upper(), ())))
 
 
 def supported_output_ids(device_kind: str | None):
-    return {item["switch_id"] for item in _DEVICE_OUTPUT_CAPABILITIES.get(str(device_kind or "").upper(), ())}
+    return {item["switch_id"] for item in device_output_capabilities(device_kind)}
 
 
 def equipment_types_for_role(role: str | None):

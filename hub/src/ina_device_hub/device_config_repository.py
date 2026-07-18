@@ -305,6 +305,10 @@ def validate_device_config(config: dict):  # noqa: PLR0915
     if not isinstance(debug_log_on_wake, bool):
         raise DeviceConfigValidationError("debug_log_on_wake must be a boolean")
 
+    sleep_sec = config.get("sleep_sec", 300)
+    if not isinstance(sleep_sec, int) or isinstance(sleep_sec, bool) or not 60 <= sleep_sec <= 86400:
+        raise DeviceConfigValidationError("sleep_sec must be between 60 and 86400")
+
     ota_check_interval_sec = config.get("ota_check_interval_sec", 21600)
     if not isinstance(ota_check_interval_sec, int) or not 3600 <= ota_check_interval_sec <= 86400:
         raise DeviceConfigValidationError("ota_check_interval_sec must be between 3600 and 86400")
@@ -506,6 +510,86 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         },
     }
 
+    normalized_fgt = None
+    if "fgt" in config:
+        fgt = config["fgt"]
+        if not isinstance(fgt, dict):
+            raise DeviceConfigValidationError("fgt must be an object")
+        recipe = fgt.get("recipe", {})
+        limits = fgt.get("limits", {})
+        sensors = fgt.get("sensors", {})
+        if not isinstance(recipe, dict):
+            raise DeviceConfigValidationError("fgt.recipe must be an object")
+        if not isinstance(limits, dict):
+            raise DeviceConfigValidationError("fgt.limits must be an object")
+        if not isinstance(sensors, dict):
+            raise DeviceConfigValidationError("fgt.sensors must be an object")
+        soil = sensors.get("soil", {})
+        par = sensors.get("par", {})
+        if not isinstance(soil, dict):
+            raise DeviceConfigValidationError("fgt.sensors.soil must be an object")
+        if not isinstance(par, dict):
+            raise DeviceConfigValidationError("fgt.sensors.par must be an object")
+
+        normalized_fgt_recipe = {
+            "total_water_ml": _optional_int(recipe, "total_water_ml", 4500, 100, 100000, "fgt.recipe.total_water_ml"),
+            "initial_water_ml": _optional_int(recipe, "initial_water_ml", 1250, 50, 100000, "fgt.recipe.initial_water_ml"),
+            "nutrient_a_ml": _optional_int(recipe, "nutrient_a_ml", 10, 0, 10000, "fgt.recipe.nutrient_a_ml"),
+            "nutrient_b_ml": _optional_int(recipe, "nutrient_b_ml", 10, 0, 10000, "fgt.recipe.nutrient_b_ml"),
+            "nutrient_a_rate_ml_min": _optional_int(recipe, "nutrient_a_rate_ml_min", 100, 1, 10000, "fgt.recipe.nutrient_a_rate_ml_min"),
+            "nutrient_b_rate_ml_min": _optional_int(recipe, "nutrient_b_rate_ml_min", 100, 1, 10000, "fgt.recipe.nutrient_b_rate_ml_min"),
+            "pre_mix_sec": _optional_int(recipe, "pre_mix_sec", 10, 1, 600, "fgt.recipe.pre_mix_sec"),
+            "mix_after_a_sec": _optional_int(recipe, "mix_after_a_sec", 30, 0, 1800, "fgt.recipe.mix_after_a_sec"),
+            "mix_after_b_sec": _optional_int(recipe, "mix_after_b_sec", 60, 0, 1800, "fgt.recipe.mix_after_b_sec"),
+            "final_mix_sec": _optional_int(recipe, "final_mix_sec", 120, 1, 3600, "fgt.recipe.final_mix_sec"),
+            "irrigation_max_sec": _optional_int(recipe, "irrigation_max_sec", 900, 1, 7200, "fgt.recipe.irrigation_max_sec"),
+            "rinse_water_ml": _optional_int(recipe, "rinse_water_ml", 500, 0, 100000, "fgt.recipe.rinse_water_ml"),
+            "rinse_mix_sec": _optional_int(recipe, "rinse_mix_sec", 30, 0, 1800, "fgt.recipe.rinse_mix_sec"),
+            "rinse_drain_max_sec": _optional_int(recipe, "rinse_drain_max_sec", 180, 0, 3600, "fgt.recipe.rinse_drain_max_sec"),
+        }
+        normalized_fgt_limits = {
+            "max_total_water_ml": _optional_int(limits, "max_total_water_ml", 10000, 100, 100000, "fgt.limits.max_total_water_ml"),
+            "max_nutrient_ml": _optional_int(limits, "max_nutrient_ml", 100, 1, 10000, "fgt.limits.max_nutrient_ml"),
+            "water_no_flow_timeout_sec": _optional_int(limits, "water_no_flow_timeout_sec", 15, 1, 300, "fgt.limits.water_no_flow_timeout_sec"),
+            "max_fill_sec": _optional_int(limits, "max_fill_sec", 300, 1, 3600, "fgt.limits.max_fill_sec"),
+            "max_batch_sec": _optional_int(limits, "max_batch_sec", 1800, 60, 14400, "fgt.limits.max_batch_sec"),
+            "volume_tolerance_ml": _optional_int(limits, "volume_tolerance_ml", 100, 0, 5000, "fgt.limits.volume_tolerance_ml"),
+        }
+        if normalized_fgt_recipe["initial_water_ml"] >= normalized_fgt_recipe["total_water_ml"]:
+            raise DeviceConfigValidationError("fgt.recipe.initial_water_ml must be less than total_water_ml")
+        if normalized_fgt_recipe["total_water_ml"] > normalized_fgt_limits["max_total_water_ml"]:
+            raise DeviceConfigValidationError("fgt.recipe.total_water_ml must not exceed fgt.limits.max_total_water_ml")
+        if max(normalized_fgt_recipe["nutrient_a_ml"], normalized_fgt_recipe["nutrient_b_ml"]) > normalized_fgt_limits["max_nutrient_ml"]:
+            raise DeviceConfigValidationError("fgt recipe nutrient volume must not exceed fgt.limits.max_nutrient_ml")
+        if normalized_fgt_recipe["rinse_water_ml"] > normalized_fgt_limits["max_total_water_ml"]:
+            raise DeviceConfigValidationError("fgt.recipe.rinse_water_ml must not exceed fgt.limits.max_total_water_ml")
+        if normalized_fgt_recipe["rinse_water_ml"] > 0 and (normalized_fgt_recipe["rinse_mix_sec"] == 0 or normalized_fgt_recipe["rinse_drain_max_sec"] == 0):
+            raise DeviceConfigValidationError("enabled FGT rinse requires rinse_mix_sec and rinse_drain_max_sec")
+
+        normalized_fgt = {
+            "enabled": _optional_bool(fgt, "enabled", False, "fgt.enabled"),
+            "recovery_ack": _optional_int(fgt, "recovery_ack", 0, 0, 0xFFFFFFFF, "fgt.recovery_ack"),
+            "recipe": normalized_fgt_recipe,
+            "limits": normalized_fgt_limits,
+            "sensors": {
+                "soil": {
+                    "enabled": _optional_bool(soil, "enabled", True, "fgt.sensors.soil.enabled"),
+                    "modbus_slave_id": _optional_int(soil, "modbus_slave_id", 2, 1, 247, "fgt.sensors.soil.modbus_slave_id"),
+                    "modbus_function": _optional_int(soil, "modbus_function", 4, 3, 4, "fgt.sensors.soil.modbus_function"),
+                    "start_register": _optional_int(soil, "start_register", 0, 0, 65535, "fgt.sensors.soil.start_register"),
+                },
+                "par": {
+                    "enabled": _optional_bool(par, "enabled", True, "fgt.sensors.par.enabled"),
+                    "modbus_slave_id": _optional_int(par, "modbus_slave_id", 1, 1, 247, "fgt.sensors.par.modbus_slave_id"),
+                    "modbus_function": _optional_int(par, "modbus_function", 3, 3, 4, "fgt.sensors.par.modbus_function"),
+                    "register": _optional_int(par, "register", 0, 0, 65535, "fgt.sensors.par.register"),
+                    "scale": _optional_float(par, "scale", 1.0, 0.0001, 100000.0, "fgt.sensors.par.scale"),
+                },
+                "power_settle_ms": _optional_int(sensors, "power_settle_ms", 800, 0, 30000, "fgt.sensors.power_settle_ms"),
+                "flow_pulses_per_liter": _optional_int(sensors, "flow_pulses_per_liter", 450, 1, 1000000, "fgt.sensors.flow_pulses_per_liter"),
+            },
+        }
+
     mosfet_switches = config.get("mosfet_switches", [])
     if not isinstance(mosfet_switches, list):
         raise DeviceConfigValidationError("mosfet_switches must be an array")
@@ -608,9 +692,19 @@ def validate_device_config(config: dict):  # noqa: PLR0915
                 "minute": minute,
                 "duration_sec": duration_sec,
                 "channel_mask": channel_mask,
+                "enabled": _optional_bool(schedule, "enabled", True, f"schedules[{index}].enabled"),
                 "frequency": normalized_frequency,
             }
         )
+
+    if normalized_fgt is not None:
+        enabled_fgt_schedules = [schedule for schedule in normalized_schedules if schedule["enabled"]]
+        if any(schedule["frequency"]["mode"] != "daily" for schedule in enabled_fgt_schedules):
+            raise DeviceConfigValidationError("enabled FGT schedules must use daily frequency")
+        if len(enabled_fgt_schedules) > 4:
+            raise DeviceConfigValidationError("FGT supports at most 4 enabled daily schedules")
+        if normalized_fgt["enabled"] and not enabled_fgt_schedules:
+            raise DeviceConfigValidationError("enabled FGT requires at least one enabled daily schedule")
 
     normalized = {
         "ntp_server": ntp_server.strip(),
@@ -618,6 +712,7 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         "moisture_threshold": moisture_threshold,
         "force_watering": force_watering,
         "debug_log_on_wake": debug_log_on_wake,
+        "sleep_sec": sleep_sec,
         "ota_check_interval_sec": ota_check_interval_sec,
         "watering_pattern": normalized_watering_pattern,
         "soil_calibration": normalized_soil_calibration,
@@ -627,6 +722,8 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         "mosfet_switches": normalized_mosfet_switches,
         "schedules": normalized_schedules,
     }
+    if normalized_fgt is not None:
+        normalized["fgt"] = normalized_fgt
     payload = json.dumps(normalized, ensure_ascii=True, separators=(",", ":"))
     if len(payload.encode("utf-8")) >= 4096:
         raise DeviceConfigValidationError("config payload must be less than 4096 bytes")

@@ -163,8 +163,10 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
         self.assertIn("SOI", by_metric["soil_moisture_percent"]["device_kinds"])
         self.assertIn("WTR", by_metric["soil_ec_us_cm"]["device_kinds"])
         self.assertIn("WRS", by_metric["soil_ec_us_cm"]["device_kinds"])
+        self.assertIn("FGT", by_metric["soil_ec_us_cm"]["device_kinds"])
         self.assertIn("WTR", by_metric["par_umol_m2_s"]["device_kinds"])
         self.assertIn("WRS", by_metric["par_umol_m2_s"]["device_kinds"])
+        self.assertIn("FGT", by_metric["par_umol_m2_s"]["device_kinds"])
 
         recorded = repository.record_status_measurements(
             "INADS-env-measurement-test",

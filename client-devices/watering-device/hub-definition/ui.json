@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "sections": [
+    "overview",
+    "monitoring",
+    "watering",
+    "soil_calibration",
+    "schedules",
+    "advanced"
+  ],
+  "configuration_fields": []
+}

@@ -9,12 +9,15 @@ Device-specific XIAO ESP32S3 pin assignments are documented in
 [docs/pin_assignments.md](docs/pin_assignments.md).
 Japanese device documentation is indexed from
 [docs/jp/README.md](docs/jp/README.md).
+The Hub-facing product metadata and Runtime Config projection are specified in
+[../docs/DEVICE_DEFINITION_SPECIFICATION.md](../docs/DEVICE_DEFINITION_SPECIFICATION.md).
 
 ```text
 client-devices/
   common/lib/ina-client-common/
   watering-device/              # WTR
   watering-rs485-device/        # WRS
+  fertigation-device/           # FGT
   soil-sensor-device/           # SOI
   environment-sensor-device/    # ENV
 ```
@@ -49,6 +52,8 @@ top-level application orchestration.
 5. Assign a three-letter uppercase device kind code in the device
    `platformio.ini`.
 6. Build and verify from the device directory.
+7. Add and validate `hub-definition/` so the hub UI and outbound Runtime Config
+   describe the firmware that was implemented.
 
 The concrete device class should call `initialize()` with
 `AppDeviceInitializeOptions`. For example, keep `setup_ap_enabled=true` for

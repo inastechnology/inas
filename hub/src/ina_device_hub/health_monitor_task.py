@@ -10,7 +10,7 @@ from ina_device_hub.discord_notification_service import discord_notification_ser
 from ina_device_hub.general_log import logger
 from ina_device_hub.setting import setting
 
-WATERING_DEVICE_KINDS = {"WTR", "WRS"}
+WATERING_DEVICE_KINDS = {"WTR", "WRS", "FGT"}
 
 
 class HealthMonitorTask:
@@ -213,7 +213,7 @@ def _last_watering_at(record: dict):
         payload = entry.get("payload") if isinstance(entry, dict) else None
         if not isinstance(payload, dict):
             continue
-        if payload.get("watering_started") is True:
+        if payload.get("watering_started") is True or payload.get("batch_started") is True:
             return _parse_datetime(entry.get("received_at"))
     return None
 

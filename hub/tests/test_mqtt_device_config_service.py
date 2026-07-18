@@ -335,6 +335,127 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                 }
             )
 
+    def test_config_validation_preserves_optional_fgt_recipe_and_schedule_enablement(self):
+        config = validate_device_config(
+            {
+                "ntp_server": "pool.ntp.org",
+                "timezone_offset_sec": 32400,
+                "moisture_threshold": 40,
+                "sleep_sec": 180,
+                "fgt": {
+                    "enabled": True,
+                    "recovery_ack": 7,
+                    "recipe": {
+                        "total_water_ml": 5000,
+                        "initial_water_ml": 1250,
+                        "nutrient_a_ml": 12,
+                        "nutrient_b_ml": 13,
+                        "rinse_water_ml": 600,
+                    },
+                    "limits": {"max_total_water_ml": 6000, "max_nutrient_ml": 20},
+                    "sensors": {
+                        "soil": {"enabled": True, "modbus_slave_id": 4},
+                        "par": {"enabled": False},
+                        "flow_pulses_per_liter": 520,
+                    },
+                },
+                "schedules": [
+                    {"hour": 6, "minute": 15, "duration_sec": 900, "channel_mask": 1, "enabled": True},
+                    {"hour": 16, "minute": 15, "duration_sec": 900, "channel_mask": 1, "enabled": False},
+                ],
+            }
+        )
+
+        self.assertEqual(config["sleep_sec"], 180)
+        self.assertTrue(config["fgt"]["enabled"])
+        self.assertEqual(config["fgt"]["recovery_ack"], 7)
+        self.assertEqual(config["fgt"]["recipe"]["initial_water_ml"], 1250)
+        self.assertEqual(config["fgt"]["sensors"]["soil"]["modbus_slave_id"], 4)
+        self.assertFalse(config["fgt"]["sensors"]["par"]["enabled"])
+        self.assertEqual(config["fgt"]["sensors"]["flow_pulses_per_liter"], 520)
+        self.assertTrue(config["schedules"][0]["enabled"])
+        self.assertFalse(config["schedules"][1]["enabled"])
+
+    def test_config_validation_keeps_legacy_records_free_of_fgt_defaults(self):
+        config = validate_device_config(
+            {
+                "ntp_server": "pool.ntp.org",
+                "timezone_offset_sec": 32400,
+                "moisture_threshold": 40,
+                "schedules": [{"hour": 7, "minute": 0, "duration_sec": 60, "channel_mask": 1}],
+            }
+        )
+
+        self.assertNotIn("fgt", config)
+        self.assertEqual(config["sleep_sec"], 300)
+        self.assertTrue(config["schedules"][0]["enabled"])
+
+    def test_publish_projects_stored_config_to_fgt_firmware_keys(self):
+        device_id = "INADS-FGT-PROJECTION-001"
+        self.service.get_record(device_id)
+        self.repository.record_status(device_id, {"seq": 1, "device_kind": "FGT", "firmware_version": "1.0.0"})
+        self.service.set_state(device_id, "active", approved_by="operator")
+        stored_before = self.service.get_config(device_id)
+
+        result = self.service.publish_config(device_id, "push")
+
+        self.assertEqual(
+            set(result["payload"]),
+            {"ntp_server", "timezone_offset_sec", "sleep_sec", "debug_log_on_wake", "ota_check_interval_sec", "fgt", "schedules"},
+        )
+        self.assertNotIn("moisture_threshold", result["payload"])
+        self.assertNotIn("mosfet_switches", result["payload"])
+        self.assertFalse(result["payload"]["fgt"]["enabled"])
+        self.assertEqual(self.service.get_config(device_id), stored_before)
+
+    def test_publish_projects_stored_config_to_soil_sensor_keys(self):
+        device_id = "INADS-SOI-PROJECTION-001"
+        self.service.get_record(device_id)
+        self.repository.record_status(device_id, {"seq": 1, "device_kind": "SOI", "firmware_version": "1.0.0"})
+        self.service.set_state(device_id, "active", approved_by="operator")
+
+        result = self.service.publish_config(device_id, "reply")
+
+        self.assertEqual(
+            set(result["payload"]),
+            {"ntp_server", "timezone_offset_sec", "sleep_sec", "ota_check_interval_sec", "soil_calibration"},
+        )
+    def test_config_validation_rejects_unsafe_fgt_cross_field_values(self):
+        base = {
+            "ntp_server": "pool.ntp.org",
+            "timezone_offset_sec": 32400,
+            "moisture_threshold": 40,
+            "schedules": [{"hour": 7, "minute": 0, "duration_sec": 900, "channel_mask": 1}],
+        }
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config({**base, "fgt": {"recipe": {"total_water_ml": 5000, "initial_water_ml": 5000}}})
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    **base,
+                    "fgt": {
+                        "recipe": {"nutrient_a_ml": 101},
+                        "limits": {"max_nutrient_ml": 100},
+                    },
+                }
+            )
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    **base,
+                    "fgt": {"enabled": True},
+                    "schedules": [
+                        {
+                            "hour": 7,
+                            "minute": 0,
+                            "duration_sec": 900,
+                            "channel_mask": 1,
+                            "frequency": {"mode": "interval", "interval_days": 2, "start_date": "2026-07-18"},
+                        }
+                    ],
+                }
+            )
+
     def test_config_validation_keeps_soil_calibration_mode_and_sampling_fields(self):
         config = validate_device_config(
             {

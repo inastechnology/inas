@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "definition_version": "1.0.0",
+  "device": {
+    "kind": "WTR",
+    "product_name": "水やり機",
+    "category": "watering",
+    "icon": "💧"
+  },
+  "files": {
+    "runtime_config": "runtime-config.schema.json",
+    "status": "status.schema.json",
+    "ui": "ui.json",
+    "actions": "actions.json"
+  },
+  "sensor_slots": [
+    {
+      "id": "soil_moisture",
+      "label": "土壌水分",
+      "status_keys": [
+        "soil_moisture_percent",
+        "last_soil_moisture"
+      ],
+      "unit": "%",
+      "digits": 1,
+      "slot_id": "soil",
+      "enabled_path": "",
+      "chart": {
+        "kind": "soil_moisture",
+        "title": "土壌水分推移",
+        "empty_message": "土壌水分の時系列データはまだありません。"
+      }
+    }
+  ],
+  "output_slots": [
+    {
+      "number": 1,
+      "id": "irr1",
+      "default_name": "潅水1系",
+      "role": "irrigation",
+      "role_label": "水やり",
+      "assignable": true,
+      "channel_mask": 1,
+      "terminal": "IRR1",
+      "allowed_load_types": [
+        "pump",
+        "valve",
+        "drip_line",
+        "sprinkler"
+      ]
+    },
+    {
+      "number": 2,
+      "id": "irr2",
+      "default_name": "潅水2系",
+      "role": "irrigation",
+      "role_label": "水やり",
+      "assignable": true,
+      "channel_mask": 2,
+      "terminal": "IRR2",
+      "allowed_load_types": [
+        "pump",
+        "valve",
+        "drip_line",
+        "sprinkler"
+      ]
+    }
+  ],
+  "runtime_sections": [
+    "watering",
+    "soil_calibration",
+    "schedules",
+    "advanced"
+  ]
+}

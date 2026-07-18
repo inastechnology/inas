@@ -86,7 +86,7 @@ python3 client-devices/docs/generate_xiao_pin_assignment_diagrams.py
 - Prefer concise, implementation-oriented prose.
 - State current behavior separately from planned or future behavior.
 - Keep command examples copy-pasteable.
-- Use stable names for device kinds, such as `WTR`, `WRS`, `SOI`, and `ENV`.
+- Use stable names for device kinds, such as `WTR`, `WRS`, `FGT`, `SOI`, and `ENV`.
 - Use exact environment variable names, topic names, file paths, and API paths
   in monospace.
 - For farmer-facing descriptions, explain the operational meaning before the

@@ -95,6 +95,16 @@ Use the same RS485 bus for additional sensors. Missing or uninstalled sensors
 are detected by Modbus timeout, CRC failure, or no response and reported as
 `*_ok=false`; adding a sensor should not require a new XIAO pin assignment.
 
+## FGT
+
+FGT uses remapped I2C on `D0/D1` for an MCP23017, `D3` as the
+hardware-pulled-down actuator master enable, `D5` as the inlet flow pulse,
+`D4/D6/D7` for RS485, and `D8` for switched RS485 sensor power. `D2/GPIO3` is
+reserved because it is a strapping pin. The five actuator selects and four
+safety inputs are on the MCP23017. See the complete assignment and OFF-on-reset
+wiring rules in
+[fertigation-device/docs/hardware_and_power.md](../fertigation-device/docs/hardware_and_power.md).
+
 ## SOI
 
 Battery-powered soil moisture node. SOI currently has no RS485 bus.

@@ -24,6 +24,12 @@ from ina_device_hub.device_config_repository import (
     DeviceStateConflictError,
 )
 from ina_device_hub.device_config_service import device_config_service
+from ina_device_hub.device_definition_registry import (
+    device_kind_label as definition_device_kind_label,
+    get_device_definition,
+    project_runtime_config,
+    value_at_path,
+)
 from ina_device_hub.device_event_log import list_device_events
 from ina_device_hub.device_output_capabilities import (
     device_output_capabilities,
@@ -969,6 +975,7 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
     payload = _latest_status_payload(record)
     config = record.get("config") or {}
     device_kind = record.get("device_kind") or payload.get("device_kind") or ""
+    definition = get_device_definition(device_kind)
     watering = _watering_state(payload)
     layout_context = layout_context or {"assigned": False, "assignments": [], "primary_path": "", "primary_href": ""}
     location = layout_context.get("primary_path") or record.get("location") or "未設置"
@@ -1012,6 +1019,9 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "device_kind": device_kind,
         "kind_label": _device_kind_label(device_kind),
         "supports_irrigation": device_kind in {"WTR", "WRS"},
+        "supports_fertigation": device_kind == "FGT",
+        "definition": definition,
+        "runtime_config_payload": project_runtime_config(device_kind, config),
         "state_label": _device_state_label(record.get("state")),
         "state_class": _device_state_class(record.get("state")),
         "watering": watering,
@@ -1026,9 +1036,9 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "ota_state": _ota_state_label(record.get("ota_state")),
         "ota_class": _ota_state_class(record.get("ota_state")),
         "ota_error": record.get("ota_error") or "",
-        "operational_heading": "現在の潅水判断" if device_kind in {"WTR", "WRS"} else "現在の計測・稼働状況",
+        "operational_heading": "現在の潅水判断" if device_kind in {"WTR", "WRS"} else "液肥づくりの現在地" if device_kind == "FGT" else "現在の計測・稼働状況",
         "operational_metrics": _build_device_operational_metrics(record, payload, config, now, watering),
-        "monitoring_charts": _build_device_monitoring_charts(device_kind, statuses),
+        "monitoring_charts": _build_device_monitoring_charts(device_kind, statuses, config),
         "schedules": _format_schedules_for_ui(config.get("schedules") or [], config),
         "config_summary": _format_config_summary(config),
         "watering_history": _build_watering_history(statuses),
@@ -1242,6 +1252,8 @@ def _layout_placement_url(field_id, space_id, placement_id):
 
 def _build_device_operational_metrics(record, payload, config, now, watering):
     device_kind = record.get("device_kind") or payload.get("device_kind") or ""
+    definition = get_device_definition(device_kind)
+    definition_metrics = definition.get("status", {}).get("metrics") or definition.get("sensor_slots") or []
     if device_kind in {"WTR", "WRS"}:
         soil_moisture = _first_numeric_value(payload, ("soil_moisture_percent", "last_soil_moisture"))
         threshold = payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")
@@ -1278,55 +1290,11 @@ def _build_device_operational_metrics(record, payload, config, now, watering):
             },
         ]
         if device_kind == "WRS":
-            integrated_specs = (
-                ("土壌EC", ("soil_ec_us_cm",), "uS/cm", 0, "soil-ec-chart"),
-                ("土壌pH", ("soil_ph",), "", 1, "soil-ph-chart"),
-                ("光合成に使える光", ("par_umol_m2_s",), "umol/m2/s", 0, "par-chart"),
-            )
-            for label, aliases, unit, digits, history_anchor in integrated_specs:
-                value = _first_numeric_value(payload, aliases)
-                if value is not None:
-                    metrics.append(
-                        {
-                            "label": label,
-                            "value": _format_measurement_value(value, unit, digits),
-                            "class": "",
-                            "hint": "直近の計測値",
-                            "history_anchor": history_anchor,
-                        }
-                    )
+            metrics.extend(_definition_operational_metrics(definition_metrics, payload, config, skip_ids={"soil_moisture"}))
         return metrics
 
-    metric_specs = {
-        "ENV": (
-            ("気温", ("air_temperature_c",), "℃", 1, "air-temperature-chart"),
-            ("湿度", ("air_humidity_percent",), "%", 1, "air-humidity-chart"),
-            ("光合成に使える光", ("par_umol_m2_s",), "umol/m2/s", 0, "par-chart"),
-        ),
-        "SOI": (
-            ("土壌水分", ("soil_moisture_percent", "last_soil_moisture"), "%", 1, "soil-moisture-chart"),
-            ("地温", ("soil_temperature_c",), "℃", 1, "soil-temperature-chart"),
-            ("土壌EC", ("soil_ec_us_cm",), "uS/cm", 0, "soil-ec-chart"),
-            ("土壌pH", ("soil_ph",), "", 1, "soil-ph-chart"),
-        ),
-        "PAR": (("光合成に使える光", ("par_umol_m2_s",), "umol/m2/s", 0, "par-chart"),),
-    }
-    metrics = []
-    for label, aliases, unit, digits, history_anchor in metric_specs.get(device_kind, ()):
-        value = _first_numeric_value(payload, aliases)
-        if value is None:
-            continue
-        metrics.append(
-            {
-                "label": label,
-                "value": _format_measurement_value(value, unit, digits),
-                "class": "",
-                "hint": "直近の計測値",
-                "history_anchor": history_anchor,
-            }
-        )
-
-    if not metrics and device_kind not in metric_specs:
+    metrics = _definition_operational_metrics(definition_metrics, payload, config)
+    if not metrics:
         detected_metric_specs = (
             ("気温", ("air_temperature_c",), "℃", 1, "air-temperature-chart"),
             ("湿度", ("air_humidity_percent",), "%", 1, "air-humidity-chart"),
@@ -1365,6 +1333,36 @@ def _build_device_operational_metrics(record, payload, config, now, watering):
             "hint": _format_datetime(record.get("last_seen_at") or record.get("last_status_at")),
         },
     ]
+
+
+def _definition_operational_metrics(metric_specs, payload, config, *, skip_ids=None):
+    metrics = []
+    skip_ids = skip_ids or set()
+    for spec in metric_specs:
+        if not isinstance(spec, dict) or spec.get("id") in skip_ids:
+            continue
+        value = _first_numeric_value(payload, spec.get("status_keys") or [])
+        enabled_path = spec.get("enabled_path")
+        enabled = value_at_path(config, enabled_path) if enabled_path else True
+        if value is None and enabled is False:
+            display_value, hint, css_class = "未接続", "設定で使用していません", "muted"
+        elif value is None:
+            display_value, hint, css_class = "未取得", "機器は対応しています。次回の計測を待っています", "muted"
+        else:
+            display_value = _format_measurement_value(value, spec.get("unit") or "", int(spec.get("digits") or 0))
+            hint, css_class = "直近の計測値", ""
+        chart = spec.get("chart") or {}
+        metrics.append(
+            {
+                "label": spec.get("label") or spec.get("id") or "計測値",
+                "value": display_value,
+                "class": css_class,
+                "hint": hint,
+                "history_anchor": f"{str(chart.get('kind') or spec.get('id')).replace('_', '-')}-chart",
+                "availability": "connected" if value is not None else "disconnected" if enabled is False else "waiting",
+            }
+        )
+    return metrics
 
 
 def _next_watering_schedule(config, now):
@@ -1432,7 +1430,24 @@ def _format_measurement_value(value, unit, digits):
     return f"{formatted} {unit}".strip()
 
 
-def _build_device_monitoring_charts(device_kind, statuses):
+def _build_device_monitoring_charts(device_kind, statuses, config=None):
+    definition = get_device_definition(device_kind)
+    definition_metrics = definition.get("status", {}).get("metrics") or []
+    if definition_metrics:
+        specs = []
+        if device_kind in {"WTR", "WRS"}:
+            specs.append(("watering", "潅水推移", "潅水に関する時系列データはまだありません。"))
+        payloads = [entry.get("payload") for entry in statuses or [] if isinstance(entry, dict) and isinstance(entry.get("payload"), dict)]
+        for metric in definition_metrics:
+            if not any(_first_numeric_value(payload, metric.get("status_keys") or []) is not None for payload in payloads):
+                continue
+            chart = metric.get("chart") or {}
+            kind = chart.get("kind") or metric.get("id")
+            specs.append((kind, chart.get("title") or f"{metric.get('label')}推移", chart.get("empty_message") or "時系列データはまだありません。"))
+        seen = set()
+        specs = tuple(item for item in specs if not (item[0] in seen or seen.add(item[0])))
+    else:
+        specs = None
     chart_specs = {
         "WTR": (
             ("watering", "潅水推移", "潅水に関する時系列データはまだありません。"),
@@ -1458,7 +1473,7 @@ def _build_device_monitoring_charts(device_kind, statuses):
         ),
         "PAR": (("par", "PAR推移", "PARの時系列データはまだありません。"),),
     }
-    specs = chart_specs.get(device_kind)
+    specs = specs or chart_specs.get(device_kind)
     if specs is None:
         specs = tuple(_detected_device_chart_specs(statuses))
     dom_ids = {
@@ -1476,7 +1491,7 @@ def _build_device_monitoring_charts(device_kind, statuses):
             "kind": kind,
             "title": title,
             "empty_message": empty_message,
-            "dom_id": dom_ids[kind],
+            "dom_id": dom_ids.get(kind, f"{str(kind).replace('_', '-')}-chart"),
         }
         for kind, title, empty_message in specs
     ]
@@ -1813,19 +1828,8 @@ def _watering_state(payload):
 
 
 def _device_kind_label(device_kind):
-    labels = {
-        "WTR": "水やり機",
-        "WRS": "RS485全部入り水やり機",
-        "ENV": "環境センサー",
-        "SOI": "土壌センサー",
-        "PAR": "日射・PARセンサー",
-        "CAM": "カメラ",
-    }
-    if device_kind in labels:
-        return labels[device_kind]
-    if device_kind:
-        return f"{device_kind} デバイス"
-    return "種別未取得"
+    legacy_labels = {"PAR": "日射・PARセンサー", "CAM": "カメラ"}
+    return legacy_labels.get(device_kind) or definition_device_kind_label(device_kind)
 
 
 def _device_state_label(state):
@@ -3309,9 +3313,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </section>
 
               <div class="section-grid">
-                {% if selected.supports_irrigation %}
+                {% if selected.supports_irrigation or selected.supports_fertigation %}
                 <section class="panel">
-                  <h2>灌水予約</h2>
+                  <h2>{{ '液肥づくりの予約' if selected.supports_fertigation else '灌水予約' }}</h2>
                   {% if selected.schedules %}
                   <div class="schedule-grid">
                     {% for schedule in selected.schedules %}
@@ -3322,7 +3326,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                     {% endfor %}
                   </div>
                   {% else %}
-                  <div class="empty">灌水予約はまだありません。</div>
+                  <div class="empty">{{ '液肥づくり' if selected.supports_fertigation else '灌水' }}の予約はまだありません。</div>
                   {% endif %}
                 </section>
                 {% endif %}
@@ -3352,7 +3356,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             </form>
           </section>
           <section class="panel">
-            <h2>{{ '水やりセットアップ' if selected.supports_irrigation else '機器セットアップ' }}</h2>
+            <h2>{{ '水やりセットアップ' if selected.supports_irrigation else '液肥づくりセットアップ' if selected.supports_fertigation else '機器セットアップ' }}</h2>
             {% if selected.supports_irrigation %}
             <nav class="setup-journey" aria-label="水やりセットアップの手順">
               <a class="setup-step" href="#output-connections"><span class="setup-step-number">1</span><span class="setup-step-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16h8M18 16h8M12 11l6 5-6 5V11ZM20 11l-6 5 6 5V11Z"/></svg></span><span><strong>設備をつなぐ</strong><small>接続口から水の行き先を組み立てる</small></span></a>
@@ -3379,6 +3383,23 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
                 <span id="debug-log-display" hidden>{{ selected.config_summary.debug_log }}</span><span id="ota-interval-display" hidden>{{ selected.config_summary.ota_interval }}</span>
               </div>
+
+              {% if selected.supports_fertigation %}
+              <section id="fertigation-recipe" class="setup-stage">
+                <div class="setup-stage-head"><div><h3>液肥づくりの流れ</h3><p class="lead">この機器では5つの役割があらかじめ決まっています。配線番号を選ぶ必要はありません。</p></div><span class="badge good">用途固定</span></div>
+                <div class="switch-flow-board fertigation-flow" aria-label="液肥づくりの固定工程">
+                  <div class="controller-node">原水</div>
+                  <div class="switch-output-list">{% for output in selected.output_settings.outputs %}<div class="switch-output enabled"><span class="switch-output-dot"></span><span class="switch-output-icon" aria-hidden="true">{{ ['🚰','🅰️','🅱️','🌀','🌱'][loop.index0] }}</span><div><strong>{{ output.name }}</strong><small>{{ output.role_label }}</small></div><span class="terminal">工程 {{ output.number }}</span></div>{% endfor %}</div>
+                </div>
+                <div class="config-toolbar definition-config-fields">
+                  {% for field in selected.definition.ui.configuration_fields %}
+                  {% if field.type == 'boolean' %}<label class="switch-row"><input type="checkbox" data-definition-path="{{ field.path }}" data-definition-type="boolean">{{ field.label }}</label>
+                  {% else %}<div class="config-field"><label>{{ field.label }}</label><div class="threshold-control"><input type="number" data-definition-path="{{ field.path }}" data-definition-type="number" min="{{ field.min }}" max="{{ field.max }}" step="1"><span>{{ field.unit }}</span></div></div>{% endif %}
+                  {% endfor %}
+                </div>
+                <p class="notice">最初に一部の水を入れ、A液とB液を別々に加えながら攪拌し、残りの水で混ぜます。潅水後は洗浄用の水でタンクと配管をすすぎます。</p>
+              </section>
+              {% endif %}
 
               <section id="watering-rules" class="setup-stage watering-rule-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
                 <h3>水やりの判断</h3>
@@ -3416,11 +3437,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </dialog>
               </section>
 
-              <div id="watering-schedules" class="setup-stage schedule-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
-                <h3>灌水予約</h3>
+              <div id="watering-schedules" class="setup-stage schedule-stage"{% if not selected.supports_irrigation and not selected.supports_fertigation %} hidden{% endif %}>
+                <h3>{{ '液肥づくりの予約' if selected.supports_fertigation else '灌水予約' }}</h3>
                 <div id="schedule-editor" class="schedule-editor"></div>
                 <div class="actions">
-                  <button type="button" id="add-schedule">＋ 予約を追加</button>
+                  <button type="button" id="add-schedule">＋ {{ '液肥づくり' if selected.supports_fertigation else '水やり' }}予約を追加</button>
                 </div>
               </div>
 
@@ -3446,7 +3467,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
               </div>
 
-              <section id="soil-moisture-reference" class="setup-stage calibration-stage"{% if selected.device_kind != "WTR" %} hidden{% endif %}>
+              <section id="soil-moisture-reference" class="setup-stage calibration-stage"{% if selected.device_kind not in ["WTR", "SOI"] %} hidden{% endif %}>
                 <div class="calibration-card">
                   <div><h3>土壌水分計の基準合わせ</h3><p class="lead">乾いた状態と十分に湿った状態を順番に記録すると、0〜100%の表示が圃場に合いやすくなります。</p><div class="calibration-status"><span class="badge {{ 'good' if selected.soil_calibration_calibrated else 'muted' }}" id="soil-calibration-status">{{ '基準設定済み' if selected.soil_calibration_calibrated else '基準未設定' }}</span><span class="badge warn" id="soil-calibration-action-summary" hidden></span></div></div>
                   <button type="button" id="open-soil-calibration-guide" class="primary">手順を見ながら設定</button>
@@ -3460,7 +3481,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </dialog>
               </section>
 
-              <div class="setup-stage environment-stage"{% if selected.device_kind not in ["WRS", "ENV", "SOI", "PAR"] %} hidden{% endif %}>
+              <div class="setup-stage environment-stage"{% if selected.device_kind not in ["WRS", "ENV", "PAR"] %} hidden{% endif %}>
                 <div class="setup-stage-head"><div><h3>つないだセンサー</h3><p class="lead">実際につないでいる機材だけをONにします。ONにした機材の調整メニューだけが開きます。</p></div></div>
                 <div class="sensor-rack">
                   <article class="sensor-device-card" data-env-sensor-card="par"{% if selected.device_kind not in ["WRS", "ENV", "PAR"] %} hidden{% endif %}>
@@ -3475,7 +3496,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                     </div>
                   </article>
 
-                  <article class="sensor-device-card" data-env-sensor-card="soil"{% if selected.device_kind not in ["WRS", "ENV", "SOI"] %} hidden{% endif %}>
+                  <article class="sensor-device-card" data-env-sensor-card="soil"{% if selected.device_kind not in ["WRS", "ENV"] %} hidden{% endif %}>
                     <div class="sensor-device-head">
                       <span class="sensor-device-illustration soil" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M24 8h16v25H24zM28 33v21M36 33v21"/><path d="M12 50c10-6 30-6 40 0M29 19h6"/></svg></span>
                       <span><strong>土のセンサー</strong><small>水分・地温・EC・pH・養分を測ります</small></span>
@@ -3736,7 +3757,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             <details>
               <summary>動作設定 JSON</summary>
               <div class="detail-body">
-                <textarea id="runtime-config-json">{{ format_json(selected_device.config) }}</textarea>
+                <p class="lead">下のJSONは、この機種へ実際に送る項目だけを表示します。Hubに保持している旧設定は削除されません。</p>
+                <textarea id="runtime-config-json">{{ format_json(selected.runtime_config_payload) }}</textarea>
+                <details><summary>Hubに保持している互換設定</summary><pre>{{ format_json(selected_device.config) }}</pre></details>
                 <div class="actions">
                   <button type="button" id="apply-runtime-json">JSON をフォームに反映</button>
                   <button type="button" id="save-runtime-json">JSON で保存</button>
@@ -3772,6 +3795,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const demoMode = {{ demo_mode | tojson }};
           const chartEndpoint = selectedDeviceId ? ((demoMode ? "/demo/local/api/mqtt-devices/" : "/local/api/mqtt-devices/") + encodeURIComponent(selectedDeviceId) + "/charts") : null;
           const initialRuntimeConfig = {{ (selected_device.config if selected_device else {}) | tojson }};
+          const deviceDefinition = {{ (admin_view.selected.definition if admin_view.selected else {}) | tojson }};
+          const deviceRuntimeSendKeys = (((deviceDefinition || {}).runtime_config || {}).send_keys || []);
+          const isFertigationDevice = ((deviceDefinition || {}).device || {}).kind === "FGT";
           const deviceOutputCapabilities = {{ (admin_view.selected.output_settings.outputs if admin_view.selected else []) | tojson }};
           const unsupportedOutputSettings = {{ (admin_view.selected.output_settings.unsupported if admin_view.selected else []) | tojson }};
           let plotlyLoadPromise = null;
@@ -4497,7 +4523,17 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           function createScheduleRow(schedule) {
             const row = document.createElement("div");
             row.className = "schedule-row";
-            row.innerHTML = [
+            row.innerHTML = (isFertigationDevice ? [
+              '<div><label>液肥づくりを始める時刻</label><input data-schedule-time type="time" required></div>',
+              '<label class="switch-row"><input data-schedule-enabled type="checkbox"> この予約を使う</label>',
+              '<input data-schedule-duration type="hidden" value="1">',
+              '<select data-schedule-channel hidden><option value="1">固定工程</option></select>',
+              '<select data-schedule-frequency-mode hidden><option value="daily">毎日</option></select>',
+              '<input data-schedule-interval-days type="hidden" value="1">',
+              '<input data-schedule-start-date type="hidden">',
+              '<select data-schedule-weekdays hidden multiple></select>',
+              '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－</button>',
+            ] : [
               '<div><label>時刻</label><input data-schedule-time type="time" required></div>',
               '<div><label>灌水時間（秒）</label><input data-schedule-duration type="number" min="1" max="3600" step="1" required></div>',
               '<div><label>水を送る接続先</label><select data-schedule-channel></select></div>',
@@ -4506,28 +4542,30 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               '<div data-frequency-panel="interval"><label>開始日</label><input data-schedule-start-date type="date"></div>',
               '<div data-frequency-panel="weekdays"><label>曜日</label><select data-schedule-weekdays multiple size="4"><option value="0">日</option><option value="1">月</option><option value="2">火</option><option value="3">水</option><option value="4">木</option><option value="5">金</option><option value="6">土</option></select></div>',
               '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－</button>',
-            ].join("");
+            ]).join("");
             const frequency = scheduleFrequency(schedule || {});
             row.querySelector("[data-schedule-time]").value = scheduleToTime(schedule || {});
             row.querySelector("[data-schedule-duration]").value = String((schedule || {}).duration_sec || 1);
             setScheduleChannelOptions(row.querySelector("[data-schedule-channel]"), Number((schedule || {}).channel_mask || 1));
             row.querySelector("[data-schedule-frequency-mode]").value = frequency.mode;
+            const enabled = row.querySelector("[data-schedule-enabled]");
+            if (enabled) enabled.checked = (schedule || {}).enabled !== false;
             row.querySelector("[data-schedule-interval-days]").value = String(frequency.interval_days || 2);
             row.querySelector("[data-schedule-start-date]").value = frequency.start_date || todayDateString();
             Array.from(row.querySelector("[data-schedule-weekdays]").options).forEach((option) => {
               option.selected = frequency.weekdays.includes(Number(option.value));
             });
-            setFrequencyControlsVisible(row);
+            if (!isFertigationDevice) setFrequencyControlsVisible(row);
             row.querySelector("[data-remove-schedule]").addEventListener("click", () => {
               if (document.querySelectorAll("#schedule-editor .schedule-row").length <= 1) {
-                showResult("灌水予約は最低 1 件必要です", false);
+                showResult("予約は最低 1 件必要です", false);
                 return;
               }
               row.remove();
               refreshRuntimeConfigPreview();
               document.getElementById("runtime-config-form")?.dispatchEvent(new Event("change", { bubbles: true }));
             });
-            row.querySelector("[data-schedule-frequency-mode]").addEventListener("input", () => setFrequencyControlsVisible(row));
+            if (!isFertigationDevice) row.querySelector("[data-schedule-frequency-mode]").addEventListener("input", () => setFrequencyControlsVisible(row));
             row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", refreshRuntimeConfigPreview));
             return row;
           }
@@ -4759,6 +4797,12 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
             renderMosfetSwitches(config.mosfet_switches);
 
+            document.querySelectorAll("[data-definition-path]").forEach((input) => {
+              const value = getNestedValue(config, input.dataset.definitionPath);
+              if (input.dataset.definitionType === "boolean") input.checked = Boolean(value);
+              else if (value !== undefined && value !== null) input.value = String(value);
+            });
+
             const editor = document.getElementById("schedule-editor");
             if (editor) {
               editor.innerHTML = "";
@@ -4785,6 +4829,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 frequency.weekdays = Array.from(row.querySelector("[data-schedule-weekdays]").selectedOptions).map((option) => Number(option.value));
               }
               return {
+                enabled: row.querySelector("[data-schedule-enabled]")?.checked !== false,
                 hour: Number(parts[0]),
                 minute: Number(parts[1]),
                 duration_sec: Number(row.querySelector("[data-schedule-duration]").value),
@@ -4844,7 +4889,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               },
               power_settle_ms: Number(document.getElementById("env-power-settle-ms").value),
             };
-            return {
+            const config = {
               ntp_server: document.getElementById("ntp-server").value.trim() || "pool.ntp.org",
               timezone_offset_sec: timezoneOffset,
               moisture_threshold: threshold,
@@ -4858,6 +4903,33 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               mosfet_switches: mosfetSwitches,
               schedules,
             };
+            document.querySelectorAll("[data-definition-path]").forEach((input) => {
+              const value = input.dataset.definitionType === "boolean" ? input.checked : Number(input.value);
+              setNestedValue(config, input.dataset.definitionPath, value);
+            });
+            Object.keys(initialRuntimeConfig || {}).forEach((key) => {
+              if (!(key in config)) config[key] = structuredClone(initialRuntimeConfig[key]);
+            });
+            return config;
+          }
+
+          function getNestedValue(value, path) {
+            return String(path || "").split(".").reduce((current, key) => current && current[key], value);
+          }
+
+          function setNestedValue(value, path, nextValue) {
+            const keys = String(path || "").split(".").filter(Boolean);
+            let current = value;
+            keys.slice(0, -1).forEach((key) => {
+              if (!current[key] || typeof current[key] !== "object") current[key] = {};
+              current = current[key];
+            });
+            if (keys.length) current[keys[keys.length - 1]] = nextValue;
+          }
+
+          function projectRuntimeConfig(config) {
+            if (!deviceRuntimeSendKeys.length) return structuredClone(config || {});
+            return Object.fromEntries(deviceRuntimeSendKeys.filter((key) => key in (config || {})).map((key) => [key, structuredClone(config[key])]));
           }
 
           function setEnvMetricCalibration(metric, prefix, envCalibration) {
@@ -4886,7 +4958,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               return;
             }
             const textarea = document.getElementById("runtime-config-json");
-            if (textarea) textarea.value = JSON.stringify(config, null, 2);
+            if (textarea) textarea.value = JSON.stringify(projectRuntimeConfig(config), null, 2);
             const thresholdDisplay = document.getElementById("threshold-display");
             if (thresholdDisplay) thresholdDisplay.textContent = config.moisture_threshold + "%";
             const forceDisplay = document.getElementById("force-display");
@@ -4904,7 +4976,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (source === "json") {
               const textarea = document.getElementById("runtime-config-json");
               try {
-                config = JSON.parse(textarea.value);
+                config = { ...structuredClone(initialRuntimeConfig), ...JSON.parse(textarea.value) };
               } catch (error) {
                 showResult("水やり設定 JSON が正しくありません", false);
                 return;
@@ -4919,7 +4991,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             }
             renderRuntimeConfigForm(config);
             const textarea = document.getElementById("runtime-config-json");
-            if (textarea) textarea.value = JSON.stringify(config, null, 2);
+            if (textarea) textarea.value = JSON.stringify(projectRuntimeConfig(config), null, 2);
             try {
               await requestJson("/local/api/mqtt-devices/" + encodeURIComponent(selectedDeviceId) + "/runtime-config?push=" + String(Boolean(push)), {
                 method: "PUT",
@@ -5763,7 +5835,7 @@ def _layout_device_assignments():
 
 
 def _layout_device_group_label(device_kind):
-    if device_kind in {"WTR", "WRS"}:
+    if device_kind in {"WTR", "WRS", "FGT"}:
         return "潅水デバイス"
     if device_kind == "ENV":
         return "環境センサー"
@@ -7366,7 +7438,7 @@ def _infer_device_role(record: dict | None):
         return "environment"
     if device_kind == "SOI":
         return "soil"
-    if device_kind in {"WTR", "WRS"}:
+    if device_kind in {"WTR", "WRS", "FGT"}:
         return "watering"
     return "sensor"
 
@@ -7871,6 +7943,11 @@ def get_mqtt_device_runtime_config(device_id):
     return jsonify(device_config_service().get_config(device_id))
 
 
+@app.route("/local/api/mqtt-devices/<device_id>/runtime-config/payload", methods=["GET"])
+def get_mqtt_device_runtime_config_payload(device_id):
+    return jsonify(device_config_service().get_runtime_config_payload(device_id))
+
+
 @app.route("/local/api/mqtt-devices/<device_id>/runtime-config", methods=["PUT"])
 def update_mqtt_device_runtime_config(device_id):
     return update_device_config(device_id)
@@ -7952,6 +8029,46 @@ def _build_mqtt_device_chart_payload(statuses):
             color="#0f766e",
             div_id="soil-ph-chart",
             y_range=(0, 14),
+        ),
+        "soil_n": _build_metric_trend_chart(
+            statuses,
+            aliases=("soil_n_mg_kg",),
+            title="土壌窒素推移",
+            unit="mg/kg",
+            color="#15803d",
+            div_id="soil-n-chart",
+        ),
+        "soil_p": _build_metric_trend_chart(
+            statuses,
+            aliases=("soil_p_mg_kg",),
+            title="土壌リン推移",
+            unit="mg/kg",
+            color="#0369a1",
+            div_id="soil-p-chart",
+        ),
+        "soil_k": _build_metric_trend_chart(
+            statuses,
+            aliases=("soil_k_mg_kg",),
+            title="土壌カリウム推移",
+            unit="mg/kg",
+            color="#be123c",
+            div_id="soil-k-chart",
+        ),
+        "batch_water": _build_metric_trend_chart(
+            statuses,
+            aliases=("inlet_water_ml",),
+            title="今回の給水量推移",
+            unit="mL",
+            color="#0284c7",
+            div_id="batch-water-chart",
+        ),
+        "batch_target": _build_metric_trend_chart(
+            statuses,
+            aliases=("nutrient_batch_water_target_ml",),
+            title="今回の目標量推移",
+            unit="mL",
+            color="#047857",
+            div_id="batch-target-chart",
         ),
         "par": _build_metric_trend_chart(
             statuses,

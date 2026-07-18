@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "definition_version": "1.0.0",
+  "device": {
+    "kind": "FGT",
+    "product_name": "液肥づくり・潅水装置",
+    "category": "fertigation",
+    "icon": "🧪"
+  },
+  "files": {
+    "runtime_config": "runtime-config.schema.json",
+    "status": "status.schema.json",
+    "ui": "ui.json",
+    "actions": "actions.json"
+  },
+  "sensor_slots": [
+    {
+      "id": "batch_water",
+      "label": "今回の給水量",
+      "status_keys": [
+        "inlet_water_ml"
+      ],
+      "unit": "mL",
+      "digits": 0,
+      "slot_id": "flow",
+      "enabled_path": "",
+      "chart": {
+        "kind": "batch_water",
+        "title": "今回の給水量推移",
+        "empty_message": "今回の給水量の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "batch_target",
+      "label": "今回の目標量",
+      "status_keys": [
+        "nutrient_batch_water_target_ml"
+      ],
+      "unit": "mL",
+      "digits": 0,
+      "slot_id": "flow",
+      "enabled_path": "",
+      "chart": {
+        "kind": "batch_target",
+        "title": "今回の目標量推移",
+        "empty_message": "今回の目標量の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_moisture",
+      "label": "土壌水分",
+      "status_keys": [
+        "soil_moisture_percent"
+      ],
+      "unit": "%",
+      "digits": 1,
+      "slot_id": "soil",
+      "enabled_path": "fgt.sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_moisture",
+        "title": "土壌水分推移",
+        "empty_message": "土壌水分の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_temperature",
+      "label": "地温",
+      "status_keys": [
+        "soil_temperature_c"
+      ],
+      "unit": "℃",
+      "digits": 1,
+      "slot_id": "soil",
+      "enabled_path": "fgt.sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_temperature",
+        "title": "地温推移",
+        "empty_message": "地温の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_ec",
+      "label": "土壌EC",
+      "status_keys": [
+        "soil_ec_us_cm"
+      ],
+      "unit": "µS/cm",
+      "digits": 0,
+      "slot_id": "soil",
+      "enabled_path": "fgt.sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_ec",
+        "title": "土壌EC推移",
+        "empty_message": "土壌ECの時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_ph",
+      "label": "土壌pH",
+      "status_keys": [
+        "soil_ph"
+      ],
+      "unit": "",
+      "digits": 1,
+      "slot_id": "soil",
+      "enabled_path": "fgt.sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_ph",
+        "title": "土壌pH推移",
+        "empty_message": "土壌pHの時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_n",
+      "label": "土壌窒素",
+      "status_keys": [
+        "soil_n_mg_kg"
+      ],
+      "unit": "mg/kg",
+      "digits": 0,
+      "slot_id": "soil",
+      "enabled_path": "fgt.sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_n",
+        "title": "土壌窒素推移",
+        "empty_message": "土壌窒素の時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_p",
+      "label": "土壌リン",
+      "status_keys": [
+        "soil_p_mg_kg"
+      ],
+      "unit": "mg/kg",
+      "digits": 0,
+      "slot_id": "soil",
+      "enabled_path": "fgt.sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_p",
+        "title": "土壌リン推移",
+        "empty_message": "土壌リンの時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "soil_k",
+      "label": "土壌カリウム",
+      "status_keys": [
+        "soil_k_mg_kg"
+      ],
+      "unit": "mg/kg",
+      "digits": 0,
+      "slot_id": "soil",
+      "enabled_path": "fgt.sensors.soil.enabled",
+      "chart": {
+        "kind": "soil_k",
+        "title": "土壌カリウム推移",
+        "empty_message": "土壌カリウムの時系列データはまだありません。"
+      }
+    },
+    {
+      "id": "par",
+      "label": "光合成に使える光",
+      "status_keys": [
+        "par_umol_m2_s"
+      ],
+      "unit": "µmol/m²/s",
+      "digits": 0,
+      "slot_id": "par",
+      "enabled_path": "fgt.sensors.par.enabled",
+      "chart": {
+        "kind": "par",
+        "title": "光合成に使える光推移",
+        "empty_message": "光合成に使える光の時系列データはまだありません。"
+      }
+    }
+  ],
+  "output_slots": [
+    {
+      "number": 1,
+      "id": "water_inlet",
+      "default_name": "水を入れる",
+      "role": "fixed",
+      "role_label": "給水",
+      "assignable": false,
+      "channel_mask": 0,
+      "terminal": "WATER_INLET",
+      "allowed_load_types": []
+    },
+    {
+      "number": 2,
+      "id": "nutrient_a",
+      "default_name": "A液を量る",
+      "role": "fixed",
+      "role_label": "A液",
+      "assignable": false,
+      "channel_mask": 0,
+      "terminal": "NUTRIENT_A",
+      "allowed_load_types": []
+    },
+    {
+      "number": 3,
+      "id": "nutrient_b",
+      "default_name": "B液を量る",
+      "role": "fixed",
+      "role_label": "B液",
+      "assignable": false,
+      "channel_mask": 0,
+      "terminal": "NUTRIENT_B",
+      "allowed_load_types": []
+    },
+    {
+      "number": 4,
+      "id": "mixer",
+      "default_name": "タンクを混ぜる",
+      "role": "fixed",
+      "role_label": "攪拌",
+      "assignable": false,
+      "channel_mask": 0,
+      "terminal": "MIXER",
+      "allowed_load_types": []
+    },
+    {
+      "number": 5,
+      "id": "irrigation",
+      "default_name": "植物へ送る",
+      "role": "fixed",
+      "role_label": "潅水",
+      "assignable": false,
+      "channel_mask": 0,
+      "terminal": "IRRIGATION",
+      "allowed_load_types": []
+    }
+  ],
+  "runtime_sections": [
+    "fertigation_recipe",
+    "sensor_connections",
+    "schedules",
+    "advanced"
+  ]
+}

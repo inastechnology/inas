@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "actions": [
+    {
+      "id": "water_now",
+      "label": "今すぐ水やり",
+      "kind": "irrigation"
+    }
+  ]
+}

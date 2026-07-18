@@ -76,6 +76,16 @@ RS485 前提の水やり全部入りデバイス。WRS は WTR の灌水出力�
 
 追加センサーは同じ RS485 bus に接続する。未接続センサーは Modbus timeout、CRC error、無応答によって検出し、`*_ok=false` として報告する。センサー追加のたびに XIAO の pin assignment を増やさない。
 
+## FGT
+
+FGT は MCP23017 用の I2C に `D0/D1`、外部 pull-down 付きの全 actuator
+許可信号に `D3`、原水流量 pulse に `D5`、RS485 に `D4/D6/D7`、RS485
+sensor 電源に `D8` を使う。`D2/GPIO3` は strapping pin のため予約する。
+5つの actuator 選択と4つの安全入力は MCP23017 へ接続する。詳細な割当と
+reset 時 OFF の配線規則は
+[fertigation-device/docs/hardware_and_power.md](../../fertigation-device/docs/hardware_and_power.md)
+を参照する。
+
 ## SOI
 
 18650 バッテリー前提の土壌水分専用ノード。現状は RS485 を持たない。

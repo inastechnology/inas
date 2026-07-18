@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "send_keys": [
+    "ntp_server",
+    "timezone_offset_sec",
+    "sleep_sec",
+    "ota_check_interval_sec",
+    "soil_calibration"
+  ]
+}

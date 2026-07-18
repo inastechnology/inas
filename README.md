@@ -27,6 +27,7 @@ client-devices/
       ina-client-common/      # Shared PlatformIO library
   watering-device/            # Watering device firmware, device kind: WTR
   watering-rs485-device/      # RS485 watering device firmware, device kind: WRS
+  fertigation-device/         # Fertilizer mixing and irrigation, device kind: FGT
   soil-sensor-device/         # Soil sensor device firmware, device kind: SOI
   environment-sensor-device/  # Environment sensor device firmware, device kind: ENV
 ```
