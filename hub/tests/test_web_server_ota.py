@@ -235,6 +235,26 @@ class WebServerOTATest(unittest.TestCase):
                 "moisture_threshold": 40,
                 "force_watering": False,
                 "schedules": [{"hour": 7, "minute": 30, "duration_sec": 60, "channel_mask": 1}],
+                "mosfet_switches": [
+                    {
+                        "switch_id": "irr1",
+                        "name": "潅水1系",
+                        "enabled": True,
+                        "role": "irrigation",
+                        "terminal": "IRR1",
+                        "channel_mask": 1,
+                        "controlled_load": "A区画",
+                    },
+                    {
+                        "switch_id": "legacy_aux",
+                        "name": "既存補助出力",
+                        "enabled": False,
+                        "role": "auxiliary",
+                        "terminal": "AUX",
+                        "channel_mask": 4,
+                        "controlled_load": "旧設備",
+                    },
+                ],
             },
         )
         self.device_service.set_state(device_id, "active", approved_by="operator")
@@ -322,6 +342,9 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("起動・通信履歴", html)
         self.assertIn("動作設定", html)
         self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings"', html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings#watering-rules" aria-label="土壌水分しきい値の設定を変更"', html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}?tab=monitoring#soil-moisture-chart" aria-label="現在の土壌水分の履歴を見る"', html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}?tab=monitoring#watering-trend-chart" aria-label="現在の潅水状態の履歴を見る"', html)
         self.assertIn(f'aria-label="{device_id}の動作設定"', html)
         self.assertIn('data-state-action="disable"', html)
         self.assertNotIn('data-state-action="approve"', html)
@@ -345,7 +368,28 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("2026-07-01T00:00:00Z+abcdef0", html)
         self.assertIn("/local/api/firmware-artifacts/", html)
         self.assertIn("OTA Status History", html)
-        self.assertIn('id="mosfet-switch-map"', html)
+        self.assertIn('id="output-connection-map"', html)
+        self.assertIn('id="open-output-settings"', html)
+        self.assertIn('id="output-settings-dialog"', html)
+        self.assertIn("水やりルートを組み立てる", html)
+        self.assertIn("設備をつなぐ", html)
+        self.assertIn("水やりを決める", html)
+        self.assertIn("センサーを合わせる", html)
+        self.assertIn("動かす設備を絵から選ぶ", html)
+        self.assertIn("data-equipment-type", html)
+        self.assertIn("接続口 1", html)
+        self.assertIn("接続口 2", html)
+        self.assertIn("A区画", html)
+        self.assertIn("既存値は維持されます", html)
+        self.assertIn("&#34;switch_id&#34;: &#34;legacy_aux&#34;", html)
+        self.assertNotIn("内部ID", html)
+        self.assertNotIn("系統番号（mask）", html)
+        self.assertNotIn("MOSFET", html)
+        self.assertIn("組み立てた設定を機器へ送る", html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings#watering-schedules"', html)
+        self.assertIn('id="soil-calibration-guide"', html)
+        self.assertIn("乾いた基準を記録する", html)
+        self.assertIn("湿った基準を記録する", html)
         self.assertIn("/static/ui-illustrations/controller-flow.png", html)
         self.assertIn('aria-label="動作確認"', html)
         self.assertIn("watering-device-1.1.0-aaaaaaaa", html)
@@ -385,6 +429,25 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('data-chart-kind="par"', html)
         self.assertNotIn('data-chart-kind="watering"', html)
         self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings"', html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}?tab=monitoring#air-temperature-chart" aria-label="気温の履歴を見る"', html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}?tab=monitoring#air-humidity-chart" aria-label="湿度の履歴を見る"', html)
+        self.assertIn(f'href="/mqtt-devices/{device_id}?tab=monitoring#par-chart" aria-label="光合成に使える光の履歴を見る"', html)
+        self.assertIn("つないだセンサー", html)
+        self.assertIn('data-env-sensor-card="par"', html)
+        self.assertIn('data-env-sensor-card="soil"', html)
+        self.assertIn('id="env-calibration-dialog"', html)
+        self.assertIn('id="env-calibration-workbench"', html)
+        self.assertIn('id="env-calibration-reference-value" type="range"', html)
+        self.assertIn('data-env-calibration-summary="par_umol_m2_s">未調整', html)
+        self.assertIn('data-env-calibration-summary="soil_ph">未調整', html)
+        self.assertIn('id="env-par-slave" type="hidden"', html)
+        self.assertIn('id="env-soil-slave" type="hidden"', html)
+        self.assertIn("上級者設定", html)
+        self.assertNotIn("センサー番号", html)
+        self.assertNotIn("読み取り方式", html)
+        self.assertNotIn("読み取り位置", html)
+        self.assertNotIn("読み取り開始位置", html)
+        self.assertIn(".sensor-device-card[hidden], .sensor-device-body[hidden], [data-env-sensor-advanced][hidden] { display: none !important; }", html)
         self.assertIn('const tabAliases = { irrigation: "monitoring", config: "settings", maintenance: "diagnostics" };', html)
 
         charts_response = self.client.get(f"/local/api/mqtt-devices/{device_id}/charts")
@@ -394,6 +457,36 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("Plotly.newPlot", charts["air_humidity"])
         self.assertIn("Plotly.newPlot", charts["par"])
         self.assertIsNone(charts["watering"])
+
+    def test_single_purpose_sensor_pages_show_only_supported_equipment_cards(self):
+        soil_device_id = "INADS-00000000-0000-4000-8000-000000000207"
+        self.device_repository.record_status(
+            soil_device_id,
+            {
+                "seq": 1,
+                "device_kind": "SOI",
+                "soil_moisture_percent": 43.0,
+                "soil_temperature_c": 19.5,
+            },
+        )
+        soil_html = self.client.get(f"/mqtt-devices/{soil_device_id}?tab=settings").get_data(as_text=True)
+        self.assertIn('data-env-sensor-card="par" hidden', soil_html)
+        self.assertIn('data-env-sensor-card="soil">', soil_html)
+        self.assertIn(f'href="/mqtt-devices/{soil_device_id}?tab=monitoring#soil-moisture-chart" aria-label="土壌水分の履歴を見る"', soil_html)
+
+        light_device_id = "INADS-00000000-0000-4000-8000-000000000208"
+        self.device_repository.record_status(
+            light_device_id,
+            {
+                "seq": 1,
+                "device_kind": "PAR",
+                "par_umol_m2_s": 880,
+            },
+        )
+        light_html = self.client.get(f"/mqtt-devices/{light_device_id}?tab=settings").get_data(as_text=True)
+        self.assertIn('data-env-sensor-card="par">', light_html)
+        self.assertIn('data-env-sensor-card="soil" hidden', light_html)
+        self.assertIn(f'href="/mqtt-devices/{light_device_id}?tab=monitoring#par-chart" aria-label="光合成に使える光の履歴を見る"', light_html)
 
     def test_retired_device_is_read_only_in_ui_and_mutation_apis(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000203"

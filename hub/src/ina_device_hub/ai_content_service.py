@@ -305,6 +305,9 @@ class AIContentService:
             "すべてのactionsのwindow_startとwindow_endはplanning.start_date以降にしてください。過去の日付の作業、期限切れから始まる作業、過去作業の追認タスクは禁止です。"
             "定植日がplanning.start_dateより前なら、定植直後ではなくplanning.start_date時点の生育段階から計画を開始してください。"
             "conditions.notesに日付付きの施肥・防除等があれば実施済み履歴として扱い、その日を次回要否確認の起点にしてください。同じ作業を重複して予定しないでください。"
+            "fertilizer_historyがあれば、畝・培地へ投入済みの肥料とeffect_summaryの基準日時点の残存肥効を施肥計画へ反映してください。"
+            "amount_kgは製品総量であり養分量ではありません。nutrient_percentから計算済みのN・P2O5・K2Oのkgを使い、製品kgを養分kgとして扱わないでください。"
+            "残存肥効がある、ECが高い、成分分析が不足している、または作物状態を確認できない場合は、追加施肥ではなく測定・観察・見送りを提案してください。"
             "planning.notesに手作業頻度の上限があれば従い、自動潅水やカメラ監視として指定された日常管理を手作業actionへ展開しないでください。"
             "ユーザーが次に何を観察し、どの条件なら実施・延期・見送りと判断するかが分かるサジェストにしてください。"
             "重要度と適期を優先し、目的が重複する作業を増やさず、利用者の作業可能頻度の範囲で季節変化を計画全体に配分してください。"
@@ -354,6 +357,8 @@ class AIContentService:
                     "不足情報を断定せずassumptionsに明記し、数値は単位と栽培方式を整合させてください。"
                     "潅水は固定間隔だけで断定せず、培地、季節、鉢容量、降雨、土壌水分、排液ECなどの開始・見送り条件を示してください。"
                     "施肥は実施日を次回計画の起点にできる反復規則とし、生育休止期、樹勢、葉色、EC、収穫時期による見送り条件を示してください。"
+                    "fertilizer_historyは畝・培地に残る施肥履歴です。effect_summaryのremaining_kgとforecastを使い、追加投入前に残存肥効、土壌分析、EC、作物状態、収穫品質への過剰施肥リスクを確認してください。"
+                    "肥料製品の総重量とN・P2O5・K2Oの養分重量を混同せず、入力されていない成分率や肥効率を推測で補わないでください。"
                     "planting.planted_onは過去の定植履歴、planning.start_dateは今回作成する予定の開始下限です。両者を同じ日付として扱ってはいけません。"
                     "定植日からplanning.current_dateまでに経過した日数とconditions.notesの実施履歴を読み、すでに終わった活着確認、施肥、防除などを新規予定として再作成しないでください。"
                     "すべての作業は『確認する』『作業する』だけで終わらせず、作物、地域、季節、生育段階に応じた対象、確認点、方法候補を具体化してください。"
@@ -384,6 +389,7 @@ class AIContentService:
                     "元の予定日ではなく完了日を使い、active_months、生育休止期、既存予定、見送り条件を考慮してください。"
                     "既存のplanned_actionsと重複する予定を作らず、次回が不要ならactionsを空配列にしてください。"
                     "completion_event.work_details.executionに実際の対象、手段、資材、次回確認までの日数があれば、すべての作業で次回候補の判断材料にしてください。"
+                    "fertilizer_historyがある場合は、残存肥効と今後の見込みを考慮し、単純な経過日数だけで追肥を作成しないでください。"
                     "次回確認までの日数は効果の保証期間ではなく利用者の記録として扱い、同じ肥料、農薬、資材、方法の再実施を自動決定しないでください。"
                     f"{VERIFIED_INPUT_RULES}"
                     f"{experience_instruction}"
@@ -610,6 +616,15 @@ class AIContentService:
         offsets = (0, 30, 60, 90, 120, 150) if monthly_manual_work else (0, 14, 7, 60, 120, 180)
         durations = (7, 7, 7, 7, 7, 7) if monthly_manual_work else (14, 21, 38, 40, 30, 40)
         crop_name = str(planting.get("crop_name") or "植物")
+        fertilizer_summary = (context.get("fertilizer_history") or {}).get("effect_summary") if isinstance(context.get("fertilizer_history"), dict) else {}
+        fertilizer_nutrients = fertilizer_summary.get("nutrients") if isinstance(fertilizer_summary, dict) else {}
+        remaining_nutrients = {
+            key: float((fertilizer_nutrients.get(key) or {}).get("remaining_kg") or 0) for key in ("n", "p2o5", "k2o") if isinstance(fertilizer_nutrients, dict)
+        }
+        has_remaining_fertilizer_effect = bool(fertilizer_summary.get("active_count")) and any(remaining_nutrients.values())
+        remaining_label = ", ".join(
+            f"{label} {remaining_nutrients[key]:g}kg" for key, label in (("n", "N"), ("p2o5", "P₂O₅"), ("k2o", "K₂O")) if remaining_nutrients.get(key, 0) > 0
+        )
         actions = [
             self._calendar_action(
                 "observation",
@@ -632,16 +647,30 @@ class AIContentService:
             ),
             self._calendar_action(
                 "fertilization",
-                "直近施肥後の追肥要否を判断" if established else "活着後の追肥要否を判断",
+                (
+                    "畝に残る肥効と追肥要否を確認"
+                    if has_remaining_fertilizer_effect
+                    else "直近施肥後の追肥要否を判断"
+                    if established
+                    else "活着後の追肥要否を判断"
+                ),
                 "recommended",
                 plan_start + timedelta(days=offsets[1]),
                 plan_start + timedelta(days=offsets[1] + durations[1]),
                 "直近施肥と現在の樹勢を確認後" if established else "活着確認後",
-                "入力された直近施肥日を起点に、樹勢と葉色を見て次の施肥が必要か判断するためです。"
-                if established
-                else "根が十分に活着する前の施肥を避け、樹勢と葉色を見て必要量を判断するためです。",
-                "作物、品種、培地に適合する肥料かを確認し、少量から判断します。",
-                ["追肥", "樹勢維持"],
+                (
+                    f"入力された肥効モデルでは、基準日時点の残存見込みが {remaining_label} あります。追加前に残効と作物の吸収状況を確認するためです。"
+                    if has_remaining_fertilizer_effect
+                    else "入力された直近施肥日を起点に、樹勢と葉色を見て次の施肥が必要か判断するためです。"
+                    if established
+                    else "根が十分に活着する前の施肥を避け、樹勢と葉色を見て必要量を判断するためです。"
+                ),
+                (
+                    "追加施肥を前提にせず、土壌分析またはEC、葉色、樹勢、収穫品質を確認し、残存肥効で足りる場合は見送ります。"
+                    if has_remaining_fertilizer_effect
+                    else "作物、品種、培地に適合する肥料かを確認し、少量から判断します。"
+                ),
+                ["残存肥効", "施肥見送り判断", "EC確認"] if has_remaining_fertilizer_effect else ["追肥", "樹勢維持"],
             ),
             self._calendar_action(
                 "pest_control",
@@ -742,6 +771,8 @@ class AIContentService:
     def _fallback_care_profile(self, context: dict):
         planting = context.get("planting") if isinstance(context.get("planting"), dict) else context
         crop_name = str(planting.get("crop_name") or "植物")
+        fertilizer_summary = (context.get("fertilizer_history") or {}).get("effect_summary") if isinstance(context.get("fertilizer_history"), dict) else {}
+        has_fertilizer_history = bool(fertilizer_summary.get("application_count"))
         return {
             "summary": f"{crop_name}の標準的な観察を中心とした暫定管理基準です。品種、地域、培地に合わせて利用者が調整してください。",
             "assumptions": ["LLMまたは栽培根拠情報が未設定のため、一般的な観察基準を使用しています。"],
@@ -753,11 +784,15 @@ class AIContentService:
                 "skip_conditions": ["根域が十分湿っている", "過湿または排水不良がある", "降雨が見込まれる"],
             },
             "fertilization": {
-                "strategy": "定植直後を避け、活着、葉色、樹勢、生育期を確認して追肥要否を判断します。",
+                "strategy": (
+                    "畝へ投入済みの肥料について、入力された成分率と肥効率から残存肥効を見積もり、土壌分析、EC、葉色、樹勢を照合してから追肥要否を判断します。"
+                    if has_fertilizer_history
+                    else "定植直後を避け、活着、葉色、樹勢、生育期を確認して追肥要否を判断します。"
+                ),
                 "ec_management": "根域または排液ECを測定できる場合は、急な上昇と塩類集積を避けます。",
                 "ph_management": "作物と培地に適したpH範囲を確認し、急激な補正を避けます。",
-                "decision_factors": ["前回施肥日", "葉色", "新梢伸長", "結実負担", "EC"],
-                "skip_conditions": ["休眠期または生育停止中", "高EC", "根傷み", "過度な乾燥または過湿"],
+                "decision_factors": ["前回施肥日", "残存肥効", "葉色", "新梢伸長", "結実負担", "EC"],
+                "skip_conditions": ["残存肥効が十分または不明", "休眠期または生育停止中", "高EC", "根傷み", "過度な乾燥または過湿"],
             },
             "stage_notes": [],
         }

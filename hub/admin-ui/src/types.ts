@@ -315,6 +315,63 @@ export interface PlantWorkLog {
   work_details: PlantActionWorkDetails;
 }
 
+export type FertilizerMaterialKind =
+  | "cattle_manure"
+  | "poultry_manure"
+  | "compost"
+  | "organic_fertilizer"
+  | "chemical_fertilizer"
+  | "custom";
+
+export interface FertilizerApplication {
+  id: string;
+  field_id: string;
+  planting_id: string;
+  space_id: string;
+  placement_id: string;
+  placement_name: string;
+  applied_on: string;
+  material_kind: FertilizerMaterialKind;
+  material_name: string;
+  amount_kg: number;
+  nutrient_percent: { n: number; p2o5: number; k2o: number };
+  annual_available_percent: number;
+  effect_years: number;
+  start_delay_days: number;
+  analysis_source: string;
+  notes: string;
+  created_at: string;
+}
+
+export interface FertilizerEffectSummary {
+  as_of: string;
+  model: "linear_estimate_from_user_inputs";
+  application_count: number;
+  active_count: number;
+  nutrients: Record<"n" | "p2o5" | "k2o", {
+    applied_kg: number;
+    effective_total_kg: number;
+    released_to_date_kg: number;
+    remaining_kg: number;
+  }>;
+  applications: Array<{
+    id: string;
+    material_name: string;
+    amount_kg: number;
+    applied_on: string;
+    effect_start: string;
+    effect_end: string;
+    state: "waiting" | "active" | "finished";
+    progress_percent: number;
+  }>;
+  forecast: Array<{
+    period_start: string;
+    period_end: string;
+    nutrients_kg: Record<"n" | "p2o5" | "k2o", number>;
+  }>;
+  caution: string;
+}
+
 export interface PlantCalendarGenerationTask {
   id: string;
   field_id: string;
@@ -338,6 +395,7 @@ export interface PlantBundle {
   generation_tasks: PlantCalendarGenerationTask[];
   suggestions: PlantSuggestion[];
   work_logs: PlantWorkLog[];
+  fertilizer_applications: FertilizerApplication[];
 }
 
 export interface PlantQuestionRecord {

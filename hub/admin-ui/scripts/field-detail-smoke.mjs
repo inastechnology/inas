@@ -81,6 +81,20 @@ try {
   assert.equal(await calendarPage.$$(".installation-app").then((items) => items.length), 0, "calendar page must not mount the installation editor");
   assert.equal(await calendarPage.$$(".gantt-period-controls").then((items) => items.length), 1);
   await calendarPage.waitForSelector(".calendar-kanban-card");
+  assert.match(await calendarPage.$eval(".fertilizer-effect-panel", (panel) => panel.textContent || ""), /培地の施肥と残存肥効/);
+  const fertilizerCount = await calendarPage.$$(".fertilizer-history-list article").then((items) => items.length);
+  await calendarPage.click(".fertilizer-effect-panel .calendar-section-heading button");
+  await calendarPage.waitForSelector("[data-fertilizer-form]");
+  assert.match(await calendarPage.$eval("[data-fertilizer-form]", (form) => form.textContent || ""), /製品kgと養分kgを分けて計算/);
+  await replaceValue(calendarPage, '[data-fertilizer-form] input[name="amount_kg"]', "20");
+  await replaceValue(calendarPage, '[data-fertilizer-form] input[name="n_percent"]', "2");
+  await replaceValue(calendarPage, '[data-fertilizer-form] input[name="p2o5_percent"]', "1");
+  await replaceValue(calendarPage, '[data-fertilizer-form] input[name="k2o_percent"]', "1.5");
+  await calendarPage.click('[data-fertilizer-form] button[type="submit"]');
+  await calendarPage.waitForFunction((before) => document.querySelectorAll(".fertilizer-history-list article").length > before, {}, fertilizerCount);
+  assert.match(await calendarPage.$eval(".fertilizer-balance", (panel) => panel.textContent || ""), /N.*P₂O₅.*K₂O/);
+  assert.match(await calendarPage.$eval(".fertilizer-caution", (panel) => panel.textContent || ""), /土壌分析.*EC.*収穫品質/);
+  await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-effect-desktop.png", fullPage: true });
   assert.equal(await calendarPage.$$(".calendar-kanban-column").then((items) => items.length), 3, "the work board must always show three states");
   assert.match(await calendarPage.$eval('[data-kanban-status="planned"] > header', (header) => header.textContent || ""), /未完了.*人時/);
   assert.match(await calendarPage.$eval('[data-kanban-status="in_progress"] > header', (header) => header.textContent || ""), /作業中.*人時/);
@@ -225,6 +239,7 @@ try {
       "/tmp/ina-field-todo-desktop.png",
       "/tmp/ina-environment-target-direct.png",
       "/tmp/ina-care-profile-desktop.png",
+      "/tmp/ina-fertilizer-effect-desktop.png",
       "/tmp/ina-calendar-mobile.png",
       "/tmp/ina-calendar-planned-action.png",
       "/tmp/ina-field-monitoring-desktop.png",

@@ -29,7 +29,9 @@ import {
   askPlantQuestion,
   addPlantAction,
   completePlantAction,
+  createFertilizerApplication,
   createPlanting,
+  deleteFertilizerApplication,
   deletePlantAction,
   loadLayout,
   loadLayoutDevices,
@@ -69,7 +71,9 @@ interface AppProps {
 }
 
 const HISTORY_LIMIT = 40;
-const EMPTY_PLANT_BUNDLE: PlantBundle = { action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [] };
+const EMPTY_PLANT_BUNDLE: PlantBundle = {
+  action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [],
+};
 const PLANTABLE_PRESETS = new Set<PlacementPreset>(["ridge", "tree", "pot", "hydroponic_bed"]);
 const SPACE_TARGET_PRESETS = new Set<PlacementPreset>(["greenhouse", "open_field", "shade_area"]);
 const TARGETABLE_PRESETS = new Set<PlacementPreset>(["greenhouse", "open_field", "shade_area", ...PLANTABLE_PRESETS]);
@@ -290,6 +294,34 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     try {
       await deletePlantAction(plantingId, actionId);
       await refreshPlants(plantingId);
+    } finally {
+      setPlantBusy(false);
+    }
+  };
+
+  const addFertilizerApplication = async (plantingId: string, payload: Record<string, unknown>) => {
+    setPlantBusy(true);
+    setError("");
+    try {
+      await createFertilizerApplication(plantingId, payload);
+      await refreshPlants(plantingId);
+    } catch (caught) {
+      setError(errorMessage(caught));
+      throw caught;
+    } finally {
+      setPlantBusy(false);
+    }
+  };
+
+  const removeFertilizerApplication = async (plantingId: string, applicationId: string) => {
+    setPlantBusy(true);
+    setError("");
+    try {
+      await deleteFertilizerApplication(plantingId, applicationId);
+      await refreshPlants(plantingId);
+    } catch (caught) {
+      setError(errorMessage(caught));
+      throw caught;
     } finally {
       setPlantBusy(false);
     }
@@ -715,6 +747,8 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
           onRegenerate={regenerateCalendar}
           onAddAction={createPlantAction}
           onDeleteAction={removePlantAction}
+          onAddFertilizer={addFertilizerApplication}
+          onDeleteFertilizer={removeFertilizerApplication}
           onSearchActions={searchCalendarActions}
         />
       )}

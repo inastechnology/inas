@@ -94,6 +94,18 @@ class PlantCalendarGenerationTaskTest(unittest.TestCase):
     def test_process_next_builds_context_and_completes_calendar(self):
         ai_service = FakeAIService()
         task_runner = self._task(ai_service)
+        self.plant_repository.create_fertilizer_application(
+            self.planting["id"],
+            {
+                "applied_on": "2026-07-14",
+                "material_kind": "cattle_manure",
+                "material_name": "牛ふん堆肥",
+                "amount_kg": 20,
+                "nutrient_percent": {"n": 2, "p2o5": 1, "k2o": 1},
+                "annual_available_percent": 10,
+                "effect_years": 2,
+            },
+        )
         requested_start = (date.today() + timedelta(days=3)).isoformat()
         queued = task_runner.enqueue(
             self.planting["id"],
@@ -108,6 +120,8 @@ class PlantCalendarGenerationTaskTest(unittest.TestCase):
         self.assertEqual(result["task"]["id"], queued["id"])
         self.assertEqual(result["task"]["status"], "succeeded")
         self.assertEqual(result["calendar"]["actions"][0]["title"], "新梢を確認")
+        self.assertEqual(ai_service.contexts[0]["fertilizer_history"]["applications"][0]["material_name"], "牛ふん堆肥")
+        self.assertGreater(ai_service.contexts[0]["fertilizer_history"]["effect_summary"]["nutrients"]["n"]["remaining_kg"], 0)
         self.assertEqual(ai_service.contexts[0]["placement"]["name"], "鉢A")
         self.assertEqual(ai_service.contexts[0]["planning"]["start_date"], requested_start)
         self.assertEqual(ai_service.contexts[0]["planning"]["current_date"], date.today().isoformat())

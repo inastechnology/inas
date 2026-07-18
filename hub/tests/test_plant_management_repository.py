@@ -110,6 +110,47 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         self.assertEqual(calendar["actions"][0]["required_people"], 1)
         self.assertEqual(calendar["actions"][0]["estimated_minutes"], 30)
 
+    def test_fertilizer_history_is_scoped_to_substrate_and_survives_planting(self):
+        planting = self._create_blueberry()
+        application = self.repository.create_fertilizer_application(
+            planting["id"],
+            {
+                "applied_on": "2026-07-14",
+                "material_kind": "cattle_manure",
+                "material_name": "牛ふん堆肥",
+                "amount_kg": 20,
+                "nutrient_percent": {"n": 2, "p2o5": 1, "k2o": 1.5},
+                "annual_available_percent": 10,
+                "effect_years": 2,
+                "start_delay_days": 0,
+                "analysis_source": "製品分析表",
+            },
+        )
+
+        context = self.repository.fertilizer_effect_context(planting["id"], as_of="2026-07-14")
+        bundle = self.repository.field_bundle("field-1")
+
+        self.assertEqual(application["placement_id"], "pot-a")
+        self.assertEqual(context["effect_summary"]["nutrients"]["n"]["applied_kg"], 0.4)
+        self.assertEqual(context["effect_summary"]["nutrients"]["n"]["remaining_kg"], 0.08)
+        self.assertEqual(bundle["fertilizer_applications"][0]["id"], application["id"])
+
+    def test_fertilizer_history_requires_nutrient_analysis(self):
+        planting = self._create_blueberry()
+
+        with self.assertRaises(PlantManagementValidationError):
+            self.repository.create_fertilizer_application(
+                planting["id"],
+                {
+                    "applied_on": "2026-07-14",
+                    "material_name": "成分不明堆肥",
+                    "amount_kg": 20,
+                    "nutrient_percent": {"n": 0, "p2o5": 0, "k2o": 0},
+                    "annual_available_percent": 10,
+                    "effect_years": 1,
+                },
+            )
+
     def test_suggestions_start_seven_days_before_work_window(self):
         planting = self._create_blueberry()
         self._create_calendar(planting["id"])

@@ -133,16 +133,6 @@ class DeviceConfigService:
                     "controlled_load": "",
                     "notes": "",
                 },
-                {
-                    "switch_id": "sensor_power",
-                    "name": "RS485センサー電源",
-                    "enabled": True,
-                    "role": "sensor_power",
-                    "terminal": "SENSOR_12V_SW",
-                    "channel_mask": 0,
-                    "controlled_load": "RS485 sensor 12V branch",
-                    "notes": "",
-                },
             ],
             "schedules": [
                 {

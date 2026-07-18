@@ -205,7 +205,7 @@ def main():
             "crop": "イチゴ",
             "stage": "栽培中",
             "cultivation_context": {"cultivation_method": "ハウス・露地", "irrigation_method": "点滴"},
-            "device_ids": ["INADS-DEMO-WTR-001", "INADS-DEMO-WTR-002", "INADS-DEMO-WTR-003"],
+            "device_ids": ["INADS-DEMO-WTR-001", "INADS-DEMO-WTR-002", "INADS-DEMO-WTR-003", "INADS-DEMO-ENV-001"],
             "memo": "設置ビュー操作確認用のデモ圃場",
         },
     )

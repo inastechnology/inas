@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 
 from ina_device_hub.collection_search import matches_search, paginate, search_terms
+from ina_device_hub.fertilizer_effect import fertilizer_effect_summary
 from ina_device_hub.json_repository_io import atomic_write_json, serialized_repository_write
 from ina_device_hub.plant_action_catalog import (
     is_known_plant_action_type,
@@ -21,6 +22,7 @@ MAX_FEEDBACK = 3000
 MAX_WORK_LOGS = 5000
 MAX_QUESTIONS = 1000
 MAX_GENERATION_TASKS = 500
+MAX_FERTILIZER_APPLICATIONS = 5000
 
 VALID_PLANTING_STATUSES = {"active", "harvested", "removed"}
 VALID_CROP_CATEGORIES = {"vegetable", "fruit_tree", "flower", "herb", "other"}
@@ -28,6 +30,14 @@ VALID_ACTION_STATUSES = {"planned", "in_progress", "completed", "skipped"}
 VALID_GENERATION_TASK_STATUSES = {"queued", "running", "succeeded", "failed"}
 ACTIVE_GENERATION_TASK_STATUSES = {"queued", "running"}
 VALID_GENERATION_TASK_KINDS = {"initial", "regenerate"}
+VALID_FERTILIZER_MATERIAL_KINDS = {
+    "cattle_manure",
+    "poultry_manure",
+    "compost",
+    "organic_fertilizer",
+    "chemical_fertilizer",
+    "custom",
+}
 ACTION_STATUS_TRANSITIONS = {
     "planned": {"in_progress", "skipped"},
     "in_progress": {"planned", "skipped"},
@@ -573,6 +583,67 @@ class PlantManagementRepository:
         self.save()
         return copy.deepcopy(record)
 
+    @serialized_repository_write("repository_path")
+    def create_fertilizer_application(self, planting_id: str, value: dict):
+        planting = self._planting(planting_id)
+        if not isinstance(value, dict):
+            raise PlantManagementValidationError("fertilizer application must be an object")
+        applications = self.data.setdefault("fertilizer_applications", [])
+        if len(applications) >= MAX_FERTILIZER_APPLICATIONS:
+            raise PlantManagementValidationError("fertilizer application limit reached")
+        record = _normalize_fertilizer_application(
+            {
+                **value,
+                "id": str(uuid.uuid4()),
+                "field_id": planting["field_id"],
+                "planting_id": planting_id,
+                "space_id": planting["space_id"],
+                "placement_id": planting["placement_id"],
+                "placement_name": planting["placement_name"],
+                "created_at": _utc_now(),
+            }
+        )
+        if _date_value(record["applied_on"], "applied_on") > date.today():
+            raise PlantManagementValidationError("applied_on must not be in the future")
+        applications.append(record)
+        self.data["fertilizer_applications"] = applications[-MAX_FERTILIZER_APPLICATIONS:]
+        self.save()
+        return copy.deepcopy(record)
+
+    @serialized_repository_write("repository_path")
+    def delete_fertilizer_application(self, planting_id: str, application_id: str):
+        planting = self._planting(planting_id)
+        application = next(
+            (
+                item
+                for item in self.data.get("fertilizer_applications", [])
+                if item.get("id") == application_id and item.get("field_id") == planting["field_id"] and item.get("placement_id") == planting["placement_id"]
+            ),
+            None,
+        )
+        if application is None:
+            raise PlantManagementNotFoundError("fertilizer application not found")
+        self.data["fertilizer_applications"] = [item for item in self.data.get("fertilizer_applications", []) if item.get("id") != application_id]
+        self.save()
+
+    def fertilizer_applications_for_planting(self, planting_id: str):
+        planting = self._planting(planting_id)
+        return copy.deepcopy(
+            [
+                item
+                for item in self.data.get("fertilizer_applications", [])
+                if item.get("field_id") == planting["field_id"] and item.get("placement_id") == planting["placement_id"]
+            ]
+        )
+
+    def fertilizer_effect_context(self, planting_id: str, *, as_of: str | date | None = None):
+        applications = self.fertilizer_applications_for_planting(planting_id)
+        return {
+            "placement_scope": "substrate",
+            "applications": applications,
+            "effect_summary": fertilizer_effect_summary(applications, as_of=as_of),
+        }
+
     def get_planting(self, planting_id: str):
         record = self.data["plantings"].get(planting_id)
         return copy.deepcopy(record) if record else None
@@ -673,6 +744,7 @@ class PlantManagementRepository:
             calendar = self.data["calendars"].get(planting.get("calendar_id"))
             if calendar and (calendar_filter is None or planting["id"] in calendar_filter):
                 calendars[planting["id"]] = copy.deepcopy(calendar)
+        placement_filter = {planting.get("placement_id") for planting in self.data["plantings"].values() if planting.get("id") in (calendar_filter or set())}
         latest_generation_tasks = {}
         for task in self.data["generation_tasks"]:
             if task.get("field_id") != field_id:
@@ -690,6 +762,11 @@ class PlantManagementRepository:
                 copy.deepcopy(item)
                 for item in self.data["work_logs"]
                 if include_work_logs and item["field_id"] == field_id and (calendar_filter is None or item.get("planting_id") in calendar_filter)
+            ],
+            "fertilizer_applications": [
+                copy.deepcopy(item)
+                for item in self.data.get("fertilizer_applications", [])
+                if item.get("field_id") == field_id and (calendar_filter is None or item.get("placement_id") in placement_filter)
             ],
         }
 
@@ -800,7 +877,16 @@ class PlantManagementRepository:
 
 
 def _empty_data():
-    return {"schema_version": 1, "plantings": {}, "calendars": {}, "generation_tasks": [], "feedback": [], "work_logs": [], "questions": []}
+    return {
+        "schema_version": 1,
+        "plantings": {},
+        "calendars": {},
+        "generation_tasks": [],
+        "feedback": [],
+        "work_logs": [],
+        "questions": [],
+        "fertilizer_applications": [],
+    }
 
 
 def _normalize_data(value):
@@ -828,6 +914,53 @@ def _normalize_data(value):
         "feedback": list(value.get("feedback") or [])[-MAX_FEEDBACK:],
         "work_logs": [_normalize_work_log(item) for item in list(value.get("work_logs") or [])[-MAX_WORK_LOGS:] if isinstance(item, dict)],
         "questions": list(value.get("questions") or [])[-MAX_QUESTIONS:],
+        "fertilizer_applications": [
+            _normalize_fertilizer_application(item)
+            for item in list(value.get("fertilizer_applications") or [])[-MAX_FERTILIZER_APPLICATIONS:]
+            if isinstance(item, dict)
+        ],
+    }
+
+
+def _normalize_fertilizer_application(value: dict):
+    material_kind = _clean_string(value.get("material_kind"), "custom")
+    if material_kind not in VALID_FERTILIZER_MATERIAL_KINDS:
+        material_kind = "custom"
+    amount_kg = _optional_float(value.get("amount_kg"), 0.001, 1_000_000, "fertilizer_application.amount_kg")
+    if amount_kg is None:
+        raise PlantManagementValidationError("fertilizer_application.amount_kg is required")
+    nutrient_value = value.get("nutrient_percent") if isinstance(value.get("nutrient_percent"), dict) else {}
+    nutrient_percent = {
+        key: _optional_float(nutrient_value.get(key), 0, 100, f"fertilizer_application.nutrient_percent.{key}") or 0.0 for key in ("n", "p2o5", "k2o")
+    }
+    if not any(nutrient_percent.values()):
+        raise PlantManagementValidationError("at least one fertilizer nutrient percentage is required")
+    annual_available_percent = _optional_float(
+        value.get("annual_available_percent"),
+        0.1,
+        100,
+        "fertilizer_application.annual_available_percent",
+    )
+    if annual_available_percent is None:
+        raise PlantManagementValidationError("fertilizer_application.annual_available_percent is required")
+    return {
+        "id": _clean_string(value.get("id"))[:120] or str(uuid.uuid4()),
+        "field_id": _required_string(value.get("field_id"), "fertilizer_application.field_id", 120),
+        "planting_id": _clean_string(value.get("planting_id"))[:120],
+        "space_id": _required_string(value.get("space_id"), "fertilizer_application.space_id", 120),
+        "placement_id": _required_string(value.get("placement_id"), "fertilizer_application.placement_id", 120),
+        "placement_name": _required_string(value.get("placement_name"), "fertilizer_application.placement_name", 120),
+        "applied_on": _date_string(value.get("applied_on"), "fertilizer_application.applied_on"),
+        "material_kind": material_kind,
+        "material_name": _required_string(value.get("material_name"), "fertilizer_application.material_name", 180),
+        "amount_kg": amount_kg,
+        "nutrient_percent": nutrient_percent,
+        "annual_available_percent": annual_available_percent,
+        "effect_years": _bounded_int(value.get("effect_years"), 1, 1, 10, "fertilizer_application.effect_years"),
+        "start_delay_days": _bounded_int(value.get("start_delay_days"), 0, 0, 3650, "fertilizer_application.start_delay_days"),
+        "analysis_source": _clean_string(value.get("analysis_source"))[:500],
+        "notes": _clean_string(value.get("notes"))[:1000],
+        "created_at": _clean_string(value.get("created_at"), _utc_now())[:80],
     }
 
 

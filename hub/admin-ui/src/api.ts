@@ -114,6 +114,20 @@ export function updatePlanting(plantingId: string, payload: Partial<Planting>): 
   });
 }
 
+export function createFertilizerApplication(plantingId: string, payload: Record<string, unknown>): Promise<unknown> {
+  return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/fertilizer-applications`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteFertilizerApplication(plantingId: string, applicationId: string): Promise<void> {
+  return requestJson(
+    `/local/api/plantings/${encodeURIComponent(plantingId)}/fertilizer-applications/${encodeURIComponent(applicationId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export function regeneratePlantCalendar(plantingId: string, payload: { start_date: string; planning_notes: string }): Promise<unknown> {
   return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/regenerate`, {
     method: "POST",

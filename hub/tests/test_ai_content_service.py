@@ -75,6 +75,34 @@ class AIContentServiceTest(unittest.TestCase):
 
         self.assertEqual(result["generation"]["source"], "fallback")
 
+    def test_calendar_prompt_and_fallback_use_remaining_fertilizer_effect(self):
+        context = {
+            **self.context,
+            "fertilizer_history": {
+                "applications": [{"material_name": "牛ふん堆肥", "amount_kg": 20}],
+                "effect_summary": {
+                    "application_count": 1,
+                    "active_count": 1,
+                    "nutrients": {
+                        "n": {"remaining_kg": 0.08},
+                        "p2o5": {"remaining_kg": 0.04},
+                        "k2o": {"remaining_kg": 0.04},
+                    },
+                    "forecast": [],
+                },
+            },
+        }
+        messages = self.service._initial_plant_plan_messages(context, [])
+        self.service.ai_settings = {"text_analyze_api_key": ""}
+
+        result = self.service.generate_plant_calendar(context)
+        fertilization = next(action for action in result["actions"] if action["action_type"] == "fertilization")
+
+        self.assertIn("製品総量", messages[1]["content"])
+        self.assertIn("残存肥効", messages[0]["content"])
+        self.assertIn("残存肥効", fertilization["tags"])
+        self.assertIn("残存肥効", result["care_profile"]["fertilization"]["strategy"])
+
     def test_existing_planting_fallback_starts_from_today_and_respects_monthly_manual_work(self):
         self.service.ai_settings = {"text_analyze_api_key": ""}
         today = date.today()

@@ -1179,6 +1179,27 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(target_update.status_code, 200)
         self.assertEqual(target_update.get_json()["growth_targets"]["soil_moisture_percent"]["max"], 65.0)
 
+        fertilizer = self.client.post(
+            f"/local/api/plantings/{planting['id']}/fertilizer-applications",
+            json={
+                "applied_on": "2026-07-14",
+                "material_kind": "cattle_manure",
+                "material_name": "牛ふん堆肥",
+                "amount_kg": 25,
+                "nutrient_percent": {"n": 2, "p2o5": 1, "k2o": 1.5},
+                "annual_available_percent": 10,
+                "effect_years": 2,
+                "start_delay_days": 0,
+                "analysis_source": "製品分析表",
+            },
+        )
+        self.assertEqual(fertilizer.status_code, 201)
+        self.assertEqual(fertilizer.get_json()["application"]["placement_id"], "pot-a")
+        self.assertGreater(fertilizer.get_json()["effect_summary"]["nutrients"]["n"]["remaining_kg"], 0)
+        fertilizer_list = self.client.get(f"/local/api/plantings/{planting['id']}/fertilizer-applications?as_of=2026-07-14")
+        self.assertEqual(fertilizer_list.status_code, 200)
+        self.assertEqual(fertilizer_list.get_json()["applications"][0]["material_name"], "牛ふん堆肥")
+
         blocked_completion = self.client.post(
             f"/local/api/plantings/{planting['id']}/calendar/actions/{action['id']}/complete",
             json={"performed_on": "2026-07-20", "rating": 4},

@@ -25,6 +25,13 @@ from ina_device_hub.device_config_repository import (
 )
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.device_event_log import list_device_events
+from ina_device_hub.device_output_capabilities import (
+    device_output_capabilities,
+    equipment_type_from_notes,
+    equipment_types_for_role,
+    infer_equipment_type,
+    supported_output_ids,
+)
 from ina_device_hub.device_removal_service import DeviceRemovalConflictError, device_removal_service
 from ina_device_hub.field_calendar_view import build_calendar_todo_items as _build_calendar_todo_items
 from ina_device_hub.field_layout_repository import (
@@ -967,7 +974,8 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
     location = layout_context.get("primary_path") or record.get("location") or "未設置"
     soil_moisture = _first_numeric_value(payload, ("soil_moisture_percent", "last_soil_moisture"))
     threshold = payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")
-    enabled_outputs = [switch for switch in config.get("mosfet_switches") or [] if isinstance(switch, dict) and switch.get("enabled") is not False]
+    output_settings = _build_device_output_settings(device_kind, config, layout_context)
+    enabled_outputs = [output for output in output_settings["outputs"] if output["enabled"]]
     readiness_checks = [
         {
             "label": "機器と通信",
@@ -1027,6 +1035,85 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "wake_history": _build_wake_history(statuses),
         "ota_history": _build_ota_history(ota_statuses),
         "readiness_checks": readiness_checks,
+        "output_settings": output_settings,
+        "soil_calibration_calibrated": bool((config.get("soil_calibration") or {}).get("calibrated")),
+    }
+
+
+def _build_device_output_settings(device_kind, config, layout_context):
+    capabilities = device_output_capabilities(device_kind)
+    saved_outputs = [item for item in config.get("mosfet_switches") or [] if isinstance(item, dict)] if isinstance(config, dict) else []
+    saved_by_id = {str(item.get("switch_id") or ""): item for item in saved_outputs if item.get("switch_id")}
+    layout_targets = []
+    for assignment in layout_context.get("assignments") or []:
+        for target in assignment.get("targets") or []:
+            name = str(target.get("name") or "").strip()
+            if name and not any(item["value"] == name for item in layout_targets):
+                layout_targets.append(
+                    {
+                        "value": name,
+                        "label": name,
+                        "equipment_type": infer_equipment_type(name, preset=target.get("preset")),
+                        "source": "圃場に配置済み",
+                    }
+                )
+
+    outputs = []
+    for capability in capabilities:
+        saved = saved_by_id.get(capability["switch_id"], {})
+        current_load = str(saved.get("controlled_load") or "").strip()
+        equipment_options = []
+        for target in layout_targets:
+            target_type = target["equipment_type"]
+            if target_type == "other":
+                target_type = infer_equipment_type(target["value"], role=capability["role"])
+            equipment_options.append({**target, "equipment_type": target_type})
+        for candidate in capability.get("equipment_presets", ()):
+            option_value = str(candidate or "").strip()
+            if option_value and not any(item["value"] == option_value for item in equipment_options):
+                equipment_options.append(
+                    {
+                        "value": option_value,
+                        "label": option_value,
+                        "equipment_type": infer_equipment_type(option_value, role=capability["role"]),
+                        "source": "設備の種類",
+                    }
+                )
+        if current_load and not any(item["value"] == current_load for item in equipment_options):
+            equipment_options.append(
+                {
+                    "value": current_load,
+                    "label": current_load,
+                    "equipment_type": infer_equipment_type(current_load, role=capability["role"]),
+                    "source": "現在の設定",
+                }
+            )
+        available_types = equipment_types_for_role(capability["role"])
+        saved_type = equipment_type_from_notes(saved.get("notes"))
+        allowed_type_values = {item["value"] for item in available_types}
+        equipment_type = saved_type if saved_type in allowed_type_values else infer_equipment_type(current_load, role=capability["role"])
+        outputs.append(
+            {
+                **capability,
+                "name": str(saved.get("name") or capability["default_name"]).strip(),
+                "enabled": saved.get("enabled") is not False,
+                "controlled_load": current_load,
+                "equipment_type": equipment_type,
+                "equipment_types": available_types,
+                "equipment_options": equipment_options,
+                "notes": str(saved.get("notes") or "").strip(),
+            }
+        )
+
+    supported_ids = supported_output_ids(device_kind)
+    unsupported = [item for item in saved_outputs if str(item.get("switch_id") or "") not in supported_ids]
+    ignored_legacy_ids = {"sensor_power"} if str(device_kind or "").upper() == "WTR" else set()
+    unsupported_count = sum(1 for item in unsupported if str(item.get("switch_id") or "") not in ignored_legacy_ids)
+    return {
+        "outputs": outputs,
+        "unsupported": unsupported,
+        "unsupported_count": unsupported_count,
+        "layout_href": (layout_context.get("assignments") or [{}])[0].get("layout_href", "") if layout_context.get("assignments") else "",
     }
 
 
@@ -1058,6 +1145,7 @@ def _build_device_layout_context(device_id, record=None):
                         {
                             "id": target_id,
                             "name": target.get("name") or target_id,
+                            "preset": target.get("preset") or "",
                             "kind_label": LAYOUT_PLACEMENT_LABELS.get(target.get("preset"), target.get("preset") or "配置物"),
                             "path": _layout_placement_path(field, layout, target_space.get("id"), target),
                             "href": _layout_placement_url(field_id, target_space.get("id"), target_id),
@@ -1159,49 +1247,72 @@ def _build_device_operational_metrics(record, payload, config, now, watering):
         threshold = payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")
         next_watering = _next_watering_schedule(config, now)
         moisture_class, moisture_hint = _moisture_threshold_guidance(soil_moisture, threshold)
-        return [
+        metrics = [
             {
                 "label": "次の潅水",
                 "value": next_watering["label"],
                 "class": "priority",
                 "hint": next_watering["hint"],
+                "settings_anchor": "watering-schedules",
             },
             {
                 "label": "土壌水分しきい値",
                 "value": _format_percent(threshold),
                 "class": "",
                 "hint": "この値以下で潅水を判断",
+                "settings_anchor": "watering-rules",
             },
             {
                 "label": "現在の土壌水分",
                 "value": _format_percent(soil_moisture),
                 "class": moisture_class,
                 "hint": moisture_hint,
+                "history_anchor": "soil-moisture-chart",
             },
             {
                 "label": "現在の潅水状態",
                 "value": watering["label"],
                 "class": watering["class"],
                 "hint": "最後のstatusから判断",
+                "history_anchor": "watering-trend-chart",
             },
         ]
+        if device_kind == "WRS":
+            integrated_specs = (
+                ("土壌EC", ("soil_ec_us_cm",), "uS/cm", 0, "soil-ec-chart"),
+                ("土壌pH", ("soil_ph",), "", 1, "soil-ph-chart"),
+                ("光合成に使える光", ("par_umol_m2_s",), "umol/m2/s", 0, "par-chart"),
+            )
+            for label, aliases, unit, digits, history_anchor in integrated_specs:
+                value = _first_numeric_value(payload, aliases)
+                if value is not None:
+                    metrics.append(
+                        {
+                            "label": label,
+                            "value": _format_measurement_value(value, unit, digits),
+                            "class": "",
+                            "hint": "直近の計測値",
+                            "history_anchor": history_anchor,
+                        }
+                    )
+        return metrics
 
     metric_specs = {
         "ENV": (
-            ("気温", ("air_temperature_c",), "℃", 1),
-            ("湿度", ("air_humidity_percent",), "%", 1),
-            ("PAR", ("par_umol_m2_s",), "umol/m2/s", 0),
+            ("気温", ("air_temperature_c",), "℃", 1, "air-temperature-chart"),
+            ("湿度", ("air_humidity_percent",), "%", 1, "air-humidity-chart"),
+            ("光合成に使える光", ("par_umol_m2_s",), "umol/m2/s", 0, "par-chart"),
         ),
         "SOI": (
-            ("土壌水分", ("soil_moisture_percent", "last_soil_moisture"), "%", 1),
-            ("地温", ("soil_temperature_c",), "℃", 1),
-            ("土壌EC", ("soil_ec_us_cm",), "uS/cm", 0),
-            ("土壌pH", ("soil_ph",), "", 1),
+            ("土壌水分", ("soil_moisture_percent", "last_soil_moisture"), "%", 1, "soil-moisture-chart"),
+            ("地温", ("soil_temperature_c",), "℃", 1, "soil-temperature-chart"),
+            ("土壌EC", ("soil_ec_us_cm",), "uS/cm", 0, "soil-ec-chart"),
+            ("土壌pH", ("soil_ph",), "", 1, "soil-ph-chart"),
         ),
-        "PAR": (("PAR", ("par_umol_m2_s",), "umol/m2/s", 0),),
+        "PAR": (("光合成に使える光", ("par_umol_m2_s",), "umol/m2/s", 0, "par-chart"),),
     }
     metrics = []
-    for label, aliases, unit, digits in metric_specs.get(device_kind, ()):
+    for label, aliases, unit, digits, history_anchor in metric_specs.get(device_kind, ()):
         value = _first_numeric_value(payload, aliases)
         if value is None:
             continue
@@ -1211,8 +1322,32 @@ def _build_device_operational_metrics(record, payload, config, now, watering):
                 "value": _format_measurement_value(value, unit, digits),
                 "class": "",
                 "hint": "直近の計測値",
+                "history_anchor": history_anchor,
             }
         )
+
+    if not metrics and device_kind not in metric_specs:
+        detected_metric_specs = (
+            ("気温", ("air_temperature_c",), "℃", 1, "air-temperature-chart"),
+            ("湿度", ("air_humidity_percent",), "%", 1, "air-humidity-chart"),
+            ("土壌水分", ("soil_moisture_percent", "last_soil_moisture"), "%", 1, "soil-moisture-chart"),
+            ("地温", ("soil_temperature_c",), "℃", 1, "soil-temperature-chart"),
+            ("土壌EC", ("soil_ec_us_cm",), "uS/cm", 0, "soil-ec-chart"),
+            ("土壌pH", ("soil_ph",), "", 1, "soil-ph-chart"),
+            ("光合成に使える光", ("par_umol_m2_s",), "umol/m2/s", 0, "par-chart"),
+        )
+        for label, aliases, unit, digits, history_anchor in detected_metric_specs:
+            value = _first_numeric_value(payload, aliases)
+            if value is not None:
+                metrics.append(
+                    {
+                        "label": label,
+                        "value": _format_measurement_value(value, unit, digits),
+                        "class": "",
+                        "hint": "直近の計測値",
+                        "history_anchor": history_anchor,
+                    }
+                )
 
     if metrics:
         return metrics
@@ -1790,7 +1925,7 @@ def _format_channel_mask(channel_mask):
     if not isinstance(channel_mask, int) or channel_mask <= 0:
         return "系統未取得"
     channels = [f"系統{i}" for i in range(1, 9) if channel_mask & (1 << (i - 1))]
-    return "・".join(channels) if channels else f"系統 mask={channel_mask}"
+    return "・".join(channels) if channels else "対応外の系統"
 
 
 def _format_percent(value):
@@ -2348,6 +2483,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             padding: 10px 12px;
             margin: 0 0 18px;
           }
+          .notice.warn {
+            border-color: #fde68a;
+            background: #fffbeb;
+            color: #92400e;
+          }
           .progress-banner {
             position: sticky;
             top: 0;
@@ -2655,6 +2795,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .metric .label { color: var(--muted); font-size: 13px; }
           .metric .value { display: block; margin-top: 8px; font-size: 24px; font-weight: 700; }
           .metric .hint { margin-top: 6px; color: var(--muted); font-size: 13px; }
+          .metric-action { position: relative; display: block; color: inherit; text-decoration: none; transition: border-color .15s ease, transform .15s ease; }
+          .metric-action:hover { border-color: var(--green); text-decoration: none; transform: translateY(-1px); }
+          .metric-action-label { display: block; margin-top: 8px; color: var(--green); font-size: 12px; font-weight: 800; }
           .section-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 18px; align-items: start; }
           .list { display: grid; gap: 10px; }
           .list-row {
@@ -2676,7 +2819,29 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             background: #fff;
           }
           .schedule strong { display: block; font-size: 20px; }
-          .config-form { display: grid; gap: 14px; }
+          .config-form { display: flex; flex-direction: column; gap: 16px; }
+          .setup-journey { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 5px 0 2px; }
+          .setup-step { position: relative; display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 11px; align-items: center; min-height: 82px; padding: 13px; overflow: hidden; border: 1px solid #cbdcd1; border-radius: 12px; color: #183f30; background: linear-gradient(145deg, #fbfefc, #edf6f0); text-decoration: none; transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease; }
+          .setup-step:hover { border-color: #5a9778; box-shadow: 0 8px 20px rgba(31, 83, 59, .12); text-decoration: none; transform: translateY(-2px); }
+          .setup-step-number { position: absolute; top: 5px; right: 9px; color: #b8d2c2; font-size: 28px; font-weight: 900; }
+          .setup-step-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; color: #21704f; background: #dff1e7; font-size: 24px; }
+          .setup-step strong, .setup-step small { display: block; }
+          .setup-step small { margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.35; }
+          .setup-stage { scroll-margin-top: 16px; padding: 18px; border: 1px solid #d2ded6; border-radius: 12px; background: #fcfefd; }
+          .setup-stage > h3:first-child { margin-top: 0; }
+          .setup-stage-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+          .setup-stage-head h3 { margin: 0; }
+          .setup-status-board { order: 0; }
+          .connection-stage { order: 1; }
+          .watering-rule-stage { order: 2; }
+          .schedule-stage { order: 3; }
+          .pattern-stage { order: 4; }
+          .calibration-stage { order: 5; }
+          .environment-stage { order: 6; }
+          .advanced-settings { order: 8; }
+          .config-form > details { order: 8; }
+          .setup-save-bar { order: 9; padding: 12px; border: 1px solid #c7d8cd; border-radius: 12px; background: #f8fcf9; box-shadow: 0 10px 28px rgba(29, 61, 44, .09); }
+          .setup-step-icon svg { width: 28px; height: 28px; }
           .firmware-workbench { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(420px, 1.25fr); gap: 16px; align-items: start; }
           .firmware-current { display: grid; align-content: start; gap: 12px; padding: 18px; border: 1px solid #c8d8ce; border-radius: 9px; background: linear-gradient(145deg, #f8fcf9, #eaf3ed); }
           .firmware-current .version { color: #173f30; font-size: 34px; font-weight: 850; line-height: 1; }
@@ -2709,30 +2874,143 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .schedule-editor, .mosfet-switch-editor { display: grid; gap: 10px; }
           .output-routing { display: grid; grid-template-columns: minmax(220px, .65fr) minmax(360px, 1.35fr); gap: 14px; margin-top: 9px; padding: 14px; border: 1px solid #cddbd2; border-radius: 9px; background: #f8fbf8; }
           .output-routing > img { width: 100%; height: 100%; min-height: 210px; object-fit: cover; border-radius: 7px; }
+          .output-overview { display: grid; gap: 12px; align-content: start; }
+          .output-overview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+          .output-overview-head h4 { margin: 0; font-size: 16px; }
           .switch-flow-board { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 16px; align-items: center; }
           .controller-node { display: grid; place-items: center; min-height: 112px; padding: 12px; border: 2px solid #4d846b; border-radius: 12px; color: #245740; background: #e4f1e8; font-weight: 800; text-align: center; }
           .switch-output-list { position: relative; display: grid; gap: 8px; }
-          .switch-output { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 9px; align-items: center; min-height: 58px; padding: 9px 10px; border: 1px solid #d4ddd6; border-radius: 7px; background: #fff; }
+          .switch-output { position: relative; display: grid; grid-template-columns: 10px 42px minmax(0, 1fr) auto; gap: 9px; align-items: center; min-height: 66px; padding: 9px 10px; border: 1px solid #d4ddd6; border-radius: 9px; background: #fff; }
           .switch-output::before { content: ""; position: absolute; left: -17px; width: 16px; border-top: 2px solid #8eb39e; }
+          .switch-output.disabled { opacity: .58; background: #f5f6f5; }
+          .switch-output.disabled::before { border-top-style: dashed; border-top-color: #b9c0bc; }
           .switch-output-dot { width: 10px; height: 10px; border-radius: 50%; background: #a6b0aa; }
           .switch-output.enabled .switch-output-dot { background: #2a8a5e; box-shadow: 0 0 0 4px #e2f3e9; }
+          .switch-output-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; color: #256247; background: #e8f4ec; }
+          .switch-output-icon svg { width: 30px; height: 30px; }
           .switch-output strong, .switch-output small { display: block; }
           .switch-output small { margin-top: 2px; color: var(--muted); }
-          .switch-output .terminal { color: #587067; font-family: ui-monospace, monospace; font-size: 11px; }
-          .output-editor-details { grid-column: 1 / -1; margin: 0; }
+          .switch-output .terminal { color: #315f4c; font-size: 11px; font-weight: 800; }
+          .output-warning { grid-column: 1 / -1; margin: 0; }
+          .config-dialog { width: min(760px, calc(100vw - 28px)); max-height: min(86vh, 840px); overflow: auto; padding: 0; border: 0; border-radius: 12px; box-shadow: 0 24px 70px rgba(20, 42, 30, .26); }
+          .config-dialog.builder-dialog { width: min(1040px, calc(100vw - 28px)); }
+          .config-dialog::backdrop { background: rgba(20, 36, 27, .56); }
+          .dialog-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--line); background: #fff; }
+          .dialog-head h3 { margin: 0; }
+          .dialog-body { display: grid; gap: 14px; padding: 20px; }
+          .dialog-actions { position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--line); background: rgba(255, 255, 255, .97); }
+          .builder-intro { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: center; padding: 13px; border-radius: 11px; color: #265542; background: #e9f5ed; }
+          .builder-intro-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; color: #fff; background: #2d7b59; font-size: 27px; }
+          .output-edit-row { display: grid; grid-template-columns: 132px 74px minmax(0, 1fr); gap: 0; align-items: stretch; overflow: hidden; border: 1px solid #cbd9cf; border-radius: 14px; background: #fbfefc; transition: opacity .15s ease, border-color .15s ease, box-shadow .15s ease; }
+          .output-edit-row.connected { border-color: #61a47f; box-shadow: 0 8px 22px rgba(33, 102, 70, .1); }
+          .output-edit-row.disconnected { opacity: .72; background: #f3f5f3; }
+          .builder-port-card { display: grid; align-content: center; justify-items: center; gap: 10px; min-height: 214px; padding: 16px 12px; color: #245c43; background: linear-gradient(160deg, #e7f4eb, #d7eadf); text-align: center; }
+          .builder-port-card strong, .builder-port-card small { display: block; }
+          .builder-port-card small { color: #587166; font-size: 11px; }
+          .builder-port-symbol { display: grid; place-items: center; width: 58px; height: 58px; border: 3px solid #6d9f85; border-radius: 18px; background: #fff; font-size: 25px; box-shadow: inset 0 0 0 5px #edf7f0; }
+          .builder-toggle { position: relative; display: grid; grid-template-columns: 35px auto; gap: 7px; align-items: center; cursor: pointer; font-size: 12px; font-weight: 800; }
+          .builder-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+          .builder-toggle-track { position: relative; width: 35px; height: 21px; border-radius: 99px; background: #aab6af; transition: background .15s ease; }
+          .builder-toggle-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); transition: transform .15s ease; }
+          .builder-toggle input:checked + .builder-toggle-track { background: #29865b; }
+          .builder-toggle input:checked + .builder-toggle-track::after { transform: translateX(14px); }
+          .builder-wire { position: relative; display: grid; place-items: center; min-height: 100%; overflow: hidden; }
+          .builder-wire::before { content: ""; width: 100%; border-top: 4px dashed #b9c3bd; }
+          .builder-wire::after { content: ""; position: absolute; right: 2px; width: 10px; height: 10px; border-radius: 50%; background: #b9c3bd; }
+          .connected .builder-wire::before { border-top-style: solid; border-top-color: #34a36b; box-shadow: 0 0 8px rgba(42, 151, 96, .35); animation: wire-pulse 1.8s ease-in-out infinite; }
+          .connected .builder-wire::after { background: #34a36b; box-shadow: 0 0 0 5px #dcf2e5; }
+          @keyframes wire-pulse { 50% { border-color: #77c99c; } }
+          .builder-endpoint { display: grid; gap: 13px; padding: 16px; }
+          .builder-endpoint-head { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 11px; align-items: center; }
+          .builder-endpoint-preview { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 15px; color: #1f6949; background: #e5f3e9; }
+          .builder-endpoint-preview svg { width: 43px; height: 43px; }
+          .builder-endpoint-head strong, .builder-endpoint-head small { display: block; }
+          .builder-endpoint-head small { margin-top: 3px; color: var(--muted); }
+          .builder-choice-label { display: block; margin-bottom: 7px; color: #52685d; font-size: 11px; font-weight: 800; }
+          .equipment-type-grid, .equipment-target-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+          .equipment-target-grid { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+          .equipment-card { display: grid; justify-items: center; gap: 5px; min-height: 92px; padding: 10px 8px; border: 2px solid #d5dfd8; border-radius: 11px; color: #294b3c; background: #fff; text-align: center; cursor: pointer; transition: border-color .14s ease, background .14s ease, transform .14s ease; }
+          .equipment-card:hover:not(:disabled) { border-color: #79ac90; transform: translateY(-1px); }
+          .equipment-card[aria-pressed="true"] { border-color: #2d8a5d; color: #19583b; background: #e6f5eb; box-shadow: inset 0 0 0 1px #2d8a5d; }
+          .equipment-card:disabled { cursor: not-allowed; filter: grayscale(.8); opacity: .48; }
+          .equipment-card svg { width: 38px; height: 38px; }
+          .equipment-card strong { font-size: 12px; }
+          .equipment-card small { color: var(--muted); font-size: 10px; line-height: 1.25; }
+          .equipment-target-card { min-height: 72px; align-content: center; grid-template-columns: 30px minmax(0, 1fr); justify-items: start; text-align: left; }
+          .equipment-target-card svg { width: 28px; height: 28px; }
+          .equipment-target-card span { min-width: 0; }
+          .equipment-target-card strong, .equipment-target-card small { display: block; overflow-wrap: anywhere; }
+          .builder-name-details { margin: 0; }
+          .builder-name-details .detail-body { padding-top: 10px; }
+          .sensor-rack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+          .sensor-device-card { overflow: hidden; border: 2px solid #d4dfd8; border-radius: 14px; background: #fff; transition: border-color .16s ease, box-shadow .16s ease; }
+          .sensor-device-card[hidden], .sensor-device-body[hidden], [data-env-sensor-advanced][hidden] { display: none !important; }
+          .sensor-device-card.active { border-color: #4a9870; box-shadow: 0 9px 24px rgba(35, 102, 70, .12); }
+          .sensor-device-head { display: grid; grid-template-columns: 66px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 98px; padding: 14px; background: linear-gradient(145deg, #f9fcfa, #edf5f0); }
+          .sensor-device-head strong, .sensor-device-head small { display: block; }
+          .sensor-device-head > span:nth-child(2) > strong { color: #194b35; font-size: 17px; }
+          .sensor-device-head small { margin-top: 3px; color: var(--muted); font-size: 11px; }
+          .sensor-device-illustration { display: grid; place-items: center; width: 66px; height: 66px; border-radius: 20px; }
+          .sensor-device-illustration.par { color: #956b14; background: linear-gradient(145deg, #fff8d9, #f8e9aa); }
+          .sensor-device-illustration.soil { color: #6d5835; background: linear-gradient(145deg, #f4ead8, #dce9d6); }
+          .sensor-device-illustration svg { width: 48px; height: 48px; }
+          .sensor-power-switch { display: grid; justify-items: center; gap: 5px; min-width: 70px; color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 800; }
+          .sensor-power-switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+          .sensor-power-track { position: relative; width: 48px; height: 28px; border-radius: 99px; background: #aab6af; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .18); transition: background .15s ease; }
+          .sensor-power-track::after { content: ""; position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 2px 5px rgba(0, 0, 0, .22); transition: transform .15s ease; }
+          .sensor-power-switch input:checked + .sensor-power-track { background: #2a8d5e; }
+          .sensor-power-switch input:checked + .sensor-power-track::after { transform: translateX(20px); }
+          .sensor-device-body { display: grid; gap: 12px; padding: 14px; border-top: 1px solid #d7e1da; }
+          .sensor-live-strip { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 9px; align-items: center; padding: 10px; border-radius: 9px; color: #315e4a; background: #edf7f0; }
+          .sensor-live-strip strong, .sensor-live-strip small { display: block; }
+          .sensor-live-strip small { color: var(--muted); font-size: 10px; }
+          .sensor-live-dot { width: 10px; height: 10px; border-radius: 50%; background: #31a16a; box-shadow: 0 0 0 5px #d8efe2; }
+          .sensor-tune-button { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 9px; align-items: center; min-height: 70px; padding: 10px 12px; border: 2px solid #c8dbcf; border-radius: 11px; color: #245a41; background: #fff; text-align: left; }
+          .sensor-tune-button > span:first-child { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: #e9f4ec; font-size: 22px; }
+          .sensor-tune-button strong, .sensor-tune-button small { display: block; }
+          .sensor-tune-button small { color: var(--muted); font-size: 10px; }
+          .sensor-adjustment-value { display: inline-flex !important; width: fit-content; margin-top: 5px; padding: 3px 7px; border-radius: 99px; color: #5d665f; background: #eef1ef; font-size: 10px; font-weight: 850; line-height: 1.2; }
+          .sensor-adjustment-value.recorded { color: #185f3e; background: #dff2e6; }
+          .sensor-tune-button:hover { border-color: #4a9870; background: #f3faf5; }
+          .soil-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+          .soil-metric-grid button { display: grid; justify-items: center; align-content: center; gap: 4px; min-height: 70px; padding: 7px 5px; border: 2px solid #d8e0da; border-radius: 10px; background: #fff; }
+          .soil-metric-grid button:hover, .soil-metric-grid button[aria-pressed="true"] { border-color: #3f966a; color: #1f6545; background: #e9f6ed; }
+          .soil-metric-grid button span { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 50%; color: #275d44; background: #edf4ef; font-size: 12px; font-weight: 900; }
+          .soil-metric-grid button strong { font-size: 10px; }
+          .soil-metric-grid button .sensor-adjustment-value { min-height: 18px; margin-top: 1px; padding: 3px 5px; text-align: center; overflow-wrap: anywhere; }
+          .sensor-tuning-bench { --dial-progress: 0deg; display: grid; gap: 16px; margin-top: 14px; padding: 18px; border: 2px solid #64a581; border-radius: 15px; background: linear-gradient(145deg, #fbfefc, #eaf5ee); box-shadow: 0 12px 28px rgba(30, 95, 62, .12); }
+          .sensor-calibration-dialog { width: min(720px, calc(100vw - 28px)); }
+          .sensor-calibration-dialog .sensor-tuning-bench { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+          .sensor-bench-head { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 15px; align-items: center; }
+          .sensor-bench-head strong, .sensor-bench-head small, .sensor-bench-head span { display: block; }
+          .sensor-bench-head > span:last-child > small { color: #2d7655; font-weight: 900; letter-spacing: .05em; }
+          .sensor-bench-head > span:last-child > strong { margin-top: 2px; color: #153f2e; font-size: 21px; }
+          .sensor-bench-head > span:last-child > span { margin-top: 4px; color: var(--muted); font-size: 12px; }
+          .sensor-bench-dial { position: relative; display: grid !important; place-items: center; width: 86px; height: 86px; border-radius: 50%; color: #1c6545; background: conic-gradient(#2f9a68 var(--dial-progress), #d9e5dd 0); box-shadow: inset 0 0 0 8px #f8fcf9, 0 5px 15px rgba(24, 78, 51, .15); font-size: 17px; font-weight: 900; }
+          .sensor-bench-dial::before { content: ""; position: absolute; inset: 17px; border-radius: 50%; background: #fff; }
+          .sensor-bench-dial span { position: relative; }
+          .sensor-range-control { display: grid; gap: 8px; padding: 14px; border-radius: 12px; background: #fff; }
+          .sensor-range-control > label { color: #315d49; font-size: 12px; font-weight: 850; }
+          .sensor-range-readout { display: flex; align-items: baseline; justify-content: center; gap: 7px; color: #174d34; }
+          .sensor-range-readout output { font-size: 36px; font-weight: 900; line-height: 1; }
+          .sensor-range-readout span { color: var(--muted); font-size: 13px; font-weight: 800; }
+          .sensor-range-control input[type="range"] { width: 100%; accent-color: #27875b; }
+          .sensor-range-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
+          .sensor-bench-actions { display: flex; justify-content: flex-end; gap: 8px; }
+          .sensor-maintenance-details { margin-top: 12px; }
+          .sensor-maintenance-intro { grid-column: 1 / -1; margin: 0; padding: 10px 12px; border-radius: 8px; color: #5f5a42; background: #fff9df; font-size: 12px; }
+          .sensor-maintenance-details [data-env-sensor-advanced] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; grid-column: 1 / -1; padding: 10px; border: 1px solid #e0e6e2; border-radius: 9px; }
+          .calibration-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 15px; border: 1px solid #cddbd2; border-radius: 9px; background: #f8fbf8; }
+          .calibration-card h3 { margin: 0 0 4px; }
+          .calibration-status { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+          .guide-steps { display: grid; gap: 12px; counter-reset: guide-step; }
+          .guide-step { position: relative; min-height: 74px; padding: 13px 14px 13px 58px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+          .guide-step::before { counter-increment: guide-step; content: counter(guide-step); position: absolute; left: 14px; top: 14px; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: #fff; background: var(--green); font-weight: 850; }
+          .guide-step strong, .guide-step span { display: block; }
+          .guide-step span { margin-top: 4px; color: var(--muted); font-size: 13px; }
           .schedule-row {
             display: grid;
             grid-template-columns: minmax(120px, .8fr) minmax(130px, .8fr) minmax(130px, .8fr) auto;
-            gap: 10px;
-            align-items: end;
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            padding: 12px;
-            background: #fff;
-          }
-          .mosfet-switch-row {
-            display: grid;
-            grid-template-columns: 92px minmax(120px, .8fr) minmax(150px, 1fr) minmax(120px, .8fr) minmax(110px, .7fr) minmax(180px, 1fr) auto;
             gap: 10px;
             align-items: end;
             border: 1px solid var(--line);
@@ -2818,16 +3096,46 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .list-row { grid-template-columns: 1fr; }
             .ridge-row { grid-template-columns: 1fr; }
             .ridge-meta { justify-content: flex-start; }
-            .schedule-row, .mosfet-switch-row { grid-template-columns: 1fr; }
+            .schedule-row { grid-template-columns: 1fr; }
+            .calibration-card { grid-template-columns: 1fr; }
             .tab-list { margin-inline: -16px; border-radius: 0; padding-inline: 16px; }
             .device-guide, .device-identity { grid-template-columns: 1fr; }
             .firmware-workbench { grid-template-columns: 1fr; }
             .firmware-meta { grid-template-columns: 1fr; }
             .readiness-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .output-routing, .switch-flow-board { grid-template-columns: 1fr; }
+            .setup-journey { grid-template-columns: 1fr; }
+            .sensor-rack { grid-template-columns: 1fr; }
+            .output-edit-row { grid-template-columns: 92px 42px minmax(0, 1fr); }
+            .builder-port-card { min-height: 100%; padding-inline: 8px; }
+            .builder-port-symbol { width: 48px; height: 48px; }
+            .equipment-type-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .switch-output::before { display: none; }
             .device-guide img { max-height: 190px; border-top: 1px solid #c9d8ce; border-left: 0; }
             .device-identity img { width: 100%; max-height: 180px; }
+          }
+          @media (max-width: 560px) {
+            .output-edit-row { grid-template-columns: 1fr; }
+            .builder-port-card { grid-template-columns: auto minmax(0, 1fr) auto; justify-items: start; min-height: auto; text-align: left; }
+            .builder-port-symbol { width: 43px; height: 43px; border-radius: 13px; }
+            .builder-wire { min-height: 38px; }
+            .builder-wire::before { width: 4px; height: 100%; border-top: 0; border-left: 4px dashed #b9c3bd; }
+            .connected .builder-wire::before { border-left-style: solid; border-left-color: #34a36b; }
+            .builder-wire::after { right: auto; bottom: 1px; }
+            .builder-endpoint { padding: 14px 12px; }
+            .equipment-target-grid { grid-template-columns: 1fr 1fr; }
+            .sensor-device-head { grid-template-columns: 54px minmax(0, 1fr) auto; padding: 11px; }
+            .sensor-device-illustration { width: 54px; height: 54px; border-radius: 16px; }
+            .sensor-device-illustration svg { width: 40px; height: 40px; }
+            .soil-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .sensor-bench-head { grid-template-columns: 68px minmax(0, 1fr); }
+            .sensor-bench-dial { width: 66px; height: 66px; box-shadow: inset 0 0 0 6px #f8fcf9, 0 5px 15px rgba(24, 78, 51, .15); font-size: 13px; }
+            .sensor-bench-dial::before { inset: 14px; }
+            .sensor-bench-actions { align-items: stretch; flex-direction: column-reverse; }
+            .sensor-bench-actions button { width: 100%; }
+            .sensor-maintenance-details [data-env-sensor-advanced] { grid-template-columns: 1fr; }
+            .setup-save-bar .actions { align-items: stretch; }
+            .setup-save-bar button { width: 100%; }
           }
         </style>
         <link rel="stylesheet" href="/static/hub-ui.css">
@@ -2947,11 +3255,12 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             <div class="priority-heading"><h3>{{ selected.operational_heading }}</h3><span class="muted">運用判断に必要な情報</span></div>
             <div class="metrics">
               {% for metric in selected.operational_metrics %}
-              <div class="metric {{ metric.class }}">
+              {% if metric.settings_anchor %}<a class="metric metric-action {{ metric.class }}" href="{{ device_link_prefix }}{{ selected.id }}?tab=settings#{{ metric.settings_anchor }}" aria-label="{{ metric.label }}の設定を変更">{% elif metric.history_anchor %}<a class="metric metric-action {{ metric.class }}" href="{{ device_link_prefix }}{{ selected.id }}?tab=monitoring#{{ metric.history_anchor }}" aria-label="{{ metric.label }}の履歴を見る">{% else %}<div class="metric {{ metric.class }}">{% endif %}
                 <span class="label">{{ metric.label }}</span>
                 <span class="value">{% if metric.class in ['good', 'ok', 'warn', 'danger', 'muted'] %}<span class="badge {{ metric.class }}">{{ metric.value }}</span>{% else %}{{ metric.value }}{% endif %}</span>
                 <div class="hint">{{ metric.hint }}</div>
-              </div>
+                {% if metric.settings_anchor %}<span class="metric-action-label">設定を変更 →</span>{% elif metric.history_anchor %}<span class="metric-action-label">推移を見る →</span>{% endif %}
+              {% if metric.settings_anchor or metric.history_anchor %}</a>{% else %}</div>{% endif %}
               {% endfor %}
             </div>
           </section>
@@ -3032,7 +3341,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
             <section id="tab-config" class="tab-panel" role="tabpanel" hidden>
           <section class="panel">
-            <h2>機器情報</h2>
+            <h2>この機器の呼び名</h2>
+            <p class="lead">圃場で見分けやすい名前と、覚えておきたいことだけを整えます。</p>
             <form id="metadata-form" data-stateful-form data-pristine-message="機器情報は変更されていません。"{% if selected_device.state == 'retired' %} data-state-blocked="true" data-blocked-message="廃止済みの機器情報は変更できません。"{% endif %}>
               <div class="form-grid">
                 <div><label for="metadata-name">表示名</label><input id="metadata-name" name="name" type="text" value="{{ selected_device.name or '' }}"></div>
@@ -3042,9 +3352,16 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             </form>
           </section>
           <section class="panel">
-            <h2>動作設定</h2>
+            <h2>{{ '水やりセットアップ' if selected.supports_irrigation else '機器セットアップ' }}</h2>
+            {% if selected.supports_irrigation %}
+            <nav class="setup-journey" aria-label="水やりセットアップの手順">
+              <a class="setup-step" href="#output-connections"><span class="setup-step-number">1</span><span class="setup-step-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16h8M18 16h8M12 11l6 5-6 5V11ZM20 11l-6 5 6 5V11Z"/></svg></span><span><strong>設備をつなぐ</strong><small>接続口から水の行き先を組み立てる</small></span></a>
+              <a class="setup-step" href="#watering-rules"><span class="setup-step-number">2</span><span class="setup-step-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M16 4C13 10 8 14 8 20a8 8 0 0 0 16 0c0-6-5-10-8-16Z"/></svg></span><span><strong>水やりを決める</strong><small>水分の目安と予約時刻を決める</small></span></a>
+              <a class="setup-step" href="#soil-moisture-reference"><span class="setup-step-number">3</span><span class="setup-step-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M16 27V13M16 18c-6 0-9-4-9-9 6 0 9 3 9 9ZM16 15c6 0 9-4 9-9-6 0-9 3-9 9ZM8 27h16"/></svg></span><span><strong>センサーを合わせる</strong><small>いつもの土に表示を合わせる</small></span></a>
+            </nav>
+            {% endif %}
             <form id="runtime-config-form" class="config-form" data-stateful-form data-pristine-message="動作設定は変更されていません。"{% if selected_device.state == 'retired' %} data-state-blocked="true" data-blocked-message="廃止済みの動作設定は変更できません。"{% endif %}>
-              <div class="metrics">
+              <div class="metrics setup-status-board">
                 <div class="metric"{% if not selected.supports_irrigation %} hidden{% endif %}>
                   <span class="label">灌水しきい値</span>
                   <span class="value"><span id="threshold-display">{{ selected.config_summary.threshold }}</span></span>
@@ -3063,28 +3380,43 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 <span id="debug-log-display" hidden>{{ selected.config_summary.debug_log }}</span><span id="ota-interval-display" hidden>{{ selected.config_summary.ota_interval }}</span>
               </div>
 
+              <section id="watering-rules" class="setup-stage watering-rule-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
+                <h3>水やりの判断</h3>
+                <p class="lead">土の乾き具合を見て、水やりを始める目安を決めます。</p>
               <div class="config-toolbar">
-                <div class="config-field"{% if not selected.supports_irrigation %} hidden{% endif %}>
+                <div class="config-field">
                   <label for="moisture-threshold">灌水しきい値</label>
                   <div class="threshold-control">
                     <input id="moisture-threshold" type="range" min="0" max="100" step="1">
                     <input id="moisture-threshold-number" type="number" min="0" max="100" step="1">
                   </div>
                 </div>
-                <label class="switch-row" for="force-watering"{% if not selected.supports_irrigation %} hidden{% endif %}>
+                <label class="switch-row" for="force-watering">
                   <input id="force-watering" type="checkbox">
                   予約時刻には水分条件を無視して灌水する
                 </label>
               </div>
+              </section>
               <details><summary>通信・開発者向け設定</summary><div class="detail-body"><p class="lead">通常は変更不要です。時刻同期、保守確認間隔、デバッグ送信を調整します。</p><div class="config-toolbar"><div class="config-field"><label for="timezone-offset">機器の時刻基準</label><select id="timezone-offset"><option value="32400">日本時間（UTC+09:00）</option><option value="0">UTC</option></select></div><div class="config-field"><label for="ntp-server">時刻同期サーバー（NTP）</label><input id="ntp-server" type="text" autocomplete="off"></div><label class="switch-row" for="debug-log-on-wake"><input id="debug-log-on-wake" type="checkbox">次回起動時に診断ログを送る</label><div class="config-field"><label for="ota-check-interval">更新確認の間隔</label><select id="ota-check-interval"><option value="3600">1時間</option><option value="10800">3時間</option><option value="21600">6時間</option><option value="43200">12時間</option><option value="86400">24時間</option></select></div></div></div></details>
 
-              <div{% if not selected.supports_irrigation %} hidden{% endif %}>
-                <h3>どの出力が、何を動かすか</h3>
-                <p class="lead">ポンプ、バルブ、センサー電源へのつながりを先に確認できます。MOSFETやmaskなどの技術値は詳細編集にまとめています。</p>
-                <div class="output-routing"><img src="/static/ui-illustrations/controller-flow.png" alt="制御機器から灌水設備やセンサーへつながるイラスト" loading="lazy"><div class="switch-flow-board"><div class="controller-node">制御<br>ボックス</div><div id="mosfet-switch-map" class="switch-output-list" aria-live="polite"></div></div><details class="output-editor-details"><summary>出力先と端子を詳しく編集</summary><div class="detail-body"><div id="mosfet-switch-editor" class="mosfet-switch-editor"></div><div class="actions"><button type="button" id="add-mosfet-switch">＋ 出力先を追加</button></div></div></details></div>
-              </div>
+              <section id="output-connections" class="setup-stage connection-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
+                <div class="setup-stage-head"><div><h3>設備をつなぐ</h3><p class="lead">制御ボックスから水を送る設備まで、今のつながりを確認できます。</p></div><button type="button" id="open-output-settings" class="primary">ルートを組み立てる</button></div>
+                <div class="output-routing">
+                  <img src="/static/ui-illustrations/controller-flow.png" alt="制御機器から潅水設備やセンサーへつながるイラスト" loading="lazy">
+                  <div class="output-overview">
+                    <div class="output-overview-head"><h4>現在の水やりルート</h4></div>
+                    <div class="switch-flow-board"><div class="controller-node">制御<br>ボックス</div><div id="output-connection-map" class="switch-output-list" aria-live="polite">{% for output in selected.output_settings.outputs %}<div class="switch-output {{ 'enabled' if output.enabled else 'disabled' }}"><span class="switch-output-dot"></span><span class="switch-output-icon" aria-hidden="true">💧</span><div><strong>{{ output.name }}</strong><small>{{ output.controlled_load or '接続先未設定' }}</small></div><span class="terminal">接続口 {{ output.number }}</span></div>{% endfor %}</div></div>
+                  </div>
+                  {% if selected.output_settings.unsupported_count %}<p class="notice warn output-warning">保存済み設定に、この機種では編集できない接続が {{ selected.output_settings.unsupported_count }} 件あります。既存値は維持されます。</p>{% endif %}
+                </div>
+                <dialog id="output-settings-dialog" class="config-dialog builder-dialog" aria-labelledby="output-settings-title">
+                  <div class="dialog-head"><div><h3 id="output-settings-title">水やりルートを組み立てる</h3><p class="lead">接続口をONにすると線がつながります。絵を選んで、設備までのルートを完成させましょう。</p></div><button type="button" data-close-output-dialog aria-label="閉じる">×</button></div>
+                  <div class="dialog-body"><div class="builder-intro"><span class="builder-intro-icon" aria-hidden="true">3</span><span><strong>作り方は3ステップ</strong><br><small>接続口を使う → 設備の種類を選ぶ → 圃場の設備を選ぶ</small></span></div><div id="mosfet-switch-editor" class="mosfet-switch-editor"></div>{% if selected.output_settings.layout_href %}<p class="muted">候補に設備がない場合は、<a href="{{ selected.output_settings.layout_href }}">圃場の設置ビュー</a>で、この機器の対象を設定してください。</p>{% endif %}<p class="muted">「組み立てを反映」後、設定画面下部の「機器へ送る」を押すと実機へ反映されます。</p></div>
+                  <div class="dialog-actions"><button type="button" data-cancel-output-dialog>キャンセル</button><button type="button" class="primary" data-apply-output-dialog>組み立てを反映</button></div>
+                </dialog>
+              </section>
 
-              <div{% if not selected.supports_irrigation %} hidden{% endif %}>
+              <div id="watering-schedules" class="setup-stage schedule-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
                 <h3>灌水予約</h3>
                 <div id="schedule-editor" class="schedule-editor"></div>
                 <div class="actions">
@@ -3092,7 +3424,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
               </div>
 
-              <div{% if not selected.supports_irrigation %} hidden{% endif %}>
+              <div id="watering-pattern" class="setup-stage pattern-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
                 <h3>分割灌水</h3>
                 <div class="config-toolbar">
                   <label class="switch-row" for="watering-pattern-enabled">
@@ -3100,11 +3432,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                     分割灌水を使う
                   </label>
                   <div class="config-field">
-                    <label for="watering-pattern-on-sec">ON 秒数</label>
+                    <label for="watering-pattern-on-sec">水を出す時間（秒）</label>
                     <input id="watering-pattern-on-sec" type="number" min="0" max="3600" step="1">
                   </div>
                   <div class="config-field">
-                    <label for="watering-pattern-off-sec">休止 秒数</label>
+                    <label for="watering-pattern-off-sec">水を止める時間（秒）</label>
                     <input id="watering-pattern-off-sec" type="number" min="0" max="3600" step="1">
                   </div>
                   <div class="config-field">
@@ -3114,164 +3446,113 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
               </div>
 
-              <div{% if selected.device_kind != "WTR" %} hidden{% endif %}>
-                <h3>土壌水分計 校正</h3>
-                <div class="config-toolbar">
-                  <div class="config-field">
-                    <label for="soil-calibration-mode">校正モード</label>
-                    <select id="soil-calibration-mode">
-                      <option value="normal">通常</option>
-                      <option value="capture_dry">乾いた状態を記録</option>
-                      <option value="capture_wet">湿った状態を記録</option>
-                      <option value="reset">未校正に戻す</option>
-                    </select>
-                  </div>
-                  <label class="switch-row" for="soil-calibration-calibrated">
-                    <input id="soil-calibration-calibrated" type="checkbox">
-                    手動校正値を使用
-                  </label>
-                  <label class="switch-row" for="soil-calibration-auto-mode">
-                    <input id="soil-calibration-auto-mode" type="checkbox">
-                    WTR 自動校正
-                  </label>
-                  <label class="switch-row" for="soil-calibration-apply-auto">
-                    <input id="soil-calibration-apply-auto" type="checkbox">
-                    WTR 自動反映
-                  </label>
-                  <label class="switch-row" for="soil-calibration-drift-check">
-                    <input id="soil-calibration-drift-check" type="checkbox">
-                    WTR ズレ検知
-                  </label>
-                  <div class="config-field">
-                    <label for="soil-calibration-dry-raw">乾燥 raw</label>
-                    <input id="soil-calibration-dry-raw" type="number" min="1" max="4095" step="1">
-                  </div>
-                  <div class="config-field">
-                    <label for="soil-calibration-wet-raw">湿潤 raw</label>
-                    <input id="soil-calibration-wet-raw" type="number" min="0" max="4094" step="1">
-                  </div>
-                  <div class="config-field">
-                    <label for="soil-calibration-min-delta-raw">校正差分 raw</label>
-                    <input id="soil-calibration-min-delta-raw" type="number" min="10" max="2000" step="1">
-                  </div>
-                  <div class="config-field">
-                    <label for="soil-calibration-drift-tolerance-raw">ズレ検知 raw</label>
-                    <input id="soil-calibration-drift-tolerance-raw" type="number" min="10" max="2000" step="1">
-                  </div>
-                  <div class="config-field">
-                    <label for="soil-calibration-sample-count">平均回数</label>
-                    <input id="soil-calibration-sample-count" type="number" min="1" max="100" step="1">
-                  </div>
-                  <div class="config-field">
-                    <label for="soil-calibration-sample-interval-ms">平均間隔 ms</label>
-                    <input id="soil-calibration-sample-interval-ms" type="number" min="0" max="1000" step="1">
-                  </div>
+              <section id="soil-moisture-reference" class="setup-stage calibration-stage"{% if selected.device_kind != "WTR" %} hidden{% endif %}>
+                <div class="calibration-card">
+                  <div><h3>土壌水分計の基準合わせ</h3><p class="lead">乾いた状態と十分に湿った状態を順番に記録すると、0〜100%の表示が圃場に合いやすくなります。</p><div class="calibration-status"><span class="badge {{ 'good' if selected.soil_calibration_calibrated else 'muted' }}" id="soil-calibration-status">{{ '基準設定済み' if selected.soil_calibration_calibrated else '基準未設定' }}</span><span class="badge warn" id="soil-calibration-action-summary" hidden></span></div></div>
+                  <button type="button" id="open-soil-calibration-guide" class="primary">手順を見ながら設定</button>
                 </div>
-              </div>
+                <select id="soil-calibration-mode" hidden aria-label="次に記録する基準"><option value="normal">通常</option><option value="capture_dry">乾いた状態を記録</option><option value="capture_wet">湿った状態を記録</option><option value="reset">基準をリセット</option></select>
+                <details class="config-details"><summary>上級者設定</summary><div class="detail-body"><p class="sensor-maintenance-intro">通常は変更する必要がありません。メーカー資料を確認できる方だけ使用してください。</p><div class="config-toolbar"><label class="switch-row" for="soil-calibration-calibrated"><input id="soil-calibration-calibrated" type="checkbox">記録した基準を使用する</label><label class="switch-row" for="soil-calibration-auto-mode"><input id="soil-calibration-auto-mode" type="checkbox">基準の候補を自動で探す</label><label class="switch-row" for="soil-calibration-apply-auto"><input id="soil-calibration-apply-auto" type="checkbox">候補を自動で反映する</label><label class="switch-row" for="soil-calibration-drift-check"><input id="soil-calibration-drift-check" type="checkbox">基準のずれを検知する</label><div class="config-field"><label for="soil-calibration-dry-raw">乾燥時の計測値</label><input id="soil-calibration-dry-raw" type="number" min="1" max="4095" step="1"></div><div class="config-field"><label for="soil-calibration-wet-raw">湿潤時の計測値</label><input id="soil-calibration-wet-raw" type="number" min="0" max="4094" step="1"></div><div class="config-field"><label for="soil-calibration-min-delta-raw">必要な計測差</label><input id="soil-calibration-min-delta-raw" type="number" min="10" max="2000" step="1"></div><div class="config-field"><label for="soil-calibration-drift-tolerance-raw">ずれの許容値</label><input id="soil-calibration-drift-tolerance-raw" type="number" min="10" max="2000" step="1"></div><div class="config-field"><label for="soil-calibration-sample-count">平均する回数</label><input id="soil-calibration-sample-count" type="number" min="1" max="100" step="1"></div><div class="config-field"><label for="soil-calibration-sample-interval-ms">計測間隔（ミリ秒）</label><input id="soil-calibration-sample-interval-ms" type="number" min="0" max="1000" step="1"></div></div></div></details>
+                <dialog id="soil-calibration-guide" class="config-dialog" aria-labelledby="soil-calibration-guide-title">
+                  <div class="dialog-head"><div><h3 id="soil-calibration-guide-title">土壌水分計の基準合わせ</h3><p class="lead">乾燥と湿潤を同時には記録せず、1段階ずつ機器へ反映します。</p></div><button type="button" data-close-calibration-guide aria-label="閉じる">×</button></div>
+                  <div class="dialog-body"><div class="guide-steps"><div class="guide-step"><strong>センサーを乾いた状態にする</strong><span>水分を拭き取り、値が落ち着くまで待ちます。普段使う用土の乾燥状態で行うと、表示が栽培環境に合いやすくなります。</span></div><div class="guide-step"><strong>乾いた基準を記録して機器へ送る</strong><span>下のボタンを選び、設定画面下部の「保存して機器へ反映」を押します。次回通信で設定受信済みになるまで待ちます。</span><div class="actions"><button type="button" data-calibration-mode="capture_dry">乾いた基準を記録する</button></div></div><div class="guide-step"><strong>用土を十分に湿らせる</strong><span>たっぷり潅水し、余分な水が抜けた後、いつもと同じ深さへセンサーを挿します。水中へ直接入れないでください。</span></div><div class="guide-step"><strong>湿った基準を記録して機器へ送る</strong><span>下のボタンを選び、もう一度「保存して機器へ反映」を押します。</span><div class="actions"><button type="button" data-calibration-mode="capture_wet">湿った基準を記録する</button></div></div></div><p class="notice warn">基準をやり直す場合だけリセットしてください。リセット後は乾燥・湿潤の両方を記録し直します。</p></div>
+                  <div class="dialog-actions"><button type="button" data-calibration-mode="reset">基準をリセット</button><button type="button" class="primary" data-close-calibration-guide>閉じる</button></div>
+                </dialog>
+              </section>
 
-              <div{% if selected.device_kind not in ["WRS", "ENV", "SOI", "PAR"] %} hidden{% endif %}>
-                <h3>環境センサー 校正</h3>
-                <div class="config-toolbar">
-                  <label class="switch-row" for="env-par-enabled">
-                    <input id="env-par-enabled" type="checkbox">
-                    光量センサーを使う
-                  </label>
-                  <label class="switch-row" for="env-soil-enabled">
-                    <input id="env-soil-enabled" type="checkbox">
-                    土壌EC/pH/NPKセンサーを使う
-                  </label>
-                  <div class="config-field">
-                    <label for="env-calibration-mode">校正モード</label>
-                    <select id="env-calibration-mode">
-                      <option value="normal">通常</option>
-                      <option value="capture_reference">基準値を記録</option>
-                      <option value="reset">未校正に戻す</option>
-                    </select>
-                  </div>
-                  <div class="config-field">
-                    <label for="env-calibration-target">記録する項目</label>
-                    <select id="env-calibration-target">
-                      <option value="par_umol_m2_s">光合成に使える光</option>
-                      <option value="soil_moisture_percent">土壌水分</option>
-                      <option value="soil_temperature_c">地温</option>
-                      <option value="soil_ec_us_cm">土壌EC</option>
-                      <option value="soil_ph">土壌pH</option>
-                      <option value="soil_n_mg_kg">窒素</option>
-                      <option value="soil_p_mg_kg">リン</option>
-                      <option value="soil_k_mg_kg">カリウム</option>
-                    </select>
-                  </div>
-                  <div class="config-field">
-                    <label for="env-calibration-reference-value">基準値</label>
-                    <input id="env-calibration-reference-value" type="number" step="0.01">
-                  </div>
+              <div class="setup-stage environment-stage"{% if selected.device_kind not in ["WRS", "ENV", "SOI", "PAR"] %} hidden{% endif %}>
+                <div class="setup-stage-head"><div><h3>つないだセンサー</h3><p class="lead">実際につないでいる機材だけをONにします。ONにした機材の調整メニューだけが開きます。</p></div></div>
+                <div class="sensor-rack">
+                  <article class="sensor-device-card" data-env-sensor-card="par"{% if selected.device_kind not in ["WRS", "ENV", "PAR"] %} hidden{% endif %}>
+                    <div class="sensor-device-head">
+                      <span class="sensor-device-illustration par" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><circle cx="32" cy="25" r="11"/><path d="M32 5v7M32 38v7M12 25h7M45 25h7M18 11l5 5M46 11l-5 5M17 53h30"/></svg></span>
+                      <span><strong>光センサー</strong><small>日射や、光合成に使える光を測ります</small></span>
+                      <label class="sensor-power-switch" for="env-par-enabled"><input id="env-par-enabled" type="checkbox"><span class="sensor-power-track" aria-hidden="true"></span><span data-env-sensor-state="par">使用しない</span></label>
+                    </div>
+                    <div class="sensor-device-body" data-env-sensor-panel="par" hidden>
+                      <div class="sensor-live-strip"><span class="sensor-live-dot"></span><span><strong>光を計測する準備ができています</strong><small>表示が基準計とずれているときだけ調整してください</small></span></div>
+                      <button type="button" class="sensor-tune-button" data-env-tune-target="par_umol_m2_s"><span aria-hidden="true">☀</span><span><strong>光の表示を合わせる</strong><small>基準計と同じ値になるよう調整</small><span class="sensor-adjustment-value" data-env-calibration-summary="par_umol_m2_s">未調整</span></span></button>
+                    </div>
+                  </article>
+
+                  <article class="sensor-device-card" data-env-sensor-card="soil"{% if selected.device_kind not in ["WRS", "ENV", "SOI"] %} hidden{% endif %}>
+                    <div class="sensor-device-head">
+                      <span class="sensor-device-illustration soil" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M24 8h16v25H24zM28 33v21M36 33v21"/><path d="M12 50c10-6 30-6 40 0M29 19h6"/></svg></span>
+                      <span><strong>土のセンサー</strong><small>水分・地温・EC・pH・養分を測ります</small></span>
+                      <label class="sensor-power-switch" for="env-soil-enabled"><input id="env-soil-enabled" type="checkbox"><span class="sensor-power-track" aria-hidden="true"></span><span data-env-sensor-state="soil">使用しない</span></label>
+                    </div>
+                    <div class="sensor-device-body" data-env-sensor-panel="soil" hidden>
+                      <div class="sensor-live-strip"><span class="sensor-live-dot"></span><span><strong>土の状態を計測する準備ができています</strong><small>合わせたい項目を1つ選びます</small></span></div>
+                      <div class="soil-metric-grid" aria-label="調整する土壌計測項目">
+                        <button type="button" data-env-tune-target="soil_moisture_percent"><span>滴</span><strong>土壌水分</strong><small class="sensor-adjustment-value" data-env-calibration-summary="soil_moisture_percent">未調整</small></button>
+                        <button type="button" data-env-tune-target="soil_temperature_c"><span>℃</span><strong>地温</strong><small class="sensor-adjustment-value" data-env-calibration-summary="soil_temperature_c">未調整</small></button>
+                        <button type="button" data-env-tune-target="soil_ec_us_cm"><span>EC</span><strong>土壌EC</strong><small class="sensor-adjustment-value" data-env-calibration-summary="soil_ec_us_cm">未調整</small></button>
+                        <button type="button" data-env-tune-target="soil_ph"><span>pH</span><strong>土壌pH</strong><small class="sensor-adjustment-value" data-env-calibration-summary="soil_ph">未調整</small></button>
+                        <button type="button" data-env-tune-target="soil_n_mg_kg"><span>N</span><strong>窒素</strong><small class="sensor-adjustment-value" data-env-calibration-summary="soil_n_mg_kg">未調整</small></button>
+                        <button type="button" data-env-tune-target="soil_p_mg_kg"><span>P</span><strong>リン</strong><small class="sensor-adjustment-value" data-env-calibration-summary="soil_p_mg_kg">未調整</small></button>
+                        <button type="button" data-env-tune-target="soil_k_mg_kg"><span>K</span><strong>カリウム</strong><small class="sensor-adjustment-value" data-env-calibration-summary="soil_k_mg_kg">未調整</small></button>
+                      </div>
+                    </div>
+                  </article>
                 </div>
 
-                <details class="config-details">
-                  <summary>環境センサー 詳細設定</summary>
+                <div hidden aria-hidden="true">
+                  <input id="env-par-slave" type="hidden"><input id="env-par-function" type="hidden"><input id="env-par-register" type="hidden">
+                  <input id="env-soil-slave" type="hidden"><input id="env-soil-function" type="hidden"><input id="env-soil-start-register" type="hidden"><input id="env-power-settle-ms" type="hidden">
+                </div>
+
+                <dialog id="env-calibration-dialog" class="config-dialog sensor-calibration-dialog" aria-labelledby="env-calibration-dialog-heading">
+                  <div class="dialog-head"><div><h3 id="env-calibration-dialog-heading">センサーの表示を合わせる</h3><p class="lead">手元の基準と同じ値になるよう、つまみを動かします。</p></div><button type="button" data-close-env-calibration aria-label="閉じる">×</button></div>
+                  <section id="env-calibration-workbench" class="sensor-tuning-bench" aria-live="polite">
+                    <div class="sensor-bench-head"><span class="sensor-bench-dial" aria-hidden="true"><span id="env-calibration-dial-value">0</span></span><span><small>表示の調整</small><strong id="env-calibration-title">光の表示を合わせる</strong><span id="env-calibration-help">信頼できる基準計の値へダイヤルを合わせます</span></span></div>
+                    <select id="env-calibration-mode" hidden aria-label="校正操作"><option value="normal">通常</option><option value="capture_reference">基準値を記録</option><option value="reset">未校正に戻す</option></select>
+                    <select id="env-calibration-target" hidden aria-label="記録する項目"><option value="par_umol_m2_s">光合成に使える光</option><option value="soil_moisture_percent">土壌水分</option><option value="soil_temperature_c">地温</option><option value="soil_ec_us_cm">土壌EC</option><option value="soil_ph">土壌pH</option><option value="soil_n_mg_kg">窒素</option><option value="soil_p_mg_kg">リン</option><option value="soil_k_mg_kg">カリウム</option></select>
+                    <div class="sensor-range-control"><label for="env-calibration-reference-value">手元の基準が示している値</label><div class="sensor-range-readout"><output id="env-calibration-reference-display">0</output><span id="env-calibration-unit"></span></div><input id="env-calibration-reference-value" type="range" min="0" max="2500" step="10"><div class="sensor-range-scale"><span id="env-calibration-min">0</span><span id="env-calibration-mid">1250</span><span id="env-calibration-max">2500</span></div></div>
+                    <p class="muted">記録後、画面下部の「組み立てた設定を機器へ送る」で実機へ反映します。</p>
+                  </section>
+                  <div class="dialog-actions"><button type="button" data-env-calibration-action="reset">調整を取り消す</button><button type="button" data-close-env-calibration>閉じる</button><button type="button" class="primary" data-env-calibration-action="capture_reference">この値を記録</button></div>
+                </dialog>
+
+                <details class="config-details sensor-maintenance-details">
+                  <summary>上級者設定</summary>
                   <div class="config-toolbar">
-                    <div class="config-field">
-                      <label for="env-par-slave">光量センサー ID</label>
-                      <input id="env-par-slave" type="number" min="1" max="247" step="1">
+                    <p class="sensor-maintenance-intro">通常は変更する必要がありません。計測機器について詳しい方が、メーカー資料に基づいて微調整するときだけ使用してください。</p>
+                    <div data-env-sensor-advanced="par">
+                    <label class="switch-row" for="env-cal-par-calibrated"><input id="env-cal-par-calibrated" type="checkbox"> 光の補正を使用する</label>
+                    <div class="config-field"><label for="env-cal-par-scale">光の倍率</label><input id="env-cal-par-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-par-offset">光のずれ補正</label><input id="env-cal-par-offset" type="number" step="0.01"></div>
                     </div>
-                    <div class="config-field">
-                      <label for="env-par-function">光量 Function</label>
-                      <input id="env-par-function" type="number" min="3" max="4" step="1">
-                    </div>
-                    <div class="config-field">
-                      <label for="env-par-register">光量 Register</label>
-                      <input id="env-par-register" type="number" min="0" max="65535" step="1">
-                    </div>
-                    <div class="config-field">
-                      <label for="env-soil-slave">土壌センサー ID</label>
-                      <input id="env-soil-slave" type="number" min="1" max="247" step="1">
-                    </div>
-                    <div class="config-field">
-                      <label for="env-soil-function">土壌 Function</label>
-                      <input id="env-soil-function" type="number" min="3" max="4" step="1">
-                    </div>
-                    <div class="config-field">
-                      <label for="env-soil-start-register">土壌 Start Register</label>
-                      <input id="env-soil-start-register" type="number" min="0" max="65535" step="1">
-                    </div>
-                    <div class="config-field">
-                      <label for="env-power-settle-ms">12V 電源待ち ms</label>
-                      <input id="env-power-settle-ms" type="number" min="0" max="30000" step="100">
-                    </div>
-                  </div>
-                  <div class="config-toolbar">
-                    <label class="switch-row" for="env-cal-par-calibrated"><input id="env-cal-par-calibrated" type="checkbox"> 光 校正済み</label>
-                    <div class="config-field"><label for="env-cal-par-scale">光 scale</label><input id="env-cal-par-scale" type="number" step="0.0001"></div>
-                    <div class="config-field"><label for="env-cal-par-offset">光 offset</label><input id="env-cal-par-offset" type="number" step="0.01"></div>
+                    <div data-env-sensor-advanced="soil">
                     <label class="switch-row" for="env-cal-moisture-calibrated"><input id="env-cal-moisture-calibrated" type="checkbox"> 水分 校正済み</label>
-                    <div class="config-field"><label for="env-cal-moisture-scale">水分 scale</label><input id="env-cal-moisture-scale" type="number" step="0.0001"></div>
-                    <div class="config-field"><label for="env-cal-moisture-offset">水分 offset</label><input id="env-cal-moisture-offset" type="number" step="0.01"></div>
+                    <div class="config-field"><label for="env-cal-moisture-scale">水分の倍率</label><input id="env-cal-moisture-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-moisture-offset">水分のずれ補正</label><input id="env-cal-moisture-offset" type="number" step="0.01"></div>
                     <label class="switch-row" for="env-cal-temperature-calibrated"><input id="env-cal-temperature-calibrated" type="checkbox"> 地温 校正済み</label>
-                    <div class="config-field"><label for="env-cal-temperature-scale">地温 scale</label><input id="env-cal-temperature-scale" type="number" step="0.0001"></div>
-                    <div class="config-field"><label for="env-cal-temperature-offset">地温 offset</label><input id="env-cal-temperature-offset" type="number" step="0.01"></div>
+                    <div class="config-field"><label for="env-cal-temperature-scale">地温の倍率</label><input id="env-cal-temperature-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-temperature-offset">地温のずれ補正</label><input id="env-cal-temperature-offset" type="number" step="0.01"></div>
                     <label class="switch-row" for="env-cal-ec-calibrated"><input id="env-cal-ec-calibrated" type="checkbox"> EC 校正済み</label>
-                    <div class="config-field"><label for="env-cal-ec-scale">EC scale</label><input id="env-cal-ec-scale" type="number" step="0.0001"></div>
-                    <div class="config-field"><label for="env-cal-ec-offset">EC offset</label><input id="env-cal-ec-offset" type="number" step="0.01"></div>
+                    <div class="config-field"><label for="env-cal-ec-scale">ECの倍率</label><input id="env-cal-ec-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-ec-offset">ECのずれ補正</label><input id="env-cal-ec-offset" type="number" step="0.01"></div>
                     <label class="switch-row" for="env-cal-ph-calibrated"><input id="env-cal-ph-calibrated" type="checkbox"> pH 校正済み</label>
-                    <div class="config-field"><label for="env-cal-ph-scale">pH scale</label><input id="env-cal-ph-scale" type="number" step="0.0001"></div>
-                    <div class="config-field"><label for="env-cal-ph-offset">pH offset</label><input id="env-cal-ph-offset" type="number" step="0.01"></div>
+                    <div class="config-field"><label for="env-cal-ph-scale">pHの倍率</label><input id="env-cal-ph-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-ph-offset">pHのずれ補正</label><input id="env-cal-ph-offset" type="number" step="0.01"></div>
                     <label class="switch-row" for="env-cal-n-calibrated"><input id="env-cal-n-calibrated" type="checkbox"> 窒素 校正済み</label>
-                    <div class="config-field"><label for="env-cal-n-scale">窒素 scale</label><input id="env-cal-n-scale" type="number" step="0.0001"></div>
-                    <div class="config-field"><label for="env-cal-n-offset">窒素 offset</label><input id="env-cal-n-offset" type="number" step="0.01"></div>
+                    <div class="config-field"><label for="env-cal-n-scale">窒素の倍率</label><input id="env-cal-n-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-n-offset">窒素のずれ補正</label><input id="env-cal-n-offset" type="number" step="0.01"></div>
                     <label class="switch-row" for="env-cal-p-calibrated"><input id="env-cal-p-calibrated" type="checkbox"> リン 校正済み</label>
-                    <div class="config-field"><label for="env-cal-p-scale">リン scale</label><input id="env-cal-p-scale" type="number" step="0.0001"></div>
-                    <div class="config-field"><label for="env-cal-p-offset">リン offset</label><input id="env-cal-p-offset" type="number" step="0.01"></div>
+                    <div class="config-field"><label for="env-cal-p-scale">リンの倍率</label><input id="env-cal-p-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-p-offset">リンのずれ補正</label><input id="env-cal-p-offset" type="number" step="0.01"></div>
                     <label class="switch-row" for="env-cal-k-calibrated"><input id="env-cal-k-calibrated" type="checkbox"> カリウム 校正済み</label>
-                    <div class="config-field"><label for="env-cal-k-scale">カリウム scale</label><input id="env-cal-k-scale" type="number" step="0.0001"></div>
-                    <div class="config-field"><label for="env-cal-k-offset">カリウム offset</label><input id="env-cal-k-offset" type="number" step="0.01"></div>
+                    <div class="config-field"><label for="env-cal-k-scale">カリウムの倍率</label><input id="env-cal-k-scale" type="number" step="0.0001"></div>
+                    <div class="config-field"><label for="env-cal-k-offset">カリウムのずれ補正</label><input id="env-cal-k-offset" type="number" step="0.01"></div>
+                    </div>
                   </div>
                 </details>
               </div>
 
-              <div class="actions">
+              <div class="actions setup-save-bar">
                 <span class="muted" data-stateful-reason></span>
-                <button type="submit" data-stateful-submit>設定を保存</button>
-                <button type="button" id="save-push-runtime-config" class="primary" data-requires-dirty{% if selected_device.state != 'active' %} data-state-blocked="true" disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>保存して機器へ反映</button>
+                <button type="submit" data-stateful-submit>下書きを保存</button>
+                <button type="button" id="save-push-runtime-config" class="primary" data-requires-dirty{% if selected_device.state != 'active' %} data-state-blocked="true" disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>組み立てた設定を機器へ送る</button>
                 <button type="button" id="push-runtime-config"{% if selected_device.state != 'active' %} disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>保存済み設定をもう一度反映</button>
               </div>
               {% if selected_device.state == 'retired' %}<p class="empty" id="device-push-disabled">廃止済みのため、動作設定は閲覧のみです。</p>{% elif selected_device.state != 'active' %}<p class="empty" id="device-push-disabled">現在は{{ selected.state_label }}です。設定は保存できますが、機器への送信は稼働状態へ変更してから行ってください。</p>{% endif %}
@@ -3491,6 +3772,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const demoMode = {{ demo_mode | tojson }};
           const chartEndpoint = selectedDeviceId ? ((demoMode ? "/demo/local/api/mqtt-devices/" : "/local/api/mqtt-devices/") + encodeURIComponent(selectedDeviceId) + "/charts") : null;
           const initialRuntimeConfig = {{ (selected_device.config if selected_device else {}) | tojson }};
+          const deviceOutputCapabilities = {{ (admin_view.selected.output_settings.outputs if admin_view.selected else []) | tojson }};
+          const unsupportedOutputSettings = {{ (admin_view.selected.output_settings.unsupported if admin_view.selected else []) | tojson }};
           let plotlyLoadPromise = null;
           let pendingWorkCount = 0;
           let lastActionButton = null;
@@ -3622,6 +3905,21 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const requestedKey = tabAliases[requestedTab] || requestedTab || "overview";
           const requestedButton = detailTabButtons.find((button) => button.getAttribute("data-tab-key") === requestedKey);
           if (requestedButton) activateDetailTab(requestedButton.getAttribute("data-tab-target"), false);
+          if (window.location.hash) {
+            window.requestAnimationFrame(() => document.querySelector(window.location.hash)?.scrollIntoView({ block: "start" }));
+          }
+
+          function openDialog(dialog) {
+            if (!dialog) return;
+            if (typeof dialog.showModal === "function") dialog.showModal();
+            else dialog.setAttribute("open", "");
+          }
+
+          function closeDialog(dialog) {
+            if (!dialog) return;
+            if (typeof dialog.close === "function") dialog.close();
+            else dialog.removeAttribute("open");
+          }
 
           async function requestJson(url, options, progressMessage) {
             const method = ((options || {}).method || "GET").toUpperCase();
@@ -3877,50 +4175,49 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             });
           }
 
-          function defaultMosfetSwitches() {
-            return [
-              { switch_id: "irr1", name: "灌水1系", enabled: true, role: "irrigation", terminal: "IRR1", channel_mask: 1, controlled_load: "", notes: "" },
-              { switch_id: "irr2", name: "灌水2系", enabled: true, role: "irrigation", terminal: "IRR2", channel_mask: 2, controlled_load: "", notes: "" },
-              { switch_id: "sensor_power", name: "RS485センサー電源", enabled: true, role: "sensor_power", terminal: "SENSOR_12V_SW", channel_mask: 0, controlled_load: "RS485 sensor 12V branch", notes: "" },
-            ];
-          }
-
           function normalizeMosfetSwitches(switches) {
-            const source = Array.isArray(switches) ? switches : defaultMosfetSwitches();
-            return source.slice(0, 16).map((sw, index) => ({
-              switch_id: String(sw.switch_id || "sw" + (index + 1)).trim(),
-              name: String(sw.name || sw.switch_id || "SW " + (index + 1)).trim(),
-              enabled: sw.enabled !== false,
-              role: String(sw.role || "").trim(),
-              terminal: String(sw.terminal || "").trim(),
-              channel_mask: Number.isInteger(sw.channel_mask) ? sw.channel_mask : 0,
-              controlled_load: String(sw.controlled_load || "").trim(),
-              notes: String(sw.notes || "").trim(),
-            }));
+            const source = Array.isArray(switches) ? switches : [];
+            const savedById = new Map(source.filter((item) => item && item.switch_id).map((item) => [String(item.switch_id), item]));
+            return deviceOutputCapabilities.map((capability) => {
+              const saved = savedById.get(String(capability.switch_id)) || {};
+              const notes = String(saved.notes || capability.notes || "").trim();
+              const savedType = notes.split(/\\r?\\n/).find((line) => line.startsWith("equipment_type="));
+              return {
+                ...capability,
+                name: String(saved.name || capability.name || capability.default_name).trim(),
+                enabled: saved.enabled !== false,
+                controlled_load: String(saved.controlled_load || capability.controlled_load || "").trim(),
+                equipment_type: String(saved.equipment_type || (savedType ? savedType.slice("equipment_type=".length) : "") || capability.equipment_type || "other"),
+                notes,
+              };
+            });
           }
 
           function channelLabel(channelMask) {
             const names = currentMosfetSwitches
               .filter((sw) => sw.enabled !== false && Number.isInteger(sw.channel_mask) && sw.channel_mask > 0 && (channelMask & sw.channel_mask))
-              .map((sw) => sw.name || sw.switch_id);
+              .map((sw) => sw.name || "接続口 " + sw.number);
             if (names.length) return names.join("・");
-            if (channelMask === 1) return "系統1";
-            if (channelMask === 2) return "系統2";
-            if (channelMask === 3) return "系統1・系統2";
-            return "mask " + String(channelMask);
+            return "現在の設定（この機種では利用できません）";
           }
 
           function scheduleChannelOptions(selectedValue) {
-            const masks = [1, 2, 3];
-            currentMosfetSwitches.forEach((sw) => {
-              if (sw.enabled !== false && Number.isInteger(sw.channel_mask) && sw.channel_mask > 0 && !masks.includes(sw.channel_mask)) {
-                masks.push(sw.channel_mask);
-              }
-            });
-            if (Number.isInteger(selectedValue) && selectedValue > 0 && !masks.includes(selectedValue)) {
-              masks.push(selectedValue);
+            const outputValues = currentMosfetSwitches
+              .filter((sw) => sw.enabled !== false && Number.isInteger(sw.channel_mask) && sw.channel_mask > 0)
+              .map((sw) => sw.channel_mask);
+            const masks = [];
+            for (let combination = 1; combination < (1 << outputValues.length); combination += 1) {
+              let value = 0;
+              outputValues.forEach((outputValue, index) => {
+                if (combination & (1 << index)) value |= outputValue;
+              });
+              if (value > 0 && !masks.includes(value)) masks.push(value);
             }
-            return masks.map((mask) => ({ value: mask, label: channelLabel(mask) }));
+            const options = masks.map((value) => ({ value, label: channelLabel(value), unsupported: false }));
+            if (Number.isInteger(selectedValue) && selectedValue > 0 && !masks.includes(selectedValue)) {
+              options.push({ value: selectedValue, label: "現在の設定（この機種では利用できません）", unsupported: true });
+            }
+            return options;
           }
 
           function setScheduleChannelOptions(select, selectedValue) {
@@ -3931,55 +4228,161 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               const element = document.createElement("option");
               element.value = String(option.value);
               element.textContent = option.label;
+              if (option.unsupported) element.dataset.unsupported = "true";
               select.appendChild(element);
             });
-            select.value = String(value);
+            if (select.querySelector('option[value="' + String(value) + '"]')) select.value = String(value);
           }
 
           function refreshScheduleChannelOptions() {
-            currentMosfetSwitches = collectMosfetSwitches();
+            currentMosfetSwitches = normalizeMosfetSwitches(collectMosfetSwitches());
             document.querySelectorAll("[data-schedule-channel]").forEach((select) => {
               setScheduleChannelOptions(select, Number(select.value || 1));
             });
           }
 
+          function equipmentIcon(type) {
+            const attributes = 'viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+            const icons = {
+              pump: '<svg ' + attributes + '><path d="M12 46h40M18 46V26h9l5-8h11v28"/><circle cx="36" cy="32" r="7"/><path d="M43 26h9v-8M52 18h-6"/></svg>',
+              valve: '<svg ' + attributes + '><path d="M8 32h15M41 32h15M23 24l9 8-9 8V24ZM41 24l-9 8 9 8V24Z"/><path d="M32 24V13M24 13h16"/></svg>',
+              drip_line: '<svg ' + attributes + '><path d="M8 25h48M15 25v15M32 25v15M49 25v15"/><path d="M11 46c0-4 4-6 4-9 0 3 4 5 4 9a4 4 0 0 1-8 0ZM28 46c0-4 4-6 4-9 0 3 4 5 4 9a4 4 0 0 1-8 0ZM45 46c0-4 4-6 4-9 0 3 4 5 4 9a4 4 0 0 1-8 0Z"/></svg>',
+              sprinkler: '<svg ' + attributes + '><path d="M32 50V32M23 50h18M22 32h20"/><path d="M15 24c4-6 9-9 17-9s13 3 17 9M8 18c6-8 14-12 24-12s18 4 24 12"/><path d="M19 28l-8 5M45 28l8 5"/></svg>',
+              soil_sensor: '<svg ' + attributes + '><path d="M24 11h16v23H24zM28 34v20M36 34v20"/><path d="M15 50c8-5 26-5 34 0M29 21h6"/></svg>',
+              light_sensor: '<svg ' + attributes + '><circle cx="32" cy="25" r="10"/><path d="M32 5v6M32 39v6M12 25h6M46 25h6M18 11l4 5M46 11l-4 5"/><path d="M18 53h28"/></svg>',
+              sensor: '<svg ' + attributes + '><rect x="18" y="10" width="28" height="40" rx="6"/><path d="M25 19h14M25 27h14M25 35h8"/><circle cx="38" cy="41" r="3"/></svg>',
+              other: '<svg ' + attributes + '><path d="M12 23h40v28H12zM21 23v-8h22v8M20 34h24M20 42h16"/></svg>',
+            };
+            return icons[type] || icons.other;
+          }
+
+          function equipmentOptions(sw) {
+            const source = Array.isArray(sw.equipment_options) ? sw.equipment_options : [];
+            return source.map((option) => typeof option === "string" ? {
+              value: option,
+              label: option,
+              equipment_type: sw.equipment_type || "other",
+              source: "設備の種類",
+            } : option).filter((option) => option && option.value);
+          }
+
+          function equipmentTypeLabel(sw, type) {
+            const match = (Array.isArray(sw.equipment_types) ? sw.equipment_types : []).find((item) => item.value === type);
+            return match ? match.label : "接続する設備";
+          }
+
+          function updateEquipmentTypeNotes(notes, type) {
+            const lines = String(notes || "").split(/\\r?\\n/).filter((line) => line && !line.startsWith("equipment_type="));
+            const preservedNotes = lines.join("\\n");
+            const typeToken = type && type !== "other" ? "equipment_type=" + type : "";
+            const updatedNotes = [preservedNotes, typeToken].filter(Boolean).join("\\n");
+            return updatedNotes.length <= 160 ? updatedNotes : preservedNotes;
+          }
+
+          function notifyBuilderChanged(row) {
+            updateBuilderLane(row);
+            refreshScheduleChannelOptions();
+            renderMosfetFlow(collectMosfetSwitches());
+            refreshRuntimeConfigPreview();
+          }
+
+          function renderEquipmentTargets(row) {
+            const grid = row.querySelector("[data-equipment-target-grid]");
+            const selectedType = row.querySelector("[data-mosfet-type]").value;
+            const selectedValue = row.querySelector("[data-mosfet-load]").value;
+            const enabled = row.querySelector("[data-mosfet-enabled]").checked;
+            const options = row._equipmentOptions.filter((option) => option.equipment_type === selectedType || option.value === selectedValue);
+            grid.innerHTML = "";
+            const empty = document.createElement("button");
+            empty.type = "button";
+            empty.className = "equipment-card equipment-target-card";
+            empty.dataset.equipmentTarget = "";
+            empty.setAttribute("aria-pressed", String(!selectedValue));
+            empty.disabled = !enabled;
+            empty.innerHTML = equipmentIcon("other") + '<span><strong>あとで決める</strong><small>接続口だけ用意する</small></span>';
+            grid.appendChild(empty);
+            options.forEach((option) => {
+              const card = document.createElement("button");
+              card.type = "button";
+              card.className = "equipment-card equipment-target-card";
+              card.dataset.equipmentTarget = option.value;
+              card.setAttribute("aria-pressed", String(option.value === selectedValue));
+              card.disabled = !enabled;
+              card.innerHTML = equipmentIcon(option.equipment_type || selectedType) + "<span></span>";
+              const copy = card.querySelector("span");
+              const title = document.createElement("strong");
+              title.textContent = option.label || option.value;
+              const source = document.createElement("small");
+              source.textContent = option.source || "設備の候補";
+              copy.append(title, source);
+              grid.appendChild(card);
+            });
+            grid.querySelectorAll("[data-equipment-target]").forEach((card) => card.addEventListener("click", () => {
+              row.querySelector("[data-mosfet-load]").value = card.dataset.equipmentTarget || "";
+              renderEquipmentTargets(row);
+              notifyBuilderChanged(row);
+            }));
+          }
+
+          function updateBuilderLane(row) {
+            const enabled = row.querySelector("[data-mosfet-enabled]").checked;
+            const selectedType = row.querySelector("[data-mosfet-type]").value || "other";
+            row.classList.toggle("connected", enabled);
+            row.classList.toggle("disconnected", !enabled);
+            row.querySelector("[data-builder-state]").textContent = enabled ? "つながっています" : "まだつながっていません";
+            row.querySelector("[data-equipment-preview]").innerHTML = equipmentIcon(selectedType);
+            row.querySelector("[data-equipment-preview-label]").textContent = equipmentTypeLabel(row._switch, selectedType);
+            row.querySelectorAll("[data-equipment-type]").forEach((card) => {
+              card.disabled = !enabled;
+              card.setAttribute("aria-pressed", String(card.dataset.equipmentType === selectedType));
+            });
+            row.querySelectorAll("[data-equipment-target]").forEach((card) => { card.disabled = !enabled; });
+          }
+
           function createMosfetSwitchRow(sw) {
             const row = document.createElement("div");
-            row.className = "mosfet-switch-row";
-            row.innerHTML = [
-              '<label class="switch-row"><input data-mosfet-enabled type="checkbox">使用する</label>',
-              '<div><label>内部ID</label><input data-mosfet-id type="text" maxlength="32" required></div>',
-              '<div><label>画面に出す名前</label><input data-mosfet-name type="text" maxlength="64" required></div>',
-              '<div><label>用途</label><select data-mosfet-role><option value="irrigation">灌水</option><option value="sensor_power">センサー電源</option><option value="other">その他</option></select></div>',
-              '<div><label>接続端子</label><input data-mosfet-terminal type="text" maxlength="32"></div>',
-              '<div><label>動かす設備</label><input data-mosfet-load type="text" maxlength="96"></div>',
-              '<div><label>系統番号（mask）</label><input data-mosfet-mask type="number" min="0" max="4294967295" step="1"></div>',
-              '<button type="button" class="icon-button" data-remove-mosfet-switch aria-label="出力先を削除">－</button>',
-            ].join("");
+            row.className = "output-edit-row";
+            row.dataset.outputId = sw.switch_id;
+            row._switch = sw;
+            row._equipmentOptions = equipmentOptions(sw);
+            row.innerHTML = '<div class="builder-port-card"><span class="builder-port-symbol" aria-hidden="true">⌁</span><span><strong data-port-label></strong><small data-role-label></small></span><label class="builder-toggle"><input data-mosfet-enabled type="checkbox"><span class="builder-toggle-track" aria-hidden="true"></span><span>使う</span></label></div><div class="builder-wire" aria-hidden="true"></div><div class="builder-endpoint"><div class="builder-endpoint-head"><span class="builder-endpoint-preview" data-equipment-preview aria-hidden="true"></span><span><strong data-equipment-preview-label></strong><small data-builder-state></small></span></div><div><span class="builder-choice-label">1. 動かす設備を絵から選ぶ</span><div class="equipment-type-grid" data-equipment-type-grid></div></div><div><span class="builder-choice-label">2. どの設備につなぐか選ぶ</span><div class="equipment-target-grid" data-equipment-target-grid></div></div><details class="builder-name-details"><summary>画面に出す名前を整える</summary><div class="detail-body"><label>この水やりルートの名前</label><input data-mosfet-name type="text" maxlength="64" required></div></details><input data-mosfet-type type="hidden"><input data-mosfet-load type="hidden"></div>';
+            row.querySelector("[data-port-label]").textContent = "接続口 " + String(sw.number);
+            row.querySelector("[data-role-label]").textContent = String(sw.role_label || "設備") + "専用";
             row.querySelector("[data-mosfet-enabled]").checked = sw.enabled !== false;
-            row.querySelector("[data-mosfet-id]").value = sw.switch_id || "";
             row.querySelector("[data-mosfet-name]").value = sw.name || "";
-            row.querySelector("[data-mosfet-role]").value = ["irrigation", "sensor_power", "other"].includes(sw.role) ? sw.role : "other";
-            row.querySelector("[data-mosfet-terminal]").value = sw.terminal || "";
+            row.querySelector("[data-mosfet-type]").value = sw.equipment_type || "other";
             row.querySelector("[data-mosfet-load]").value = sw.controlled_load || "";
-            row.querySelector("[data-mosfet-mask]").value = String(Number.isInteger(sw.channel_mask) ? sw.channel_mask : 0);
-            row.querySelector("[data-remove-mosfet-switch]").addEventListener("click", () => {
-              row.remove();
-              refreshScheduleChannelOptions();
-              renderMosfetFlow(collectMosfetSwitches());
-              refreshRuntimeConfigPreview();
-              document.getElementById("runtime-config-form")?.dispatchEvent(new Event("change", { bubbles: true }));
+            const typeGrid = row.querySelector("[data-equipment-type-grid]");
+            (Array.isArray(sw.equipment_types) ? sw.equipment_types : []).forEach((type) => {
+              const card = document.createElement("button");
+              card.type = "button";
+              card.className = "equipment-card";
+              card.dataset.equipmentType = type.value;
+              card.innerHTML = equipmentIcon(type.value) + "<strong></strong><small></small>";
+              card.querySelector("strong").textContent = type.label;
+              card.querySelector("small").textContent = type.description;
+              card.addEventListener("click", () => {
+                const previousType = row.querySelector("[data-mosfet-type]").value;
+                row.querySelector("[data-mosfet-type]").value = type.value;
+                const selectedOption = row._equipmentOptions.find((option) => option.value === row.querySelector("[data-mosfet-load]").value);
+                if (previousType !== type.value && selectedOption && selectedOption.equipment_type !== type.value) row.querySelector("[data-mosfet-load]").value = "";
+                renderEquipmentTargets(row);
+                notifyBuilderChanged(row);
+              });
+              typeGrid.appendChild(card);
             });
-            row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", () => {
-              refreshScheduleChannelOptions();
-              renderMosfetFlow(collectMosfetSwitches());
-              refreshRuntimeConfigPreview();
-            }));
+            row.querySelector("[data-mosfet-enabled]").addEventListener("input", () => {
+              renderEquipmentTargets(row);
+              notifyBuilderChanged(row);
+            });
+            row.querySelector("[data-mosfet-name]").addEventListener("input", () => notifyBuilderChanged(row));
+            renderEquipmentTargets(row);
+            updateBuilderLane(row);
             return row;
           }
 
           function renderMosfetFlow(switches) {
-            const map = document.getElementById("mosfet-switch-map");
+            const map = document.getElementById("output-connection-map");
             if (!map) return;
             map.innerHTML = "";
             normalizeMosfetSwitches(switches).forEach((sw) => {
@@ -3987,19 +4390,23 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               item.className = "switch-output " + (sw.enabled !== false ? "enabled" : "disabled");
               const dot = document.createElement("span");
               dot.className = "switch-output-dot";
+              const icon = document.createElement("span");
+              icon.className = "switch-output-icon";
+              icon.setAttribute("aria-hidden", "true");
+              icon.innerHTML = equipmentIcon(sw.equipment_type || "other");
               const copy = document.createElement("div");
               const title = document.createElement("strong");
-              title.textContent = sw.name || sw.switch_id;
+              title.textContent = sw.name || "接続口 " + sw.number;
               const target = document.createElement("small");
-              target.textContent = sw.controlled_load || ({ irrigation: "灌水設備", sensor_power: "センサー電源" }[sw.role] || "接続先未設定");
+              target.textContent = sw.controlled_load || "接続先未設定";
               copy.append(title, target);
               const terminal = document.createElement("span");
               terminal.className = "terminal";
-              terminal.textContent = sw.terminal || "端子未設定";
-              item.append(dot, copy, terminal);
+              terminal.textContent = "接続口 " + String(sw.number);
+              item.append(dot, icon, copy, terminal);
               map.appendChild(item);
             });
-            if (!map.children.length) map.textContent = "出力先はまだ登録されていません。";
+            if (!map.children.length) map.textContent = "この機種には編集できる接続口がありません。";
           }
 
           function renderMosfetSwitches(switches) {
@@ -4013,18 +4420,79 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           function collectMosfetSwitches() {
             const editor = document.getElementById("mosfet-switch-editor");
-            if (!editor) return currentMosfetSwitches;
-            return Array.from(editor.querySelectorAll(".mosfet-switch-row")).map((row) => ({
-              switch_id: row.querySelector("[data-mosfet-id]").value.trim(),
-              name: row.querySelector("[data-mosfet-name]").value.trim(),
-              enabled: row.querySelector("[data-mosfet-enabled]").checked,
-              role: row.querySelector("[data-mosfet-role]").value,
-              terminal: row.querySelector("[data-mosfet-terminal]").value.trim(),
-              channel_mask: Number(row.querySelector("[data-mosfet-mask]").value),
-              controlled_load: row.querySelector("[data-mosfet-load]").value.trim(),
-              notes: "",
-            }));
+            if (!editor) return [...currentMosfetSwitches, ...unsupportedOutputSettings];
+            const capabilitiesById = new Map(deviceOutputCapabilities.map((item) => [String(item.switch_id), item]));
+            const supported = Array.from(editor.querySelectorAll(".output-edit-row")).map((row) => {
+              const capability = capabilitiesById.get(row.dataset.outputId);
+              return {
+                switch_id: capability.switch_id,
+                name: row.querySelector("[data-mosfet-name]").value.trim() || capability.default_name,
+                enabled: row.querySelector("[data-mosfet-enabled]").checked,
+                role: capability.role,
+                terminal: capability.terminal,
+                channel_mask: capability.channel_mask,
+                controlled_load: row.querySelector("[data-mosfet-load]").value,
+                notes: updateEquipmentTypeNotes(row._switch.notes || capability.notes || "", row.querySelector("[data-mosfet-type]").value),
+              };
+            });
+            return [...supported, ...unsupportedOutputSettings];
           }
+
+          const outputSettingsDialog = document.getElementById("output-settings-dialog");
+          let outputSettingsSnapshot = [];
+          document.getElementById("open-output-settings")?.addEventListener("click", () => {
+            outputSettingsSnapshot = JSON.parse(JSON.stringify(collectMosfetSwitches()));
+            openDialog(outputSettingsDialog);
+          });
+          function cancelOutputSettings() {
+            renderMosfetSwitches(outputSettingsSnapshot);
+            refreshScheduleChannelOptions();
+            closeDialog(outputSettingsDialog);
+          }
+          document.querySelectorAll("[data-close-output-dialog], [data-cancel-output-dialog]").forEach((button) => {
+            button.addEventListener("click", cancelOutputSettings);
+          });
+          document.querySelector("[data-apply-output-dialog]")?.addEventListener("click", () => {
+            currentMosfetSwitches = normalizeMosfetSwitches(collectMosfetSwitches());
+            renderMosfetFlow(currentMosfetSwitches);
+            refreshScheduleChannelOptions();
+            refreshRuntimeConfigPreview();
+            document.getElementById("runtime-config-form")?.dispatchEvent(new Event("change", { bubbles: true }));
+            closeDialog(outputSettingsDialog);
+          });
+
+          function updateSoilCalibrationAction(mode) {
+            const summary = document.getElementById("soil-calibration-action-summary");
+            if (!summary) return;
+            const labels = {
+              capture_dry: "次回反映: 乾いた基準を記録",
+              capture_wet: "次回反映: 湿った基準を記録",
+              reset: "次回反映: 基準をリセット",
+            };
+            summary.textContent = labels[mode] || "";
+            summary.hidden = !labels[mode];
+          }
+
+          const soilCalibrationGuide = document.getElementById("soil-calibration-guide");
+          document.getElementById("open-soil-calibration-guide")?.addEventListener("click", () => openDialog(soilCalibrationGuide));
+          document.querySelectorAll("[data-close-calibration-guide]").forEach((button) => {
+            button.addEventListener("click", () => closeDialog(soilCalibrationGuide));
+          });
+          document.querySelectorAll("[data-calibration-mode]").forEach((button) => {
+            button.addEventListener("click", () => {
+              const mode = button.getAttribute("data-calibration-mode") || "normal";
+              const select = document.getElementById("soil-calibration-mode");
+              if (select) {
+                select.value = mode;
+                select.dispatchEvent(new Event("input", { bubbles: true }));
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+              updateSoilCalibrationAction(mode);
+              refreshRuntimeConfigPreview();
+              closeDialog(soilCalibrationGuide);
+              document.getElementById("soil-moisture-reference")?.scrollIntoView({ behavior: "smooth", block: "center" });
+            });
+          });
 
           function createScheduleRow(schedule) {
             const row = document.createElement("div");
@@ -4032,7 +4500,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             row.innerHTML = [
               '<div><label>時刻</label><input data-schedule-time type="time" required></div>',
               '<div><label>灌水時間（秒）</label><input data-schedule-duration type="number" min="1" max="3600" step="1" required></div>',
-              '<div><label>系統</label><select data-schedule-channel></select></div>',
+              '<div><label>水を送る接続先</label><select data-schedule-channel></select></div>',
               '<div><label>頻度</label><select data-schedule-frequency-mode><option value="daily">毎日</option><option value="interval">日にちごと</option><option value="weekdays">曜日指定</option></select></div>',
               '<div data-frequency-panel="interval"><label>間隔</label><input data-schedule-interval-days type="number" min="1" max="31" step="1"></div>',
               '<div data-frequency-panel="interval"><label>開始日</label><input data-schedule-start-date type="date"></div>',
@@ -4062,6 +4530,132 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             row.querySelector("[data-schedule-frequency-mode]").addEventListener("input", () => setFrequencyControlsVisible(row));
             row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", refreshRuntimeConfigPreview));
             return row;
+          }
+
+          const envCalibrationProfiles = {
+            par_umol_m2_s: { label: "光の表示を合わせる", help: "基準となる光量計と同じ値へダイヤルを合わせます", unit: "µmol/m²/s", min: 0, max: 2500, step: 10, initial: 1000, sensor: "par" },
+            soil_moisture_percent: { label: "土壌水分の表示を合わせる", help: "基準となる水分計や、決めた湿り具合へ合わせます", unit: "%", min: 0, max: 100, step: 1, initial: 50, sensor: "soil" },
+            soil_temperature_c: { label: "地温の表示を合わせる", help: "土に挿した基準温度計と同じ値へ合わせます", unit: "℃", min: -20, max: 60, step: 0.5, initial: 20, sensor: "soil" },
+            soil_ec_us_cm: { label: "土壌ECの表示を合わせる", help: "標準液または基準計の値へ合わせます", unit: "µS/cm", min: 0, max: 5000, step: 10, initial: 1000, sensor: "soil" },
+            soil_ph: { label: "土壌pHの表示を合わせる", help: "標準液または基準計の値へ合わせます", unit: "pH", min: 0, max: 14, step: 0.1, initial: 7, sensor: "soil" },
+            soil_n_mg_kg: { label: "窒素の表示を合わせる", help: "基準となる分析値へ合わせます", unit: "mg/kg", min: 0, max: 1000, step: 1, initial: 100, sensor: "soil" },
+            soil_p_mg_kg: { label: "リンの表示を合わせる", help: "基準となる分析値へ合わせます", unit: "mg/kg", min: 0, max: 1000, step: 1, initial: 100, sensor: "soil" },
+            soil_k_mg_kg: { label: "カリウムの表示を合わせる", help: "基準となる分析値へ合わせます", unit: "mg/kg", min: 0, max: 1000, step: 1, initial: 100, sensor: "soil" },
+          };
+          let envCalibrationState = {};
+
+          function formatEnvCalibrationSummary(target, value) {
+            const profile = envCalibrationProfiles[target];
+            if (!profile || typeof value !== "number" || !Number.isFinite(value)) return "調整済み";
+            const digits = profile.step < 1 ? 1 : 0;
+            return "基準 " + value.toFixed(digits) + " " + profile.unit;
+          }
+
+          function refreshEnvCalibrationSummaries(envCalibration = {}) {
+            for (const target of Object.keys(envCalibrationProfiles)) {
+              const summary = document.querySelector('[data-env-calibration-summary="' + target + '"]');
+              if (!summary) continue;
+              const metricCalibration = envCalibration[target] || {};
+              let label = metricCalibration.calibrated ? "調整済み" : "未調整";
+              const isRecordedTarget = envCalibration.target === target
+                && envCalibration.mode !== "reset"
+                && (envCalibration.mode === "capture_reference" || Boolean(envCalibration.request_id));
+              if (isRecordedTarget) label = formatEnvCalibrationSummary(target, Number(envCalibration.reference_value));
+              summary.textContent = label;
+              summary.classList.toggle("recorded", label !== "未調整");
+            }
+          }
+
+          function envSensorEnabled(sensor) {
+            const toggle = document.getElementById(sensor === "par" ? "env-par-enabled" : "env-soil-enabled");
+            const card = document.querySelector('[data-env-sensor-card="' + sensor + '"]');
+            return Boolean(toggle?.checked && card && !card.hidden);
+          }
+
+          function refreshEnvCalibrationDial() {
+            const target = document.getElementById("env-calibration-target")?.value || "par_umol_m2_s";
+            const profile = envCalibrationProfiles[target] || envCalibrationProfiles.par_umol_m2_s;
+            const range = document.getElementById("env-calibration-reference-value");
+            if (!range) return;
+            const value = Number(range.value);
+            const digits = profile.step < 1 ? 1 : 0;
+            const displayValue = Number.isFinite(value) ? value.toFixed(digits) : String(profile.initial);
+            const progress = Math.max(0, Math.min(1, (value - profile.min) / (profile.max - profile.min || 1)));
+            document.getElementById("env-calibration-reference-display").textContent = displayValue;
+            document.getElementById("env-calibration-dial-value").textContent = displayValue;
+            document.getElementById("env-calibration-unit").textContent = profile.unit;
+            document.getElementById("env-calibration-min").textContent = String(profile.min);
+            document.getElementById("env-calibration-mid").textContent = String((profile.min + profile.max) / 2);
+            document.getElementById("env-calibration-max").textContent = String(profile.max);
+            document.getElementById("env-calibration-workbench")?.style.setProperty("--dial-progress", String(progress * 360) + "deg");
+          }
+
+          function selectEnvCalibrationTarget(target, options = {}) {
+            const profile = envCalibrationProfiles[target];
+            const targetSelect = document.getElementById("env-calibration-target");
+            const range = document.getElementById("env-calibration-reference-value");
+            const bench = document.getElementById("env-calibration-workbench");
+            const dialog = document.getElementById("env-calibration-dialog");
+            if (!profile || !targetSelect || !range || !bench) return;
+            const changed = targetSelect.value !== target;
+            targetSelect.value = target;
+            range.min = String(profile.min);
+            range.max = String(profile.max);
+            range.step = String(profile.step);
+            const desiredValue = typeof options.value === "number" ? options.value : changed ? profile.initial : Number(range.value);
+            range.value = String(Math.max(profile.min, Math.min(profile.max, Number.isFinite(desiredValue) ? desiredValue : profile.initial)));
+            document.getElementById("env-calibration-title").textContent = profile.label;
+            document.getElementById("env-calibration-help").textContent = profile.help;
+            document.querySelectorAll("[data-env-tune-target]").forEach((button) => {
+              button.setAttribute("aria-pressed", String(button.dataset.envTuneTarget === target));
+            });
+            const canTune = envSensorEnabled(profile.sensor);
+            refreshEnvCalibrationDial();
+            if (options.reveal && canTune && dialog && !dialog.open) dialog.showModal();
+          }
+
+          function updateEnvSensorVisibility() {
+            for (const sensor of ["par", "soil"]) {
+              const enabled = envSensorEnabled(sensor);
+              document.querySelector('[data-env-sensor-card="' + sensor + '"]')?.classList.toggle("active", enabled);
+              document.querySelectorAll('[data-env-sensor-panel="' + sensor + '"]').forEach((panel) => { panel.hidden = !enabled; });
+              document.querySelectorAll('[data-env-sensor-advanced="' + sensor + '"]').forEach((panel) => { panel.hidden = !enabled; });
+              const state = document.querySelector('[data-env-sensor-state="' + sensor + '"]');
+              if (state) state.textContent = enabled ? "使用中" : "使用しない";
+            }
+            const details = document.querySelector(".sensor-maintenance-details");
+            if (details) details.hidden = !envSensorEnabled("par") && !envSensorEnabled("soil");
+            const target = document.getElementById("env-calibration-target")?.value;
+            const profile = envCalibrationProfiles[target];
+            const calibrationDialog = document.getElementById("env-calibration-dialog");
+            if (profile && !envSensorEnabled(profile.sensor) && calibrationDialog?.open) calibrationDialog.close();
+            const settleRange = document.getElementById("env-power-settle-ms");
+            const settleDisplay = document.getElementById("env-power-settle-display");
+            if (settleRange && settleDisplay) settleDisplay.textContent = (Number(settleRange.value || 0) / 1000).toFixed(1) + "秒";
+          }
+
+          function bindEnvSensorWorkbench() {
+            document.querySelectorAll("#env-par-enabled, #env-soil-enabled").forEach((toggle) => toggle.addEventListener("input", updateEnvSensorVisibility));
+            document.querySelectorAll("[data-env-tune-target]").forEach((button) => button.addEventListener("click", () => {
+              document.getElementById("env-calibration-mode").value = "normal";
+              selectEnvCalibrationTarget(button.dataset.envTuneTarget, { reveal: true });
+            }));
+            document.querySelectorAll("[data-close-env-calibration]").forEach((button) => button.addEventListener("click", () => document.getElementById("env-calibration-dialog")?.close()));
+            document.getElementById("env-calibration-reference-value")?.addEventListener("input", refreshEnvCalibrationDial);
+            document.getElementById("env-power-settle-ms")?.addEventListener("input", updateEnvSensorVisibility);
+            document.querySelectorAll("[data-env-calibration-action]").forEach((button) => button.addEventListener("click", () => {
+              const mode = button.dataset.envCalibrationAction;
+              document.getElementById("env-calibration-mode").value = mode;
+              const target = document.getElementById("env-calibration-target").value;
+              const referenceValue = Number(document.getElementById("env-calibration-reference-value").value);
+              envCalibrationState = { ...envCalibrationState, mode, target, reference_value: referenceValue };
+              refreshEnvCalibrationSummaries(envCalibrationState);
+              const title = document.getElementById("env-calibration-title");
+              if (title) title.textContent = mode === "reset" ? "未校正へ戻す予約をしました" : "この値を次回の基準として記録します";
+              document.getElementById("runtime-config-form")?.dispatchEvent(new Event("change", { bubbles: true }));
+              refreshRuntimeConfigPreview();
+              document.getElementById("env-calibration-dialog")?.close();
+            }));
           }
 
           function renderRuntimeConfigForm(config) {
@@ -4096,6 +4690,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const soilCalibration = config.soil_calibration || {};
             const soilCalibrationMode = document.getElementById("soil-calibration-mode");
             if (soilCalibrationMode) soilCalibrationMode.value = typeof soilCalibration.mode === "string" ? soilCalibration.mode : "normal";
+            updateSoilCalibrationAction(soilCalibrationMode ? soilCalibrationMode.value : "normal");
             const soilCalibrationCalibrated = document.getElementById("soil-calibration-calibrated");
             if (soilCalibrationCalibrated) soilCalibrationCalibrated.checked = Boolean(soilCalibration.calibrated);
             const soilCalibrationAutoMode = document.getElementById("soil-calibration-auto-mode");
@@ -4140,6 +4735,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (envPowerSettleMs) envPowerSettleMs.value = String(Number.isInteger(envSensors.power_settle_ms) ? envSensors.power_settle_ms : 800);
 
             const envCalibration = config.env_calibration || {};
+            envCalibrationState = { ...envCalibration };
             const envCalibrationMode = document.getElementById("env-calibration-mode");
             if (envCalibrationMode) envCalibrationMode.value = typeof envCalibration.mode === "string" ? envCalibration.mode : "normal";
             const envCalibrationTarget = document.getElementById("env-calibration-target");
@@ -4154,6 +4750,12 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             setEnvMetricCalibration("soil_n_mg_kg", "env-cal-n", envCalibration);
             setEnvMetricCalibration("soil_p_mg_kg", "env-cal-p", envCalibration);
             setEnvMetricCalibration("soil_k_mg_kg", "env-cal-k", envCalibration);
+            refreshEnvCalibrationSummaries(envCalibrationState);
+            updateEnvSensorVisibility();
+            selectEnvCalibrationTarget(envCalibrationTarget ? envCalibrationTarget.value : "par_umol_m2_s", {
+              value: typeof envCalibration.reference_value === "number" ? envCalibration.reference_value : 0,
+              reveal: false,
+            });
 
             renderMosfetSwitches(config.mosfet_switches);
 
@@ -4333,6 +4935,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           const runtimeConfigForm = document.getElementById("runtime-config-form");
           if (runtimeConfigForm) {
+            bindEnvSensorWorkbench();
             renderRuntimeConfigForm(initialRuntimeConfig);
             runtimeConfigForm.dispatchEvent(new CustomEvent("stateful-form-reset"));
             runtimeConfigForm.addEventListener("submit", async (event) => {
@@ -4363,32 +4966,6 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 return;
               }
               editor.appendChild(createScheduleRow({ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1, frequency: { mode: "daily" } }));
-              refreshRuntimeConfigPreview();
-              runtimeConfigForm?.dispatchEvent(new Event("change", { bubbles: true }));
-            });
-          }
-          const addMosfetSwitchButton = document.getElementById("add-mosfet-switch");
-          if (addMosfetSwitchButton) {
-            addMosfetSwitchButton.addEventListener("click", () => {
-              const editor = document.getElementById("mosfet-switch-editor");
-              if (!editor) return;
-              if (editor.querySelectorAll(".mosfet-switch-row").length >= 16) {
-                showResult("MOSFET SW は最大 16 件です", false);
-                return;
-              }
-              const nextIndex = editor.querySelectorAll(".mosfet-switch-row").length + 1;
-              editor.appendChild(createMosfetSwitchRow({
-                switch_id: "sw" + nextIndex,
-                name: "SW " + nextIndex,
-                enabled: true,
-                role: "other",
-                terminal: "",
-                channel_mask: 0,
-                controlled_load: "",
-                notes: "",
-              }));
-              refreshScheduleChannelOptions();
-              renderMosfetFlow(collectMosfetSwitches());
               refreshRuntimeConfigPreview();
               runtimeConfigForm?.dispatchEvent(new Event("change", { bubbles: true }));
             });
@@ -5147,7 +5724,7 @@ def _field_layout_devices(field_id, field):
             {
                 "resource_type": "mosfet_switch",
                 "resource_id": switch.get("switch_id", ""),
-                "name": switch.get("name") or switch.get("switch_id") or "MOSFET SW",
+                "name": switch.get("name") or switch.get("switch_id") or "機器出力",
             }
             for switch in config.get("mosfet_switches", [])
             if isinstance(switch, dict) and switch.get("enabled", True)
@@ -5331,6 +5908,42 @@ def update_planting_api(planting_id):
     return jsonify(planting)
 
 
+@app.route("/local/api/plantings/<planting_id>/fertilizer-applications", methods=["GET"])
+def list_fertilizer_applications_api(planting_id):
+    repository = plant_management_repository()
+    try:
+        return jsonify(repository.fertilizer_effect_context(planting_id, as_of=request.args.get("as_of") or None))
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except (PlantManagementValidationError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/local/api/plantings/<planting_id>/fertilizer-applications", methods=["POST"])
+def create_fertilizer_application_api(planting_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    repository = plant_management_repository()
+    try:
+        application = repository.create_fertilizer_application(planting_id, request_body)
+        effect_context = repository.fertilizer_effect_context(planting_id)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"application": application, **effect_context}), 201
+
+
+@app.route("/local/api/plantings/<planting_id>/fertilizer-applications/<application_id>", methods=["DELETE"])
+def delete_fertilizer_application_api(planting_id, application_id):
+    try:
+        plant_management_repository().delete_fertilizer_application(planting_id, application_id)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return "", 204
+
+
 @app.route("/local/api/plantings/<planting_id>/calendar/regenerate", methods=["POST"])
 def regenerate_plant_calendar_api(planting_id):
     request_body = request.get_json(silent=True)
@@ -5492,6 +6105,7 @@ def complete_plant_calendar_action_api(planting_id, action_id):  # noqa: PLR0911
             "completion_event": work_log,
             "planned_actions": [action for action in current_calendar.get("actions", []) if action.get("status") == "planned"],
             "recent_work_logs": repository.recent_work_logs(planting_id, limit=12),
+            "fertilizer_history": repository.fertilizer_effect_context(planting_id, as_of=work_log["performed_on"]),
             "audience": _current_plant_advice_profile(),
         }
         follow_up = ai_content_service().generate_follow_up_tasks(follow_up_context)
@@ -5521,6 +6135,7 @@ def ask_plant_question_api(planting_id):
         "planting": planting,
         "calendar": calendar or {},
         "suggestions": repository.list_suggestions(planting["field_id"]),
+        "fertilizer_history": repository.fertilizer_effect_context(planting_id),
     }
     answer = ai_content_service().answer_plant_question(context, question)
     try:
@@ -6451,8 +7066,8 @@ def _layout_resource_name(record: dict | None, resource_type: str, resource_id: 
         config = record.get("config") if isinstance(record, dict) and isinstance(record.get("config"), dict) else {}
         for switch in config.get("mosfet_switches", []):
             if isinstance(switch, dict) and switch.get("switch_id") == resource_id:
-                return switch.get("name") or resource_id or "MOSFET SW"
-        return resource_id or "MOSFET SW"
+                return switch.get("name") or resource_id or "機器出力"
+        return resource_id or "機器出力"
     return {
         "sensor": "センサー機能",
         "camera": "カメラ機能",

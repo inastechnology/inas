@@ -95,6 +95,10 @@ class PlantCalendarGenerationTask:
             "horizon_months": 12,
             "notes": task.get("planning_notes") or "",
         }
+        context["fertilizer_history"] = self.plant_repository.fertilizer_effect_context(
+            planting["id"],
+            as_of=effective_start,
+        )
         return context
 
 

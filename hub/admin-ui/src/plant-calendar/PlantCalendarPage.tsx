@@ -5,6 +5,8 @@ import {
   addPlantAction,
   askPlantQuestion,
   completePlantAction,
+  createFertilizerApplication,
+  deleteFertilizerApplication,
   deletePlantAction,
   loadPlantBundle,
   regeneratePlantCalendar,
@@ -15,7 +17,9 @@ import { errorMessage } from "../formatters";
 import type { PlantBundle, PlantCalendarAction } from "../types";
 import { PlantCalendarDrawer } from "./PlantCalendarDrawer";
 
-const EMPTY_BUNDLE: PlantBundle = { action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [] };
+const EMPTY_BUNDLE: PlantBundle = {
+  action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [],
+};
 const searchCalendarActions = (plantingId: string, query: string, page: number, signal: AbortSignal) => (
   searchPlantActions(plantingId, { query, page, pageSize: 50, signal })
 );
@@ -142,6 +146,12 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
         })}
         onDeleteAction={(plantingId, actionId) => execute(async () => {
           await deletePlantAction(plantingId, actionId);
+        })}
+        onAddFertilizer={(plantingId, payload) => execute(async () => {
+          await createFertilizerApplication(plantingId, payload);
+        })}
+        onDeleteFertilizer={(plantingId, applicationId) => execute(async () => {
+          await deleteFertilizerApplication(plantingId, applicationId);
         })}
         onSearchActions={searchCalendarActions}
       />
