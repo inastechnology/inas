@@ -1016,6 +1016,64 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(groups["SOI-001"], "土壌センサー")
         self.assertEqual(groups["WRS-001"], "潅水デバイス")
 
+    def test_registered_camera_can_be_placed_with_monitored_area_and_is_hidden_from_other_fields(self):
+        first_field = self.field_repository.upsert(None, {"name": "カメラ設置圃場"})
+        second_field = self.field_repository.upsert(None, {"name": "別圃場"})
+        camera = {
+            "id": "INACD-garden",
+            "name": "garden",
+            "camera_type": "reolink",
+            "ip_address": "192.168.1.84",
+            "credentials_configured": True,
+            "preview_url": "/camera/INACD-garden/preview",
+        }
+
+        class CameraServiceStub:
+            def list(self, **_kwargs):
+                return [camera]
+
+            def get(self, device_id):
+                return camera if device_id == camera["id"] else None
+
+        with patch.object(web_server, "camera_management_service", return_value=CameraServiceStub()):
+            options = self.client.get(f"/local/api/fields/{first_field['id']}/layout/device-options?group=カメラ").get_json()
+
+            self.assertEqual(options["total"], 1)
+            self.assertEqual(options["items"][0]["id"], camera["id"])
+            self.assertEqual(options["items"][0]["group_label"], "カメラ")
+            self.assertEqual(options["items"][0]["preview_url"], camera["preview_url"])
+            self.assertNotIn("username", options["items"][0])
+
+            layout = self.field_layout_repository.get(first_field["id"], field_name=first_field["name"])
+            layout["spaces"][0]["placements"] = [
+                {"id": "tree-1", "preset": "tree", "name": "ライチ", "x": 8, "y": 6, "width": 3, "height": 3},
+                {
+                    "id": "camera-1",
+                    "preset": "camera",
+                    "name": "庭カメラ",
+                    "x": 2,
+                    "y": 2,
+                    "width": 2,
+                    "height": 2,
+                    "binding": {
+                        "device_id": camera["id"],
+                        "resource_type": "camera",
+                        "resource_id": "",
+                        "target_placement_ids": ["tree-1"],
+                    },
+                },
+            ]
+            saved = self.client.put(f"/local/api/fields/{first_field['id']}/layout", json=layout)
+            other_options = self.client.get(f"/local/api/fields/{second_field['id']}/layout/device-options?group=カメラ").get_json()
+            detail = self.client.get(f"/fields/{first_field['id']}").get_data(as_text=True)
+
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.get_json()["spaces"][0]["placements"][1]["binding"]["target_placement_ids"], ["tree-1"])
+        self.assertEqual(other_options["items"], [])
+        self.assertIn("garden", detail)
+        self.assertIn("監視: ライチ", detail)
+        self.assertIn(f"/camera/{camera['id']}/preview", detail)
+
     def test_field_detail_renders_containment_tree_and_device_resource_relation(self):
         field = self.field_repository.upsert(None, {"name": "階層テスト圃場"})
         self.fake_device_config_service.records = {

@@ -167,7 +167,7 @@
                 <div class="setting-label">投稿元カメラ<small>登録済みのカメラデバイスから選択します。</small></div>
                 <div class="setting-control">
                   <select id="instagram-camera-select" name="camera_id" aria-label="投稿元カメラ" data-searchable-select data-search-placeholder="カメラ名、IDを検索" data-empty-message="一致するカメラはありません。"><option value="">選択してください</option>{% for camera in instagram_camera_options %}<option value="{{ camera.id }}"{% if instagram.camera_id == camera.id %} selected{% endif %}>{{ camera.name }} / {{ camera.id }}</option>{% endfor %}</select>
-                  {% if not instagram_camera_options %}<p class="disabled-reason">利用できるカメラデバイスがありません。先にカメラを登録してください。</p>{% endif %}
+                  {% if not instagram_camera_options %}<p class="disabled-reason">利用できるカメラデバイスがありません。<a href="/cameras/new">カメラを登録</a>してください。</p>{% endif %}
                 </div>
               </div>
               <div class="setting-row" data-setting-row data-search="植物 位置 配置 解析 prompt プロンプト">

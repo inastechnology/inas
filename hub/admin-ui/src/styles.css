@@ -214,6 +214,10 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .binding-location { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; color: #6c7971; font-size: 11px; }
 .binding-location strong { color: #30473a; font-size: 12px; }
 .field-help { color: #6d7a72; font-size: 10px; font-weight: 600; line-height: 1.5; }
+.field-help a { color: #176b5b; font-weight: 800; }
+.camera-placement-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.camera-placement-links a { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 6px 8px; border: 1px solid #b9a5c5; border-radius: 5px; color: #5b3970; background: #f7f1fa; font-size: 10px; font-weight: 800; text-decoration: none; }
+.camera-placement-links a:hover { border-color: #7d5793; background: #efe4f5; }
 .watering-source-section { display: grid; gap: 7px; padding: 10px; border: 1px solid #b9d3dc; border-radius: 6px; background: #f0f7f9; }
 .watering-source-heading { display: flex; align-items: center; gap: 6px; color: #23677f; }
 .watering-source-heading strong { font-size: 12px; }

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ "カメラを編集" if form_mode == "edit" else "カメラを登録" }} | INA Hub</title>
+    <link rel="stylesheet" href="/static/hub-ui.css">
+    <style>
+      :root { --green: #237a52; --green-dark: #185a3b; --line: #d6dfd9; --muted: #617067; --danger: #b4232f; }
+      body { margin: 0; color: #193126; background: #f2f6f3; font-family: system-ui, -apple-system, sans-serif; }
+      .camera-shell { width: min(860px, calc(100% - 28px)); margin: 0 auto; padding: 24px 0 56px; }
+      .breadcrumbs { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+      .breadcrumbs a { color: var(--green-dark); }
+      .camera-header { display: flex; justify-content: space-between; gap: 20px; align-items: start; margin-bottom: 18px; }
+      .camera-header h1 { margin: 0; font-size: clamp(25px, 5vw, 36px); }
+      .camera-header p { margin: 7px 0 0; color: var(--muted); }
+      .camera-panel { padding: clamp(18px, 4vw, 30px); border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 12px 35px rgba(31, 78, 54, .08); }
+      .camera-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+      .camera-field { display: grid; gap: 7px; }
+      .camera-field.full { grid-column: 1 / -1; }
+      .camera-field label, .camera-field legend { color: #264a38; font-size: 13px; font-weight: 800; }
+      .camera-field small { color: var(--muted); line-height: 1.5; }
+      input, select { width: 100%; box-sizing: border-box; min-height: 44px; padding: 9px 11px; border: 1px solid #bbc9c0; border-radius: 8px; background: #fff; font: inherit; }
+      input:focus, select:focus { outline: 3px solid rgba(35, 122, 82, .16); border-color: var(--green); }
+      .check-field { display: flex; gap: 9px; align-items: center; min-height: 44px; }
+      .check-field input { width: auto; min-height: auto; }
+      .camera-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
+      button, .button-link { min-height: 42px; padding: 9px 16px; border: 1px solid #aabbb0; border-radius: 8px; color: #244a37; background: #fff; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
+      button.primary { border-color: var(--green); color: #fff; background: var(--green); }
+      button:hover, .button-link:hover { border-color: var(--green); }
+      button:disabled { cursor: wait; opacity: .58; }
+      .result { margin: 0 0 18px; padding: 12px 14px; border-radius: 9px; color: #345447; background: #eef4f0; }
+      .result.ok { color: #155b39; background: #e2f4e9; }
+      .result.error { color: var(--danger); background: #fff0f1; }
+      .advanced { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 18px; }
+      .advanced summary { cursor: pointer; color: #315d48; font-weight: 800; }
+      .advanced .camera-grid { margin-top: 16px; }
+      [hidden] { display: none !important; }
+      @media (max-width: 640px) { .camera-grid { grid-template-columns: 1fr; } .camera-field.full { grid-column: auto; } .camera-header { display: block; } .camera-actions > * { flex: 1; } }
+    </style>
+  </head>
+  <body>
+    <main class="camera-shell">
+      <p class="breadcrumbs"><a href="/fields">圃場一覧</a> / <a href="/mqtt-devices">機器保守</a> / {{ "カメラを編集" if form_mode == "edit" else "カメラを登録" }}</p>
+      <header class="camera-header">
+        <div>
+          <h1>{{ "カメラを編集" if form_mode == "edit" else "ネットワークカメラを登録" }}</h1>
+          <p>固定IPまたはDHCP予約したアドレスと、カメラ側で作成したRTSP認証情報を入力します。</p>
+        </div>
+        {% if camera %}<span>{{ camera.id }}</span>{% endif %}
+      </header>
+
+      <section class="camera-panel">
+        <div id="camera-result" class="result" hidden aria-live="polite"></div>
+        <form id="camera-form">
+          <div class="camera-grid">
+            <div class="camera-field full">
+              <label for="camera-name">表示名</label>
+              <input id="camera-name" name="name" maxlength="100" required placeholder="例: ハウス東側">
+            </div>
+            <div class="camera-field">
+              <label for="camera-type">メーカー・方式</label>
+              <select id="camera-type" name="camera_type" required>
+                <option value="reolink">Reolink</option>
+                <option value="tapo">Tapo</option>
+                <option value="custom">カスタムRTSP</option>
+              </select>
+            </div>
+            <div class="camera-field">
+              <label for="camera-address">IPアドレスまたはホスト名</label>
+              <input id="camera-address" name="ip_address" maxlength="253" required inputmode="url" placeholder="例: 192.168.1.84">
+            </div>
+            <div class="camera-field">
+              <label for="camera-username">ユーザー名</label>
+              <input id="camera-username" name="username" maxlength="200" required autocomplete="username">
+            </div>
+            <div class="camera-field">
+              <label for="camera-password">パスワード</label>
+              <input id="camera-password" name="password" maxlength="500" type="password" autocomplete="new-password" {% if not camera %}required{% endif %}>
+              {% if camera %}<small>変更しない場合は空欄のままにします。</small>{% endif %}
+            </div>
+            <div class="camera-field" data-reolink-field>
+              <label for="camera-channel">チャンネル</label>
+              <input id="camera-channel" name="channel" type="number" min="1" max="64" value="1">
+            </div>
+            <div class="camera-field" data-reolink-field>
+              <label for="camera-stream">ストリーム</label>
+              <select id="camera-stream" name="stream"><option value="main">main（高画質）</option><option value="sub">sub（軽量）</option></select>
+            </div>
+            <div class="camera-field full">
+              <label class="check-field"><input id="camera-timelapse" name="timelapse" type="checkbox"> タイムラプス撮影に使用する</label>
+            </div>
+          </div>
+
+          <details class="advanced">
+            <summary>詳細設定</summary>
+            <div class="camera-grid">
+              <div class="camera-field">
+                <label for="camera-port">RTSPポート</label>
+                <input id="camera-port" name="port" type="number" min="1" max="65535" value="554">
+              </div>
+              <div class="camera-field" data-custom-field>
+                <label for="camera-path">RTSPパス</label>
+                <input id="camera-path" name="rtsp_path" maxlength="240" placeholder="例: /Preview_01_main">
+                <small>カスタムRTSPでは必須です。Reolink/Tapoでも既定パスを上書きできます。</small>
+              </div>
+            </div>
+          </details>
+
+          <div class="camera-actions">
+            {% if camera %}<a class="button-link" href="{{ camera.preview_url }}">ライブを見る</a>{% endif %}
+            <button id="test-camera" type="button">接続を確認</button>
+            <button id="save-camera" class="primary" type="submit">{{ "変更を保存" if camera else "カメラを登録" }}</button>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script>
+      const existingCamera = {{ (camera or {}) | tojson }};
+      const formMode = {{ form_mode | tojson }};
+      const form = document.getElementById("camera-form");
+      const result = document.getElementById("camera-result");
+      const typeSelect = document.getElementById("camera-type");
+      const testButton = document.getElementById("test-camera");
+      const saveButton = document.getElementById("save-camera");
+
+      function setResult(message, ok) {
+        result.hidden = false;
+        result.className = "result " + (ok ? "ok" : "error");
+        result.textContent = message;
+      }
+
+      function syncFields() {
+        const reolink = typeSelect.value === "reolink";
+        document.querySelectorAll("[data-reolink-field]").forEach((field) => field.hidden = !reolink);
+      }
+
+      function payload() {
+        return {
+          name: document.getElementById("camera-name").value.trim(),
+          camera_type: typeSelect.value,
+          ip_address: document.getElementById("camera-address").value.trim(),
+          port: document.getElementById("camera-port").value,
+          username: document.getElementById("camera-username").value.trim(),
+          password: document.getElementById("camera-password").value,
+          channel: document.getElementById("camera-channel").value,
+          stream: document.getElementById("camera-stream").value,
+          rtsp_path: document.getElementById("camera-path").value.trim(),
+          timelapse: document.getElementById("camera-timelapse").checked,
+        };
+      }
+
+      async function requestJson(url, options) {
+        const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || "処理に失敗しました");
+        return body;
+      }
+
+      if (existingCamera.id) {
+        document.getElementById("camera-name").value = existingCamera.name || "";
+        typeSelect.value = existingCamera.camera_type || "reolink";
+        document.getElementById("camera-address").value = existingCamera.ip_address || "";
+        document.getElementById("camera-port").value = existingCamera.port || 554;
+        document.getElementById("camera-username").value = existingCamera.username || "";
+        document.getElementById("camera-channel").value = existingCamera.channel || 1;
+        document.getElementById("camera-stream").value = existingCamera.stream || "main";
+        document.getElementById("camera-path").value = existingCamera.rtsp_path || "";
+        document.getElementById("camera-timelapse").checked = Boolean(existingCamera.timelapse);
+      }
+      syncFields();
+      typeSelect.addEventListener("change", syncFields);
+
+      testButton.addEventListener("click", async () => {
+        testButton.disabled = true;
+        setResult("HubからRTSP映像を確認しています…", true);
+        try {
+          const body = payload();
+          if (existingCamera.id) body.device_id = existingCamera.id;
+          const tested = await requestJson("/local/api/cameras/test-connection", { method: "POST", body: JSON.stringify(body) });
+          setResult(tested.message, Boolean(tested.ok));
+        } catch (error) {
+          setResult(error.message, false);
+        } finally {
+          testButton.disabled = false;
+        }
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        saveButton.disabled = true;
+        try {
+          const url = formMode === "edit" ? "/local/api/cameras/" + encodeURIComponent(existingCamera.id) : "/local/api/cameras";
+          await requestJson(url, { method: formMode === "edit" ? "PATCH" : "POST", body: JSON.stringify(payload()) });
+          window.location.assign("/mqtt-devices");
+        } catch (error) {
+          setResult(error.message, false);
+          saveButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

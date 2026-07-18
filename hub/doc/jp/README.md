@@ -264,7 +264,15 @@ Instagram 自動投稿フロー
 
 カメラ RTSP 設定
 
-`.camera_device_list.json` の各カメラには `camera_type` を指定できます。未指定時は既存互換の `tapo` として扱います。
+管理画面の「機器保守」から「カメラを登録」を選び、表示名、カメラ方式、IPアドレスまたはホスト名、RTSP認証情報を入力します。保存前に「接続を確認」を実行すると、HubがLAN内のカメラから1フレーム取得できるか確認できます。登録・編集・削除・接続確認は管理者だけが実行できます。
+
+- `reolink`: チャンネルと `main` / `sub` ストリームを選択します。
+- `tapo`: 既定の `/stream1` を使用します。
+- `custom`: RTSPパスを入力します。
+- カメラが圃場、設置ビュー、Instagram投稿元から参照されている間は登録を削除できません。
+- パスワードは一般のカメラ一覧とは別の権限 `0600` の認証情報ファイルへ保存され、APIには返されません。
+
+既存環境の `.camera_device_list.json` は引き続き読み取れます。従来形式のカメラを管理画面から更新すると、ユーザー名とパスワードが保護された認証情報ファイルへ移されます。手動で確認する場合のメタデータ形式は次のとおりです。
 
 ```json
 {
@@ -273,8 +281,6 @@ Instagram 自動投稿フロー
     "name": "garden",
     "camera_type": "reolink",
     "ip_address": "192.168.1.84",
-    "username": "admin",
-    "password": "password",
     "channel": 1,
     "stream": "main",
     "timelapse": true
@@ -282,8 +288,8 @@ Instagram 自動投稿フロー
 }
 ```
 
-- `tapo`: `rtsp://<user>:<password>@<ip_address>/stream1`
-- `reolink`: `rtsp://<user>:<password>@<ip_address>/Preview_<channel>_<stream>`
+- `tapo`: `/stream1`
+- `reolink`: `/Preview_<channel>_<stream>`
 - `rtsp_path` を指定すると、種別ごとの既定パスより優先します。
 
 貢献

@@ -1,7 +1,12 @@
+import ipaddress
+import shutil
+import socket
+import subprocess
 from urllib.parse import quote
 
 import ffmpeg
 
+from ina_device_hub.camera_credential_repository import camera_credential_repository
 from ina_device_hub.camera_device_repository import camera_device_repository
 from ina_device_hub.general_log import logger
 
@@ -11,8 +16,9 @@ class CameraConnector:
     REOLINK_MAIN_STREAM = "main"
     REOLINK_SUB_STREAM = "sub"
 
-    def __init__(self):
-        self.camera_device_repository = camera_device_repository()
+    def __init__(self, camera_repository=None, credential_repository=None):
+        self.camera_device_repository = camera_repository or camera_device_repository()
+        self.credential_repository = credential_repository or camera_credential_repository()
 
     def take_picture(self, device_id: str):
         rtsp_url = self.construct_rtsp_url(device_id)
@@ -32,8 +38,8 @@ class CameraConnector:
 
             return img_bytes  # バイト列として画像データが返される
         except ffmpeg.Error as e:
-            print("エラーが発生しました:")
-            print(e.stderr.decode())
+            del e
+            logger.error("Failed to take picture from camera: %s", device_id)
             return None
 
     def stream_rtsp(self, device_id: str):
@@ -58,26 +64,93 @@ class CameraConnector:
         process.stdout.close()
 
     def construct_rtsp_url(self, device_id: str):
-        info = self.camera_device_repository.get(device_id)
+        info = self._device_info(device_id)
         if not info:
             logger.error(f"Device not found: {device_id}")
             return None
+        try:
+            _validate_private_destination(info.get("ip_address"), info.get("port", 554))
+        except CameraAddressError as exc:
+            logger.error("Camera address rejected for %s: %s", device_id, exc)
+            return None
+        return self.construct_rtsp_url_from_info(info)
+
+    def _device_info(self, device_id: str):
+        info = self.camera_device_repository.get(device_id)
+        if not info:
+            return None
+        credentials = self.credential_repository.get(device_id)
+        return {
+            **info,
+            "username": credentials.get("username") or info.get("username"),
+            "password": credentials.get("password") or info.get("password"),
+        }
+
+    def construct_rtsp_url_from_info(self, info: dict):
         ip_address = info.get("ip_address")
         username = info.get("username")
         password = info.get("password")
         if not ip_address or not username or not password:
-            logger.error(f"Invalid device info: ip_address={ip_address}, username={username}, password=[REDACTED]")
+            logger.error("Camera connection information is incomplete: %s", info.get("id") or "unknown-camera")
             return None
 
         return self.get_rtsp_url(
             ip_address,
             username,
             password,
+            port=info.get("port", 554),
             camera_type=info.get("camera_type") or info.get("type") or self.DEFAULT_CAMERA_TYPE,
             channel=info.get("channel", 1),
             stream=info.get("stream", self.REOLINK_MAIN_STREAM),
             rtsp_path=info.get("rtsp_path"),
         )
+
+    def test_connection_info(self, info: dict, timeout_seconds: int = 8):
+        device_id = info.get("id") or "camera-connection-test"
+        try:
+            _validate_private_destination(info.get("ip_address"), info.get("port", 554))
+            rtsp_url = self.construct_rtsp_url_from_info(info)
+        except (CameraAddressError, TypeError, ValueError) as exc:
+            return {"ok": False, "message": str(exc)}
+        if not rtsp_url:
+            return {"ok": False, "message": "カメラの接続情報が不足しています"}
+        ffmpeg_command = shutil.which("ffmpeg")
+        if not ffmpeg_command:
+            return {"ok": False, "message": "Hubにffmpegがインストールされていません"}
+        command = [
+            ffmpeg_command,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-rtsp_transport",
+            "tcp",
+            "-i",
+            rtsp_url,
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg",
+            "pipe:1",
+        ]
+        try:
+            result = subprocess.run(command, capture_output=True, timeout=max(1, min(int(timeout_seconds), 20)), check=False)
+        except subprocess.TimeoutExpired:
+            logger.warning("Camera connection test timed out: %s", device_id)
+            return {"ok": False, "message": "カメラ接続がタイムアウトしました"}
+        except OSError:
+            logger.exception("Camera connection test could not start: %s", device_id)
+            return {"ok": False, "message": "カメラ接続確認を開始できませんでした"}
+        if result.returncode == 0 and result.stdout:
+            return {"ok": True, "message": "RTSP映像から静止画を取得できました"}
+        error_text = result.stderr.decode("utf-8", errors="replace").lower()
+        logger.warning("Camera connection test failed: %s", device_id)
+        if "401 unauthorized" in error_text or "authentication" in error_text:
+            return {"ok": False, "message": "ユーザー名またはパスワードを確認してください"}
+        if any(fragment in error_text for fragment in ("connection refused", "no route to host", "network is unreachable", "timed out")):
+            return {"ok": False, "message": "カメラへ接続できませんでした。アドレスとネットワークを確認してください"}
+        return {"ok": False, "message": "RTSPストリームから映像を取得できませんでした"}
 
     @staticmethod
     def get_rtsp_url(
@@ -88,10 +161,14 @@ class CameraConnector:
         channel: int | str = 1,
         stream: str = REOLINK_MAIN_STREAM,
         rtsp_path: str | None = None,
+        port: int | str = 554,
     ):
         encoded_username = quote(username, safe="")
         encoded_password = quote(password, safe="")
-        authority = f"{encoded_username}:{encoded_password}@{ip_address}"
+        host = f"[{ip_address}]" if ":" in str(ip_address) and not str(ip_address).startswith("[") else ip_address
+        normalized_port = int(port)
+        port_suffix = "" if normalized_port == 554 else f":{normalized_port}"
+        authority = f"{encoded_username}:{encoded_password}@{host}{port_suffix}"
 
         if rtsp_path:
             normalized_path = rtsp_path if rtsp_path.startswith("/") else f"/{rtsp_path}"
@@ -142,6 +219,29 @@ class CameraConnector:
 
 
 __instance = None
+
+
+class CameraAddressError(ValueError):
+    pass
+
+
+def _validate_private_destination(host: str, port: int | str):
+    if not host:
+        raise CameraAddressError("IPアドレスまたはホスト名を入力してください")
+    try:
+        normalized_port = int(port)
+    except (TypeError, ValueError) as exc:
+        raise CameraAddressError("RTSPポートが正しくありません") from exc
+    try:
+        addresses = {item[4][0] for item in socket.getaddrinfo(host, normalized_port, type=socket.SOCK_STREAM)}
+    except OSError as exc:
+        raise CameraAddressError("カメラのホスト名を解決できませんでした") from exc
+    if not addresses:
+        raise CameraAddressError("カメラのアドレスを解決できませんでした")
+    for address in addresses:
+        parsed = ipaddress.ip_address(address)
+        if not parsed.is_private or parsed.is_loopback or parsed.is_link_local or parsed.is_multicast or parsed.is_unspecified or parsed.is_reserved:
+            raise CameraAddressError("カメラにはLAN内のプライベートアドレスだけを指定できます")
 
 
 def camera_connector():

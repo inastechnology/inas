@@ -77,7 +77,7 @@ const EMPTY_PLANT_BUNDLE: PlantBundle = {
 const PLANTABLE_PRESETS = new Set<PlacementPreset>(["ridge", "tree", "pot", "hydroponic_bed"]);
 const SPACE_TARGET_PRESETS = new Set<PlacementPreset>(["greenhouse", "open_field", "shade_area"]);
 const TARGETABLE_PRESETS = new Set<PlacementPreset>(["greenhouse", "open_field", "shade_area", ...PLANTABLE_PRESETS]);
-const DEVICE_BINDABLE_PRESETS = new Set<PlacementPreset>(["watering_device", "sensor", "grow_light", "mister", "fan", "hvac"]);
+const DEVICE_BINDABLE_PRESETS = new Set<PlacementPreset>(["watering_device", "sensor", "camera", "grow_light", "mister", "fan", "hvac"]);
 const INITIAL_QUERY = new URLSearchParams(window.location.search);
 const REQUESTED_SPACE_ID = INITIAL_QUERY.get("space") ?? "";
 const REQUESTED_PLACEMENT_ID = INITIAL_QUERY.get("placement") ?? "";
@@ -891,8 +891,9 @@ function PlacementInspector({
   const deviceOptions = (deviceQuery.trim() ? availableDevices : devices).filter((device) => {
     if (usedDeviceIds.has(device.id)) return false;
     if (placement.preset === "watering_device") return device.group_label === "潅水デバイス";
-    if (placement.preset === "sensor") return device.group_label !== "潅水デバイス";
-    return true;
+    if (placement.preset === "camera") return device.group_label === "カメラ";
+    if (placement.preset === "sensor") return device.group_label !== "潅水デバイス" && device.group_label !== "カメラ";
+    return device.group_label !== "カメラ";
   });
   const filteredDeviceOptions = deviceOptions.filter((device) => (
     device.id === selectedDevice?.id || matchesSearch(deviceQuery, [device.name, device.id, device.kind_label, device.group_label, device.location])
@@ -953,8 +954,8 @@ function PlacementInspector({
     onChange({
       binding: {
         device_id: deviceId,
-        resource_type: placement.preset === "sensor" ? "sensor" : onlyResource?.resource_type ?? "device",
-        resource_id: placement.preset === "sensor" ? "" : onlyResource?.resource_id ?? "",
+        resource_type: placement.preset === "camera" ? "camera" : placement.preset === "sensor" ? "sensor" : onlyResource?.resource_type ?? "device",
+        resource_id: placement.preset === "camera" || placement.preset === "sensor" ? "" : onlyResource?.resource_id ?? "",
         target_placement_ids: [],
       },
     });
@@ -993,11 +994,11 @@ function PlacementInspector({
       </div>
       {canBindDevice && <section className="device-binding-section" aria-label="デバイス紐づけ">
         <div className="filterable-field">
-          <span className="field-label">{placement.preset === "watering_device" ? "紐づける潅水デバイス" : placement.preset === "sensor" ? "紐づけるセンサーデバイス" : "紐づける設備デバイス"}</span>
+          <span className="field-label">{bindingDeviceLabel(placement.preset)}</span>
           <SearchableSelect
             value={placement.binding?.device_id ?? ""}
             onChange={bindDevice}
-            ariaLabel={placement.preset === "watering_device" ? "紐づける潅水デバイス" : placement.preset === "sensor" ? "紐づけるセンサーデバイス" : "紐づける設備デバイス"}
+            ariaLabel={bindingDeviceLabel(placement.preset)}
             searchPlaceholder="名前、ID、種別、場所を検索"
             emptyMessage="一致するデバイスはありません。"
             query={deviceQuery}
@@ -1015,9 +1016,10 @@ function PlacementInspector({
             ]}
           />
         </div>
+        {placement.preset === "camera" && <small className="field-help">登録済みのネットワークカメラを選択します。候補がない場合は<a href="/cameras/new">カメラを登録</a>してください。</small>}
         <p className="binding-location"><span>設置環境</span><strong>{spaceLocation}</strong></p>
       </section>}
-      {canBindDevice && placement.binding && (
+      {canBindDevice && placement.binding && placement.preset !== "camera" && (
         <div className="filterable-field">
           <span className="field-label">{bindingResourceLabel(placement.preset)}</span>
           <SearchableSelect
@@ -1061,6 +1063,12 @@ function PlacementInspector({
           <dt>ID</dt><dd><code>{selectedDevice.id}</code></dd>
           {selectedDevice.location && <><dt>登録場所</dt><dd>{selectedDevice.location}</dd></>}
         </dl>
+      )}
+      {selectedDevice && placement.preset === "camera" && (
+        <div className="camera-placement-links">
+          {selectedDevice.preview_url && <a href={selectedDevice.preview_url} target="_blank" rel="noreferrer"><ExternalLink size={15} />ライブ映像を見る</a>}
+          {selectedDevice.manage_url && <a href={selectedDevice.manage_url}><ExternalLink size={15} />カメラ設定を開く</a>}
+        </div>
       )}
       <label>メモ<textarea value={placement.memo} onChange={(event) => onChange({ memo: event.target.value })} /></label>
       {PLANTABLE_PRESETS.has(placement.preset) && (
@@ -1430,10 +1438,18 @@ function cultivationMethodsFor(preset: PlacementPreset): Array<{ value: string; 
 function relationTargetLabel(preset: PlacementPreset) {
   if (preset === "watering_device") return "潅水する培地";
   if (preset === "sensor") return "計測する培地・空間（任意）";
+  if (preset === "camera") return "監視する培地・空間";
   if (preset === "grow_light") return "補光する培地・空間（任意）";
   if (preset === "mister") return "噴霧する培地・空間（任意）";
   if (preset === "fan" || preset === "hvac") return "環境制御する空間（任意）";
   return "接続対象（任意）";
+}
+
+function bindingDeviceLabel(preset: PlacementPreset) {
+  if (preset === "watering_device") return "紐づける潅水デバイス";
+  if (preset === "sensor") return "紐づけるセンサーデバイス";
+  if (preset === "camera") return "紐づけるカメラ";
+  return "紐づける設備デバイス";
 }
 
 function bindingResourceLabel(preset: PlacementPreset) {

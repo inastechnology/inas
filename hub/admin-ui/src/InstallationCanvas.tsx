@@ -423,6 +423,15 @@ function PresetPattern({ placement, width, height }: { placement: Placement; wid
   if (placement.preset === "hvac") {
     return <>{[0.35, 0.5, 0.65].map((ratio) => <Line key={ratio} points={[width * ratio, 7, width * ratio, height - 7]} stroke="#718198" strokeWidth={2} opacity={0.6} listening={false} />)}</>;
   }
+  if (placement.preset === "camera") {
+    const lensRadius = Math.max(7, Math.min(width, height) * 0.2);
+    return (
+      <>
+        <Rect x={width * 0.18} y={height * 0.3} width={width * 0.64} height={height * 0.42} fill="#8f6aa5" opacity={0.28} cornerRadius={4} listening={false} />
+        <Circle x={width / 2} y={height * 0.51} radius={lensRadius} fill="#6f4b87" opacity={0.7} listening={false} />
+      </>
+    );
+  }
   return null;
 }
 
@@ -437,6 +446,7 @@ function compactLabel(placement: Placement) {
     hydroponic_bed: "水耕",
     watering_device: "潅水",
     sensor: "S",
+    camera: "映像",
     irrigation_line: "配管",
     tank: "T",
     grow_light: "灯",
@@ -542,6 +552,7 @@ function targetEdgePoint(source: { x: number; y: number }, targetCenter: { x: nu
 function connectionStyle(preset: PlacementPreset) {
   if (preset === "watering_device" || preset === "mister") return { color: "#3184a3", selectedColor: "#0f6688", dash: [10, 6], kind: "潅水・噴霧" };
   if (preset === "sensor") return { color: "#9a8134", selectedColor: "#725b13", dash: [5, 6], kind: "計測" };
+  if (preset === "camera") return { color: "#7d5793", selectedColor: "#55316b", dash: [12, 5], kind: "監視" };
   if (preset === "grow_light") return { color: "#b0841f", selectedColor: "#76570d", dash: [8, 5], kind: "補光" };
   return { color: "#58786d", selectedColor: "#2f5e4e", dash: [7, 5], kind: "設備制御" };
 }

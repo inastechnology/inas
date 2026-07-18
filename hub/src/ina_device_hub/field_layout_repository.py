@@ -20,6 +20,7 @@ VALID_PLACEMENT_PRESETS = {
     "hydroponic_bed",
     "watering_device",
     "sensor",
+    "camera",
     "irrigation_line",
     "tank",
     "grow_light",

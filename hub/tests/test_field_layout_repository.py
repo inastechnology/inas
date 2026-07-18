@@ -222,6 +222,35 @@ class FieldLayoutRepositoryTest(unittest.TestCase):
         sensor = saved["spaces"][1]["placements"][0]
         self.assertEqual(sensor["binding"]["target_placement_ids"], ["open-field-1", "shade-1"])
 
+    def test_camera_can_target_multiple_monitored_areas(self):
+        layout = self.repository.get("field-1", "果樹園")
+        layout["spaces"][0]["placements"] = [
+            {"id": "tree-east", "preset": "tree", "name": "東側ライチ", "x": 4, "y": 4, "width": 3, "height": 3},
+            {"id": "tree-west", "preset": "tree", "name": "西側ライチ", "x": 12, "y": 4, "width": 3, "height": 3},
+            {
+                "id": "camera-garden",
+                "preset": "camera",
+                "name": "庭カメラ",
+                "x": 2,
+                "y": 2,
+                "width": 2,
+                "height": 2,
+                "binding": {
+                    "device_id": "INACD-garden",
+                    "resource_type": "camera",
+                    "resource_id": "",
+                    "target_placement_ids": ["tree-east", "tree-west"],
+                },
+            },
+        ]
+
+        saved = self.repository.upsert("field-1", layout)
+        camera = saved["spaces"][0]["placements"][2]
+
+        self.assertEqual(camera["preset"], "camera")
+        self.assertEqual(camera["binding"]["resource_type"], "camera")
+        self.assertEqual(camera["binding"]["target_placement_ids"], ["tree-east", "tree-west"])
+
 
 if __name__ == "__main__":
     unittest.main()

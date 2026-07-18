@@ -17,6 +17,12 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from ina_device_hub.agri_action_service import METRIC_LABELS, build_action_candidates
 from ina_device_hub.ai_content_service import ai_content_service
 from ina_device_hub.camera_connector import camera_connector
+from ina_device_hub.camera_management_service import (
+    CameraNotFoundError,
+    CameraRemovalConflictError,
+    CameraValidationError,
+    camera_management_service,
+)
 from ina_device_hub.collection_search import matches_search, paginate, search_terms
 from ina_device_hub.device_config_repository import (
     DeviceConfigValidationError,
@@ -26,6 +32,8 @@ from ina_device_hub.device_config_repository import (
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.device_definition_registry import (
     device_kind_label as definition_device_kind_label,
+)
+from ina_device_hub.device_definition_registry import (
     get_device_definition,
     project_runtime_config,
     value_at_path,
@@ -109,7 +117,7 @@ MQTT_ADMIN_STATUS_HISTORY_LIMIT = 2000
 SAFE_HTTP_METHODS = {"GET", "HEAD", "OPTIONS"}
 PUBLIC_HEALTH_PATHS = {"/healthz", "/readyz"}
 PUBLIC_DEVICE_PATH_PREFIXES = ("/firmware/",)
-ADMIN_PATH_PREFIXES = ("/local/api/settings/", "/local/api/firmware-artifacts")
+ADMIN_PATH_PREFIXES = ("/local/api/settings/", "/local/api/firmware-artifacts", "/local/api/cameras", "/cameras")
 ADMIN_MUTATION_PATH_PREFIXES = ("/local/api/mqtt-devices/", "/local/api/device-configs/", "/devices/", "/locations/")
 _web_initialized = False
 _readiness_checks = {}
@@ -159,7 +167,7 @@ def authenticate_hub_request():
 
 @app.after_request
 def apply_security_headers(response):
-    if request.path == "/settings" or request.path.startswith("/local/api/settings/"):
+    if request.path == "/settings" or request.path.startswith(("/local/api/settings/", "/local/api/cameras", "/cameras")):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     response.headers.setdefault("Referrer-Policy", "no-referrer")
@@ -234,6 +242,7 @@ LAYOUT_PLACEMENT_LABELS = {
     "hydroponic_bed": "水耕ベッド",
     "watering_device": "潅水設備",
     "sensor": "センサー",
+    "camera": "カメラ",
     "irrigation_line": "配管（既存データ）",
     "tank": "タンク",
     "grow_light": "植物育成ライト",
@@ -667,6 +676,74 @@ def add_location():
     """
 
     return render_template_string(template)
+
+
+@app.route("/cameras/new", methods=["GET"])
+def new_camera_page():
+    return render_template("camera_form.html", camera=None, form_mode="create")
+
+
+@app.route("/cameras/<device_id>/edit", methods=["GET"])
+def edit_camera_page(device_id):
+    camera = camera_management_service().get(device_id)
+    if camera is None:
+        return jsonify({"error": "camera not found"}), 404
+    return render_template("camera_form.html", camera=camera, form_mode="edit")
+
+
+@app.route("/local/api/cameras", methods=["GET", "POST"])
+def cameras_api():
+    service = camera_management_service()
+    if request.method == "GET":
+        cameras = service.list(query=request.args.get("q", ""))
+        return jsonify({"items": cameras, "total": len(cameras)})
+    request_body = request.get_json(silent=True)
+    try:
+        created = service.create(request_body)
+    except CameraValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(created), 201
+
+
+@app.route("/local/api/cameras/test-connection", methods=["POST"])
+def test_camera_connection_api():
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    payload = dict(request_body)
+    device_id = str(payload.pop("device_id", "") or "").strip() or None
+    try:
+        result = camera_management_service().test_connection(payload, device_id=device_id)
+    except CameraNotFoundError:
+        return jsonify({"error": "camera not found"}), 404
+    except CameraValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
+
+
+@app.route("/local/api/cameras/<device_id>", methods=["GET", "PATCH", "DELETE"])
+def camera_api(device_id):
+    service = camera_management_service()
+    if request.method == "GET":
+        camera = service.get(device_id)
+        return jsonify(camera) if camera is not None else (jsonify({"error": "camera not found"}), 404)
+    if request.method == "DELETE":
+        user = current_user_from_request(request)
+        try:
+            deleted = service.delete(device_id, deleted_by=user.email or "local-operator")
+        except CameraRemovalConflictError as exc:
+            return jsonify({"error": str(exc), "references": exc.references}), 409
+        if deleted is None:
+            return jsonify({"error": "camera not found"}), 404
+        return jsonify({"deleted": True, "device_id": device_id})
+    request_body = request.get_json(silent=True)
+    try:
+        updated = service.update(device_id, request_body)
+    except CameraNotFoundError:
+        return jsonify({"error": "camera not found"}), 404
+    except CameraValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(updated)
 
 
 @app.route("/camera/<device_id>/preview", methods=["GET"])
@@ -1162,7 +1239,9 @@ def _build_device_layout_context(device_id, record=None):
                         }
                     )
                 preset = placement.get("preset") or ""
-                relation_label = "潅水対象" if preset == "watering_device" else "計測対象" if preset == "sensor" else "関連対象"
+                relation_label = (
+                    "潅水対象" if preset == "watering_device" else "計測対象" if preset == "sensor" else "監視対象" if preset == "camera" else "関連対象"
+                )
                 resource_type = binding.get("resource_type") or "device"
                 field_assignments.append(
                     {
@@ -2362,6 +2441,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
     device_page = request.args.get("page", 1) if not is_detail_page else 1
     device_page_size = 24
     device_catalog = {"total": 0, "page": 1, "page_size": device_page_size, "page_count": 1, "has_previous": False, "has_next": False}
+    camera_devices = []
     if demo_mode:
         demo_data = _demo_mqtt_admin_page_data(device_id)
         devices = demo_data["devices"]
@@ -2413,6 +2493,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if selected_device_id
             else list_device_events(limit=50, connection_events_only=True)
         )
+        if not is_detail_page:
+            camera_devices = camera_management_service().list(query=device_query)
     selected_device = devices.get(selected_device_id) if selected_device_id else None
     if is_detail_page and selected_device is None:
         return jsonify({"error": "device not found"}), 404
@@ -2749,6 +2831,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .device-list-search button { min-height: 38px; }
           .device-filter-empty { margin: 12px 0 0; }
           .device-result-summary { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+          .device-catalog-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+          .device-catalog-head h2 { margin-bottom: 4px; }
+          .camera-add-link { display: inline-flex; align-items: center; min-height: 38px; padding: 7px 12px; border: 1px solid var(--green); border-radius: 6px; color: #fff; background: var(--green); font-weight: 800; text-decoration: none; }
+          .camera-add-link:hover { background: #166534; }
           .device-pagination { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; }
           .device-pagination a { padding: 7px 10px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
           .select-filter { display: grid; gap: 5px; max-width: 520px; margin: 0 0 9px; color: var(--muted); font-size: 12px; }
@@ -2764,6 +2850,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .device-tile-link { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px 14px 52px; color: inherit; }
           .device-delete-button { position: absolute; right: 14px; bottom: 12px; min-height: 30px; border-color: var(--line); color: var(--muted); background: #fff; font-size: 12px; }
           .device-delete-button:hover { border-color: #fecdd3; color: var(--red); background: var(--red-bg); }
+          .camera-edit-link { position: absolute; left: 14px; bottom: 12px; display: inline-flex; align-items: center; min-height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); background: #fff; font-size: 12px; text-decoration: none; }
           .device-title { font-size: 16px; font-weight: 700; }
           .device-sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
           .tile-metrics { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
@@ -3209,14 +3296,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           {% if not is_detail_page %}
           <section class="panel">
-            <h2>機器一覧</h2>
-            <p class="lead">カードを選ぶと、機器種別に応じた現在値、履歴、設定を確認できます。検索はサーバ側で実行します。</p>
+            <div class="device-catalog-head"><div><h2>機器一覧</h2><p class="lead">MQTT機器とネットワークカメラを確認できます。検索はサーバ側で実行します。</p></div>{% if not demo_mode %}<a class="camera-add-link" href="/cameras/new">＋ カメラを登録</a>{% endif %}</div>
             <form class="device-list-search" id="device-list-search-form" method="get" action="{{ list_path }}">
               <input id="device-list-search" name="q" type="search" value="{{ device_query }}" placeholder="機器名、ID、種別、設置場所を検索" aria-label="機器を検索" autocomplete="off">
               <button type="submit">検索</button>
             </form>
-            <p class="device-result-summary" id="device-result-summary">{{ device_catalog.total }}件中 {{ admin_view.devices|length }}件を表示 / {{ device_catalog.page }}ページ</p>
-            {% if admin_view.devices %}
+            <p class="device-result-summary" id="device-result-summary">{{ (device_catalog.total | int) + (camera_devices | length) }}件中 {{ (admin_view.devices | length) + (camera_devices | length) }}件を表示 / {{ device_catalog.page }}ページ</p>
+            {% if admin_view.devices or camera_devices %}
             <div class="device-grid" id="device-list-grid">
               {% for device in admin_view.devices %}
               <article class="device-tile" aria-current="{{ 'true' if device.id == selected_device_id else 'false' }}" data-device-id="{{ device.id }}">
@@ -3236,9 +3322,28 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 {% if not demo_mode %}<button type="button" class="device-delete-button" data-delete-device="{{ device.id }}" data-delete-device-name="{{ device.name }}">一覧から削除</button>{% endif %}
               </article>
               {% endfor %}
+              {% for camera in camera_devices %}
+              <article class="device-tile" data-camera-id="{{ camera.id }}">
+                <a class="device-tile-link" href="{{ camera.preview_url }}">
+                  <div>
+                    <div class="device-title">{{ camera.name }}</div>
+                    <div class="device-sub">ネットワークカメラ / {{ camera.camera_type }}</div>
+                    <div class="device-sub">{{ camera.id }}</div>
+                  </div>
+                  <div><span class="badge good">登録済み</span></div>
+                  <div class="tile-metrics">
+                    <div class="mini"><span>接続先</span><strong>{{ camera.ip_address }}</strong></div>
+                    <div class="mini"><span>ストリーム</span><strong>{{ camera.stream }}</strong></div>
+                    <div class="mini"><span>タイムラプス</span><strong>{{ "有効" if camera.timelapse else "無効" }}</strong></div>
+                  </div>
+                </a>
+                <a class="camera-edit-link" href="/cameras/{{ camera.id }}/edit">設定</a>
+                <button type="button" class="device-delete-button" data-delete-camera="{{ camera.id }}" data-delete-camera-name="{{ camera.name }}">登録を解除</button>
+              </article>
+              {% endfor %}
             </div>
             {% else %}
-            <div class="empty">{% if device_query %}一致する機器はありません。{% else %}まだ MQTT device が登録されていません。{% endif %}</div>
+            <div class="empty">{% if device_query %}一致する機器はありません。{% else %}まだ機器が登録されていません。{% endif %}</div>
             {% endif %}
             {% if device_catalog.has_previous or device_catalog.has_next %}<nav class="device-pagination" aria-label="機器一覧ページ">{% if device_catalog.previous_url %}<a href="{{ device_catalog.previous_url }}">前へ</a>{% endif %}<span>{{ device_catalog.page }} / {{ device_catalog.page_count }}</span>{% if device_catalog.next_url %}<a href="{{ device_catalog.next_url }}">次へ</a>{% endif %}</nav>{% endif %}
           </section>
@@ -3830,6 +3935,25 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               } catch (error) {
                 button.disabled = false;
                 window.alert("削除できませんでした: " + error.message);
+              }
+            });
+          });
+
+          document.querySelectorAll("[data-delete-camera]").forEach((button) => {
+            button.addEventListener("click", async () => {
+              const cameraId = button.getAttribute("data-delete-camera");
+              const cameraName = button.getAttribute("data-delete-camera-name") || cameraId;
+              const confirmed = window.confirm(
+                cameraName + "（" + cameraId + "）の登録を解除しますか？\\n\\n撮影済み画像は残ります。圃場やInstagramで使用中のカメラは解除できません。",
+              );
+              if (!confirmed) return;
+              button.disabled = true;
+              try {
+                await requestJson("/local/api/cameras/" + encodeURIComponent(cameraId), { method: "DELETE" }, "カメラ登録を解除しています...");
+                window.location.reload();
+              } catch (error) {
+                button.disabled = false;
+                window.alert("解除できませんでした: " + error.message);
               }
             });
           });
@@ -5271,6 +5395,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         list_path=list_path,
         device_query=device_query,
         device_catalog=device_catalog,
+        camera_devices=camera_devices,
     )
 
 
@@ -5779,15 +5904,33 @@ def search_field_layout_devices_api(field_id):
 
 
 def _field_layout_devices(field_id, field):
-
     records = device_config_service().get_all_records()
+    camera_records = {record["id"]: record for record in camera_management_service().list() if record.get("id")}
     assignments = _layout_device_assignments()
     field_device_ids = set(field.get("device_ids") or []) | set(field.get("camera_device_ids") or [])
-    device_ids = sorted(set(records) | field_device_ids)
+    device_ids = sorted(set(records) | set(camera_records) | field_device_ids)
     devices = []
     for device_id in device_ids:
         assigned_field_id = assignments.get(device_id, "")
         if assigned_field_id and assigned_field_id != field_id:
+            continue
+        camera_record = camera_records.get(device_id)
+        if camera_record is not None:
+            devices.append(
+                {
+                    "id": device_id,
+                    "name": camera_record.get("name") or device_id,
+                    "device_kind": "CAM",
+                    "kind_label": _device_kind_label("CAM"),
+                    "group_label": "カメラ",
+                    "assigned_field_id": assigned_field_id,
+                    "state": "active" if camera_record.get("credentials_configured") else "pending",
+                    "location": camera_record.get("ip_address") or "",
+                    "resources": [],
+                    "preview_url": camera_record.get("preview_url") or f"/camera/{quote(str(device_id), safe='')}/preview",
+                    "manage_url": f"/cameras/{quote(str(device_id), safe='')}/edit",
+                }
+            )
             continue
         record = records.get(device_id) or {}
         config = record.get("config") if isinstance(record.get("config"), dict) else {}
@@ -5813,6 +5956,8 @@ def _field_layout_devices(field_id, field):
                 "state": record.get("state") or "unknown",
                 "location": record.get("location") or "",
                 "resources": resources,
+                "preview_url": "",
+                "manage_url": f"/mqtt-devices/{quote(str(device_id), safe='')}",
             }
         )
     return devices
@@ -6969,7 +7114,12 @@ def _field_device_records(field: dict, layout: dict):
     layout_device_ids = {(placement.get("binding") or {}).get("device_id") for space in layout.get("spaces", []) for placement in space.get("placements", [])}
     relevant_device_ids = layout_device_ids | set(field.get("device_ids") or []) | set(field.get("camera_device_ids") or [])
     config_service = device_config_service()
-    return {device_id: record for device_id in relevant_device_ids - {None, ""} if (record := config_service.find_record(device_id)) is not None}
+    records = {device_id: record for device_id in relevant_device_ids - {None, ""} if (record := config_service.find_record(device_id)) is not None}
+    for device_id in relevant_device_ids - {None, ""} - set(records):
+        camera = camera_management_service().get(device_id)
+        if camera is not None:
+            records[device_id] = {**camera, "device_kind": "CAM", "state": "active" if camera.get("credentials_configured") else "pending"}
+    return records
 
 
 def _active_planting_growth_targets(active_plantings):
@@ -7072,6 +7222,7 @@ def _build_installation_tree(layout: dict, device_records: dict, active_planting
             if crop_label:
                 detail_parts.append(crop_label)
             device_id = binding.get("device_id") or ""
+            is_camera = binding.get("resource_type") == "camera"
             if device_id:
                 record = device_records.get(device_id) or {}
                 detail_parts.append(record.get("name") or device_id)
@@ -7080,6 +7231,9 @@ def _build_installation_tree(layout: dict, device_records: dict, active_planting
             if preset in LAYOUT_CULTIVATION_PRESETS:
                 relation = f"潅水: {'、'.join(watering_source_names)}" if watering_source_names else "手動潅水"
                 relation_kind = "watering" if watering_source_names else "manual"
+            elif is_camera:
+                relation = f"監視: {'、'.join(target_labels)}" if target_labels else "監視エリア未設定"
+                relation_kind = "target" if target_labels else "manual"
             else:
                 relation = f"対象: {'、'.join(target_labels)}" if target_labels else ""
                 relation_kind = "target" if target_labels else ""
@@ -7093,14 +7247,18 @@ def _build_installation_tree(layout: dict, device_records: dict, active_planting
                     "relation": relation,
                     "relation_kind": relation_kind,
                     "href": (
-                        f"/mqtt-devices/{quote(str(device_id), safe='')}" if device_id else _layout_placement_url(field_id, space_id, placement.get("id"))
+                        f"/camera/{quote(str(device_id), safe='')}/preview"
+                        if device_id and is_camera
+                        else f"/mqtt-devices/{quote(str(device_id), safe='')}"
+                        if device_id
+                        else _layout_placement_url(field_id, space_id, placement.get("id"))
                     ),
-                    "action_label": "機器詳細を開く" if device_id else "配置詳細を開く",
+                    "action_label": "カメラ映像を見る" if device_id and is_camera else "機器詳細を開く" if device_id else "配置詳細を開く",
                 }
             )
 
             resource_type = binding.get("resource_type") or "device"
-            if device_id and resource_type != "device":
+            if device_id and resource_type != "device" and not is_camera:
                 resource_id = binding.get("resource_id") or ""
                 rows.append(
                     {

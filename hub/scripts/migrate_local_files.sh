@@ -6,6 +6,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 REPO_LOCAL_FILES=(
   ".env"
+  ".camera_credentials.json"
   ".camera_device_list.json"
   ".device_configs.json"
   ".device_list.json"

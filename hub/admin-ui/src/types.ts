@@ -10,6 +10,7 @@ export type PlacementPreset =
   | "hydroponic_bed"
   | "watering_device"
   | "sensor"
+  | "camera"
   | "irrigation_line"
   | "tank"
   | "grow_light"
@@ -82,6 +83,8 @@ export interface LayoutDevice {
   group_label: string;
   assigned_field_id: string;
   resources: DeviceResource[];
+  preview_url?: string;
+  manage_url?: string;
 }
 
 export interface GrowthTarget {

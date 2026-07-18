@@ -38,6 +38,53 @@ class _DeviceRemoval:
         return self.repository.delete(device_id)
 
 
+class _CameraManagement:
+    def __init__(self):
+        self.records = {}
+        self.test_payloads = []
+
+    def list(self, query=""):
+        return [
+            record for record in self.records.values() if not query or query.casefold() in f"{record['id']} {record['name']} {record['camera_type']}".casefold()
+        ]
+
+    def get(self, device_id):
+        return self.records.get(device_id)
+
+    def create(self, payload):
+        device_id = "INACD-created"
+        record = {
+            "id": device_id,
+            "name": payload["name"],
+            "camera_type": payload["camera_type"],
+            "ip_address": payload["ip_address"],
+            "port": int(payload.get("port") or 554),
+            "channel": int(payload.get("channel") or 1),
+            "stream": payload.get("stream") or "main",
+            "rtsp_path": payload.get("rtsp_path") or "",
+            "timelapse": bool(payload.get("timelapse")),
+            "username": payload.get("username") or "",
+            "credentials_configured": True,
+            "preview_url": f"/camera/{device_id}/preview",
+            "images_url": f"/camera/{device_id}/images",
+        }
+        self.records[device_id] = record
+        return record
+
+    def update(self, device_id, payload):
+        self.records[device_id] = {**self.records[device_id], **payload, "id": device_id}
+        self.records[device_id].pop("password", None)
+        return self.records[device_id]
+
+    def test_connection(self, payload, device_id=None):
+        self.test_payloads.append((device_id, payload))
+        return {"ok": True, "message": "RTSP映像から静止画を取得できました"}
+
+    def delete(self, device_id, deleted_by="unknown"):
+        del deleted_by
+        return self.records.pop(device_id, None)
+
+
 class WebServerOTATest(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
@@ -66,10 +113,13 @@ class WebServerOTATest(unittest.TestCase):
         self.original_device_config_service = web_server.device_config_service
         self.original_device_removal_service = web_server.device_removal_service
         self.original_ota_update_service = web_server.ota_update_service
+        self.original_camera_management_service = web_server.camera_management_service
         self.original_list_device_events = web_server.list_device_events
         web_server.device_config_service = lambda: self.device_service
         web_server.device_removal_service = lambda: _DeviceRemoval(self.device_repository)
         web_server.ota_update_service = lambda: self.service
+        self.camera_management = _CameraManagement()
+        web_server.camera_management_service = lambda: self.camera_management
         web_server.list_device_events = lambda *args, **kwargs: []
         self.client = web_server.app.test_client()
 
@@ -78,6 +128,7 @@ class WebServerOTATest(unittest.TestCase):
         web_server.device_config_service = self.original_device_config_service
         web_server.device_removal_service = self.original_device_removal_service
         web_server.ota_update_service = self.original_ota_update_service
+        web_server.camera_management_service = self.original_camera_management_service
         web_server.list_device_events = self.original_list_device_events
         self.tmp_dir.cleanup()
 
@@ -189,6 +240,65 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn(f'data-delete-device="{device_id}"', html)
         self.assertNotIn("灌水推移", html)
         self.assertNotIn('id="metadata-form"', html)
+
+    def test_mqtt_devices_list_shows_registered_camera_and_registration_link(self):
+        camera_id = "INACD-00000000-0000-4000-8000-000000000301"
+        self.camera_management.records[camera_id] = {
+            "id": camera_id,
+            "name": "ハウス東側",
+            "camera_type": "reolink",
+            "ip_address": "192.168.1.84",
+            "port": 554,
+            "channel": 1,
+            "stream": "main",
+            "rtsp_path": "",
+            "timelapse": True,
+            "username": "camera-user",
+            "credentials_configured": True,
+            "preview_url": f"/camera/{camera_id}/preview",
+            "images_url": f"/camera/{camera_id}/images",
+        }
+
+        response = self.client.get("/mqtt-devices")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("ハウス東側", html)
+        self.assertIn("ネットワークカメラ / reolink", html)
+        self.assertIn(f'href="/cameras/{camera_id}/edit"', html)
+        self.assertIn('href="/cameras/new"', html)
+        self.assertNotIn("camera-user", html)
+
+    def test_camera_form_and_api_support_registration_and_connection_test(self):
+        form_response = self.client.get("/cameras/new")
+        created = self.client.post(
+            "/local/api/cameras",
+            json={
+                "name": "ハウス東側",
+                "camera_type": "reolink",
+                "ip_address": "192.168.1.84",
+                "username": "camera-user",
+                "password": "secret",
+            },
+        )
+        tested = self.client.post(
+            "/local/api/cameras/test-connection",
+            json={
+                "name": "ハウス東側",
+                "camera_type": "reolink",
+                "ip_address": "192.168.1.84",
+                "username": "camera-user",
+                "password": "secret",
+            },
+        )
+
+        self.assertEqual(form_response.status_code, 200)
+        self.assertIn('id="camera-address"', form_response.get_data(as_text=True))
+        self.assertIn('id="test-camera"', form_response.get_data(as_text=True))
+        self.assertEqual(created.status_code, 201)
+        self.assertNotIn("password", created.get_json())
+        self.assertEqual(tested.status_code, 200)
+        self.assertTrue(tested.get_json()["ok"])
 
     def test_mqtt_device_can_be_deleted_without_recreating_detail_record(self):
         device_id = "INADS-OLD-FIRMWARE-ID"
