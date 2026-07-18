@@ -1,3 +1,4 @@
+import base64
 import json
 from datetime import date, timedelta
 from pathlib import Path
@@ -63,6 +64,7 @@ class AIContentService:
     DEFAULT_BASE_URL = "https://api.openai.com/v1"
     DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "data" / "instagram_caption_prompt.txt"
     MAX_PROMPT_FILE_BYTES = 32 * 1024
+    MAX_GROWTH_IMAGE_BYTES = 10 * 1024 * 1024
 
     def __init__(self):
         self.ai_settings = setting().get("ai")
@@ -467,6 +469,97 @@ class AIContentService:
         except RuntimeError:
             logger.exception("Falling back to deterministic plant answer")
             return fallback
+
+    def image_analysis_available(self):
+        return self._channel_enabled("image_analyze") and bool(self.ai_settings.get("image_analyze_model"))
+
+    def assess_plant_growth(self, context: dict, images: list[dict]):
+        if not self.image_analysis_available():
+            raise RuntimeError("AI image analysis is not configured")
+        if not isinstance(context, dict):
+            raise RuntimeError("plant growth context is invalid")
+
+        image_content = []
+        for image in images[:2]:
+            image_bytes = image.get("bytes") if isinstance(image, dict) else None
+            if not isinstance(image_bytes, bytes) or not image_bytes or len(image_bytes) > self.MAX_GROWTH_IMAGE_BYTES:
+                raise RuntimeError("plant growth image is invalid")
+            label = str(image.get("label") or "観察画像")[:80]
+            captured_at = str(image.get("captured_at") or "")[:80]
+            encoded = base64.b64encode(image_bytes).decode("ascii")
+            image_content.extend(
+                [
+                    {"type": "text", "text": f"{label}（撮影: {captured_at or '不明'}）"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}},
+                ]
+            )
+        if not image_content:
+            raise RuntimeError("plant growth image is required")
+
+        serialized_context = json.dumps(context, ensure_ascii=False, separators=(",", ":"), default=str)
+        output_contract = {
+            "overall_status": "healthy | attention | concern | insufficient_evidence",
+            "confidence": "0.0〜1.0",
+            "summary": "画像から確認できる状態の簡潔な要約",
+            "observations": [
+                {
+                    "category": "growth | leaf | flower | fruit | pest | disease | water | environment | other",
+                    "finding": "画像で確認できた事実",
+                    "evidence": "画像内の位置・形・色などの根拠",
+                    "severity": "info | watch | warning",
+                }
+            ],
+            "comparison": {"available": True, "summary": "前回との差", "changes": ["確認できた変化"]},
+            "concerns": [{"title": "懸念", "severity": "watch | warning", "evidence": "根拠"}],
+            "suggested_actions": [
+                {
+                    "title": "ユーザーが確認してから行う作業候補",
+                    "action_type": "observation | watering | fertilization | pest_control | pruning | pollination | harvest | other",
+                    "priority": "required | should | recommended | optional",
+                    "timing": "実施時期の目安",
+                    "reason": "画像・比較・センサー情報に基づく理由",
+                    "checks_before_action": ["実施前に現物で確認する項目"],
+                    "instructions": ["安全な確認・作業手順"],
+                    "skip_conditions": ["見送る条件"],
+                }
+            ],
+            "limitations": ["画像だけでは判断できない事項"],
+        }
+        content = [
+            {
+                "type": "text",
+                "text": (
+                    "登録済みの圃場・作物情報とカメラ画像を使い、作物の生育状態を評価してください。"
+                    "現在画像が1枚目、比較画像がある場合は2枚目です。画像で見える事実、時系列の変化、推測を区別してください。"
+                    "病害虫名や欠乏症を画像だけで確定診断せず、疑いと追加確認に留めてください。"
+                    "農薬・肥料・植物成長調整剤の製品名、使用量、希釈倍率を新たに提案しないでください。"
+                    "潅水、施肥、防除、剪定、収穫など不可逆または影響の大きい作業は、現物確認、測定、製品ラベル、"
+                    "または専門家確認をchecks_before_actionとskip_conditionsに明記してください。"
+                    "根拠が不足する場合はoverall_statusをinsufficient_evidenceにし、観察作業を優先してください。"
+                    "出力は説明文やMarkdownを付けず、次の契約と同じキーを持つJSONオブジェクトだけにしてください。\n"
+                    f"出力契約: {json.dumps(output_contract, ensure_ascii=False, separators=(',', ':'))}\n"
+                    f"登録情報: {serialized_context}"
+                ),
+            },
+            *image_content,
+        ]
+        response_text = self._chat_completion(
+            api_key=self.ai_settings.get("image_analyze_api_key"),
+            base_url=self.ai_settings.get("image_analyze_base_url"),
+            model=self.ai_settings.get("image_analyze_model"),
+            messages=[
+                {
+                    "role": "system",
+                    "content": "あなたは農作物の定点画像を慎重に評価する栽培観察アシスタントです。JSONだけを返します。",
+                },
+                {"role": "user", "content": content},
+            ],
+            temperature=0.1,
+        )
+        try:
+            return self._parse_json_object(response_text)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError("AI image analysis returned invalid JSON") from exc
 
     def _summarize_visuals(self, media_context: dict):
         if not self._channel_enabled("image_analyze"):
@@ -1203,6 +1296,23 @@ class AIContentService:
         if isinstance(content, list):
             return "\n".join(item.get("text", "") for item in content if item.get("type") == "text")
         return ""
+
+    def _parse_json_object(self, value: str):
+        text = str(value or "").strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        start = text.find("{")
+        if start < 0:
+            raise ValueError("JSON object not found")
+        parsed, _ = json.JSONDecoder().raw_decode(text[start:])
+        if not isinstance(parsed, dict):
+            raise ValueError("JSON response must be an object")
+        return parsed
 
 
 __instance = None

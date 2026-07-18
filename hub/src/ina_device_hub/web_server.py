@@ -17,6 +17,14 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from ina_device_hub.agri_action_service import METRIC_LABELS, build_action_candidates
 from ina_device_hub.ai_content_service import ai_content_service
 from ina_device_hub.camera_connector import camera_connector
+from ina_device_hub.camera_growth_monitoring_service import (
+    CameraGrowthAIUnavailableError,
+    CameraGrowthAnalysisError,
+    CameraGrowthCaptureError,
+    CameraGrowthMonitoringNotFoundError,
+    CameraGrowthMonitoringValidationError,
+    camera_growth_monitoring_service,
+)
 from ina_device_hub.camera_management_service import (
     CameraNotFoundError,
     CameraRemovalConflictError,
@@ -167,7 +175,12 @@ def authenticate_hub_request():
 
 @app.after_request
 def apply_security_headers(response):
-    if request.path == "/settings" or request.path.startswith(("/local/api/settings/", "/local/api/cameras", "/cameras")):
+    if (
+        request.path == "/settings"
+        or request.path.startswith(("/local/api/settings/", "/local/api/cameras", "/cameras"))
+        or "/growth-monitoring" in request.path
+        or "/camera-growth-assessments" in request.path
+    ):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"
     response.headers.setdefault("Referrer-Policy", "no-referrer")
@@ -5810,6 +5823,62 @@ def field_calendar_page(field_id):
         planting_id=request.args.get("planting", "").strip(),
         action_id=request.args.get("action", "").strip(),
     )
+
+
+@app.route("/fields/<field_id>/growth-monitoring", methods=["GET"])
+def field_growth_monitoring_page(field_id):
+    try:
+        dashboard = camera_growth_monitoring_service().dashboard(field_id)
+    except CameraGrowthMonitoringNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return render_template(
+        "field_growth_monitoring.html",
+        dashboard=dashboard,
+        current_user=current_user_from_request(request),
+    )
+
+
+@app.route("/local/api/fields/<field_id>/camera-growth-assessments", methods=["GET"])
+def list_camera_growth_assessments_api(field_id):
+    try:
+        items = camera_growth_monitoring_service().list_assessments(
+            field_id,
+            camera_id=request.args.get("camera_id", "").strip(),
+            limit=_request_limit(default=50, maximum=200),
+        )
+    except CameraGrowthMonitoringNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"items": items})
+
+
+@app.route("/local/api/fields/<field_id>/camera-growth-assessments", methods=["POST"])
+def create_camera_growth_assessment_api(field_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    camera_id = str(request_body.get("camera_id") or "").strip()
+    if not camera_id:
+        return jsonify({"error": "camera_id is required"}), 400
+    user = current_user_from_request(request)
+    preferences = effective_preferences(user_preference_repository(), user.email)
+    try:
+        assessment = camera_growth_monitoring_service().create_assessment(
+            field_id,
+            camera_id,
+            created_by=user.email,
+            audience={"experience_level": (preferences.get("preferences") or {}).get("cultivation_experience", "standard")},
+        )
+    except CameraGrowthMonitoringNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except CameraGrowthMonitoringValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except CameraGrowthAIUnavailableError as exc:
+        return jsonify({"error": str(exc), "code": "image_ai_not_configured"}), 503
+    except CameraGrowthCaptureError as exc:
+        return jsonify({"error": str(exc), "code": "camera_capture_failed"}), 502
+    except CameraGrowthAnalysisError as exc:
+        return jsonify({"error": str(exc), "code": "image_analysis_failed"}), 502
+    return jsonify(assessment), 201
 
 
 @app.route("/local/api/fields/<field_id>/layout", methods=["GET"])

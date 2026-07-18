@@ -20,27 +20,45 @@ class CameraConnector:
         self.camera_device_repository = camera_repository or camera_device_repository()
         self.credential_repository = credential_repository or camera_credential_repository()
 
-    def take_picture(self, device_id: str):
+    def take_picture(self, device_id: str, timeout_seconds: int = 20):
         rtsp_url = self.construct_rtsp_url(device_id)
         if not rtsp_url:
             return None
-
-        # take picture
-        try:
-            # RTSP の入力を受け取り、出力先をパイプに設定。
-            # format='image2' で画像出力、vframes=1 で1フレームのみ取得
-            img_bytes, _ = (
-                ffmpeg.input(rtsp_url, rtsp_transport="tcp").output("pipe:", format="image2", vframes=1).run(capture_stdout=True, capture_stderr=True)
-            )
-            if not img_bytes:
-                logger.error(f"Failed to take picture: {device_id}")
-                return None
-
-            return img_bytes  # バイト列として画像データが返される
-        except ffmpeg.Error as e:
-            del e
-            logger.error("Failed to take picture from camera: %s", device_id)
+        ffmpeg_command = shutil.which("ffmpeg")
+        if not ffmpeg_command:
+            logger.error("ffmpeg is not installed; cannot capture camera frame")
             return None
+        command = [
+            ffmpeg_command,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-rtsp_transport",
+            "tcp",
+            "-i",
+            rtsp_url,
+            "-frames:v",
+            "1",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg",
+            "pipe:1",
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                timeout=max(1, min(int(timeout_seconds), 30)),
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            logger.warning("Camera frame capture failed or timed out: %s", device_id)
+            return None
+        if result.returncode != 0 or not result.stdout:
+            logger.warning("Camera frame capture failed: %s", device_id)
+            return None
+        return result.stdout
 
     def stream_rtsp(self, device_id: str):
         rtsp_url = self.construct_rtsp_url(device_id)

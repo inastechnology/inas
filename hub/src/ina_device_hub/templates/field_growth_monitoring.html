@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ dashboard.field.name }} - カメラ生育モニタリング</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/hub-ui.css">
+    <style>
+      :root { --green: #176b52; --ink: #26352d; --muted: #647168; --line: #d8e0da; --surface: #fff; }
+      * { box-sizing: border-box; }
+      body { margin: 0; color: var(--ink); background: #f2f5f2; font-family: system-ui, sans-serif; }
+      a { color: #176b5b; }
+      button { font: inherit; }
+      .page-header { border-bottom: 1px solid var(--line); background: #fff; }
+      .header-inner, main { width: min(1180px, calc(100% - 36px)); margin: auto; }
+      .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 0; }
+      .breadcrumb { margin: 0 0 5px; color: var(--muted); font-size: 12px; }
+      h1 { margin: 0; font-size: clamp(22px, 4vw, 31px); }
+      h2, h3, p { margin-top: 0; }
+      .header-links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+      .secondary-link { display: inline-flex; align-items: center; min-height: 36px; padding: 7px 11px; border: 1px solid #b9c6bd; border-radius: 6px; background: #fff; font-size: 12px; font-weight: 750; text-decoration: none; }
+      main { display: grid; gap: 18px; padding: 22px 0 44px; }
+      .notice { padding: 14px 16px; border: 1px solid #b9d2c3; border-left: 5px solid var(--green); border-radius: 7px; background: #f6fbf8; }
+      .notice strong { display: block; margin-bottom: 4px; }
+      .notice p { margin: 0; color: #4e6257; font-size: 13px; line-height: 1.55; }
+      .notice.warning { border-color: #e1c7a7; border-left-color: #aa651f; background: #fff9f1; }
+      .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+      .section-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+      .source-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr)); gap: 14px; }
+      .source-card, .assessment-card, .empty { border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: 0 2px 8px rgba(34, 52, 41, .04); }
+      .source-card { overflow: hidden; }
+      .camera-image { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: #dfe6e1; }
+      .camera-placeholder { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 10; color: #68776e; background: #e8ede9; }
+      .source-body { display: grid; gap: 12px; padding: 15px; }
+      .source-title { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
+      .source-title h3 { margin-bottom: 3px; font-size: 18px; }
+      .meta { color: var(--muted); font-size: 11px; }
+      .badge { display: inline-flex; align-items: center; min-height: 24px; padding: 3px 8px; border-radius: 999px; color: #17563f; background: #e5f3eb; font-size: 11px; font-weight: 800; }
+      .badge.blocked { color: #87511f; background: #f9ebd8; }
+      .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+      .chip { padding: 4px 7px; border: 1px solid #ced9d1; border-radius: 999px; color: #42564b; background: #f7f9f7; font-size: 11px; }
+      .source-links { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; }
+      .blocking-list { margin: 0; padding-left: 20px; color: #7f4c23; font-size: 12px; line-height: 1.55; }
+      .analyze-button { min-height: 42px; padding: 9px 13px; border: 1px solid #125a43; border-radius: 6px; color: #fff; background: var(--green); font-weight: 800; cursor: pointer; }
+      .analyze-button:disabled { border-color: #bcc7bf; color: #77847b; background: #e7ece8; cursor: not-allowed; }
+      .source-status { min-height: 20px; margin: 0; color: #4d6257; font-size: 12px; }
+      .source-status.error { color: #a03c31; }
+      .history { display: grid; gap: 14px; }
+      .assessment-card { padding: 17px; }
+      .assessment-head { display: flex; align-items: start; justify-content: space-between; gap: 14px; margin-bottom: 14px; }
+      .assessment-head h3 { margin-bottom: 4px; font-size: 18px; }
+      .status-badge { flex: none; padding: 6px 10px; border-radius: 5px; font-size: 12px; font-weight: 850; }
+      .status-healthy { color: #176044; background: #dff2e7; }
+      .status-attention { color: #805313; background: #f8ebcc; }
+      .status-concern { color: #963c30; background: #f8dedb; }
+      .status-insufficient_evidence { color: #5b6460; background: #e8ece9; }
+      .assessment-summary { padding: 12px 14px; border-left: 4px solid #579078; background: #f4f8f5; line-height: 1.65; white-space: pre-wrap; }
+      .evidence-grid { display: grid; grid-template-columns: minmax(230px, .8fr) minmax(300px, 1.2fr); gap: 15px; margin-top: 15px; }
+      .comparison-images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+      .comparison-image { overflow: hidden; border: 1px solid var(--line); border-radius: 6px; background: #edf1ee; }
+      .comparison-image img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+      .comparison-image span { display: block; padding: 5px 7px; color: var(--muted); font-size: 10px; }
+      .detail-stack { display: grid; gap: 12px; }
+      .detail-block { padding: 12px; border: 1px solid #e0e5e1; border-radius: 6px; }
+      .detail-block h4 { margin: 0 0 8px; font-size: 13px; }
+      .detail-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+      .detail-list li { color: #4b5d53; font-size: 12px; line-height: 1.55; }
+      .detail-list strong { color: var(--ink); }
+      .action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 9px; margin-top: 10px; }
+      .action-card { padding: 12px; border: 1px solid #d7dfd9; border-left: 4px solid #477c66; border-radius: 6px; background: #fcfdfc; }
+      .action-card header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+      .action-card h4 { margin: 0; font-size: 14px; }
+      .action-card p, .action-card li { color: #4d5d54; font-size: 11px; line-height: 1.55; }
+      .action-card p { margin-bottom: 6px; }
+      .action-card ul { margin: 4px 0 0; padding-left: 18px; }
+      .review-warning { margin: 12px 0 0; padding: 9px 11px; border-radius: 5px; color: #78451f; background: #fff1df; font-size: 11px; font-weight: 750; }
+      .empty { padding: 28px; color: var(--muted); text-align: center; }
+      @media (max-width: 720px) {
+        .header-inner { align-items: flex-start; flex-direction: column; }
+        .header-links { justify-content: flex-start; }
+        .evidence-grid { grid-template-columns: 1fr; }
+        .assessment-head { flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body class="hub-shell hub-growth-monitoring">
+    {% set action_labels = {'observation':'観察', 'watering':'潅水', 'fertilization':'施肥', 'pest_control':'防除', 'pruning':'剪定', 'pollination':'受粉・結実', 'harvest':'収穫', 'other':'その他'} %}
+    <header class="page-header">
+      <div class="header-inner">
+        <div>
+          <p class="breadcrumb"><a href="/fields">圃場</a> / <a href="/fields/{{ dashboard.field.id }}">{{ dashboard.field.name }}</a></p>
+          <h1>カメラ生育モニタリング</h1>
+        </div>
+        <nav class="header-links" aria-label="関連画面">
+          <a class="secondary-link" href="/fields/{{ dashboard.field.id }}">圃場詳細</a>
+          <a class="secondary-link" href="/fields/{{ dashboard.field.id }}/layout">設置ビュー</a>
+          <a class="secondary-link" href="/fields/{{ dashboard.field.id }}/calendar">作業カレンダー</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="notice">
+        <strong>撮影画像を、設定済みの画像AIへ送信して評価します</strong>
+        <p>評価は作業判断を補助する提案です。病害虫・欠乏症の確定診断や作業の自動実行は行いません。作業前に現物、センサー値、製品ラベルを確認してください。</p>
+      </section>
+      {% if not dashboard.image_ai_configured %}
+      <section class="notice warning">
+        <strong>画像AIが未設定です</strong>
+        <p>{% if current_user.role == 'admin' %}<a href="/settings#ai">アプリ設定</a>で画像AIのAPIキーとモデルを設定してください。{% else %}管理者に画像AIの設定を依頼してください。{% endif %}</p>
+      </section>
+      {% endif %}
+
+      <section>
+        <div class="section-heading">
+          <div><h2>監視カメラ</h2><p>設置ビューの監視対象と、定植中の作物を使って評価範囲を決めます。</p></div>
+          <span class="meta">{{ dashboard.sources|length }}台</span>
+        </div>
+        {% if dashboard.sources %}
+        <div class="source-grid">
+          {% for source in dashboard.sources %}
+          <article class="source-card">
+            {% if source.latest_frame %}<img class="camera-image" src="{{ source.latest_frame.url }}" alt="{{ source.camera_name }}の最新画像">{% else %}<div class="camera-placeholder">保存済み画像はありません</div>{% endif %}
+            <div class="source-body">
+              <div class="source-title">
+                <div><h3>{{ source.camera_name }}</h3><div class="meta">{{ source.space_name }} / {{ source.camera_placement_name }}</div></div>
+                <span class="badge{% if not source.ready %} blocked{% endif %}">{{ '評価可能' if source.ready else '設定が必要' }}</span>
+              </div>
+              <div>
+                <div class="meta">監視エリア</div>
+                <div class="chips">{% for area in source.monitored_areas %}<span class="chip">{{ area.name }}</span>{% else %}<span class="meta">未設定</span>{% endfor %}</div>
+              </div>
+              <div>
+                <div class="meta">対象作物</div>
+                <div class="chips">{% for planting in source.plantings %}<span class="chip">{{ planting.crop_label }} / {{ planting.placement_name }}</span>{% else %}<span class="meta">定植情報なし</span>{% endfor %}</div>
+              </div>
+              {% if source.blocking_reasons %}<ul class="blocking-list">{% for reason in source.blocking_reasons %}<li>{{ reason.message }}</li>{% endfor %}</ul>{% endif %}
+              <div class="source-links">{% if source.preview_url %}<a href="{{ source.preview_url }}">ライブ映像</a>{% endif %}{% if source.images_url %}<a href="{{ source.images_url }}">撮影履歴</a>{% endif %}<a href="/fields/{{ dashboard.field.id }}/layout">監視対象を編集</a></div>
+              <button class="analyze-button" type="button" data-analyze-camera="{{ source.camera_id }}"{% if not source.ready %} disabled{% endif %}>今の状態を撮影してAI評価</button>
+              <p class="source-status" data-analysis-status="{{ source.camera_id }}" aria-live="polite"></p>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty">設置ビューにカメラを配置し、監視エリアを選択するとここに表示されます。<br><a href="/fields/{{ dashboard.field.id }}/layout">設置ビューを開く</a></div>
+        {% endif %}
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <div><h2>評価履歴</h2><p>撮影時点の評価を残し、前回画像との変化を追跡します。</p></div>
+          <span class="meta">直近{{ dashboard.assessments|length }}件</span>
+        </div>
+        {% if dashboard.assessments %}
+        <div class="history">
+          {% for assessment in dashboard.assessments %}
+          {% set result = assessment.result %}
+          <article class="assessment-card" id="assessment-{{ assessment.id }}">
+            <header class="assessment-head">
+              <div><h3>{{ assessment.camera_name }} / {{ assessment.crop_labels|join('、') }}</h3><div class="meta">{{ assessment.created_at }} ・ AI確信度 {{ '%d'|format(result.confidence * 100) }}%</div></div>
+              <span class="status-badge status-{{ result.overall_status }}">{% if result.overall_status == 'healthy' %}概ね良好{% elif result.overall_status == 'attention' %}注意して観察{% elif result.overall_status == 'concern' %}懸念あり{% else %}根拠不足{% endif %}</span>
+            </header>
+            <div class="assessment-summary">{{ result.summary }}</div>
+            <div class="evidence-grid">
+              <div>
+                <div class="comparison-images">
+                  {% if assessment.current_frame %}<a class="comparison-image" href="{{ assessment.current_frame.url }}" target="_blank" rel="noreferrer"><img src="{{ assessment.current_frame.url }}" alt="現在画像"><span>現在 {{ assessment.current_frame.captured_at }}</span></a>{% endif %}
+                  {% if assessment.previous_frame %}<a class="comparison-image" href="{{ assessment.previous_frame.url }}" target="_blank" rel="noreferrer"><img src="{{ assessment.previous_frame.url }}" alt="比較画像"><span>比較 {{ assessment.previous_frame.captured_at }}</span></a>{% endif %}
+                </div>
+                <div class="detail-block" style="margin-top:9px"><h4>前回との差</h4><p class="meta">{{ result.comparison.summary }}</p>{% if result.comparison.changes %}<ul class="detail-list">{% for change in result.comparison.changes %}<li>{{ change }}</li>{% endfor %}</ul>{% endif %}</div>
+              </div>
+              <div class="detail-stack">
+                <section class="detail-block"><h4>画像で確認したこと</h4><ul class="detail-list">{% for observation in result.observations %}<li><strong>{{ observation.finding }}</strong>{% if observation.evidence %}<br>{{ observation.evidence }}{% endif %}</li>{% else %}<li>明確な観察結果は得られませんでした。</li>{% endfor %}</ul></section>
+                {% if result.concerns %}<section class="detail-block"><h4>懸念・追加確認</h4><ul class="detail-list">{% for concern in result.concerns %}<li><strong>{{ concern.title }}</strong>{% if concern.evidence %}<br>{{ concern.evidence }}{% endif %}</li>{% endfor %}</ul></section>{% endif %}
+                {% if result.limitations %}<section class="detail-block"><h4>この評価の限界</h4><ul class="detail-list">{% for limitation in result.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul></section>{% endif %}
+              </div>
+            </div>
+            <h3 style="margin-top:16px">作業の提案</h3>
+            <div class="action-grid">
+              {% for action in result.suggested_actions %}
+              <article class="action-card">
+                <header><h4>{{ action.title }}</h4><span class="badge">{{ action_labels.get(action.action_type, 'その他') }}</span></header>
+                {% if action.timing %}<p><strong>時期:</strong> {{ action.timing }}</p>{% endif %}
+                {% if action.reason %}<p>{{ action.reason }}</p>{% endif %}
+                {% if action.checks_before_action %}<strong class="meta">実施前の確認</strong><ul>{% for item in action.checks_before_action %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+                {% if action.instructions %}<strong class="meta">手順</strong><ul>{% for item in action.instructions %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+                {% if action.skip_conditions %}<strong class="meta">見送る条件</strong><ul>{% for item in action.skip_conditions %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+              </article>
+              {% endfor %}
+            </div>
+            {% if result.needs_human_review %}<p class="review-warning">この評価には人による現物確認が必要です。提案をそのまま自動実行しないでください。</p>{% endif %}
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}<div class="empty">まだ評価履歴がありません。評価可能なカメラから「今の状態を撮影してAI評価」を実行してください。</div>{% endif %}
+      </section>
+    </main>
+    <script>
+      document.querySelectorAll("[data-analyze-camera]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const cameraId = button.dataset.analyzeCamera;
+          const status = document.querySelector(`[data-analysis-status="${CSS.escape(cameraId)}"]`);
+          if (!window.confirm("現在画像を撮影し、設定済みの画像AIへ送信して評価します。実行しますか？")) return;
+          button.disabled = true;
+          status.classList.remove("error");
+          status.textContent = "撮影・評価中です。最大1〜2分かかることがあります…";
+          try {
+            const response = await fetch("/local/api/fields/{{ dashboard.field.id }}/camera-growth-assessments", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({camera_id: cameraId}),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.error || "評価を完了できませんでした");
+            status.textContent = "評価を保存しました。表示を更新します…";
+            window.location.replace(`/fields/{{ dashboard.field.id }}/growth-monitoring?updated=${Date.now()}#assessment-${body.id}`);
+          } catch (error) {
+            status.classList.add("error");
+            status.textContent = error.message || "評価を完了できませんでした";
+            button.disabled = false;
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

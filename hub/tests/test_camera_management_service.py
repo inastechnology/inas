@@ -203,6 +203,23 @@ class CameraConnectorTest(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertIn("LAN内", result["message"])
 
+    @patch("ina_device_hub.camera_connector.shutil.which", return_value="/usr/bin/ffmpeg")
+    @patch("ina_device_hub.camera_connector.subprocess.run")
+    def test_take_picture_uses_a_bounded_ffmpeg_process(self, run, _which):
+        repository = unittest.mock.Mock()
+        repository.get.return_value = CameraManagementServiceTest._payload(id="INACD-test")
+        credentials = unittest.mock.Mock()
+        credentials.get.return_value = {"username": "camera-user", "password": "camera-password"}
+        run.return_value = subprocess.CompletedProcess([], 0, stdout=b"jpeg", stderr=b"")
+        connector = CameraConnector(camera_repository=repository, credential_repository=credentials)
+        connector.construct_rtsp_url = unittest.mock.Mock(return_value="rtsp://redacted")
+
+        frame = connector.take_picture("INACD-test", timeout_seconds=7)
+
+        self.assertEqual(frame, b"jpeg")
+        self.assertEqual(run.call_args.kwargs["timeout"], 7)
+        self.assertIn("-frames:v", run.call_args.args[0])
+
 
 if __name__ == "__main__":
     unittest.main()

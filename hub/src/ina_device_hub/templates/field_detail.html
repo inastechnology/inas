@@ -355,7 +355,7 @@
     <header class="field-header">
       <div class="header-inner">
         <div><p class="breadcrumb"><a href="/fields">圃場一覧</a> / {{ field.name }}</p><h1>{{ field.name }}</h1><p class="meta">{{ field.location.prefecture }}{{ field.location.municipality }}{% if field.location.locality %} {{ field.location.locality }}{% endif %} / {{ environment_labels.get(field.location.environment_type, '環境未設定') }}</p></div>
-        <div class="header-actions"><a class="header-action" href="/preferences" title="個人設定">&#9786; 個人設定</a>{% if current_user.role == 'admin' %}<a class="header-action" href="/settings" title="アプリ設定">&#9881; アプリ設定</a>{% endif %}</div>
+        <div class="header-actions"><a class="header-action" href="/fields/{{ field.id }}/growth-monitoring" title="カメラで生育状態を確認">&#9673; 生育モニタ</a><a class="header-action" href="/preferences" title="個人設定">&#9786; 個人設定</a>{% if current_user.role == 'admin' %}<a class="header-action" href="/settings" title="アプリ設定">&#9881; アプリ設定</a>{% endif %}</div>
       </div>
     </header>
     <nav class="tabs-shell" aria-label="圃場詳細メニュー">
