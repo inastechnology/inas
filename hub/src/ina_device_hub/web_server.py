@@ -6141,6 +6141,7 @@ def create_field_planting_api(field_id):
             start_date=max(date.fromisoformat(planting["planted_on"]), date.today()).isoformat(),
             planning_notes=str(request_body.get("planning_notes") or "")[:2000],
             audience=_current_plant_advice_profile(),
+            mode=str(request_body.get("mode") or "automatic"),
         )
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -6267,6 +6268,7 @@ def regenerate_plant_calendar_api(planting_id):
             start_date=str(request_body.get("start_date") or date.today().isoformat()),
             planning_notes=str(request_body.get("planning_notes") or "")[:2000],
             audience=_current_plant_advice_profile(),
+            mode=str(request_body.get("mode") or "automatic"),
         )
     except (PlantManagementNotFoundError, PlantManagementValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
@@ -6275,17 +6277,45 @@ def regenerate_plant_calendar_api(planting_id):
     return jsonify({"planting": repository.get_planting(planting_id), "generation_task": generation_task}), 202
 
 
-@app.route("/local/api/plantings/<planting_id>/calendar/actions", methods=["POST"])
-def add_plant_calendar_action_api(planting_id):
+@app.route("/local/api/plantings/<planting_id>/calendar/regeneration-proposals/<task_id>/<proposal_id>", methods=["POST"])
+def decide_plant_calendar_regeneration_proposal_api(planting_id, task_id, proposal_id):
     request_body = request.get_json(silent=True)
     if not isinstance(request_body, dict):
         return jsonify({"error": "request body must be a JSON object"}), 400
+    repository = plant_management_repository()
+    planting = repository.get_planting(planting_id)
+    task = next((item for item in repository.field_bundle(planting["field_id"]).get("generation_tasks", []) if item.get("id") == task_id), None) if planting else None
+    if task is None or task.get("planting_id") != planting_id:
+        return jsonify({"error": "calendar generation task not found"}), 404
     try:
-        action = plant_management_repository().add_action(planting_id, request_body)
+        result = repository.decide_calendar_generation_proposal(task_id, proposal_id, str(request_body.get("decision") or ""))
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+    return jsonify(result)
+
+
+@app.route("/local/api/plantings/<planting_id>/calendar/actions", methods=["POST"])
+def add_plant_calendar_action_api(planting_id):
+    request_body = _plant_action_request_body()
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object or multipart payload"}), 400
+    repository = plant_management_repository()
+    try:
+        planting = repository.get_planting(planting_id)
+        if planting is None:
+            raise PlantManagementNotFoundError("planting not found")
+        request_body = _attach_plant_action_images(planting, request_body, request.files.getlist("images"))
+        action = repository.add_action(planting_id, request_body)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except (PlantManagementValidationError, FieldRecordMediaValidationError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except FieldRecordMediaStorageError as exc:
+        return jsonify({"error": str(exc)}), 502
     return jsonify(action), 201
 
 
@@ -6302,12 +6332,24 @@ def delete_plant_calendar_action_api(planting_id, action_id):
 
 @app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>", methods=["PATCH"])
 def update_plant_calendar_action_api(planting_id, action_id):
-    request_body = request.get_json(silent=True)
+    request_body = _plant_action_request_body()
     if not isinstance(request_body, dict):
-        return jsonify({"error": "request body must be a JSON object"}), 400
+        return jsonify({"error": "request body must be a JSON object or multipart payload"}), 400
     use_as_guidance = bool(request_body.pop("use_as_guidance", False))
+    repository = plant_management_repository()
     try:
-        action = plant_management_repository().update_action(
+        planting = repository.get_planting(planting_id)
+        if planting is None:
+            raise PlantManagementNotFoundError("planting not found")
+        current_calendar = repository.get_calendar(planting_id) or {}
+        current_action = next((item for item in current_calendar.get("actions") or [] if item.get("id") == action_id), {})
+        request_body = _attach_plant_action_images(
+            planting,
+            request_body,
+            request.files.getlist("images"),
+            existing=current_action.get("attachments") or [],
+        )
+        action = repository.update_action(
             planting_id,
             action_id,
             request_body,
@@ -6315,9 +6357,43 @@ def update_plant_calendar_action_api(planting_id, action_id):
         )
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
-    except PlantManagementValidationError as exc:
+    except (PlantManagementValidationError, FieldRecordMediaValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
+    except FieldRecordMediaStorageError as exc:
+        return jsonify({"error": str(exc)}), 502
     return jsonify(action)
+
+
+def _plant_action_request_body():
+    if request.is_json:
+        return request.get_json(silent=True)
+    raw_payload = request.form.get("payload", "")
+    try:
+        value = json.loads(raw_payload)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _attach_plant_action_images(planting, value, files, *, existing=None):
+    uploads = field_record_media_service().upload_images(
+        planting["field_id"],
+        str(value.get("window_start") or date.today().isoformat()),
+        files,
+    )
+    if not uploads:
+        return value
+    html = str(value.get("instructions_html") or "")[:12000]
+    for index, attachment in enumerate(uploads):
+        marker = f"{{{{image:{index}}}}}"
+        image_html = (
+            f'<figure><img src="{escape(attachment["url"], quote=True)}" '
+            f'alt="{escape(attachment.get("original_filename") or "作業画像", quote=True)}" loading="lazy"></figure>'
+        )
+        html = html.replace(marker, image_html)
+        if marker not in str(value.get("instructions_html") or ""):
+            html += image_html
+    return {**value, "instructions_html": html, "attachments": [*(existing or []), *uploads][-5:]}
 
 
 @app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>/skip", methods=["POST"])
@@ -6541,6 +6617,13 @@ def get_field_record_image_api(field_id, attachment_id):
     if attachment is None:
         plant_bundle = plant_management_repository().field_bundle(field_id)
         attachment = _find_attachment_in_records(plant_bundle.get("work_logs") or [], attachment_id)
+        if attachment is None:
+            calendar_actions = [
+                action
+                for calendar in (plant_bundle.get("calendars") or {}).values()
+                for action in calendar.get("actions") or []
+            ]
+            attachment = _find_attachment_in_records(calendar_actions, attachment_id)
     if attachment is None:
         return jsonify({"error": "record image not found"}), 404
     try:

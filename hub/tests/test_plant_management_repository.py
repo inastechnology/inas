@@ -119,7 +119,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
                 "material_kind": "cattle_manure",
                 "material_name": "牛ふん堆肥",
                 "amount_kg": 20,
-                "nutrient_percent": {"n": 2, "p2o5": 1, "k2o": 1.5},
+                "nutrient_percent": {"n": 2, "p2o5": 1, "k2o": 1.5, "mgo": 0.5},
                 "annual_available_percent": 10,
                 "effect_years": 2,
                 "start_delay_days": 0,
@@ -133,6 +133,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         self.assertEqual(application["placement_id"], "pot-a")
         self.assertEqual(context["effect_summary"]["nutrients"]["n"]["applied_kg"], 0.4)
         self.assertEqual(context["effect_summary"]["nutrients"]["n"]["remaining_kg"], 0.08)
+        self.assertEqual(context["effect_summary"]["nutrients"]["mgo"]["remaining_kg"], 0.02)
         self.assertEqual(bundle["fertilizer_applications"][0]["id"], application["id"])
 
     def test_fertilizer_history_requires_nutrient_analysis(self):
@@ -543,6 +544,165 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         bundle = self.repository.field_bundle("field-1")
         self.assertEqual(bundle["generation_tasks"][0]["status"], "succeeded")
         self.assertEqual(bundle["plantings"][0]["growth_targets"]["soil_moisture_percent"], {"min": 30.0, "max": 60.0})
+
+    def test_automatic_regeneration_reconciles_existing_actions_without_duplicates(self):
+        planting = self._create_blueberry()
+        original = self._create_calendar(planting["id"])
+        original_fertilizer_id = original["actions"][0]["id"]
+        queued = self.repository.enqueue_calendar_generation(
+            planting["id"], kind="regenerate", start_date="2026-07-20", mode="automatic"
+        )
+        self.repository.claim_next_calendar_generation()
+
+        result = self.repository.complete_calendar_generation(
+            queued["id"],
+            {
+                "actions": [
+                    {
+                        "rule_id": "rule-fertilization",
+                        "action_type": "fertilization",
+                        "title": "葉色とECを見て追肥を判断",
+                        "window_start": "2026-07-22",
+                        "window_end": "2026-08-05",
+                        "reason": "残存肥効も含めて判断するため",
+                    },
+                    {
+                        "action_type": "harvest",
+                        "title": "収穫適期を確認",
+                        "window_start": "2026-08-10",
+                        "window_end": "2026-08-20",
+                    },
+                ],
+                "generation": {"source": "test"},
+            },
+        )
+
+        actions = result["calendar"]["actions"]
+        self.assertEqual(sum(action["action_type"] == "fertilization" for action in actions), 1)
+        self.assertEqual(next(action for action in actions if action["action_type"] == "fertilization")["id"], original_fertilizer_id)
+        self.assertEqual({action["action_type"] for action in actions}, {"fertilization", "harvest"})
+
+    def test_review_regeneration_requires_each_change_to_be_decided(self):
+        planting = self._create_blueberry()
+        original = self._create_calendar(planting["id"])
+        original_titles = [action["title"] for action in original["actions"]]
+        queued = self.repository.enqueue_calendar_generation(
+            planting["id"], kind="regenerate", start_date="2026-07-20", mode="review"
+        )
+        self.repository.claim_next_calendar_generation()
+
+        result = self.repository.complete_calendar_generation(
+            queued["id"],
+            {
+                "growth_targets": {"soil_moisture_percent": {"min": 30, "max": 60}},
+                "actions": [
+                    {
+                        "rule_id": "rule-fertilization",
+                        "action_type": "fertilization",
+                        "title": "追肥前にECを確認",
+                        "window_start": "2026-07-23",
+                        "window_end": "2026-08-03",
+                    },
+                    {
+                        "action_type": "harvest",
+                        "title": "収穫適期を確認",
+                        "window_start": "2026-08-10",
+                        "window_end": "2026-08-20",
+                    },
+                ],
+                "generation": {"source": "test-review"},
+            },
+        )
+
+        self.assertEqual(result["task"]["status"], "awaiting_review")
+        self.assertEqual({item["change_type"] for item in result["task"]["proposals"]}, {"add", "update", "delete"})
+        self.assertEqual([action["title"] for action in self.repository.get_calendar(planting["id"])["actions"]], original_titles)
+        with self.assertRaises(PlantManagementConflictError):
+            self.repository.enqueue_calendar_generation(planting["id"], kind="regenerate", start_date="2026-08-01")
+
+        for proposal in result["task"]["proposals"]:
+            decision = "rejected" if proposal["change_type"] == "add" else "approved"
+            decided = self.repository.decide_calendar_generation_proposal(result["task"]["id"], proposal["id"], decision)
+
+        self.assertEqual(decided["task"]["status"], "succeeded")
+        titles = [action["title"] for action in decided["calendar"]["actions"]]
+        self.assertIn("追肥前にECを確認", titles)
+        self.assertNotIn("葉の病害虫確認", titles)
+        self.assertNotIn("収穫適期を確認", titles)
+        self.assertEqual(self.repository.get_planting(planting["id"])["growth_targets"]["soil_moisture_percent"], {"min": 35.0, "max": 65.0})
+
+    def test_regeneration_does_not_match_unrelated_recurring_actions_by_rule_id_alone(self):
+        planting = self._create_blueberry()
+        self.repository.create_calendar(
+            planting["id"],
+            [
+                {
+                    "rule_id": "rule-observation",
+                    "action_type": "observation",
+                    "title": "季節の生育変化と次の重点作業を確認",
+                    "window_start": "2027-04-15",
+                    "window_end": "2027-04-22",
+                }
+            ],
+        )
+        queued = self.repository.enqueue_calendar_generation(
+            planting["id"], kind="regenerate", start_date="2026-07-20", mode="review"
+        )
+        self.repository.claim_next_calendar_generation()
+
+        result = self.repository.complete_calendar_generation(
+            queued["id"],
+            {
+                "actions": [
+                    {
+                        "rule_id": "rule-observation",
+                        "action_type": "observation",
+                        "title": "定植後の活着確認",
+                        "window_start": "2026-07-20",
+                        "window_end": "2026-08-02",
+                    },
+                    {
+                        "rule_id": "rule-observation",
+                        "action_type": "observation",
+                        "title": "季節の生育変化と次の重点作業を確認",
+                        "window_start": "2027-04-15",
+                        "window_end": "2027-04-22",
+                    },
+                ]
+            },
+        )
+
+        self.assertEqual(len(result["task"]["proposals"]), 1)
+        self.assertEqual(result["task"]["proposals"][0]["change_type"], "add")
+        self.assertEqual(result["task"]["proposals"][0]["title"], "定植後の活着確認")
+
+    def test_regeneration_does_not_duplicate_an_in_progress_action(self):
+        planting = self._create_blueberry()
+        calendar = self._create_calendar(planting["id"])
+        in_progress = self.repository.update_action(
+            planting["id"], calendar["actions"][0]["id"], {"status": "in_progress"}
+        )
+        queued = self.repository.enqueue_calendar_generation(
+            planting["id"], kind="regenerate", start_date="2026-07-20", mode="review"
+        )
+        self.repository.claim_next_calendar_generation()
+
+        result = self.repository.complete_calendar_generation(
+            queued["id"],
+            {
+                "actions": [
+                    {
+                        "rule_id": in_progress["rule_id"],
+                        "action_type": in_progress["action_type"],
+                        "title": in_progress["title"],
+                        "window_start": in_progress["window_start"],
+                        "window_end": in_progress["window_end"],
+                    }
+                ]
+            },
+        )
+
+        self.assertFalse(any(item.get("after", {}).get("title") == in_progress["title"] for item in result["task"]["proposals"] if item.get("after")))
 
     def test_interrupted_calendar_generation_is_requeued_and_failed_task_can_be_retried(self):
         planting = self._create_blueberry()

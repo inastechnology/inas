@@ -37,6 +37,14 @@ async function dragCardToColumn(targetPage, actionId, column) {
   }, actionId);
 }
 
+async function selectCalendarWorkspace(targetPage, label) {
+  await targetPage.$$eval(".calendar-workspace-tabs button", (buttons, text) => {
+    const button = buttons.find((item) => item.textContent?.includes(text));
+    if (!(button instanceof HTMLButtonElement)) throw new Error(`calendar workspace was not found: ${text}`);
+    button.click();
+  }, label);
+}
+
 try {
   await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   await page.goto(`${baseUrl}/fields/${fieldId}`, { waitUntil: "networkidle0" });
@@ -81,22 +89,44 @@ try {
   await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
   assert.match(new URL(calendarPage.url()).pathname, /\/calendar$/);
   assert.equal(await calendarPage.$$(".installation-app").then((items) => items.length), 0, "calendar page must not mount the installation editor");
+  assert.match(await calendarPage.$eval(".calendar-workspace-tabs button.active", (button) => button.textContent || ""), /圃場の作業/);
+  assert.match(await calendarPage.$eval(".calendar-work-scope", (scope) => scope.textContent || ""), /圃場のすべての作物/, "the work board must offer all crops in the field");
+  assert.equal(await calendarPage.$$(".calendar-section-heading small").then((items) => items.filter((item) => /^r\d+/.test(item.textContent || "")).length), 0, "internal calendar revisions must stay hidden");
+  await selectCalendarWorkspace(calendarPage, "作物別の栽培計画");
+  await calendarPage.evaluate(() => { const shell = document.querySelector('.calendar-page-shell'); if (shell instanceof HTMLElement) shell.scrollTop = 0; });
+  await calendarPage.screenshot({ path: "/tmp/ina-calendar-crop-plan-desktop.png", fullPage: true });
+  await calendarPage.click(".calendar-generation .calendar-section-heading button");
+  await calendarPage.waitForSelector('.generation-mode-options input[value="review"]:checked');
+  assert.equal(await calendarPage.$$(".generation-mode-options label").then((items) => items.length), 2, "regeneration must offer review and automatic modes");
+  assert.match(await calendarPage.$eval(".calendar-generation form", (form) => form.textContent || ""), /現在の.*件の作業.*重複させません/s);
+  await calendarPage.$eval(".calendar-generation", (section) => section.scrollIntoView({ block: "start" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-calendar-regeneration-modes.png", fullPage: false });
+  await calendarPage.click('.calendar-generation .form-actions button[type="button"]');
+  await calendarPage.waitForFunction(() => !document.querySelector(".calendar-generation form"));
   assert.equal(await calendarPage.$$(".gantt-period-controls").then((items) => items.length), 1);
-  await calendarPage.waitForSelector(".calendar-kanban-card");
   assert.match(await calendarPage.$eval(".fertilizer-effect-panel", (panel) => panel.textContent || ""), /培地の施肥と残存肥効/);
   const fertilizerCount = await calendarPage.$$(".fertilizer-history-list article").then((items) => items.length);
-  await calendarPage.click(".fertilizer-effect-panel .calendar-section-heading button");
+  await calendarPage.$eval(".fertilizer-effect-panel .calendar-section-heading button", (button) => button.click());
   await calendarPage.waitForSelector("[data-fertilizer-form]");
   assert.match(await calendarPage.$eval("[data-fertilizer-form]", (form) => form.textContent || ""), /製品kgと養分kgを分けて計算/);
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="amount_kg"]', "20");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="n_percent"]', "2");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="p2o5_percent"]', "1");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="k2o_percent"]', "1.5");
+  await replaceValue(calendarPage, '[data-fertilizer-form] input[name="mgo_percent"]', "0.5");
   await calendarPage.click('[data-fertilizer-form] button[type="submit"]');
   await calendarPage.waitForFunction((before) => document.querySelectorAll(".fertilizer-history-list article").length > before, {}, fertilizerCount);
   assert.match(await calendarPage.$eval(".fertilizer-balance", (panel) => panel.textContent || ""), /N.*P₂O₅.*K₂O/);
+  assert.match(await calendarPage.$eval(".fertilizer-balance", (panel) => panel.textContent || ""), /MgO/);
+  assert.match(await calendarPage.$eval(".fertilizer-history-list", (panel) => panel.textContent || ""), /N 2%.*MgO（苦土） 0.5%/s);
   assert.match(await calendarPage.$eval(".fertilizer-caution", (panel) => panel.textContent || ""), /土壌分析.*EC.*収穫品質/);
-  await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-effect-desktop.png", fullPage: true });
+  await calendarPage.$eval(".fertilizer-effect-panel", (section) => section.scrollIntoView({ block: "start" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-effect-desktop.png", fullPage: false });
+  await selectCalendarWorkspace(calendarPage, "圃場の作業");
+  await calendarPage.waitForSelector(".calendar-kanban-card");
+  await calendarPage.evaluate(() => { const shell = document.querySelector('.calendar-page-shell'); if (shell instanceof HTMLElement) shell.scrollTop = 0; });
+  await calendarPage.screenshot({ path: "/tmp/ina-calendar-workboard-desktop.png", fullPage: true });
+  assert(await calendarPage.$eval(".calendar-kanban-toolbar > :first-child", (element) => element.classList.contains("calendar-action-date")), "the work date filter must be the leftmost control");
   assert.equal(await calendarPage.$$(".calendar-kanban-column").then((items) => items.length), 3, "the work board must always show three states");
   assert.match(await calendarPage.$eval('[data-kanban-status="planned"] > header', (header) => header.textContent || ""), /未完了.*人時/);
   assert.match(await calendarPage.$eval('[data-kanban-status="in_progress"] > header', (header) => header.textContent || ""), /作業中.*人時/);
@@ -109,6 +139,16 @@ try {
   assert.match(await calendarPage.$eval(".calendar-kanban-toolbar output", (output) => output.textContent || ""), /^0 \/ /);
   await replaceValue(calendarPage, '.calendar-kanban-toolbar input[type="search"]', "");
   await calendarPage.waitForFunction((expected) => document.querySelectorAll(".calendar-kanban-card").length === expected, {}, cardCountBeforeFilter);
+  const filterDate = await calendarPage.$eval('.calendar-kanban-card time', (time) => time.getAttribute("datetime"));
+  await replaceValue(calendarPage, '.calendar-action-date input[type="date"]', filterDate);
+  assert(await calendarPage.$$(".calendar-kanban-card").then((items) => items.length) > 0, "the date filter must retain work whose period includes the selected day");
+  await calendarPage.click('.calendar-action-date button');
+
+  await calendarPage.click('.calendar-action-list .calendar-section-heading button');
+  await calendarPage.waitForSelector('.calendar-action-create-dialog .new-action-form');
+  assert.match(await calendarPage.$eval('.calendar-action-create-dialog', (dialog) => dialog.textContent || ""), /対象の作物.*詳しい作業内容・画像/);
+  await calendarPage.screenshot({ path: "/tmp/ina-calendar-add-action-modal.png", fullPage: true });
+  await calendarPage.click('.calendar-action-create-dialog > header .icon-button');
 
   const draggableActionId = await calendarPage.$eval('[data-kanban-status="planned"] .calendar-kanban-card', (card) => card.getAttribute("data-action-id"));
   assert(draggableActionId, "a planned task must be available for drag and drop");
@@ -129,6 +169,7 @@ try {
     return 3;
   }));
   assert.deepEqual(urgencyOrder, [...urgencyOrder].sort((left, right) => left - right), "incomplete work must be sorted by urgency");
+  await selectCalendarWorkspace(calendarPage, "作物別の栽培計画");
   const completedGanttBar = await calendarPage.$(".gantt-bar.completed");
   if (completedGanttBar) {
     await completedGanttBar.click();
@@ -136,11 +177,20 @@ try {
     assert(await calendarPage.$(".calendar-action-detail-dialog .completed-badge"), "a completed gantt item must open its detail");
     await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
   }
+  await selectCalendarWorkspace(calendarPage, "圃場の作業");
   await calendarPage.click(".calendar-kanban-card");
   await calendarPage.waitForSelector(".calendar-action-detail-dialog .work-guidance");
   if (await calendarPage.$(".calendar-action-detail-dialog .calendar-action.planned")) {
     assert.equal(await calendarPage.$(".calendar-action-detail-dialog .complete-button"), null, "planned work must not offer completion recording");
     assert(await calendarPage.$(".calendar-action-detail-dialog .start-button"), "planned work must offer a start action");
+    await calendarPage.click(".calendar-action-detail-dialog .action-edit-button");
+    await calendarPage.waitForSelector(".action-edit-dialog .rich-action-content");
+    assert.match(await calendarPage.$eval(".action-edit-dialog > header", (header) => header.textContent || ""), /実績入力とは別に編集/);
+    await calendarPage.screenshot({ path: "/tmp/ina-calendar-edit-action-modal.png", fullPage: true });
+    await calendarPage.click(".action-edit-dialog > header .icon-button");
+    const deleteConfirmation = new Promise((resolve) => calendarPage.once("dialog", async (dialog) => { assert.match(dialog.message(), /元に戻せません/); await dialog.dismiss(); resolve(); }));
+    await calendarPage.click(".calendar-action-detail-dialog .action-icon-button.danger");
+    await deleteConfirmation;
     await calendarPage.screenshot({ path: "/tmp/ina-calendar-planned-action.png", fullPage: true });
   }
   assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-guidance", (panel) => panel.textContent || ""), /開始条件/);
@@ -149,6 +199,7 @@ try {
   assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-method-detail[open]", (panel) => panel.textContent || ""), /手順/);
   assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-method-detail[open]", (panel) => panel.textContent || ""), /頻度/);
   await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
+  await selectCalendarWorkspace(calendarPage, "作物別の栽培計画");
   await calendarPage.$eval('.gantt-period-controls input[type="month"]', (input) => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     setter?.call(input, "2025-07");
@@ -161,6 +212,7 @@ try {
   assert.match(await calendarPage.$eval(".care-profile-summary", (panel) => panel.textContent || ""), /EC/);
   assert.match(await calendarPage.$eval(".care-profile-summary", (panel) => panel.textContent || ""), /実施日起点/);
   await calendarPage.screenshot({ path: "/tmp/ina-care-profile-desktop.png", fullPage: true });
+  await selectCalendarWorkspace(calendarPage, "圃場の作業");
   const openedWorkRecord = await calendarPage.evaluate(() => {
     const cards = [...document.querySelectorAll(".calendar-kanban-card")];
     const card = cards.find((item) => item.textContent?.includes("追肥") && item.getAttribute("data-action-status") !== "completed")
@@ -184,10 +236,12 @@ try {
     await calendarPage.type(`${workMethodSelect} input[type="search"]`, "一致しない方法");
     assert(await calendarPage.$(`${workMethodSelect} [data-searchable-option][data-value="custom"]`), "custom method must remain available while filtering");
     await calendarPage.click(`${workMethodSelect} [data-searchable-option][data-value="custom"]`);
+    await calendarPage.select('.work-detail-fields select', "material_application");
     assert.match(await calendarPage.$eval(".work-detail-fields", (fields) => fields.textContent || ""), /実施内容/);
     assert.match(await calendarPage.$eval(".work-detail-fields", (fields) => fields.textContent || ""), /使用した資材・製品/);
     assert.match(await calendarPage.$eval(".work-detail-fields", (fields) => fields.textContent || ""), /実際の使用量・希釈・処理時間/);
-    assert.match(await calendarPage.$eval(".work-detail-fields", (fields) => fields.textContent || ""), /次回確認までの日数/);
+    assert.match(await calendarPage.$eval(".work-detail-fields", (fields) => fields.textContent || ""), /次回の確認目安.*AIの提案値/);
+    assert(Number(await calendarPage.$eval('.follow-up-default-field input', (input) => input.value)) > 0, "AI work must provide a default follow-up day");
     await calendarPage.screenshot({ path: "/tmp/ina-work-record-desktop.png", fullPage: true });
     await calendarPage.click('.work-record-form button[type="button"]');
     await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
@@ -213,6 +267,10 @@ try {
 
   await page.click("[data-field-tab='records']");
   await page.waitForSelector("[data-tab-panel='records']:not([hidden])");
+  assert.match(await page.$eval("#record-image-dropzone", (zone) => zone.textContent || ""), /画像を選択・貼り付け.*最大5枚/s);
+  await page.$eval("#field-record-form .record-extras", (details) => { details.open = true; });
+  await page.$eval("#field-record-composer", (section) => section.scrollIntoView({ block: "start" }));
+  await page.screenshot({ path: "/tmp/ina-field-record-image-paste.png", fullPage: false });
   assert(await page.$('input[aria-label="栽培記録を検索"]'), "the growing record history must provide API search");
   await page.type('input[aria-label="栽培記録を検索"]', "一致しない栽培記録");
   await page.waitForFunction(() => document.querySelector("#record-history-count")?.textContent?.trim() === "0 / 0件");
@@ -243,11 +301,13 @@ try {
       "/tmp/ina-field-todo-desktop.png",
       "/tmp/ina-environment-target-direct.png",
       "/tmp/ina-care-profile-desktop.png",
+      "/tmp/ina-calendar-regeneration-modes.png",
       "/tmp/ina-fertilizer-effect-desktop.png",
       "/tmp/ina-calendar-mobile.png",
       "/tmp/ina-calendar-planned-action.png",
       "/tmp/ina-field-monitoring-desktop.png",
       "/tmp/ina-field-cultivation-desktop.png",
+      "/tmp/ina-field-record-image-paste.png",
       "/tmp/ina-field-record-search-desktop.png",
       "/tmp/ina-field-cultivation-mobile.png",
       "/tmp/ina-ai-settings-mobile.png",

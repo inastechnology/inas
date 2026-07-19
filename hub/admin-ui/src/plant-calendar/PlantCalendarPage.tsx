@@ -6,24 +6,21 @@ import {
   askPlantQuestion,
   completePlantAction,
   createFertilizerApplication,
+  decidePlantCalendarRegenerationProposal,
   deleteFertilizerApplication,
   deletePlantAction,
   loadPlantBundle,
   regeneratePlantCalendar,
-  searchPlantActions,
   skipPlantAction,
   updatePlantAction,
 } from "../api";
 import { errorMessage } from "../formatters";
-import type { PlantBundle, PlantCalendarAction } from "../types";
+import type { PlantActionMutationPayload, PlantBundle } from "../types";
 import { PlantCalendarDrawer } from "./PlantCalendarDrawer";
 
 const EMPTY_BUNDLE: PlantBundle = {
   action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [],
 };
-const searchCalendarActions = (plantingId: string, query: string, page: number, signal: AbortSignal) => (
-  searchPlantActions(plantingId, { query, page, pageSize: 50, signal })
-);
 
 interface PlantCalendarPageProps {
   fieldId: string;
@@ -41,13 +38,10 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
   const [error, setError] = useState("");
 
   const refresh = async (preferredPlantingId = selectedPlantingId || initialPlantingId) => {
-    let nextBundle = await loadPlantBundle(fieldId, { compact: true, calendarPlantingId: preferredPlantingId });
+    const nextBundle = await loadPlantBundle(fieldId);
     const nextPlantingId = nextBundle.plantings.some((planting) => planting.status === "active" && planting.id === preferredPlantingId)
       ? preferredPlantingId
       : nextBundle.plantings.find((planting) => planting.status === "active")?.id ?? "";
-    if (nextPlantingId && !nextBundle.calendars[nextPlantingId]) {
-      nextBundle = await loadPlantBundle(fieldId, { compact: true, calendarPlantingId: nextPlantingId });
-    }
     setBundle(nextBundle);
     setSelectedPlantingId(nextPlantingId);
     return nextBundle;
@@ -89,10 +83,10 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
     }
   };
 
-  const regenerate = async (plantingId: string, startDate: string, planningNotes: string) => {
+  const regenerate = async (plantingId: string, startDate: string, planningNotes: string, mode: "automatic" | "review") => {
     setError("");
     try {
-      await regeneratePlantCalendar(plantingId, { start_date: startDate, planning_notes: planningNotes });
+      await regeneratePlantCalendar(plantingId, { start_date: startDate, planning_notes: planningNotes, mode });
       await refresh(plantingId);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -145,7 +139,10 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
         })}
         onAskQuestion={(plantingId, question) => execute(() => askPlantQuestion(plantingId, question), false)}
         onRegenerate={regenerate}
-        onAddAction={(plantingId, payload: Partial<PlantCalendarAction>) => execute(async () => {
+        onDecideRegeneration={(plantingId, taskId, proposalId, decision) => execute(async () => {
+          await decidePlantCalendarRegenerationProposal(plantingId, taskId, proposalId, decision);
+        })}
+        onAddAction={(plantingId, payload: PlantActionMutationPayload) => execute(async () => {
           await addPlantAction(plantingId, payload);
         })}
         onDeleteAction={(plantingId, actionId) => execute(async () => {
@@ -157,7 +154,6 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
         onDeleteFertilizer={(plantingId, applicationId) => execute(async () => {
           await deleteFertilizerApplication(plantingId, applicationId);
         })}
-        onSearchActions={searchCalendarActions}
       />
     </>
   );

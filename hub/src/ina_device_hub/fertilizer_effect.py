@@ -1,7 +1,7 @@
 from datetime import date, timedelta
 
-NUTRIENT_KEYS = ("n", "p2o5", "k2o")
-NUTRIENT_LABELS = {"n": "N", "p2o5": "P₂O₅", "k2o": "K₂O"}
+NUTRIENT_KEYS = ("n", "p2o5", "k2o", "mgo")
+NUTRIENT_LABELS = {"n": "N", "p2o5": "P₂O₅", "k2o": "K₂O", "mgo": "MgO（苦土）"}
 
 
 def fertilizer_effect_summary(applications: list[dict], *, as_of: str | date | None = None, horizon_days: int = 365):

@@ -1,4 +1,4 @@
-import type { FieldLayout, LayoutDevice, PlantActionCompletionPayload, PlantActionSkipPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
+import type { FieldLayout, LayoutDevice, PlantActionCompletionPayload, PlantActionMutationPayload, PlantActionSkipPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
 
 export interface SearchPage<Item> {
   items: Item[];
@@ -128,17 +128,30 @@ export function deleteFertilizerApplication(plantingId: string, applicationId: s
   );
 }
 
-export function regeneratePlantCalendar(plantingId: string, payload: { start_date: string; planning_notes: string }): Promise<unknown> {
+export function regeneratePlantCalendar(plantingId: string, payload: { start_date: string; planning_notes: string; mode: "automatic" | "review" }): Promise<unknown> {
   return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/regenerate`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
-export function addPlantAction(plantingId: string, payload: Partial<PlantCalendarAction>): Promise<PlantCalendarAction> {
+export function decidePlantCalendarRegenerationProposal(
+  plantingId: string,
+  taskId: string,
+  proposalId: string,
+  decision: "approved" | "rejected",
+): Promise<unknown> {
+  return requestJson(
+    `/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/regeneration-proposals/${encodeURIComponent(taskId)}/${encodeURIComponent(proposalId)}`,
+    { method: "POST", body: JSON.stringify({ decision }) },
+  );
+}
+
+export function addPlantAction(plantingId: string, payload: PlantActionMutationPayload): Promise<PlantCalendarAction> {
+  const form = actionMutationForm(payload);
   return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/actions`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: form,
   });
 }
 
@@ -151,12 +164,21 @@ export function deletePlantAction(plantingId: string, actionId: string): Promise
 export function updatePlantAction(
   plantingId: string,
   actionId: string,
-  payload: Partial<PlantCalendarAction> & { use_as_guidance?: boolean },
+  payload: PlantActionMutationPayload & { use_as_guidance?: boolean },
 ): Promise<PlantCalendarAction> {
+  const form = actionMutationForm(payload);
   return requestJson(
     `/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/actions/${encodeURIComponent(actionId)}`,
-    { method: "PATCH", body: JSON.stringify(payload) },
+    { method: "PATCH", body: form },
   );
+}
+
+function actionMutationForm(payload: PlantActionMutationPayload & { use_as_guidance?: boolean }): FormData {
+  const form = new FormData();
+  const { images = [], ...values } = payload;
+  form.append("payload", JSON.stringify(values));
+  images.slice(0, 5).forEach((image) => form.append("images", image));
+  return form;
 }
 
 export function completePlantAction(

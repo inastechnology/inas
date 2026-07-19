@@ -31,6 +31,7 @@ import {
   completePlantAction,
   createFertilizerApplication,
   createPlanting,
+  decidePlantCalendarRegenerationProposal,
   deleteFertilizerApplication,
   deletePlantAction,
   loadLayout,
@@ -39,7 +40,6 @@ import {
   regeneratePlantCalendar,
   saveLayout,
   searchLayoutDevices,
-  searchPlantActions,
   skipPlantAction,
   updatePlantAction,
   updatePlanting,
@@ -59,6 +59,7 @@ import type {
   Placement,
   PlacementPreset,
   PlantActionCompletionPayload,
+  PlantActionMutationPayload,
   PlantActionSkipPayload,
   PlantBundle,
   PlantCalendarGenerationTask,
@@ -85,9 +86,6 @@ const REQUESTED_SPACE_ID = INITIAL_QUERY.get("space") ?? "";
 const REQUESTED_PLACEMENT_ID = INITIAL_QUERY.get("placement") ?? "";
 const REQUESTED_PLANTING_ID = INITIAL_QUERY.get("planting") ?? "";
 const REQUESTED_TARGET_METRIC = INITIAL_QUERY.get("target_metric") ?? "";
-const searchCalendarActions = (plantingId: string, query: string, page: number, signal: AbortSignal) => (
-  searchPlantActions(plantingId, { query, page, pageSize: 50, signal })
-);
 
 interface LayoutConflictState {
   server: FieldLayout;
@@ -216,8 +214,8 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     [paletteQuery],
   );
 
-  const refreshPlants = async (calendarPlantingId = "") => {
-    const nextBundle = await loadPlantBundle(fieldId, { compact: true, calendarPlantingId });
+  const refreshPlants = async (_calendarPlantingId = "") => {
+    const nextBundle = await loadPlantBundle(fieldId);
     setPlantBundle(nextBundle);
     return nextBundle;
   };
@@ -256,7 +254,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     }
   };
 
-  const editPlantAction = async (plantingId: string, actionId: string, payload: Partial<PlantCalendarAction> & { use_as_guidance?: boolean }) => {
+  const editPlantAction = async (plantingId: string, actionId: string, payload: PlantActionMutationPayload & { use_as_guidance?: boolean }) => {
     setPlantBusy(true);
     setError("");
     try {
@@ -270,10 +268,10 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     }
   };
 
-  const regenerateCalendar = async (plantingId: string, startDate: string, planningNotes: string) => {
+  const regenerateCalendar = async (plantingId: string, startDate: string, planningNotes: string, mode: "automatic" | "review") => {
     setError("");
     try {
-      await regeneratePlantCalendar(plantingId, { start_date: startDate, planning_notes: planningNotes });
+      await regeneratePlantCalendar(plantingId, { start_date: startDate, planning_notes: planningNotes, mode });
       await refreshPlants(plantingId);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -281,7 +279,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     }
   };
 
-  const createPlantAction = async (plantingId: string, payload: Partial<PlantCalendarAction>) => {
+  const createPlantAction = async (plantingId: string, payload: PlantActionMutationPayload) => {
     setPlantBusy(true);
     try {
       await addPlantAction(plantingId, payload);
@@ -762,11 +760,23 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
           onSkipAction={skipPlantCalendarAction}
           onAskQuestion={answerPlantQuestion}
           onRegenerate={regenerateCalendar}
+          onDecideRegeneration={async (plantingId, taskId, proposalId, decision) => {
+            setPlantBusy(true);
+            setError("");
+            try {
+              await decidePlantCalendarRegenerationProposal(plantingId, taskId, proposalId, decision);
+              await refreshPlants(plantingId);
+            } catch (caught) {
+              setError(errorMessage(caught));
+              throw caught;
+            } finally {
+              setPlantBusy(false);
+            }
+          }}
           onAddAction={createPlantAction}
           onDeleteAction={removePlantAction}
           onAddFertilizer={addFertilizerApplication}
           onDeleteFertilizer={removeFertilizerApplication}
-          onSearchActions={searchCalendarActions}
         />
       )}
       {layoutConflict && (

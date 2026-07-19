@@ -159,6 +159,8 @@ export interface PlantCalendarAction {
   timing_label: string;
   reason: string;
   instructions: string;
+  instructions_html: string;
+  attachments: RecordImageAttachment[];
   tags: string[];
   required_people: number;
   estimated_minutes: number;
@@ -185,6 +187,8 @@ export interface PlantCalendarAction {
   source: string;
   rule_id: string;
 }
+
+export type PlantActionMutationPayload = Partial<PlantCalendarAction> & { images?: File[] };
 
 export type WorkMethodType =
   | "observation"
@@ -365,7 +369,7 @@ export interface FertilizerApplication {
   material_kind: FertilizerMaterialKind;
   material_name: string;
   amount_kg: number;
-  nutrient_percent: { n: number; p2o5: number; k2o: number };
+  nutrient_percent: { n: number; p2o5: number; k2o: number; mgo: number };
   annual_available_percent: number;
   effect_years: number;
   start_delay_days: number;
@@ -379,7 +383,7 @@ export interface FertilizerEffectSummary {
   model: "linear_estimate_from_user_inputs";
   application_count: number;
   active_count: number;
-  nutrients: Record<"n" | "p2o5" | "k2o", {
+  nutrients: Record<"n" | "p2o5" | "k2o" | "mgo", {
     applied_kg: number;
     effective_total_kg: number;
     released_to_date_kg: number;
@@ -398,7 +402,7 @@ export interface FertilizerEffectSummary {
   forecast: Array<{
     period_start: string;
     period_end: string;
-    nutrients_kg: Record<"n" | "p2o5" | "k2o", number>;
+    nutrients_kg: Record<"n" | "p2o5" | "k2o" | "mgo", number>;
   }>;
   caution: string;
 }
@@ -408,7 +412,8 @@ export interface PlantCalendarGenerationTask {
   field_id: string;
   planting_id: string;
   kind: "initial" | "regenerate";
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "awaiting_review" | "succeeded" | "failed";
+  mode: "automatic" | "review";
   start_date: string;
   planning_notes: string;
   attempts: number;
@@ -417,6 +422,18 @@ export interface PlantCalendarGenerationTask {
   started_at: string;
   finished_at: string;
   updated_at: string;
+  proposals: PlantCalendarRegenerationProposal[];
+}
+
+export interface PlantCalendarRegenerationProposal {
+  id: string;
+  change_type: "add" | "update" | "delete";
+  decision: "pending" | "approved" | "rejected";
+  existing_action_id: string;
+  title: string;
+  before: PlantCalendarAction | null;
+  after: PlantCalendarAction | null;
+  decided_at: string;
 }
 
 export interface PlantBundle {

@@ -251,6 +251,13 @@
       .record-extras { border-top: 1px solid #dce2dd; }
       .record-extras summary { padding: 10px 2px; color: #506159; font-size: 11px; font-weight: 800; cursor: pointer; }
       .record-extras > div { display: grid; gap: 10px; padding: 2px 0 8px; }
+      .record-image-input { display: grid; gap: 6px; }
+      .record-image-dropzone { display: grid; place-items: center; min-height: 92px; padding: 14px; border: 1px dashed #8eaa9a; border-radius: 7px; color: #476457; background: #f5faf7; text-align: center; cursor: pointer; }
+      .record-image-dropzone:hover, .record-image-dropzone:focus-visible, .record-image-dropzone.is-dragging { border-color: #277057; outline: 2px solid #dcece4; outline-offset: 1px; background: #edf7f1; }
+      .record-image-dropzone strong { color: #235d48; font-size: 12px; }
+      .record-image-dropzone span { margin-top: 3px; color: #718078; font-size: 10px; font-weight: 600; }
+      .record-image-dropzone input { position: absolute; width: 1px; min-height: 1px; padding: 0; overflow: hidden; border: 0; opacity: 0; pointer-events: none; }
+      .record-image-status { margin: 0; color: #5d7066; font-size: 10px; font-weight: 650; }
       .record-tags { display: grid; gap: 7px; }
       .record-tag-input { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
       .record-tag-chips, .timeline-tags { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -504,7 +511,7 @@
           <div class="record-value-list" id="record-value-list"><p class="record-value-empty">記録項目はまだ追加されていません。</p></div>
           <button class="record-item-search-open" id="record-item-search-open" type="button"><span aria-hidden="true">＋</span>記録項目を追加</button>
           <div class="record-tags"><label>タグ<div class="record-tag-input"><input id="record-tag-input" type="text" list="record-tag-options" placeholder="既存タグを選択、または新しいタグを入力" autocomplete="off"><button id="record-tag-add" type="button">追加</button></div></label><datalist id="record-tag-options">{% for tag in context.record_tags %}<option value="{{ tag }}">{% endfor %}</datalist><div class="record-tag-chips" id="record-tag-chips" aria-live="polite"></div></div>
-          <details class="record-extras"><summary>メモ・評価・画像</summary><div><label>メモ<textarea name="description"></textarea></label><fieldset class="rating-fieldset"><legend>評価</legend><div class="rating-options">{% for value, emoji, label in [(1, '😞', 'とても悪い'), (2, '😕', '悪い'), (3, '😐', '普通'), (4, '😊', '良い'), (5, '😄', 'とても良い')] %}<label class="rating-option" title="{{ label }}"><input type="radio" name="rating" value="{{ value }}" aria-label="{{ value }}: {{ label }}"><span aria-hidden="true">{{ emoji }}</span></label>{% endfor %}</div></fieldset><label>画像<input name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple></label></div></details>
+          <details class="record-extras"><summary>メモ・評価・画像</summary><div><label>メモ<textarea name="description"></textarea></label><fieldset class="rating-fieldset"><legend>評価</legend><div class="rating-options">{% for value, emoji, label in [(1, '😞', 'とても悪い'), (2, '😕', '悪い'), (3, '😐', '普通'), (4, '😊', '良い'), (5, '😄', 'とても良い')] %}<label class="rating-option" title="{{ label }}"><input type="radio" name="rating" value="{{ value }}" aria-label="{{ value }}: {{ label }}"><span aria-hidden="true">{{ emoji }}</span></label>{% endfor %}</div></fieldset><div class="record-image-input"><span class="record-subheading"><strong>画像</strong></span><label class="record-image-dropzone" id="record-image-dropzone" tabindex="0"><strong>画像を選択・貼り付け</strong><span>Ctrl / ⌘ + V またはドラッグ＆ドロップ（最大5枚）</span><input id="record-image-input" name="images" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p class="record-image-status" id="record-image-status" role="status" aria-live="polite">画像はまだ選択されていません。</p></div></div></details>
           <div class="record-submit-row"><p class="stateful-reason" id="record-submit-reason">記録項目、タグ、メモ、評価、画像のいずれかを追加してください。</p><button class="primary-button" type="submit" data-stateful-submit>この内容で記録</button></div>
         </form>
       </section>
@@ -832,6 +839,9 @@
       const recordSubmitReason = document.getElementById("record-submit-reason");
       const recordTagInput = document.getElementById("record-tag-input");
       const recordTagChips = document.getElementById("record-tag-chips");
+      const recordImageInput = document.getElementById("record-image-input");
+      const recordImageDropzone = document.getElementById("record-image-dropzone");
+      const recordImageStatus = document.getElementById("record-image-status");
       const selectedRecordTags = new Set();
       const recentStorageKey = "ina-field-record-items:" + {{ field.id|tojson }};
       let activeRecordCategory = "";
@@ -861,6 +871,51 @@
       recordForm.addEventListener("input", syncRecordSubmitAvailability);
       recordForm.addEventListener("change", syncRecordSubmitAvailability);
       recordForm.addEventListener("stateful-action-state", syncRecordSubmitAvailability);
+
+      const setRecordImages = (incomingFiles) => {
+        const existing = Array.from(recordImageInput.files || []);
+        const accepted = incomingFiles.filter((file) => file.type.startsWith("image/"));
+        const files = [...existing, ...accepted].slice(0, 5);
+        const transfer = new DataTransfer();
+        files.forEach((file) => transfer.items.add(file));
+        recordImageInput.files = transfer.files;
+        recordImageStatus.textContent = files.length
+          ? `${files.length}枚の画像を記録に追加します。${existing.length + accepted.length > 5 ? " 最大5枚までのため、超過分は除外しました。" : ""}`
+          : "画像はまだ選択されていません。";
+        recordImageInput.dispatchEvent(new Event("change", { bubbles: true }));
+      };
+      recordImageInput.addEventListener("change", () => {
+        const files = Array.from(recordImageInput.files || []).slice(0, 5);
+        if (recordImageInput.files.length > 5) {
+          const transfer = new DataTransfer();
+          files.forEach((file) => transfer.items.add(file));
+          recordImageInput.files = transfer.files;
+        }
+        recordImageStatus.textContent = files.length
+          ? `${files.length}枚の画像を記録に追加します。`
+          : "画像はまだ選択されていません。";
+      });
+      recordImageDropzone.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          recordImageInput.click();
+        }
+      });
+      recordImageDropzone.addEventListener("paste", (event) => {
+        const files = Array.from(event.clipboardData?.files || []);
+        if (!files.some((file) => file.type.startsWith("image/"))) return;
+        event.preventDefault();
+        setRecordImages(files);
+      });
+      ["dragenter", "dragover"].forEach((type) => recordImageDropzone.addEventListener(type, (event) => {
+        event.preventDefault();
+        recordImageDropzone.classList.add("is-dragging");
+      }));
+      ["dragleave", "drop"].forEach((type) => recordImageDropzone.addEventListener(type, (event) => {
+        event.preventDefault();
+        recordImageDropzone.classList.remove("is-dragging");
+      }));
+      recordImageDropzone.addEventListener("drop", (event) => setRecordImages(Array.from(event.dataTransfer?.files || [])));
 
       const renderRecordTags = () => {
         recordTagChips.replaceChildren();

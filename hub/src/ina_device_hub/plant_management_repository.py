@@ -3,6 +3,7 @@ import json
 import os
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from difflib import SequenceMatcher
 
 from ina_device_hub.collection_search import matches_search, paginate, search_terms
 from ina_device_hub.fertilizer_effect import fertilizer_effect_summary
@@ -27,9 +28,11 @@ MAX_FERTILIZER_APPLICATIONS = 5000
 VALID_PLANTING_STATUSES = {"active", "harvested", "removed"}
 VALID_CROP_CATEGORIES = {"vegetable", "fruit_tree", "flower", "herb", "other"}
 VALID_ACTION_STATUSES = {"planned", "in_progress", "completed", "skipped"}
-VALID_GENERATION_TASK_STATUSES = {"queued", "running", "succeeded", "failed"}
-ACTIVE_GENERATION_TASK_STATUSES = {"queued", "running"}
+VALID_GENERATION_TASK_STATUSES = {"queued", "running", "awaiting_review", "succeeded", "failed"}
+ACTIVE_GENERATION_TASK_STATUSES = {"queued", "running", "awaiting_review"}
 VALID_GENERATION_TASK_KINDS = {"initial", "regenerate"}
+VALID_GENERATION_MODES = {"automatic", "review"}
+VALID_GENERATION_PROPOSAL_DECISIONS = {"pending", "approved", "rejected"}
 VALID_FERTILIZER_MATERIAL_KINDS = {
     "cattle_manure",
     "poultry_manure",
@@ -231,11 +234,15 @@ class PlantManagementRepository:
         start_date: str,
         planning_notes: str = "",
         audience: dict | None = None,
+        mode: str = "automatic",
     ):
         planting = self._planting(planting_id)
         kind = _clean_string(kind)
         if kind not in VALID_GENERATION_TASK_KINDS:
             raise PlantManagementValidationError("unsupported calendar generation kind")
+        mode = _clean_string(mode, "automatic")
+        if mode not in VALID_GENERATION_MODES:
+            raise PlantManagementValidationError("unsupported calendar generation mode")
         for task in self.data["generation_tasks"]:
             if task.get("planting_id") == planting_id and task.get("status") in ACTIVE_GENERATION_TASK_STATUSES:
                 raise PlantManagementConflictError("calendar generation is already in progress")
@@ -250,6 +257,9 @@ class PlantManagementRepository:
             "start_date": _date_string(start_date, "start_date"),
             "planning_notes": _clean_string(planning_notes)[:2000],
             "audience": copy.deepcopy(audience) if isinstance(audience, dict) else {},
+            "mode": mode,
+            "proposals": [],
+            "generated_payload": {},
             "attempts": 0,
             "error": "",
             "created_at": now,
@@ -307,10 +317,10 @@ class PlantManagementRepository:
             raise PlantManagementValidationError(f"calendar actions must contain {MAX_ACTIONS_PER_CALENDAR} entries or less")
 
         planting = self._planting(task["planting_id"])
-        planting["growth_targets"] = _normalize_growth_targets(generated.get("growth_targets") or planting.get("growth_targets") or {})
-        planting["updated_at"] = _utc_now()
         calendar = self.data["calendars"].get(planting.get("calendar_id"))
         if calendar is None:
+            planting["growth_targets"] = _normalize_growth_targets(generated.get("growth_targets") or planting.get("growth_targets") or {})
+            planting["updated_at"] = _utc_now()
             calendar_id = str(uuid.uuid4())
             now = _utc_now()
             calendar = {
@@ -328,14 +338,27 @@ class PlantManagementRepository:
             planting["calendar_id"] = calendar_id
         else:
             calendar = copy.deepcopy(calendar)
-            preserved = [copy.deepcopy(action) for action in calendar["actions"] if action.get("status") != "planned"]
             regenerated = [_normalize_action(action, index) for index, action in enumerate(actions)]
-            calendar["actions"] = preserved + regenerated
+            proposals = _calendar_regeneration_proposals(calendar["actions"], regenerated, task.get("start_date") or date.today().isoformat())
+            if task.get("mode") == "review":
+                task = self._generation_task(task_id)
+                task["status"] = "awaiting_review" if proposals else "succeeded"
+                task["proposals"] = proposals
+                task["generated_payload"] = _generation_review_payload(generated)
+                task["error"] = ""
+                task["finished_at"] = "" if proposals else _utc_now()
+                task["updated_at"] = _utc_now()
+                self._replace_generation_task(task)
+                self.save()
+                return {"task": copy.deepcopy(task), "planting": copy.deepcopy(planting), "calendar": copy.deepcopy(calendar)}
+            calendar["actions"] = _apply_calendar_regeneration_proposals(calendar["actions"], proposals)
             calendar["care_profile"] = _normalize_care_profile(generated.get("care_profile"))
             calendar["task_rules"] = _normalize_task_rules(generated.get("task_rules"))
             calendar["generation"] = _normalize_generation(generated.get("generation"))
             calendar["revision"] += 1
             calendar["updated_at"] = _utc_now()
+            planting["growth_targets"] = _normalize_growth_targets(generated.get("growth_targets") or planting.get("growth_targets") or {})
+            planting["updated_at"] = _utc_now()
 
         self.data["plantings"][planting["id"]] = planting
         self.data["calendars"][calendar["id"]] = calendar
@@ -347,6 +370,47 @@ class PlantManagementRepository:
         self._replace_generation_task(task)
         self.save()
         return {"task": copy.deepcopy(task), "planting": copy.deepcopy(planting), "calendar": copy.deepcopy(calendar)}
+
+    @serialized_repository_write("repository_path")
+    def decide_calendar_generation_proposal(self, task_id: str, proposal_id: str, decision: str):
+        task = self._generation_task(task_id)
+        if task.get("status") != "awaiting_review":
+            raise PlantManagementConflictError("calendar generation is not awaiting review")
+        decision = _clean_string(decision)
+        if decision not in {"approved", "rejected"}:
+            raise PlantManagementValidationError("proposal decision must be approved or rejected")
+        proposals = copy.deepcopy(task.get("proposals") or [])
+        proposal = next((item for item in proposals if item.get("id") == proposal_id), None)
+        if proposal is None:
+            raise PlantManagementNotFoundError("calendar generation proposal not found")
+        if proposal.get("decision") != "pending":
+            raise PlantManagementConflictError("calendar generation proposal is already decided")
+
+        planting = self._planting(task["planting_id"])
+        calendar = self._calendar_for_planting(planting)
+        proposal["decision"] = decision
+        proposal["decided_at"] = _utc_now()
+        if decision == "approved":
+            if proposal.get("change_type") in {"update", "delete"}:
+                current = next((action for action in calendar["actions"] if action.get("id") == proposal.get("existing_action_id")), None)
+                if current is None or _calendar_action_revision_signature(current) != _calendar_action_revision_signature(proposal.get("before") or {}):
+                    raise PlantManagementConflictError("calendar action changed after the AI proposal was created")
+            calendar["actions"] = _apply_calendar_regeneration_proposals(calendar["actions"], [proposal])
+            calendar["revision"] += 1
+            calendar["updated_at"] = _utc_now()
+
+        task["proposals"] = proposals
+        if not any(item.get("decision") == "pending" for item in proposals):
+            generated_payload = task.get("generated_payload") if isinstance(task.get("generated_payload"), dict) else {}
+            calendar["generation"] = _normalize_generation(generated_payload.get("generation") or calendar.get("generation"))
+            task["status"] = "succeeded"
+            task["finished_at"] = _utc_now()
+        task["updated_at"] = _utc_now()
+        self.data["plantings"][planting["id"]] = planting
+        self.data["calendars"][calendar["id"]] = calendar
+        self._replace_generation_task(task)
+        self.save()
+        return {"task": copy.deepcopy(task), "proposal": copy.deepcopy(proposal), "calendar": copy.deepcopy(calendar)}
 
     @serialized_repository_write("repository_path")
     def fail_calendar_generation(self, task_id: str, error: str):
@@ -375,6 +439,10 @@ class PlantManagementRepository:
         for key in ("title", "reason", "instructions", "timing_label"):
             if key in value:
                 action[key] = _clean_string(value.get(key))[: 1200 if key in {"reason", "instructions"} else 180]
+        if "instructions_html" in value:
+            action["instructions_html"] = _clean_string(value.get("instructions_html"))[:12000]
+        if "attachments" in value:
+            action["attachments"] = _normalize_work_attachments(value.get("attachments"))
         if not action["title"]:
             raise PlantManagementValidationError("action title is required")
         if "priority" in value:
@@ -782,6 +850,7 @@ class PlantManagementRepository:
                     action.get("priority"),
                     action.get("reason"),
                     action.get("instructions"),
+                    action.get("instructions_html"),
                     action.get("timing_label"),
                     action.get("tags"),
                     action.get("work_plan"),
@@ -833,14 +902,14 @@ class PlantManagementRepository:
         for task in self.data["generation_tasks"]:
             if task.get("field_id") != field_id:
                 continue
-            current = latest_generation_tasks.get(task.get("planting_id"))
-            if current is None or (task.get("created_at") or "", task.get("id") or "") > (current.get("created_at") or "", current.get("id") or ""):
-                latest_generation_tasks[task.get("planting_id")] = task
+            # Tasks are append-only; list order remains reliable even when two tasks
+            # share the same sub-second-truncated timestamp.
+            latest_generation_tasks[task.get("planting_id")] = task
         return {
             "action_types": plant_action_types(),
             "plantings": plantings,
             "calendars": calendars,
-            "generation_tasks": [copy.deepcopy(task) for task in latest_generation_tasks.values()],
+            "generation_tasks": [_public_generation_task(task) for task in latest_generation_tasks.values()],
             "suggestions": self.list_suggestions(field_id, today=today),
             "work_logs": [
                 copy.deepcopy(item)
@@ -1006,6 +1075,128 @@ def _normalize_data(value):
     }
 
 
+def _calendar_regeneration_proposals(existing_actions: list, generated_actions: list, start_date: str):
+    in_progress_actions = [copy.deepcopy(action) for action in existing_actions if action.get("status") == "in_progress"]
+    future_existing = [
+        copy.deepcopy(action)
+        for action in existing_actions
+        if action.get("status") == "planned" and str(action.get("window_end") or "") >= start_date
+    ]
+    unmatched = {action["id"]: action for action in future_existing}
+    proposals = []
+    for generated in generated_actions:
+        if any(_calendar_action_match_score(existing, generated) >= 0.75 for existing in in_progress_actions):
+            # A task that is already being carried out remains the source of truth.
+            # Its next recurrence is created from the completion record instead.
+            continue
+        best = None
+        best_score = 0.0
+        for existing in unmatched.values():
+            score = _calendar_action_match_score(existing, generated)
+            if score > best_score:
+                best = existing
+                best_score = score
+        if best is not None and best_score >= 0.75:
+            unmatched.pop(best["id"], None)
+            after = copy.deepcopy(generated)
+            after["id"] = best["id"]
+            after["status"] = best["status"]
+            after["completion"] = copy.deepcopy(best.get("completion"))
+            after["attachments"] = copy.deepcopy(after.get("attachments") or best.get("attachments") or [])
+            after["source"] = "ai_replanned"
+            if _calendar_action_revision_signature(best) != _calendar_action_revision_signature(after):
+                proposals.append(_generation_proposal("update", before=best, after=after))
+        else:
+            after = copy.deepcopy(generated)
+            after["source"] = "ai_replanned"
+            proposals.append(_generation_proposal("add", before=None, after=after))
+    for existing in unmatched.values():
+        proposals.append(_generation_proposal("delete", before=existing, after=None))
+    return proposals
+
+
+def _calendar_action_match_score(existing: dict, generated: dict):
+    if existing.get("id") and existing.get("id") == generated.get("id"):
+        return 2.0
+    rule_match = bool(existing.get("rule_id")) and existing.get("rule_id") == generated.get("rule_id")
+    type_match = existing.get("action_type") == generated.get("action_type")
+    title_similarity = SequenceMatcher(None, _clean_string(existing.get("title")), _clean_string(generated.get("title"))).ratio()
+    start = max(str(existing.get("window_start") or ""), str(generated.get("window_start") or ""))
+    end = min(str(existing.get("window_end") or ""), str(generated.get("window_end") or ""))
+    overlaps = bool(start and end and start <= end)
+    exact_title = bool(existing.get("title")) and _clean_string(existing.get("title")) == _clean_string(generated.get("title"))
+    return (
+        (0.35 if rule_match else 0)
+        + (0.15 if type_match else 0)
+        + title_similarity * 0.45
+        + (0.35 if overlaps else 0)
+        + (0.25 if exact_title else 0)
+    )
+
+
+def _calendar_action_revision_signature(action: dict):
+    ignored = {"id", "status", "completion", "source", "created_at", "updated_at"}
+    return json.dumps({key: value for key, value in action.items() if key not in ignored}, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _generation_proposal(change_type: str, *, before: dict | None, after: dict | None):
+    action = after or before or {}
+    return {
+        "id": str(uuid.uuid4()),
+        "change_type": change_type,
+        "decision": "pending",
+        "existing_action_id": _clean_string((before or {}).get("id"))[:120],
+        "title": _clean_string(action.get("title"))[:180],
+        "before": copy.deepcopy(before),
+        "after": copy.deepcopy(after),
+        "decided_at": "",
+    }
+
+
+def _apply_calendar_regeneration_proposals(existing_actions: list, proposals: list):
+    actions = [copy.deepcopy(action) for action in existing_actions]
+    for proposal in proposals:
+        if proposal.get("decision") == "rejected":
+            continue
+        change_type = proposal.get("change_type")
+        existing_id = proposal.get("existing_action_id")
+        if change_type == "delete":
+            actions = [action for action in actions if action.get("id") != existing_id or action.get("status") != "planned"]
+            continue
+        if not isinstance(proposal.get("after"), dict):
+            continue
+        if change_type == "add":
+            if len(actions) >= MAX_ACTIONS_PER_CALENDAR:
+                raise PlantManagementValidationError("calendar action limit reached")
+            action = _normalize_action(proposal["after"], len(actions))
+            action["source"] = "ai_replanned"
+            if any(item.get("id") == action.get("id") for item in actions):
+                action["id"] = str(uuid.uuid4())
+            actions.append(action)
+            continue
+        if change_type == "update":
+            for index, current in enumerate(actions):
+                if current.get("id") != existing_id or current.get("status") != "planned":
+                    continue
+                action = _normalize_action(proposal["after"], index)
+                action["id"] = current["id"]
+                action["status"] = current["status"]
+                action["completion"] = copy.deepcopy(current.get("completion"))
+                action["source"] = "ai_replanned"
+                actions[index] = action
+                break
+    return actions
+
+
+def _generation_review_payload(generated: dict):
+    return {
+        "growth_targets": copy.deepcopy(generated.get("growth_targets") or {}),
+        "care_profile": copy.deepcopy(generated.get("care_profile") or {}),
+        "task_rules": copy.deepcopy(generated.get("task_rules") or []),
+        "generation": copy.deepcopy(generated.get("generation") or {}),
+    }
+
+
 def _normalize_fertilizer_application(value: dict):
     material_kind = _clean_string(value.get("material_kind"), "custom")
     if material_kind not in VALID_FERTILIZER_MATERIAL_KINDS:
@@ -1014,9 +1205,12 @@ def _normalize_fertilizer_application(value: dict):
     if amount_kg is None:
         raise PlantManagementValidationError("fertilizer_application.amount_kg is required")
     nutrient_value = value.get("nutrient_percent") if isinstance(value.get("nutrient_percent"), dict) else {}
-    nutrient_percent = {
-        key: _optional_float(nutrient_value.get(key), 0, 100, f"fertilizer_application.nutrient_percent.{key}") or 0.0 for key in ("n", "p2o5", "k2o")
-    }
+    nutrient_percent = {}
+    for key in ("n", "p2o5", "k2o", "mgo"):
+        raw_value = nutrient_value.get(key)
+        if key == "mgo" and raw_value is None:
+            raw_value = nutrient_value.get("mg")  # Compatibility with early Mg-labelled development data.
+        nutrient_percent[key] = _optional_float(raw_value, 0, 100, f"fertilizer_application.nutrient_percent.{key}") or 0.0
     if not any(nutrient_percent.values()):
         raise PlantManagementValidationError("at least one fertilizer nutrient percentage is required")
     annual_available_percent = _optional_float(
@@ -1061,6 +1255,7 @@ def _normalize_generation_task(value: dict):
     record = copy.deepcopy(value)
     status = _clean_string(record.get("status"), "failed")
     kind = _clean_string(record.get("kind"), "initial")
+    mode = _clean_string(record.get("mode"), "automatic")
     return {
         "id": _clean_string(record.get("id"))[:120] or str(uuid.uuid4()),
         "field_id": _clean_string(record.get("field_id"))[:120],
@@ -1070,12 +1265,36 @@ def _normalize_generation_task(value: dict):
         "start_date": _clean_string(record.get("start_date"))[:10],
         "planning_notes": _clean_string(record.get("planning_notes"))[:2000],
         "audience": copy.deepcopy(record.get("audience")) if isinstance(record.get("audience"), dict) else {},
+        "mode": mode if mode in VALID_GENERATION_MODES else "automatic",
+        "proposals": [_normalize_generation_proposal(item) for item in list(record.get("proposals") or []) if isinstance(item, dict)][:MAX_ACTIONS_PER_CALENDAR * 2],
+        "generated_payload": _generation_review_payload(record.get("generated_payload") if isinstance(record.get("generated_payload"), dict) else {}),
         "attempts": max(0, _bounded_int(record.get("attempts"), 0, 0, 1000, "generation_task.attempts")),
         "error": _clean_string(record.get("error"))[:500],
         "created_at": _clean_string(record.get("created_at"))[:40],
         "started_at": _clean_string(record.get("started_at"))[:40],
         "finished_at": _clean_string(record.get("finished_at"))[:40],
         "updated_at": _clean_string(record.get("updated_at"))[:40],
+    }
+
+
+def _public_generation_task(value: dict):
+    record = copy.deepcopy(value)
+    record.pop("generated_payload", None)
+    return record
+
+
+def _normalize_generation_proposal(value: dict):
+    change_type = _clean_string(value.get("change_type"))
+    decision = _clean_string(value.get("decision"), "pending")
+    return {
+        "id": _clean_string(value.get("id"))[:120] or str(uuid.uuid4()),
+        "change_type": change_type if change_type in {"add", "update", "delete"} else "update",
+        "decision": decision if decision in VALID_GENERATION_PROPOSAL_DECISIONS else "pending",
+        "existing_action_id": _clean_string(value.get("existing_action_id"))[:120],
+        "title": _clean_string(value.get("title"))[:180],
+        "before": copy.deepcopy(value.get("before")) if isinstance(value.get("before"), dict) else None,
+        "after": copy.deepcopy(value.get("after")) if isinstance(value.get("after"), dict) else None,
+        "decided_at": _clean_string(value.get("decided_at"))[:40],
     }
 
 
@@ -1170,6 +1389,8 @@ def _normalize_action(value, index: int):
         "timing_label": _clean_string(value.get("timing_label"))[:180],
         "reason": _clean_string(value.get("reason"))[:1200],
         "instructions": _clean_string(value.get("instructions"))[:1200],
+        "instructions_html": _clean_string(value.get("instructions_html"))[:12000],
+        "attachments": _normalize_work_attachments(value.get("attachments")),
         "tags": _clean_string_list(value.get("tags"), limit=20, item_length=60),
         "required_people": _bounded_int(value.get("required_people"), 1, 1, 100, f"actions[{index}].required_people"),
         "estimated_minutes": _bounded_int(value.get("estimated_minutes"), 30, 1, 1440, f"actions[{index}].estimated_minutes"),

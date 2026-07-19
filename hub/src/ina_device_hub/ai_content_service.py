@@ -44,6 +44,8 @@ WORK_PLAN_OUTPUT_CONTRACT = (
     "method_typeはobservation, manual, device, material_application, chemical, physical, biological, cultural, otherです。"
     "frequencyはmode, min_interval_days, preferred_interval_days, max_interval_days, max_applications, basisを持ち、"
     "modeはone_time, as_needed, interval, seasonal, continuousです。不明な数値はnullにしてください。"
+    "follow_up_days_defaultは、初心者が記録時に日数を判断しなくてよいよう、作業後に状態を再確認する標準日数を1〜365の整数で必ず設定してください。"
+    "frequency.preferred_interval_days、製品ラベル、作物の反応確認時期の順に根拠を選び、根拠が乏しい場合も作業種別に応じた安全側の観察日を設定し、nullにはしないでください。"
     "amount_or_rateには使用量、希釈倍率、処理時間等を単位付きで入れますが、根拠がなければ推測せず『製品ラベルで確認』等の確認行動にします。"
     "procedure_stepsは実行順の配列、completion_checksとprecautionsは確認可能な短文配列にしてください。"
     "method_optionsは利用者が実施時に選べる代替案です。各候補は単独で目的、開始判断、手順、終了確認を理解できる内容にし、"
@@ -181,6 +183,7 @@ class AIContentService:
     def generate_plant_calendar(self, context: dict, guidance_examples: list | None = None):
         guidance_examples = guidance_examples or []
         fallback_actions = self._fallback_plant_calendar(context)
+        self._ensure_action_work_plans(fallback_actions)
         fallback_targets = self._fallback_growth_targets(context)
         fallback_profile = self._fallback_care_profile(context)
         fallback_rules = self._fallback_task_rules(context)
@@ -309,7 +312,9 @@ class AIContentService:
             "conditions.notesに日付付きの施肥・防除等があれば実施済み履歴として扱い、その日を次回要否確認の起点にしてください。同じ作業を重複して予定しないでください。"
             "guidance_jsonでdecision_typeがskip_actionの記録は、ユーザーが現地確認して不要と判断した実績です。reason_code、observed_facts、noteを反映し、同じ条件の不要な作業を再生成しないでください。"
             "fertilizer_historyがあれば、畝・培地へ投入済みの肥料とeffect_summaryの基準日時点の残存肥効を施肥計画へ反映してください。"
-            "amount_kgは製品総量であり養分量ではありません。nutrient_percentから計算済みのN・P2O5・K2Oのkgを使い、製品kgを養分kgとして扱わないでください。"
+            "amount_kgは製品総量であり養分量ではありません。nutrient_percentから計算済みのN・P2O5・K2O・MgO（苦土）のkgを使い、製品kgを養分kgとして扱わないでください。"
+            "existing_calendarがある場合は現在の計画を土台に、妥当な作業は維持し、条件変更が必要な作業だけを修正し、不足分だけを追加してください。"
+            "既存作業と同じ目的・時期・rule_idの作業を別作業として重複生成しないでください。不要になった既存予定は、出力する新しいactionsには含めないでください。"
             "残存肥効がある、ECが高い、成分分析が不足している、または作物状態を確認できない場合は、追加施肥ではなく測定・観察・見送りを提案してください。"
             "planning.notesに手作業頻度の上限があれば従い、自動潅水やカメラ監視として指定された日常管理を手作業actionへ展開しないでください。"
             "ユーザーが次に何を観察し、どの条件なら実施・延期・見送りと判断するかが分かるサジェストにしてください。"
@@ -355,13 +360,13 @@ class AIContentService:
                 "role": "system",
                 "content": (
                     "あなたは家庭園芸、果樹、露地、施設、水耕栽培の初期栽培設計を行う園芸計画者です。"
-                    "この呼び出しは定植登録時の初回だけ実行され、ここで作成するcare_profileとtask_rulesが以後の差分計画の基準になります。"
+                    "初回作成では栽培計画の基準を作り、再計画ではexisting_calendarを現在の正として必要な差分だけを提案する園芸計画者です。"
                     "提供された根拠情報を優先し、作物、品種、区分、樹齢、定植日、培地、日照、空間、所在地から合理的に判断してください。"
                     "不足情報を断定せずassumptionsに明記し、数値は単位と栽培方式を整合させてください。"
                     "潅水は固定間隔だけで断定せず、培地、季節、鉢容量、降雨、土壌水分、排液ECなどの開始・見送り条件を示してください。"
                     "施肥は実施日を次回計画の起点にできる反復規則とし、生育休止期、樹勢、葉色、EC、収穫時期による見送り条件を示してください。"
                     "fertilizer_historyは畝・培地に残る施肥履歴です。effect_summaryのremaining_kgとforecastを使い、追加投入前に残存肥効、土壌分析、EC、作物状態、収穫品質への過剰施肥リスクを確認してください。"
-                    "肥料製品の総重量とN・P2O5・K2Oの養分重量を混同せず、入力されていない成分率や肥効率を推測で補わないでください。"
+                    "肥料製品の総重量とN・P2O5・K2O・MgO（苦土）の養分重量を混同せず、入力されていない成分率や肥効率を推測で補わないでください。"
                     "planting.planted_onは過去の定植履歴、planning.start_dateは今回作成する予定の開始下限です。両者を同じ日付として扱ってはいけません。"
                     "定植日からplanning.current_dateまでに経過した日数とconditions.notesの実施履歴を読み、すでに終わった活着確認、施肥、防除などを新規予定として再作成しないでください。"
                     "すべての作業は『確認する』『作業する』だけで終わらせず、作物、地域、季節、生育段階に応じた対象、確認点、方法候補を具体化してください。"
@@ -713,7 +718,7 @@ class AIContentService:
         fertilizer_summary = (context.get("fertilizer_history") or {}).get("effect_summary") if isinstance(context.get("fertilizer_history"), dict) else {}
         fertilizer_nutrients = fertilizer_summary.get("nutrients") if isinstance(fertilizer_summary, dict) else {}
         remaining_nutrients = {
-            key: float((fertilizer_nutrients.get(key) or {}).get("remaining_kg") or 0) for key in ("n", "p2o5", "k2o") if isinstance(fertilizer_nutrients, dict)
+            key: float((fertilizer_nutrients.get(key) or {}).get("remaining_kg") or 0) for key in ("n", "p2o5", "k2o", "mgo") if isinstance(fertilizer_nutrients, dict)
         }
         has_remaining_fertilizer_effect = bool(fertilizer_summary.get("active_count")) and any(remaining_nutrients.values())
         remaining_label = ", ".join(
@@ -1182,7 +1187,30 @@ class AIContentService:
                     else defaults["completion_criteria"]
                 ),
             }
+            for method in action["work_plan"]["method_options"]:
+                if not isinstance(method, dict):
+                    continue
+                current = self._positive_int(method.get("follow_up_days_default"))
+                frequency = method.get("frequency") if isinstance(method.get("frequency"), dict) else {}
+                preferred = self._positive_int(frequency.get("preferred_interval_days"))
+                method["follow_up_days_default"] = current or preferred or self._default_follow_up_days(action_type)
             action.pop("pest_control", None)
+
+    @staticmethod
+    def _default_follow_up_days(action_type: str):
+        return {
+            "watering": 1,
+            "pest_control": 7,
+            "fertilization": 14,
+            "gibberellin_treatment": 7,
+            "repotting": 7,
+            "pruning": 14,
+            "girdling": 14,
+            "pollination": 3,
+            "harvest": 3,
+            "winter_care": 7,
+            "observation": 7,
+        }.get(action_type, 7)
 
     def _validate_task_rules(self, rules: list):
         recurrence_types = {"one_time", "interval_after_completion", "seasonal", "condition_based", "continuous_review"}

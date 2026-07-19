@@ -1,3 +1,4 @@
+import copy
 import threading
 from datetime import date
 
@@ -31,13 +32,14 @@ class PlantCalendarGenerationTask:
     def wake(self):
         self._wake_event.set()
 
-    def enqueue(self, planting_id: str, *, kind: str, start_date: str, planning_notes: str = "", audience: dict | None = None):
+    def enqueue(self, planting_id: str, *, kind: str, start_date: str, planning_notes: str = "", audience: dict | None = None, mode: str = "automatic"):
         task = self.plant_repository.enqueue_calendar_generation(
             planting_id,
             kind=kind,
             start_date=start_date,
             planning_notes=planning_notes,
             audience=audience,
+            mode=mode,
         )
         self.wake()
         return task
@@ -99,6 +101,13 @@ class PlantCalendarGenerationTask:
             planting["id"],
             as_of=effective_start,
         )
+        existing_calendar = self.plant_repository.get_calendar(planting["id"])
+        context["existing_calendar"] = {
+            "actions": [_calendar_action_generation_snapshot(action) for action in existing_calendar.get("actions") or []],
+            "care_profile": copy.deepcopy(existing_calendar.get("care_profile") or {}),
+            "task_rules": copy.deepcopy(existing_calendar.get("task_rules") or []),
+        } if existing_calendar else None
+        context["planning"]["regeneration_mode"] = task.get("mode") or "automatic"
         return context
 
 
@@ -127,6 +136,23 @@ def build_plant_generation_context(field, layout, space, placement, planting):
             "space_type": space.get("space_type"),
             "root_space_id": layout.get("root_space_id"),
         },
+    }
+
+
+def _calendar_action_generation_snapshot(action):
+    work_plan = action.get("work_plan") if isinstance(action.get("work_plan"), dict) else {}
+    return {
+        key: copy.deepcopy(action.get(key))
+        for key in (
+            "id", "rule_id", "action_type", "title", "priority", "window_start", "window_end",
+            "timing_label", "reason", "instructions", "tags", "status", "source", "required_people",
+            "estimated_minutes", "completion", "skip_decision",
+        )
+    } | {
+        "work_plan": {
+            key: copy.deepcopy(work_plan.get(key) or [])
+            for key in ("targets", "checkpoints", "start_conditions", "skip_conditions", "completion_criteria")
+        }
     }
 
 

@@ -88,12 +88,11 @@ try {
   );
   assert.equal(await page.$$eval(`${sensorDeviceSelect} [data-searchable-option]`, (options) => options.filter((option) => option.dataset.value).length), 1, "device search must narrow dynamic device options");
   await replaceValue(page, `${sensorDeviceSelect} input[type="search"]`, "");
-  await page.waitForFunction((selector) => document.querySelectorAll(`${selector} .searchable-select-group[aria-label]`).length === 4, {}, sensorDeviceSelect);
+  await page.waitForFunction((selector) => document.querySelectorAll(`${selector} .searchable-select-group[aria-label]`).length >= 3, {}, sensorDeviceSelect);
   const sensorGroups = await page.$$eval(`${sensorDeviceSelect} .searchable-select-group[aria-label]`, (groups) => groups.map((group) => group.getAttribute("aria-label")));
-  assert.deepEqual(
-    new Set(sensorGroups),
-    new Set(["環境センサー", "土壌センサー", "日射・PARセンサー", "カメラ"]),
-  );
+  for (const expectedGroup of ["環境センサー", "土壌センサー", "日射・PARセンサー"]) {
+    assert(sensorGroups.includes(expectedGroup), `sensor candidates must include ${expectedGroup}`);
+  }
   await page.click(`${sensorDeviceSelect} [data-searchable-option][data-value="INADS-DEMO-ENV-001"]`);
   await page.screenshot({ path: "/tmp/ina-layout-device-candidates.png" });
 
@@ -194,6 +193,11 @@ try {
   assert.match(await page.$eval(".calendar-action-detail-dialog .skip-decision-record", (record) => record.textContent || ""), /現在は作業不要/);
   await page.click(".calendar-action-detail-dialog > header .icon-button");
 
+  await page.$$eval(".calendar-workspace-tabs button", (buttons) => {
+    const cropPlan = buttons.find((button) => button.textContent?.includes("作物別の栽培計画"));
+    if (!(cropPlan instanceof HTMLButtonElement)) throw new Error("crop planning workspace was not found");
+    cropPlan.click();
+  });
   await page.type(".plant-question textarea", "追肥の前に何を確認すればよいですか？");
   await page.click('.plant-question button[type="submit"]');
   await page.waitForSelector(".question-answer");

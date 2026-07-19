@@ -28,7 +28,7 @@ class FertilizerEffectTest(unittest.TestCase):
                     "material_name": "牛ふん堆肥",
                     "applied_on": "2026-01-01",
                     "amount_kg": 1000,
-                    "nutrient_percent": {"n": 2, "p2o5": 1, "k2o": 1.5},
+                    "nutrient_percent": {"n": 2, "p2o5": 1, "k2o": 1.5, "mgo": 0.5},
                     "annual_available_percent": 10,
                     "effect_years": 3,
                     "start_delay_days": 0,
@@ -41,6 +41,8 @@ class FertilizerEffectTest(unittest.TestCase):
         self.assertEqual(summary["nutrients"]["n"]["effective_total_kg"], 6)
         self.assertEqual(summary["nutrients"]["n"]["released_to_date_kg"], 2)
         self.assertEqual(summary["nutrients"]["n"]["remaining_kg"], 4)
+        self.assertEqual(summary["nutrients"]["mgo"]["applied_kg"], 5)
+        self.assertEqual(summary["nutrients"]["mgo"]["remaining_kg"], 1)
         self.assertEqual(summary["applications"][0]["state"], "active")
 
     def test_start_delay_keeps_effect_waiting(self):

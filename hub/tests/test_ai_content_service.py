@@ -59,6 +59,13 @@ class AIContentServiceTest(unittest.TestCase):
                 for method in action["work_plan"]["method_options"]
             )
         )
+        self.assertTrue(
+            all(
+                isinstance(method["follow_up_days_default"], int) and method["follow_up_days_default"] > 0
+                for action in result["actions"]
+                for method in action["work_plan"]["method_options"]
+            )
+        )
         fertilization = next(action for action in result["actions"] if action["action_type"] == "fertilization")
         pruning = next(action for action in result["actions"] if action["action_type"] == "pruning")
         self.assertIn("葉色と樹勢", fertilization["work_plan"]["checkpoints"])
@@ -87,6 +94,7 @@ class AIContentServiceTest(unittest.TestCase):
                         "n": {"remaining_kg": 0.08},
                         "p2o5": {"remaining_kg": 0.04},
                         "k2o": {"remaining_kg": 0.04},
+                        "mgo": {"remaining_kg": 0.01},
                     },
                     "forecast": [],
                 },
@@ -99,9 +107,25 @@ class AIContentServiceTest(unittest.TestCase):
         fertilization = next(action for action in result["actions"] if action["action_type"] == "fertilization")
 
         self.assertIn("製品総量", messages[1]["content"])
+        self.assertIn("MgO", messages[1]["content"])
         self.assertIn("残存肥効", messages[0]["content"])
         self.assertIn("残存肥効", fertilization["tags"])
         self.assertIn("残存肥効", result["care_profile"]["fertilization"]["strategy"])
+
+    def test_regeneration_prompt_treats_existing_calendar_as_the_plan_to_revise(self):
+        context = {
+            **self.context,
+            "existing_calendar": {
+                "actions": [{"id": "action-1", "title": "葉色を確認", "status": "planned"}],
+                "care_profile": {},
+                "task_rules": [],
+            },
+        }
+
+        messages = self.service._initial_plant_plan_messages(context, [])
+
+        self.assertIn("existing_calendar", messages[1]["content"])
+        self.assertIn("重複生成", messages[1]["content"])
 
     def test_existing_planting_fallback_starts_from_today_and_respects_monthly_manual_work(self):
         self.service.ai_settings = {"text_analyze_api_key": ""}
@@ -260,6 +284,8 @@ class AIContentServiceTest(unittest.TestCase):
         self.assertIn("過去の日付の作業", initial_prompt)
         self.assertIn("実施済み履歴", initial_prompt)
         self.assertIn("自動潅水やカメラ監視", initial_prompt)
+        self.assertIn("follow_up_days_default", initial_prompt)
+        self.assertIn("nullにはしない", initial_prompt)
 
         professional_context = {
             "audience": {"experience_level": "professional"},

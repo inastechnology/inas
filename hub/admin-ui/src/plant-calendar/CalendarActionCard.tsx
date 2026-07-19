@@ -24,6 +24,7 @@ import { errorMessage, formatDate, formatDateRange, todayString } from "../forma
 import { SearchableSelect } from "../SearchableSelect";
 import type {
   PlantActionCompletionPayload,
+  PlantActionMutationPayload,
   PlantActionPriority,
   PlantActionSkipPayload,
   PlantActionSkipReason,
@@ -37,7 +38,7 @@ import { PRIORITY_LABELS, RATING_OPTIONS, TIMING_LABELS } from "./constants";
 
 
 type TimingState = keyof typeof TIMING_LABELS;
-type ActionUpdate = Partial<PlantCalendarAction> & { use_as_guidance?: boolean };
+type ActionUpdate = PlantActionMutationPayload & { use_as_guidance?: boolean };
 
 const ACTION_CAPABILITIES: Record<PlantCalendarAction["status"], { edit: boolean; delete: boolean; start: boolean; returnToPlanned: boolean; record: boolean; skip: boolean }> = {
   planned: { edit: true, delete: true, start: true, returnToPlanned: false, record: false, skip: true },
@@ -74,13 +75,14 @@ interface NewCalendarActionFormProps {
   actionTypes: PlantActionTypeDefinition[];
   busy: boolean;
   onCancel: () => void;
-  onSave: (payload: Partial<PlantCalendarAction>) => Promise<void>;
+  onSave: (payload: PlantActionMutationPayload) => Promise<void>;
 }
 
 interface CalendarKanbanCardProps {
   action: PlantCalendarAction;
   actionType: PlantActionTypeDefinition;
   timingState?: TimingState;
+  cropLabel?: string;
   onOpen: () => void;
   draggable: boolean;
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
@@ -95,8 +97,11 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
   const [end, setEnd] = useState(todayString());
   const [reason, setReason] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [instructionsHtml, setInstructionsHtml] = useState("");
+  const [images, setImages] = useState<File[]>([]);
   const [requiredPeople, setRequiredPeople] = useState(1);
   const [estimatedMinutes, setEstimatedMinutes] = useState(30);
+  const [localError, setLocalError] = useState("");
   const blockingReasons = [
     ...(!title.trim() ? ["作業名を入力してください"] : []),
     ...(!start || !end ? ["開始日と終了日を選択してください"] : []),
@@ -106,25 +111,32 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
     ...(busy ? ["現在の処理が完了するまでお待ちください"] : []),
   ];
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
-    void onSave({
-      title,
-      action_type: actionType,
-      priority,
-      window_start: start,
-      window_end: end,
-      reason,
-      instructions,
-      tags: [],
-      required_people: requiredPeople,
-      estimated_minutes: estimatedMinutes,
-    });
+    setLocalError("");
+    try {
+      await onSave({
+        title,
+        action_type: actionType,
+        priority,
+        window_start: start,
+        window_end: end,
+        reason,
+        instructions,
+        instructions_html: instructionsHtml,
+        images,
+        tags: [],
+        required_people: requiredPeople,
+        estimated_minutes: estimatedMinutes,
+      });
+    } catch (caught) {
+      setLocalError(errorMessage(caught));
+    }
   };
 
   return (
-    <form className="action-edit-form new-action-form" onSubmit={save}>
-      <strong>手動で作業を追加</strong>
+    <form className="action-edit-form new-action-form" onSubmit={(event) => void save(event)}>
+      <strong>作業内容</strong>
       <label>作業名<input required value={title} onChange={(event) => setTitle(event.target.value)} /></label>
       <div className="field-grid two">
         <ActionTypeSelect actionTypes={actionTypes} value={actionType} onChange={setActionType} />
@@ -141,8 +153,10 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
         onEstimatedMinutesChange={setEstimatedMinutes}
       />
       <label>理由<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-      <label>作業内容<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} /></label>
+      <label>作業の要約<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="カードですぐ確認できる短い説明" /></label>
+      <RichActionContentField html={instructionsHtml} onHtmlChange={setInstructionsHtml} images={images} onImagesChange={setImages} />
       <DisabledActionReason id="new-calendar-action-blocked" reasons={blockingReasons} prefix="作業を追加するには" />
+      {localError && <p className="form-error" role="alert">作業を追加できませんでした: {localError}</p>}
       <div className="form-actions">
         <button type="button" onClick={onCancel}>キャンセル</button>
         <button type="submit" disabled={blockingReasons.length > 0} aria-describedby={blockingReasons.length > 0 ? "new-calendar-action-blocked" : undefined} title={disabledActionTitle(blockingReasons)}><Plus size={15} />追加</button>
@@ -151,7 +165,7 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
   );
 }
 
-export function CalendarKanbanCard({ action, actionType, timingState, onOpen, draggable, onDragStart, onDragEnd }: CalendarKanbanCardProps) {
+export function CalendarKanbanCard({ action, actionType, timingState, cropLabel, onOpen, draggable, onDragStart, onDragEnd }: CalendarKanbanCardProps) {
   return (
     <button
       type="button"
@@ -180,6 +194,7 @@ export function CalendarKanbanCard({ action, actionType, timingState, onOpen, dr
         </span>
         <ChevronRight size={18} aria-hidden="true" />
       </span>
+      {cropLabel && <span className="kanban-card-crop"><Leaf size={13} />{cropLabel}</span>}
       <span className="kanban-card-workload">
         <span><Users size={14} />{action.required_people}人</span>
         <span><Clock3 size={14} />{formatDuration(action.estimated_minutes)}</span>
@@ -224,8 +239,8 @@ export function CalendarActionCard({
           <div className="action-heading">
             <div><small>{actionType.label}</small><h3>{action.title}</h3></div>
             {(capabilities.edit || capabilities.delete) && <div className="action-row-tools">
-              {capabilities.edit && <button type="button" className="action-icon-button" onClick={() => setEditing((value) => !value)} disabled={busy} title={busyReason || "作業を編集"}><Edit3 size={16} /></button>}
-              {capabilities.delete && <button type="button" className="action-icon-button danger" onClick={() => void onDelete(plantingId, action.id)} disabled={busy} title={busyReason || "作業を削除"}><Trash2 size={16} /></button>}
+              {capabilities.edit && <button type="button" className="action-edit-button" onClick={() => setEditing(true)} disabled={busy} title={busyReason || "予定、説明、人数を編集"}><Edit3 size={16} />作業内容を編集</button>}
+              {capabilities.delete && <button type="button" className="action-icon-button danger" onClick={() => { if (window.confirm(`「${action.title}」を削除しますか？\nこの操作は元に戻せません。`)) void onDelete(plantingId, action.id); }} disabled={busy} title={busyReason || "作業を削除"}><Trash2 size={16} /></button>}
             </div>}
           </div>
           <dl className="action-detail">
@@ -234,6 +249,8 @@ export function CalendarActionCard({
             <dt>理由</dt><dd>{action.reason || "未設定"}</dd>
             <dt>作業</dt><dd>{action.instructions || "未設定"}</dd>
           </dl>
+          {action.instructions_html && <RichActionContent html={action.instructions_html} />}
+          {Boolean(action.attachments?.length) && <div className="action-content-images">{action.attachments.map((attachment) => <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer"><img src={attachment.url} alt={attachment.original_filename || "作業画像"} loading="lazy" /></a>)}</div>}
           <WorkGuidance action={action} />
           {action.tags.length > 0 && <div className="action-tags">{action.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
@@ -242,16 +259,12 @@ export function CalendarActionCard({
       {action.completion && <CompletionRecord action={action} />}
       {action.skip_decision && <SkipDecisionRecord action={action} />}
       {editing && (
-        <ActionEditForm
-          action={action}
-          actionTypes={actionTypes}
-          busy={busy}
-          onCancel={() => setEditing(false)}
-          onSave={async (payload) => {
-            await onEdit(plantingId, action.id, payload);
-            setEditing(false);
-          }}
-        />
+        <div className="action-edit-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditing(false); }}>
+          <section className="action-edit-dialog" role="dialog" aria-modal="true" aria-labelledby={`action-edit-title-${action.id}`}>
+            <header><div><span>実績入力とは別に編集します</span><h3 id={`action-edit-title-${action.id}`}>作業内容を編集</h3></div><button type="button" className="icon-button" onClick={() => setEditing(false)} title="閉じる">×</button></header>
+            <div className="action-edit-dialog-body"><ActionEditForm action={action} actionTypes={actionTypes} busy={busy} onCancel={() => setEditing(false)} onSave={async (payload) => { await onEdit(plantingId, action.id, payload); setEditing(false); }} /></div>
+          </section>
+        </div>
       )}
       {!editing && (capabilities.start || capabilities.returnToPlanned || capabilities.record || capabilities.skip) && (
         skipping && capabilities.skip ? (
@@ -506,7 +519,7 @@ function SkipDecisionForm({ plantingId, action, busy, onCancel, onSkip }: SkipDe
       <label>確認した状態・測定値<textarea required maxLength={2000} value={observedFacts} onChange={(event) => setObservedFacts(event.target.value)} placeholder="例: 葉色と新梢は良好。排液EC 1.2 mS/cmで追肥は不要と判断" /></label>
       <label>判断メモ（任意）<textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="期限切れになった経緯や補足を記録" /></label>
       <label>次回確認日（任意）<input type="date" min={decidedOn} value={nextReviewOn} onChange={(event) => setNextReviewOn(event.target.value)} /></label>
-      <label className="image-input"><span><ImagePlus size={15} />確認画像（任意）</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setImages(Array.from(event.target.files ?? []).slice(0, 5))} /></label>
+      <ImagePasteInput label="確認画像（任意）" images={images} onChange={setImages} />
       <label className="guidance-check"><input type="checkbox" checked={useAsGuidance} onChange={(event) => setUseAsGuidance(event.target.checked)} /><span>この判断を同じ作物の今後のAI計画改善に利用する</span></label>
       <DisabledActionReason id={`skip-decision-blocked-${action.id}`} reasons={blockingReasons} prefix="見送りを記録するには" />
       {localError && <p className="form-error">{localError}</p>}
@@ -542,7 +555,7 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
   const [customMethodType, setCustomMethodType] = useState<WorkMethodType>(defaultCustomMethodType(action.action_type));
   const [materialName, setMaterialName] = useState(initialWorkMethod?.material_name ?? "");
   const [amountOrRate, setAmountOrRate] = useState("");
-  const [followUpDays, setFollowUpDays] = useState(initialWorkMethod?.follow_up_days_default ? String(initialWorkMethod.follow_up_days_default) : "");
+  const [followUpDays, setFollowUpDays] = useState(String(recommendedFollowUpDays(initialWorkMethod, action.action_type)));
   const selectedWorkMethod = workMethods.find((method) => method.id === workMethodId);
   const selectedMethodType = workMethodId === "custom" ? customMethodType : selectedWorkMethod?.method_type;
   const followUpDaysNumber = followUpDays ? Number(followUpDays) : null;
@@ -606,7 +619,7 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
             setWorkMethodId(nextId);
             setMaterialName(nextMethod?.material_name ?? "");
             setAmountOrRate("");
-            setFollowUpDays(nextMethod?.follow_up_days_default ? String(nextMethod.follow_up_days_default) : "");
+            setFollowUpDays(String(recommendedFollowUpDays(nextMethod, action.action_type)));
             }}
             options={[
               { value: "", label: "選択してください", fixed: true },
@@ -638,7 +651,7 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
         {selectedMethodType && methodUsesAmountOrRate(selectedMethodType, action.action_type) && (
           <label>実際の使用量・希釈・処理時間（任意）<input value={amountOrRate} onChange={(event) => setAmountOrRate(event.target.value)} placeholder={selectedWorkMethod?.amount_or_rate || "例: 500倍、1鉢2L、10分"} /></label>
         )}
-        <label>次回確認までの日数（任意）<input type="number" min="1" max="365" step="1" value={followUpDays} onChange={(event) => setFollowUpDays(event.target.value)} placeholder="実施日から数える目安" /></label>
+        <label className="follow-up-default-field"><span>次回の確認目安 <small>AIの提案値・変更できます</small></span><input type="number" min="1" max="365" step="1" value={followUpDays} onChange={(event) => setFollowUpDays(event.target.value)} /><em>実施日から何日後に状態を見直すかの目安です。迷う場合はこのまま記録できます。</em></label>
       </fieldset>
       <label>メモ<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="使用量、状態など（任意）" /></label>
       <fieldset className="work-rating">
@@ -652,10 +665,7 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
           ))}
         </div>
       </fieldset>
-      <label className="image-input">
-        <span><ImagePlus size={15} />画像</span>
-        <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setImages(Array.from(event.target.files ?? []).slice(0, 5))} />
-      </label>
+      <ImagePasteInput label="作業記録の画像" images={images} onChange={setImages} />
       <DisabledActionReason id={`work-record-blocked-${action.id}`} reasons={blockingReasons} prefix="作業を記録するには" />
       {localError && <p className="form-error">{localError}</p>}
       <div>
@@ -664,6 +674,80 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
       </div>
     </form>
   );
+}
+
+function RichActionContentField({ html, onHtmlChange, images, onImagesChange }: { html: string; onHtmlChange: (value: string) => void; images: File[]; onImagesChange: (value: File[]) => void }) {
+  const addImages = (files: File[], selectionStart = html.length, selectionEnd = html.length) => {
+    const accepted = files.filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type)).slice(0, Math.max(0, 5 - images.length));
+    if (accepted.length === 0) return;
+    const markers = accepted.map((_, offset) => `{{image:${images.length + offset}}}`).join("\n");
+    onImagesChange([...images, ...accepted]);
+    onHtmlChange(`${html.slice(0, selectionStart)}${markers}${html.slice(selectionEnd)}`);
+  };
+  return (
+    <fieldset className="rich-action-content">
+      <legend>詳しい作業内容・画像</legend>
+      <p><code>&lt;p&gt;</code>、<code>&lt;strong&gt;</code>、<code>&lt;ul&gt;</code>などのHTMLを使用できます。画像は選択または貼り付けた位置へ挿入されます。</p>
+      <textarea
+        value={html}
+        onChange={(event) => onHtmlChange(event.target.value)}
+        onPaste={(event) => {
+          const files = Array.from(event.clipboardData.files);
+          if (files.length === 0) return;
+          event.preventDefault();
+          addImages(files, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
+        }}
+        placeholder={'<p>葉の裏側を確認します。</p>\n<strong>注意:</strong> 雨の日は延期します。'}
+        aria-label="HTML形式の詳しい作業内容"
+      />
+      <label className="image-input"><span><ImagePlus size={15} />画像を選ぶ・ここへ貼り付ける</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => addImages(Array.from(event.target.files ?? []))} /></label>
+      {images.length > 0 && <ul className="pending-image-list">{images.map((image, index) => <li key={`${image.name}-${index}`}><span>{index + 1}</span>{image.name}<code>{`{{image:${index}}}`}</code></li>)}</ul>}
+      {html && <div className="rich-action-preview"><span>プレビュー</span><RichActionContent html={html.replace(/\{\{image:\d+\}\}/g, '<em class="pending-image-placeholder">画像（保存後に表示）</em>')} /></div>}
+    </fieldset>
+  );
+}
+
+function ImagePasteInput({ label, images, onChange }: { label: string; images: File[]; onChange: (images: File[]) => void }) {
+  const append = (files: File[]) => onChange([...images, ...files.filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type))].slice(0, 5));
+  return (
+    <div className="image-paste-input" tabIndex={0} onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); append(files); } }}>
+      <label className="image-input"><span><ImagePlus size={15} />{label}</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => append(Array.from(event.target.files ?? []))} /></label>
+      <small>最大5枚。枠を選択してクリップボードから画像を貼り付けることもできます。</small>
+      {images.length > 0 && <span className="image-paste-count">{images.length}枚を追加</span>}
+    </div>
+  );
+}
+
+function RichActionContent({ html }: { html: string }) {
+  return <div className="rich-action-rendered" dangerouslySetInnerHTML={{ __html: sanitizeActionHtml(html) }} />;
+}
+
+function sanitizeActionHtml(value: string): string {
+  const documentValue = new DOMParser().parseFromString(value, "text/html");
+  const allowedTags = new Set(["P", "BR", "STRONG", "EM", "UL", "OL", "LI", "H3", "H4", "BLOCKQUOTE", "A", "IMG", "FIGURE", "CODE"]);
+  [...documentValue.body.querySelectorAll("*")].forEach((element) => {
+    if (!allowedTags.has(element.tagName)) {
+      element.replaceWith(...element.childNodes);
+      return;
+    }
+    [...element.attributes].forEach((attribute) => {
+      const allowed = (element.tagName === "A" && ["href", "target", "rel"].includes(attribute.name))
+        || (element.tagName === "IMG" && ["src", "alt", "loading"].includes(attribute.name))
+        || (element.tagName === "EM" && attribute.name === "class" && attribute.value === "pending-image-placeholder");
+      if (!allowed) element.removeAttribute(attribute.name);
+    });
+    if (element.tagName === "A") {
+      const href = element.getAttribute("href") ?? "";
+      if (!href.startsWith("https://") && !href.startsWith("/")) element.removeAttribute("href");
+      element.setAttribute("target", "_blank");
+      element.setAttribute("rel", "noopener noreferrer");
+    }
+    if (element.tagName === "IMG") {
+      const source = element.getAttribute("src") ?? "";
+      if (!source.startsWith("https://") && !source.startsWith("/local/api/")) element.remove();
+    }
+  });
+  return documentValue.body.innerHTML;
 }
 
 const COMMON_WORK_METHODS: WorkMethodOption[] = [
@@ -698,6 +782,14 @@ function methodUsesAmountOrRate(methodType: WorkMethodType, actionType: string):
   return actionType === "watering" || ["device", "material_application", "chemical", "biological"].includes(methodType);
 }
 
+function recommendedFollowUpDays(method: WorkMethodOption | undefined, actionType: string): number {
+  const explicit = method?.follow_up_days_default;
+  if (explicit && explicit > 0) return explicit;
+  const preferred = method?.frequency.preferred_interval_days;
+  if (preferred && preferred > 0) return preferred;
+  return ({ watering: 1, pollination: 3, harvest: 3, pest_control: 7, gibberellin_treatment: 7, repotting: 7, fertilization: 14, pruning: 14, girdling: 14 } as Record<string, number>)[actionType] ?? 7;
+}
+
 interface ActionEditFormProps {
   action: PlantCalendarAction;
   actionTypes: PlantActionTypeDefinition[];
@@ -714,6 +806,8 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
   const [windowEnd, setWindowEnd] = useState(action.window_end);
   const [reason, setReason] = useState(action.reason);
   const [instructions, setInstructions] = useState(action.instructions);
+  const [instructionsHtml, setInstructionsHtml] = useState(action.instructions_html ?? "");
+  const [images, setImages] = useState<File[]>([]);
   const [tags, setTags] = useState(action.tags.join(", "));
   const [requiredPeople, setRequiredPeople] = useState(action.required_people);
   const [estimatedMinutes, setEstimatedMinutes] = useState(action.estimated_minutes);
@@ -740,6 +834,8 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
         window_end: windowEnd,
         reason,
         instructions,
+        instructions_html: instructionsHtml,
+        images,
         tags: tags.split(/[,、\n]/).map((tag) => tag.trim()).filter(Boolean),
         required_people: requiredPeople,
         estimated_minutes: estimatedMinutes,
@@ -768,7 +864,8 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
         onEstimatedMinutesChange={setEstimatedMinutes}
       />
       <label>理由<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-      <label>作業内容<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} /></label>
+      <label>作業の要約<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="カードですぐ確認できる短い説明" /></label>
+      <RichActionContentField html={instructionsHtml} onHtmlChange={setInstructionsHtml} images={images} onImagesChange={setImages} />
       <label>タグ<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="結実, 樹勢, 防除" /></label>
       <label className="guidance-check">
         <input type="checkbox" checked={useAsGuidance} onChange={(event) => setUseAsGuidance(event.target.checked)} />

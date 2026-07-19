@@ -1249,7 +1249,7 @@ class WebServerBasicUITest(unittest.TestCase):
                 "material_kind": "cattle_manure",
                 "material_name": "牛ふん堆肥",
                 "amount_kg": 25,
-                "nutrient_percent": {"n": 2, "p2o5": 1, "k2o": 1.5},
+                "nutrient_percent": {"n": 2, "p2o5": 1, "k2o": 1.5, "mgo": 0.5},
                 "annual_available_percent": 10,
                 "effect_years": 2,
                 "start_delay_days": 0,
@@ -1259,6 +1259,7 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(fertilizer.status_code, 201)
         self.assertEqual(fertilizer.get_json()["application"]["placement_id"], "pot-a")
         self.assertGreater(fertilizer.get_json()["effect_summary"]["nutrients"]["n"]["remaining_kg"], 0)
+        self.assertGreater(fertilizer.get_json()["effect_summary"]["nutrients"]["mgo"]["remaining_kg"], 0)
         fertilizer_list = self.client.get(f"/local/api/plantings/{planting['id']}/fertilizer-applications?as_of=2026-07-14")
         self.assertEqual(fertilizer_list.status_code, 200)
         self.assertEqual(fertilizer_list.get_json()["applications"][0]["material_name"], "牛ふん堆肥")
@@ -1291,6 +1292,36 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(action_search.status_code, 200)
         self.assertEqual(action_search.get_json()["total"], 1)
         self.assertEqual(action_search.get_json()["items"][0]["id"], action["id"])
+
+        rich_action = self.client.post(
+            f"/local/api/plantings/{planting['id']}/calendar/actions",
+            data={
+                "payload": json.dumps(
+                    {
+                        "title": "画像付きの葉色確認",
+                        "action_type": "observation",
+                        "priority": "recommended",
+                        "window_start": "2026-07-21",
+                        "window_end": "2026-07-22",
+                        "reason": "葉色を比較するため",
+                        "instructions": "葉を撮影して比較する",
+                        "instructions_html": "<p><strong>同じ葉</strong>を撮影します。</p>{{image:0}}",
+                        "required_people": 1,
+                        "estimated_minutes": 15,
+                    },
+                    ensure_ascii=False,
+                ),
+                "images": (io.BytesIO(b"calendar-action-image"), "leaf.png"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(rich_action.status_code, 201)
+        self.assertEqual(rich_action.get_json()["attachments"][0]["original_filename"], "leaf.png")
+        self.assertIn("<figure><img", rich_action.get_json()["instructions_html"])
+        self.assertNotIn("{{image:0}}", rich_action.get_json()["instructions_html"])
+        rich_image = self.client.get(rich_action.get_json()["attachments"][0]["url"])
+        self.assertEqual(rich_image.status_code, 200)
+        self.assertEqual(rich_image.data, b"calendar-action-image")
 
         completed = self.client.post(
             f"/local/api/plantings/{planting['id']}/calendar/actions/{action['id']}/complete",
@@ -1340,14 +1371,25 @@ class WebServerBasicUITest(unittest.TestCase):
 
         regenerated = self.client.post(
             f"/local/api/plantings/{planting['id']}/calendar/regenerate",
-            json={"start_date": "2026-07-21", "planning_notes": "週末だけ作業する"},
+            json={"start_date": "2026-07-21", "planning_notes": "週末だけ作業する", "mode": "review"},
         )
         self.assertEqual(regenerated.status_code, 202)
         self.assertEqual(regenerated.get_json()["generation_task"]["status"], "queued")
         previous_context_count = len(self.fake_ai_content_service.calendar_contexts)
         self.plant_calendar_generation_task.process_next()
         self.assertEqual(self.fake_ai_content_service.calendar_contexts[-1]["audience"]["experience_level"], "beginner")
+        self.assertGreater(len(self.fake_ai_content_service.calendar_contexts[-1]["existing_calendar"]["actions"]), 0)
         self.assertEqual(len(self.fake_ai_content_service.calendar_contexts), previous_context_count + 1)
+        review_task = self.plant_management_repository.field_bundle(field["id"])["generation_tasks"][0]
+        self.assertEqual(review_task["status"], "awaiting_review")
+        self.assertTrue(review_task["proposals"])
+        for proposal in review_task["proposals"]:
+            decision = self.client.post(
+                f"/local/api/plantings/{planting['id']}/calendar/regeneration-proposals/{review_task['id']}/{proposal['id']}",
+                json={"decision": "approved"},
+            )
+            self.assertEqual(decision.status_code, 200)
+        self.assertEqual(decision.get_json()["task"]["status"], "succeeded")
         self.assertTrue(any(item["status"] == "completed" for item in self.plant_management_repository.get_calendar(planting["id"])["actions"]))
 
         detail = self.client.get(f"/fields/{field['id']}?planting={planting['id']}#cultivation")
@@ -1478,6 +1520,8 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertIn('data-record-date="2026-07-18"', html)
         self.assertIn('id="record-day-modal"', html)
+        self.assertIn('id="record-image-dropzone"', html)
+        self.assertIn("画像を選択・貼り付け", html)
         self.assertIn("葉色を確認", html)
         self.assertIn("😄", html)
 
