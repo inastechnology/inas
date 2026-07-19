@@ -8,6 +8,7 @@ import type {
   FertilizerApplication,
   FertilizerMaterialKind,
   PlantActionCompletionPayload,
+  PlantActionSkipPayload,
   PlantBundle,
   PlantCalendar,
   PlantCalendarAction,
@@ -23,7 +24,7 @@ type ActionTimingState = PlantBundle["suggestions"][number]["timing_state"];
 const KANBAN_COLUMNS: Array<{ id: KanbanColumn; label: string; description: string }> = [
   { id: "planned", label: "未完了", description: "着手を待っている作業" },
   { id: "in_progress", label: "作業中", description: "現在取り組んでいる作業" },
-  { id: "completed", label: "完了", description: "実施済み・見送りの作業" },
+  { id: "completed", label: "完了・見送り", description: "実施済み、または確認して不要と判断した作業" },
 ];
 
 const TIMING_SORT_ORDER: Record<ActionTimingState, number> = { overdue: 0, due: 1, upcoming: 2 };
@@ -42,6 +43,7 @@ export interface PlantCalendarDrawerProps {
   onClose: () => void;
   onEditAction: (plantingId: string, actionId: string, payload: Partial<PlantCalendarAction> & { use_as_guidance?: boolean }) => Promise<void>;
   onCompleteAction: (plantingId: string, actionId: string, payload: PlantActionCompletionPayload) => Promise<void>;
+  onSkipAction: (plantingId: string, actionId: string, payload: PlantActionSkipPayload) => Promise<void>;
   onAskQuestion: (plantingId: string, question: string) => Promise<PlantQuestionRecord>;
   onRegenerate: (plantingId: string, startDate: string, planningNotes: string) => Promise<void>;
   onAddAction: (plantingId: string, payload: Partial<PlantCalendarAction>) => Promise<void>;
@@ -72,6 +74,7 @@ export function PlantCalendarDrawer({
   onClose,
   onEditAction,
   onCompleteAction,
+  onSkipAction,
   onAskQuestion,
   onRegenerate,
   onAddAction,
@@ -475,6 +478,7 @@ export function PlantCalendarDrawer({
                       initialRecording={recordActionId === selectedAction.id}
                       onEdit={onEditAction}
                       onComplete={onCompleteAction}
+                      onSkip={onSkipAction}
                       onDelete={async (...args) => {
                         await onDeleteAction(...args);
                         closeAction();
@@ -533,8 +537,8 @@ function compareManagementActions(
     return left.window_start.localeCompare(right.window_start) || left.window_end.localeCompare(right.window_end);
   }
 
-  const leftDate = left.completion?.performed_on || left.window_end;
-  const rightDate = right.completion?.performed_on || right.window_end;
+  const leftDate = left.completion?.performed_on || left.skip_decision?.decided_on || left.window_end;
+  const rightDate = right.completion?.performed_on || right.skip_decision?.decided_on || right.window_end;
   return rightDate.localeCompare(leftDate) || right.window_end.localeCompare(left.window_end);
 }
 

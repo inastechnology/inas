@@ -84,6 +84,7 @@ from ina_device_hub.instagram_client import InstagramClient
 from ina_device_hub.instagram_post_task import reload_instagram_post_task_settings
 from ina_device_hub.location_repository import location_repository
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
+from ina_device_hub.plant_action_decision_service import PlantActionDecisionService
 from ina_device_hub.plant_calendar_generation_task import plant_calendar_generation_task
 from ina_device_hub.plant_calendar_prompt import (
     DEFAULT_PLANT_CALENDAR_PROMPT_TEMPLATE,
@@ -6317,6 +6318,33 @@ def update_plant_calendar_action_api(planting_id, action_id):
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(action)
+
+
+@app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>/skip", methods=["POST"])
+def skip_plant_calendar_action_api(planting_id, action_id):
+    request_body = request.get_json(silent=True) if request.is_json else request.form.to_dict()
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be an object"}), 400
+    service = PlantActionDecisionService(
+        plant_repository=plant_management_repository(),
+        field_repository=field_repository(),
+        media_service=field_record_media_service(),
+    )
+    try:
+        result = service.skip_action(
+            planting_id,
+            action_id,
+            request_body,
+            request.files.getlist("images"),
+            decided_by=current_user_from_request(request).email,
+        )
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except (PlantManagementValidationError, FieldValidationError, FieldRecordMediaValidationError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except FieldRecordMediaStorageError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(result), 201
 
 
 @app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>/complete", methods=["POST"])

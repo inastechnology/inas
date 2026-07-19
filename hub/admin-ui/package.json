@@ -10,6 +10,7 @@
     "smoke:field-detail": "node scripts/field-detail-smoke.mjs",
     "smoke:device-detail": "node scripts/device-detail-smoke.mjs",
     "smoke:settings": "node scripts/settings-smoke.mjs",
+    "smoke:skip-decision": "node scripts/skip-decision-smoke.mjs",
     "test:merge": "node --experimental-strip-types scripts/layout-merge-test.mjs",
     "typecheck": "tsc --noEmit"
   },

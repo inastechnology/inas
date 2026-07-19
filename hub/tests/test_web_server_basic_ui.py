@@ -1361,6 +1361,70 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn("/static/plant-actions/fertilization.webp", html)
         self.assertIn(f"/fields/{field['id']}/calendar?planting={planting['id']}", html)
 
+    def test_plant_action_can_be_checked_and_skipped_with_a_field_history_record(self):
+        field = self.field_repository.upsert(None, {"name": "見送り判断圃場", "crop": "ブルーベリー"})
+        planting = self.plant_management_repository.create_planting(
+            field["id"],
+            {
+                "space_id": "space-root",
+                "placement_id": "pot-a",
+                "placement_name": "鉢A",
+                "crop_name": "ブルーベリー",
+                "planted_on": "2026-07-14",
+                "plant_count": 1,
+            },
+        )
+        calendar = self.plant_management_repository.create_calendar(
+            planting["id"],
+            [
+                {
+                    "action_type": "fertilization",
+                    "title": "追肥する",
+                    "window_start": "2026-07-15",
+                    "window_end": "2026-07-18",
+                }
+            ],
+        )
+        action_id = calendar["actions"][0]["id"]
+
+        direct_status_change = self.client.patch(
+            f"/local/api/plantings/{planting['id']}/calendar/actions/{action_id}",
+            json={"status": "skipped"},
+        )
+        skipped = self.client.post(
+            f"/local/api/plantings/{planting['id']}/calendar/actions/{action_id}/skip",
+            data={
+                "decided_on": "2026-07-19",
+                "reason_code": "generated_in_error",
+                "observed_facts": "葉色と新梢は良好。排液EC 1.2 mS/cmで追肥不要",
+                "note": "期限切れで残った自動作業を確認した",
+                "next_review_on": "2026-07-26",
+                "use_as_guidance": "true",
+                "images": (io.BytesIO(b"\x89PNG\r\n\x1a\nskip-image"), "skip.png"),
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(direct_status_change.status_code, 400)
+        self.assertEqual(skipped.status_code, 201)
+        action = skipped.get_json()["action"]
+        self.assertEqual(action["status"], "skipped")
+        self.assertEqual(action["skip_decision"]["decided_by"], "local-user@ina.local")
+        self.assertEqual(action["skip_decision"]["attachments"][0]["original_filename"], "skip.png")
+        event = self.field_repository.get(field["id"])["events"][0]
+        self.assertEqual(event["occurred_at"], "2026-07-19")
+        self.assertEqual(event["target_placement_id"], "pot-a")
+        self.assertIn("自動計画で誤って生成された", event["description"])
+        self.assertEqual(self.plant_management_repository.guidance_examples("ブルーベリー")[0]["decision_type"], "skip_action")
+
+        reopened = self.client.patch(
+            f"/local/api/plantings/{planting['id']}/calendar/actions/{action_id}",
+            json={"status": "planned"},
+        )
+        self.assertEqual(reopened.status_code, 200)
+        self.assertIsNone(reopened.get_json()["skip_decision"])
+        self.assertEqual(len(self.field_repository.get(field["id"])["events"]), 1)
+
     def test_planting_generation_rejects_missing_ai_context_before_creating_record(self):
         field = self.field_repository.upsert(None, {"name": "入力確認圃場"})
         layout = self.field_layout_repository.get(field["id"], field_name=field["name"])

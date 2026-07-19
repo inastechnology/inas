@@ -206,6 +206,69 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         with self.assertRaises(PlantManagementValidationError):
             self.repository.update_action(planting["id"], action_id, {"required_people": 0})
 
+    def test_skip_action_records_decision_guidance_and_can_be_reopened(self):
+        planting = self._create_blueberry()
+        calendar = self._create_calendar(planting["id"])
+        action_id = calendar["actions"][0]["id"]
+        attachment = {
+            "id": "skip-image-1",
+            "storage": "r2",
+            "object_key": "field-records/field-1/2026-07-19/skip-image-1.png",
+            "content_type": "image/png",
+            "size_bytes": 120,
+            "original_filename": "leaf.png",
+            "url": "/local/api/fields/field-1/record-images/skip-image-1",
+        }
+
+        skipped = self.repository.skip_action(
+            planting["id"],
+            action_id,
+            "2026-07-19",
+            "generated_in_error",
+            "葉色と新梢は良好で、排液ECは1.2 mS/cmだった",
+            "期限切れの自動作業のため不要",
+            next_review_on="2026-08-01",
+            attachments=[attachment],
+            decided_by="worker@example.com",
+            use_as_guidance=True,
+        )
+
+        self.assertEqual(skipped["status"], "skipped")
+        self.assertEqual(skipped["skip_decision"]["reason_code"], "generated_in_error")
+        self.assertEqual(skipped["skip_decision"]["attachments"][0]["id"], "skip-image-1")
+        self.assertNotIn(action_id, {item["action"]["id"] for item in self.repository.list_suggestions("field-1", today="2026-07-19")})
+        skipped_search = self.repository.search_actions(planting["id"], query="排液EC", statuses=["skipped"])
+        self.assertEqual(skipped_search["items"][0]["id"], action_id)
+        guidance = self.repository.guidance_examples("ブルーベリー")
+        self.assertEqual(guidance[0]["decision_type"], "skip_action")
+        self.assertEqual(guidance[0]["reason_code"], "generated_in_error")
+
+        reloaded = PlantManagementRepository()
+        reloaded.repository_path = self.repository.repository_path
+        reloaded.load()
+        self.assertEqual(reloaded.get_calendar(planting["id"])["actions"][0]["skip_decision"]["next_review_on"], "2026-08-01")
+
+        reopened = self.repository.update_action(planting["id"], action_id, {"status": "planned"})
+        self.assertEqual(reopened["status"], "planned")
+        self.assertIsNone(reopened["skip_decision"])
+        self.assertEqual(len(self.repository.guidance_examples("ブルーベリー")), 1)
+
+    def test_skip_action_requires_a_supported_reason_observation_and_valid_review_date(self):
+        planting = self._create_blueberry()
+        calendar = self._create_calendar(planting["id"])
+        action_id = calendar["actions"][0]["id"]
+
+        with self.assertRaises(PlantManagementValidationError):
+            self.repository.skip_action(planting["id"], action_id, "2026-07-19", "unknown", "確認済み")
+        with self.assertRaises(PlantManagementValidationError):
+            self.repository.skip_action(planting["id"], action_id, "2026-07-19", "other", "")
+        with self.assertRaises(PlantManagementValidationError):
+            self.repository.skip_action(
+                planting["id"], action_id, "2026-07-19", "other", "確認済み", next_review_on="2026-07-18"
+            )
+        with self.assertRaises(PlantManagementValidationError):
+            self.repository.update_action(planting["id"], action_id, {"status": "skipped"})
+
     def test_search_actions_filters_text_status_period_and_paginates(self):
         planting = self._create_blueberry()
         calendar = self._create_calendar(planting["id"])

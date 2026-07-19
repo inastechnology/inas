@@ -1,5 +1,6 @@
 import { useEffect, useState, type DragEvent, type FormEvent } from "react";
 import {
+  Ban,
   CalendarRange,
   Check,
   ChevronRight,
@@ -24,6 +25,8 @@ import { SearchableSelect } from "../SearchableSelect";
 import type {
   PlantActionCompletionPayload,
   PlantActionPriority,
+  PlantActionSkipPayload,
+  PlantActionSkipReason,
   PlantActionTypeDefinition,
   PlantActionWorkDetails,
   PlantCalendarAction,
@@ -36,12 +39,22 @@ import { PRIORITY_LABELS, RATING_OPTIONS, TIMING_LABELS } from "./constants";
 type TimingState = keyof typeof TIMING_LABELS;
 type ActionUpdate = Partial<PlantCalendarAction> & { use_as_guidance?: boolean };
 
-const ACTION_CAPABILITIES: Record<PlantCalendarAction["status"], { edit: boolean; delete: boolean; start: boolean; returnToPlanned: boolean; record: boolean }> = {
-  planned: { edit: true, delete: true, start: true, returnToPlanned: false, record: false },
-  in_progress: { edit: true, delete: false, start: false, returnToPlanned: true, record: true },
-  completed: { edit: false, delete: false, start: false, returnToPlanned: false, record: false },
-  skipped: { edit: false, delete: false, start: false, returnToPlanned: true, record: false },
+const ACTION_CAPABILITIES: Record<PlantCalendarAction["status"], { edit: boolean; delete: boolean; start: boolean; returnToPlanned: boolean; record: boolean; skip: boolean }> = {
+  planned: { edit: true, delete: true, start: true, returnToPlanned: false, record: false, skip: true },
+  in_progress: { edit: true, delete: false, start: false, returnToPlanned: true, record: true, skip: true },
+  completed: { edit: false, delete: false, start: false, returnToPlanned: false, record: false, skip: false },
+  skipped: { edit: false, delete: false, start: false, returnToPlanned: true, record: false, skip: false },
 };
+
+const SKIP_REASON_OPTIONS: Array<{ value: PlantActionSkipReason; label: string }> = [
+  { value: "generated_in_error", label: "自動計画で誤って生成された" },
+  { value: "timing_passed", label: "適期を過ぎた" },
+  { value: "start_conditions_not_met", label: "実施条件を満たしていない" },
+  { value: "already_satisfied", label: "既に作業の目的を満たしている" },
+  { value: "duplicate", label: "他の作業と重複している" },
+  { value: "not_applicable", label: "現在の作物・区画には不要" },
+  { value: "other", label: "その他" },
+];
 
 interface CalendarActionCardProps {
   plantingId: string;
@@ -53,6 +66,7 @@ interface CalendarActionCardProps {
   initialRecording?: boolean;
   onEdit: (plantingId: string, actionId: string, payload: ActionUpdate) => Promise<void>;
   onComplete: (plantingId: string, actionId: string, payload: PlantActionCompletionPayload) => Promise<void>;
+  onSkip: (plantingId: string, actionId: string, payload: PlantActionSkipPayload) => Promise<void>;
   onDelete: (plantingId: string, actionId: string) => Promise<void>;
 }
 
@@ -184,10 +198,12 @@ export function CalendarActionCard({
   initialRecording = false,
   onEdit,
   onComplete,
+  onSkip,
   onDelete,
 }: CalendarActionCardProps) {
   const [editing, setEditing] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const capabilities = ACTION_CAPABILITIES[action.status];
   const busyReason = busy ? "現在の処理が完了するまでお待ちください" : "";
 
@@ -224,6 +240,7 @@ export function CalendarActionCard({
       </div>
 
       {action.completion && <CompletionRecord action={action} />}
+      {action.skip_decision && <SkipDecisionRecord action={action} />}
       {editing && (
         <ActionEditForm
           action={action}
@@ -236,8 +253,19 @@ export function CalendarActionCard({
           }}
         />
       )}
-      {!editing && (capabilities.start || capabilities.returnToPlanned || capabilities.record) && (
-        recording && capabilities.record ? (
+      {!editing && (capabilities.start || capabilities.returnToPlanned || capabilities.record || capabilities.skip) && (
+        skipping && capabilities.skip ? (
+          <SkipDecisionForm
+            plantingId={plantingId}
+            action={action}
+            busy={busy}
+            onCancel={() => setSkipping(false)}
+            onSkip={async (...args) => {
+              await onSkip(...args);
+              setSkipping(false);
+            }}
+          />
+        ) : recording && capabilities.record ? (
           <WorkRecordForm
             plantingId={plantingId}
             action={action}
@@ -258,6 +286,7 @@ export function CalendarActionCard({
               {capabilities.start && <button type="button" className="start-button" onClick={() => void onEdit(plantingId, action.id, { status: "in_progress", use_as_guidance: false })} disabled={busy} title={busyReason || "この作業を作業中へ移動"}><CirclePlay size={16} />作業を開始</button>}
               {capabilities.returnToPlanned && <button type="button" onClick={() => void onEdit(plantingId, action.id, { status: "planned", use_as_guidance: false })} disabled={busy} title={busyReason || "この作業を未完了へ戻す"}><RotateCcw size={16} />未完了に戻す</button>}
               {capabilities.record && <button type="button" className="complete-button" onClick={() => setRecording(true)} disabled={busy} title={busyReason || "実施内容を記録して完了にする"}><Check size={16} />実績を記録して完了</button>}
+              {capabilities.skip && <button type="button" className="skip-button" onClick={() => setSkipping(true)} disabled={busy} title={busyReason || "確認結果を記録して、この作業を見送る"}><Ban size={16} />確認して見送る</button>}
             </div>
           </div>
         )
@@ -385,6 +414,33 @@ function CompletionRecord({ action }: { action: PlantCalendarAction }) {
   );
 }
 
+function SkipDecisionRecord({ action }: { action: PlantCalendarAction }) {
+  const decision = action.skip_decision;
+  if (!decision) return null;
+  const reason = SKIP_REASON_OPTIONS.find((option) => option.value === decision.reason_code)?.label ?? "その他";
+  return (
+    <section className="skip-decision-record" aria-label="見送り判断の記録">
+      <p className="skip-decision-line"><Ban size={14} />{formatDate(decision.decided_on)} に確認して見送り</p>
+      <dl>
+        <dt>理由</dt><dd>{reason}</dd>
+        <dt>確認内容</dt><dd>{decision.observed_facts}</dd>
+        {decision.note && <><dt>判断メモ</dt><dd>{decision.note}</dd></>}
+        {decision.next_review_on && <><dt>次回確認</dt><dd>{formatDate(decision.next_review_on)}</dd></>}
+        {decision.decided_by && <><dt>記録者</dt><dd>{decision.decided_by}</dd></>}
+      </dl>
+      {decision.attachments.length > 0 && (
+        <div className="completion-images">
+          {decision.attachments.map((attachment) => (
+            <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer">
+              <img src={attachment.url} alt={attachment.original_filename || "見送り判断の確認画像"} loading="lazy" />
+            </a>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function WorkCompletion({ details }: { details: NonNullable<PlantActionWorkDetails["execution"]> }) {
   const method = details.custom_method || details.method_label;
   return (
@@ -395,6 +451,70 @@ function WorkCompletion({ details }: { details: NonNullable<PlantActionWorkDetai
       {details.amount_or_rate && <><dt>使用量等</dt><dd>{details.amount_or_rate}</dd></>}
       {details.follow_up_days && <><dt>次回確認</dt><dd>実施日から {details.follow_up_days} 日後を目安</dd></>}
     </dl>
+  );
+}
+
+interface SkipDecisionFormProps {
+  plantingId: string;
+  action: PlantCalendarAction;
+  busy: boolean;
+  onCancel: () => void;
+  onSkip: CalendarActionCardProps["onSkip"];
+}
+
+function SkipDecisionForm({ plantingId, action, busy, onCancel, onSkip }: SkipDecisionFormProps) {
+  const [decidedOn, setDecidedOn] = useState(todayString());
+  const [reasonCode, setReasonCode] = useState<PlantActionSkipReason>("generated_in_error");
+  const [observedFacts, setObservedFacts] = useState("");
+  const [note, setNote] = useState("");
+  const [nextReviewOn, setNextReviewOn] = useState("");
+  const [images, setImages] = useState<File[]>([]);
+  const [useAsGuidance, setUseAsGuidance] = useState(true);
+  const [localError, setLocalError] = useState("");
+  const blockingReasons = [
+    ...(!decidedOn ? ["確認日を選択してください"] : []),
+    ...(!observedFacts.trim() ? ["確認した状態や測定値を入力してください"] : []),
+    ...(nextReviewOn && nextReviewOn < decidedOn ? ["次回確認日は確認日以降にしてください"] : []),
+    ...(busy ? ["現在の処理が完了するまでお待ちください"] : []),
+  ];
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setLocalError("");
+    try {
+      await onSkip(plantingId, action.id, {
+        decided_on: decidedOn,
+        reason_code: reasonCode,
+        observed_facts: observedFacts.trim(),
+        note: note.trim(),
+        next_review_on: nextReviewOn,
+        images,
+        use_as_guidance: useAsGuidance,
+      });
+    } catch (caught) {
+      setLocalError(errorMessage(caught));
+    }
+  };
+
+  return (
+    <form className="skip-decision-form" onSubmit={(event) => void submit(event)}>
+      <div className="skip-decision-heading"><Ban size={17} /><div><strong>確認して見送る</strong><span>作業済みにはせず、不要と判断した根拠を記録します。</span></div></div>
+      <div className="field-grid two">
+        <label>確認日<input type="date" required max={todayString()} value={decidedOn} onChange={(event) => setDecidedOn(event.target.value)} /></label>
+        <label>判断理由<select value={reasonCode} onChange={(event) => setReasonCode(event.target.value as PlantActionSkipReason)}>{SKIP_REASON_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      </div>
+      <label>確認した状態・測定値<textarea required maxLength={2000} value={observedFacts} onChange={(event) => setObservedFacts(event.target.value)} placeholder="例: 葉色と新梢は良好。排液EC 1.2 mS/cmで追肥は不要と判断" /></label>
+      <label>判断メモ（任意）<textarea maxLength={2000} value={note} onChange={(event) => setNote(event.target.value)} placeholder="期限切れになった経緯や補足を記録" /></label>
+      <label>次回確認日（任意）<input type="date" min={decidedOn} value={nextReviewOn} onChange={(event) => setNextReviewOn(event.target.value)} /></label>
+      <label className="image-input"><span><ImagePlus size={15} />確認画像（任意）</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setImages(Array.from(event.target.files ?? []).slice(0, 5))} /></label>
+      <label className="guidance-check"><input type="checkbox" checked={useAsGuidance} onChange={(event) => setUseAsGuidance(event.target.checked)} /><span>この判断を同じ作物の今後のAI計画改善に利用する</span></label>
+      <DisabledActionReason id={`skip-decision-blocked-${action.id}`} reasons={blockingReasons} prefix="見送りを記録するには" />
+      {localError && <p className="form-error">{localError}</p>}
+      <div className="form-actions">
+        <button type="button" onClick={onCancel}>キャンセル</button>
+        <button type="submit" disabled={blockingReasons.length > 0} aria-describedby={blockingReasons.length > 0 ? `skip-decision-blocked-${action.id}` : undefined} title={disabledActionTitle(blockingReasons)}><Ban size={15} />見送りとして記録</button>
+      </div>
+    </form>
   );
 }
 

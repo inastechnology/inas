@@ -180,6 +180,20 @@ try {
   assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), 0, "completed work must leave the in-progress column");
   await page.click(".calendar-action-detail-dialog > header .icon-button");
 
+  const skippedCountBefore = Number(await page.$eval('[data-kanban-status="completed"] > header strong', (count) => count.textContent || "0"));
+  await page.click('[data-kanban-status="planned"] .calendar-kanban-card');
+  await page.waitForSelector(".calendar-action-detail-dialog .skip-button");
+  await page.click(".calendar-action-detail-dialog .skip-button");
+  await page.waitForSelector(".skip-decision-form textarea[required]");
+  await page.type(".skip-decision-form textarea[required]", "葉色と新梢は良好で、現在は作業不要と確認した");
+  await page.type(".skip-decision-form textarea:not([required])", "自動生成された期限切れ作業を現地確認した");
+  await page.screenshot({ path: "/tmp/ina-plant-skip-decision-desktop.png" });
+  await page.click('.skip-decision-form button[type="submit"]');
+  await page.waitForFunction((before) => Number(document.querySelector('[data-kanban-status="completed"] > header strong')?.textContent || "0") > before, {}, skippedCountBefore);
+  await page.waitForSelector(".calendar-action-detail-dialog .skipped-badge");
+  assert.match(await page.$eval(".calendar-action-detail-dialog .skip-decision-record", (record) => record.textContent || ""), /現在は作業不要/);
+  await page.click(".calendar-action-detail-dialog > header .icon-button");
+
   await page.type(".plant-question textarea", "追肥の前に何を確認すればよいですか？");
   await page.click('.plant-question button[type="submit"]');
   await page.waitForSelector(".question-answer");
@@ -239,6 +253,7 @@ try {
   assert.equal(blueberry.growth_targets.soil_moisture_percent.max, 60);
   assert(blueberryCalendar?.actions.length > 0, "plant calendar must contain actions");
   assert(blueberryCalendar.actions.some((action) => action.status === "completed"), "work completion must be stored");
+  assert(blueberryCalendar.actions.some((action) => action.status === "skipped" && action.skip_decision), "skip decision must be stored");
   assert(plantBundle.work_logs.some((log) => log.planting_id === blueberry.id), "work log must be stored");
   assert.equal(browserErrors.length, 0, browserErrors.join("\n"));
 
@@ -254,7 +269,7 @@ try {
         calendarActions: blueberryCalendar.actions.length,
         workLogs: plantBundle.work_logs.filter((log) => log.planting_id === blueberry.id).length,
         desktopZoom,
-        screenshots: ["/tmp/ina-layout-north-settings.png", "/tmp/ina-layout-device-candidates.png", "/tmp/ina-layout-device-binding.png", "/tmp/ina-layout-concurrent-merge.png", "/tmp/ina-layout-desktop.png", "/tmp/ina-layout-mobile.png", "/tmp/ina-plant-calendar-desktop.png", "/tmp/ina-plant-work-record-desktop.png"],
+        screenshots: ["/tmp/ina-layout-north-settings.png", "/tmp/ina-layout-device-candidates.png", "/tmp/ina-layout-device-binding.png", "/tmp/ina-layout-concurrent-merge.png", "/tmp/ina-layout-desktop.png", "/tmp/ina-layout-mobile.png", "/tmp/ina-plant-calendar-desktop.png", "/tmp/ina-plant-work-record-desktop.png", "/tmp/ina-plant-skip-decision-desktop.png"],
       },
       null,
       2,

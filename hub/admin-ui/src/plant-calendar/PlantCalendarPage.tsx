@@ -11,6 +11,7 @@ import {
   loadPlantBundle,
   regeneratePlantCalendar,
   searchPlantActions,
+  skipPlantAction,
   updatePlantAction,
 } from "../api";
 import { errorMessage } from "../formatters";
@@ -138,6 +139,9 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
         })}
         onCompleteAction={(plantingId, actionId, payload) => execute(async () => {
           await completePlantAction(plantingId, actionId, payload);
+        })}
+        onSkipAction={(plantingId, actionId, payload) => execute(async () => {
+          await skipPlantAction(plantingId, actionId, payload);
         })}
         onAskQuestion={(plantingId, question) => execute(() => askPlantQuestion(plantingId, question), false)}
         onRegenerate={regenerate}

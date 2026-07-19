@@ -45,6 +45,15 @@ ACTION_STATUS_TRANSITIONS = {
     "skipped": {"planned"},
 }
 VALID_ACTION_PRIORITIES = {"required", "should", "recommended", "optional"}
+VALID_ACTION_SKIP_REASON_CODES = {
+    "already_satisfied",
+    "start_conditions_not_met",
+    "timing_passed",
+    "duplicate",
+    "generated_in_error",
+    "not_applicable",
+    "other",
+}
 VALID_WORK_METHOD_TYPES = {
     "observation",
     "manual",
@@ -381,9 +390,13 @@ class PlantManagementRepository:
             status = _clean_string(value.get("status"))
             if status not in VALID_ACTION_STATUSES:
                 raise PlantManagementValidationError("unsupported action status")
+            if status == "skipped" and status != action["status"]:
+                raise PlantManagementValidationError("use the skip decision endpoint to skip an action")
             if status != action["status"] and status not in ACTION_STATUS_TRANSITIONS[action["status"]]:
                 raise PlantManagementValidationError(f"action status cannot change from {action['status']} to {status}")
             action["status"] = status
+            if before["status"] == "skipped" and status == "planned":
+                action["skip_decision"] = None
         if "window_start" in value:
             action["window_start"] = _date_string(value.get("window_start"), "window_start")
         if "window_end" in value:
@@ -424,6 +437,76 @@ class PlantManagementRepository:
             calendar["updated_at"] = _utc_now()
             self.data["calendars"][calendar["id"]] = calendar
             self.save()
+        return copy.deepcopy(action)
+
+    @serialized_repository_write("repository_path")
+    def skip_action(
+        self,
+        planting_id: str,
+        action_id: str,
+        decided_on: str,
+        reason_code: str,
+        observed_facts: str,
+        note: str = "",
+        *,
+        next_review_on: str | None = None,
+        attachments: list | None = None,
+        decided_by: str = "",
+        use_as_guidance: bool = True,
+    ):
+        planting = self._planting(planting_id)
+        calendar = self._calendar_for_planting(planting)
+        action = _find_action(calendar, action_id)
+        if action.get("status") not in {"planned", "in_progress"}:
+            raise PlantManagementValidationError("only planned or in-progress actions can be skipped")
+
+        decided_on = _date_string(decided_on, "decided_on")
+        if _date_value(decided_on, "decided_on") > date.today():
+            raise PlantManagementValidationError("decided_on must not be in the future")
+        reason_code = _clean_string(reason_code)
+        if reason_code not in VALID_ACTION_SKIP_REASON_CODES:
+            raise PlantManagementValidationError("unsupported skip reason")
+        observed_facts = _required_string(observed_facts, "observed_facts", 2000)
+        next_review = _date_string(next_review_on, "next_review_on") if next_review_on else None
+        if next_review and next_review < decided_on:
+            raise PlantManagementValidationError("next_review_on must be on or after decided_on")
+
+        before = copy.deepcopy(action)
+        action["status"] = "skipped"
+        action["skip_decision"] = {
+            "decided_on": decided_on,
+            "reason_code": reason_code,
+            "observed_facts": observed_facts,
+            "note": _clean_string(note)[:2000],
+            "next_review_on": next_review,
+            "attachments": _normalize_work_attachments(attachments),
+            "decided_by": _clean_string(decided_by)[:180],
+            "created_at": _utc_now(),
+        }
+        action["source"] = "user_edited"
+        changed = _dict_diff(before, action)
+        feedback = {
+            "id": str(uuid.uuid4()),
+            "field_id": planting["field_id"],
+            "planting_id": planting_id,
+            "crop_name": planting["crop_name"],
+            "action_id": action_id,
+            "changed_at": _utc_now(),
+            "decision_type": "skip_action",
+            "reason_code": reason_code,
+            "observed_facts": observed_facts,
+            "note": action["skip_decision"]["note"],
+            "changes": changed,
+            "before": before,
+            "after": copy.deepcopy(action),
+            "use_as_guidance": bool(use_as_guidance),
+        }
+        self.data["feedback"].append(feedback)
+        self.data["feedback"] = self.data["feedback"][-MAX_FEEDBACK:]
+        calendar["revision"] += 1
+        calendar["updated_at"] = _utc_now()
+        self.data["calendars"][calendar["id"]] = calendar
+        self.save()
         return copy.deepcopy(action)
 
     @serialized_repository_write("repository_path")
@@ -703,6 +786,7 @@ class PlantManagementRepository:
                     action.get("tags"),
                     action.get("work_plan"),
                     action.get("completion"),
+                    action.get("skip_decision"),
                 ],
             ):
                 continue
@@ -1075,6 +1159,7 @@ def _normalize_action(value, index: int):
     if window_end < window_start:
         raise PlantManagementValidationError(f"actions[{index}].window_end must be on or after window_start")
     legacy_plan = value.get("pest_control") if action_type == "pest_control" else None
+    skip_decision = _normalize_action_skip_decision(value.get("skip_decision"))
     return {
         "id": _clean_string(value.get("id"))[:120] or str(uuid.uuid4()),
         "action_type": action_type,
@@ -1091,6 +1176,7 @@ def _normalize_action(value, index: int):
         "work_plan": _normalize_action_work_plan(value.get("work_plan") or legacy_plan, action_type),
         "status": status,
         "completion": _normalize_action_completion(value.get("completion")),
+        "skip_decision": skip_decision if status == "skipped" else None,
         "source": _clean_string(value.get("source"), "llm")[:40],
         "rule_id": _clean_string(value.get("rule_id"))[:120],
     }
@@ -1411,6 +1497,37 @@ def _normalize_action_completion(value):
         "rating": _optional_rating(value.get("rating")),
         "attachments": _normalize_work_attachments(value.get("attachments")),
         "work_details": _normalize_work_details(value.get("work_details")),
+    }
+
+
+def _normalize_action_skip_decision(value):
+    if not isinstance(value, dict):
+        return None
+    decided_on = _clean_string(value.get("decided_on"))
+    try:
+        decided_on = date.fromisoformat(decided_on).isoformat()
+    except ValueError:
+        return None
+    reason_code = _clean_string(value.get("reason_code"))
+    if reason_code not in VALID_ACTION_SKIP_REASON_CODES:
+        reason_code = "other"
+    next_review_on = _clean_string(value.get("next_review_on"))
+    if next_review_on:
+        try:
+            next_review_on = date.fromisoformat(next_review_on).isoformat()
+        except ValueError:
+            next_review_on = None
+    else:
+        next_review_on = None
+    return {
+        "decided_on": decided_on,
+        "reason_code": reason_code,
+        "observed_facts": _clean_string(value.get("observed_facts"))[:2000],
+        "note": _clean_string(value.get("note"))[:2000],
+        "next_review_on": next_review_on,
+        "attachments": _normalize_work_attachments(value.get("attachments")),
+        "decided_by": _clean_string(value.get("decided_by"))[:180],
+        "created_at": _clean_string(value.get("created_at"))[:40],
     }
 
 

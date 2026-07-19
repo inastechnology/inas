@@ -40,6 +40,7 @@ import {
   saveLayout,
   searchLayoutDevices,
   searchPlantActions,
+  skipPlantAction,
   updatePlantAction,
   updatePlanting,
 } from "./api";
@@ -58,6 +59,7 @@ import type {
   Placement,
   PlacementPreset,
   PlantActionCompletionPayload,
+  PlantActionSkipPayload,
   PlantBundle,
   PlantCalendarGenerationTask,
   PlantCalendarAction,
@@ -332,6 +334,20 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     setError("");
     try {
       await completePlantAction(plantingId, actionId, payload);
+      await refreshPlants(plantingId);
+    } catch (caught) {
+      setError(errorMessage(caught));
+      throw caught;
+    } finally {
+      setPlantBusy(false);
+    }
+  };
+
+  const skipPlantCalendarAction = async (plantingId: string, actionId: string, payload: PlantActionSkipPayload) => {
+    setPlantBusy(true);
+    setError("");
+    try {
+      await skipPlantAction(plantingId, actionId, payload);
       await refreshPlants(plantingId);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -743,6 +759,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
           onClose={() => setCalendarOpen(false)}
           onEditAction={editPlantAction}
           onCompleteAction={recordPlantAction}
+          onSkipAction={skipPlantCalendarAction}
           onAskQuestion={answerPlantQuestion}
           onRegenerate={regenerateCalendar}
           onAddAction={createPlantAction}

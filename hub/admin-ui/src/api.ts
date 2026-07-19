@@ -1,4 +1,4 @@
-import type { FieldLayout, LayoutDevice, PlantActionCompletionPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
+import type { FieldLayout, LayoutDevice, PlantActionCompletionPayload, PlantActionSkipPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
 
 export interface SearchPage<Item> {
   items: Item[];
@@ -172,6 +172,25 @@ export function completePlantAction(
   payload.images.forEach((image) => form.append("images", image));
   return requestJson(
     `/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/actions/${encodeURIComponent(actionId)}/complete`,
+    { method: "POST", body: form },
+  );
+}
+
+export function skipPlantAction(
+  plantingId: string,
+  actionId: string,
+  payload: PlantActionSkipPayload,
+): Promise<{ action: PlantCalendarAction }> {
+  const form = new FormData();
+  form.append("decided_on", payload.decided_on);
+  form.append("reason_code", payload.reason_code);
+  form.append("observed_facts", payload.observed_facts);
+  form.append("note", payload.note);
+  form.append("next_review_on", payload.next_review_on);
+  form.append("use_as_guidance", String(payload.use_as_guidance));
+  payload.images.forEach((image) => form.append("images", image));
+  return requestJson(
+    `/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/actions/${encodeURIComponent(actionId)}/skip`,
     { method: "POST", body: form },
   );
 }

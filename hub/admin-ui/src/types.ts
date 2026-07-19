@@ -94,6 +94,14 @@ export interface GrowthTarget {
 
 export type PlantActionPriority = "required" | "should" | "recommended" | "optional";
 export type PlantActionStatus = "planned" | "in_progress" | "completed" | "skipped";
+export type PlantActionSkipReason =
+  | "already_satisfied"
+  | "start_conditions_not_met"
+  | "timing_passed"
+  | "duplicate"
+  | "generated_in_error"
+  | "not_applicable"
+  | "other";
 
 export interface PlantActionTypeDefinition {
   code: string;
@@ -163,6 +171,16 @@ export interface PlantCalendarAction {
     rating?: number | null;
     attachments?: RecordImageAttachment[];
     work_details?: PlantActionWorkDetails;
+  } | null;
+  skip_decision: {
+    decided_on: string;
+    reason_code: PlantActionSkipReason;
+    observed_facts: string;
+    note: string;
+    next_review_on: string | null;
+    attachments: RecordImageAttachment[];
+    decided_by: string;
+    created_at: string;
   } | null;
   source: string;
   rule_id: string;
@@ -242,6 +260,16 @@ export interface PlantActionCompletionPayload {
   rating: number;
   images: File[];
   work_details: PlantActionWorkDetails;
+}
+
+export interface PlantActionSkipPayload {
+  decided_on: string;
+  reason_code: PlantActionSkipReason;
+  observed_facts: string;
+  note: string;
+  next_review_on: string;
+  images: File[];
+  use_as_guidance: boolean;
 }
 
 export interface PlantTaskRule {

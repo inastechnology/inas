@@ -307,6 +307,7 @@ class AIContentService:
             "すべてのactionsのwindow_startとwindow_endはplanning.start_date以降にしてください。過去の日付の作業、期限切れから始まる作業、過去作業の追認タスクは禁止です。"
             "定植日がplanning.start_dateより前なら、定植直後ではなくplanning.start_date時点の生育段階から計画を開始してください。"
             "conditions.notesに日付付きの施肥・防除等があれば実施済み履歴として扱い、その日を次回要否確認の起点にしてください。同じ作業を重複して予定しないでください。"
+            "guidance_jsonでdecision_typeがskip_actionの記録は、ユーザーが現地確認して不要と判断した実績です。reason_code、observed_facts、noteを反映し、同じ条件の不要な作業を再生成しないでください。"
             "fertilizer_historyがあれば、畝・培地へ投入済みの肥料とeffect_summaryの基準日時点の残存肥効を施肥計画へ反映してください。"
             "amount_kgは製品総量であり養分量ではありません。nutrient_percentから計算済みのN・P2O5・K2Oのkgを使い、製品kgを養分kgとして扱わないでください。"
             "残存肥効がある、ECが高い、成分分析が不足している、または作物状態を確認できない場合は、追加施肥ではなく測定・観察・見送りを提案してください。"
