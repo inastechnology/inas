@@ -392,6 +392,14 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .fertilizer-entry-form label small { color: #8a6b32; font-size: 8px; font-weight: 500; }
 .fertilizer-form-intro { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; color: #405347; }
 .fertilizer-form-intro span { color: #778178; font-size: 9px; }
+.fertilizer-preset-picker { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(260px, 1.5fr); gap: 10px; padding: 10px; border: 1px solid #b9d0bc; border-radius: 6px; background: #f3f8f2; }
+.fertilizer-preset-picker > label { align-self: start; }
+.fertilizer-preset-picker > div { display: grid; align-content: start; gap: 3px; padding-left: 10px; border-left: 3px solid #6d9c67; }
+.fertilizer-preset-picker strong { color: #31533a; font-size: 11px; }
+.fertilizer-preset-picker span { color: #52665a; font-size: 9px; line-height: 1.5; }
+.fertilizer-preset-picker small, .fertilizer-estimate-note { color: #725b31; font-size: 8px; line-height: 1.55; }
+.fertilizer-preset-picker a { width: fit-content; color: #28624e; font-size: 8px; font-weight: 800; }
+.fertilizer-estimate-note { margin: 0; padding: 7px 9px; border-left: 3px solid #b48a43; background: #fff9ec; }
 .fertilizer-form-grid { display: grid; gap: 8px; }
 .fertilizer-form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .fertilizer-form-grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -768,6 +776,8 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 }
 
 @media (max-width: 520px) {
+  .fertilizer-preset-picker { grid-template-columns: 1fr; }
+  .fertilizer-preset-picker > div { padding-top: 8px; padding-left: 0; border-top: 3px solid #6d9c67; border-left: 0; }
   .editor-header { min-height: 58px; }
   .editor-identity .eyebrow { display: none; }
   .editor-identity h1 { max-width: 150px; font-size: 15px; }

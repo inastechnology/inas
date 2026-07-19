@@ -626,7 +626,98 @@ const FERTILIZER_KIND_OPTIONS: Array<{ value: FertilizerMaterialKind; label: str
   { value: "custom", label: "その他・独自資材" },
 ];
 
+interface FertilizerPreset {
+  id: string;
+  label: string;
+  summary: string;
+  materialKind: FertilizerMaterialKind;
+  materialName: string;
+  nPercent: string;
+  pPercent: string;
+  kPercent: string;
+  mgoPercent: string;
+  annualAvailablePercent: string;
+  effectYears: string;
+  startDelayDays: string;
+  analysisSource: string;
+  sourceUrl?: string;
+}
+
+const FERTILIZER_PRESETS: FertilizerPreset[] = [
+  {
+    id: "cattle-manure-reference", label: "牛ふん堆肥（公的資料の参考値）", summary: "土づくりを主目的に、ゆっくり効く開始値",
+    materialKind: "cattle_manure", materialName: "牛ふん堆肥",
+    nPercent: "1.2", pPercent: "1.3", kPercent: "1.6", mgoPercent: "0.7",
+    annualAvailablePercent: "10", effectYears: "3", startDelayDays: "14",
+    analysisSource: "千葉県の牛ふん堆肥計算例（N 1.2%、P₂O₅ 1.3%、K₂O 1.6%、MgO 0.7%）・窒素肥効率目安",
+    sourceUrl: "https://www.pref.chiba.lg.jp/chikusan/taihiriyou/sanshutsuhou.html",
+  },
+  {
+    id: "poultry-manure-reference", label: "鶏ふん堆肥（公的資料の平均例）", summary: "牛ふんより成分が高く、比較的早く効く開始値",
+    materialKind: "poultry_manure", materialName: "鶏ふん堆肥",
+    nPercent: "2.5", pPercent: "6.6", kPercent: "3.6", mgoPercent: "1.4",
+    annualAvailablePercent: "50", effectYears: "1", startDelayDays: "7",
+    analysisSource: "千葉県の採卵鶏ふん主体堆肥の平均例（N 2.5%、P₂O₅ 6.6%、K₂O 3.6%、MgO 1.4%）・窒素肥効率目安",
+    sourceUrl: "https://www.pref.chiba.lg.jp/chikusan/taihiriyou/tokuchou.html",
+  },
+  {
+    id: "dried-poultry-manure", label: "乾燥鶏ふん", summary: "濃度が高いため、少量から扱う開始値",
+    materialKind: "poultry_manure", materialName: "乾燥鶏ふん",
+    nPercent: "3.6", pPercent: "4.0", kPercent: "2.2", mgoPercent: "",
+    annualAvailablePercent: "60", effectYears: "1", startDelayDays: "3",
+    analysisSource: "農林水産省掲載の乾燥鶏ふん成分例・家畜ふん堆肥の窒素肥効率目安",
+    sourceUrl: "https://www.maff.go.jp/j/seisan/kankyo/hozen_type/h_sehi_kizyun/pdf/sisin2.pdf",
+  },
+  {
+    id: "rice-straw-compost", label: "植物性堆肥（稲わら堆肥の参考）", summary: "肥料より土づくり向け。成分表示があれば必ず上書き",
+    materialKind: "compost", materialName: "植物性堆肥",
+    nPercent: "0.5", pPercent: "", kPercent: "", mgoPercent: "",
+    annualAvailablePercent: "1", effectYears: "3", startDelayDays: "21",
+    analysisSource: "千葉県の稲わら堆肥の窒素成分例。肥効は原則見込まず、便宜上1%で概算",
+    sourceUrl: "https://www.pref.chiba.lg.jp/chikusan/taihiriyou/sanshutsuhou.html",
+  },
+  {
+    id: "rapeseed-oil-cake", label: "菜種油かす", summary: "有機質肥料の代表例。温度・水分で効き方が変化",
+    materialKind: "organic_fertilizer", materialName: "菜種油かす",
+    nPercent: "5.2", pPercent: "2.0", kPercent: "1.0", mgoPercent: "",
+    annualAvailablePercent: "50", effectYears: "1", startDelayDays: "7",
+    analysisSource: "農研機構の試験使用資材の成分例。肥効率50%は保守的な編集可能な開始値",
+    sourceUrl: "https://www.naro.go.jp/org/tarc/to-noken/DB/DATA/077/077-069.pdf",
+  },
+  {
+    id: "fish-meal", label: "魚かす（研究例）", summary: "速効性が比較的高い研究例。製品表示を優先",
+    materialKind: "organic_fertilizer", materialName: "魚かす",
+    nPercent: "11.0", pPercent: "7.0", kPercent: "1.7", mgoPercent: "",
+    annualAvailablePercent: "50", effectYears: "1", startDelayDays: "7",
+    analysisSource: "農研機構の魚かす試験例（N 11%、P₂O₅ 7%、K₂O 1.7%、20℃で7日以内に窒素約50%無機化）",
+    sourceUrl: "https://www.naro.go.jp/org/warc/research_results/h20/02_kankyo/p22/index.html",
+  },
+  {
+    id: "compound-8-8-8", label: "化成肥料 8-8-8", summary: "袋に8-8-8と表示された速効性肥料の入力例",
+    materialKind: "chemical_fertilizer", materialName: "化成肥料 8-8-8",
+    nPercent: "8", pPercent: "8", kPercent: "8", mgoPercent: "",
+    annualAvailablePercent: "100", effectYears: "1", startDelayDays: "0",
+    analysisSource: "製品表示8-8-8を入力した例。実際に使用した袋の保証成分へ変更",
+  },
+  {
+    id: "custom", label: "製品ラベルから入力", summary: "袋・分析表の数値をそのまま入力",
+    materialKind: "custom", materialName: "",
+    nPercent: "", pPercent: "", kPercent: "", mgoPercent: "",
+    annualAvailablePercent: "50", effectYears: "1", startDelayDays: "0", analysisSource: "",
+  },
+];
+
+const DEFAULT_FERTILIZER_PRESET_BY_KIND: Record<FertilizerMaterialKind, string> = {
+  cattle_manure: "cattle-manure-reference",
+  poultry_manure: "poultry-manure-reference",
+  compost: "rice-straw-compost",
+  organic_fertilizer: "rapeseed-oil-cake",
+  chemical_fertilizer: "compound-8-8-8",
+  custom: "custom",
+};
+
 interface FertilizerDraft {
+  presetId: string;
   appliedOn: string;
   materialKind: FertilizerMaterialKind;
   materialName: string;
@@ -643,19 +734,21 @@ interface FertilizerDraft {
 }
 
 function newFertilizerDraft(): FertilizerDraft {
+  const preset = FERTILIZER_PRESETS[0];
   return {
+    presetId: preset.id,
     appliedOn: todayString(),
-    materialKind: "cattle_manure",
-    materialName: "牛ふん堆肥",
+    materialKind: preset.materialKind,
+    materialName: preset.materialName,
     amountKg: "",
-    nPercent: "",
-    pPercent: "",
-    kPercent: "",
-    mgoPercent: "",
-    annualAvailablePercent: "10",
-    effectYears: "1",
-    startDelayDays: "0",
-    analysisSource: "",
+    nPercent: preset.nPercent,
+    pPercent: preset.pPercent,
+    kPercent: preset.kPercent,
+    mgoPercent: preset.mgoPercent,
+    annualAvailablePercent: preset.annualAvailablePercent,
+    effectYears: preset.effectYears,
+    startDelayDays: preset.startDelayDays,
+    analysisSource: preset.analysisSource,
     notes: "",
   };
 }
@@ -679,19 +772,31 @@ function FertilizerEffectPanel({
   const [draft, setDraft] = useState<FertilizerDraft>(newFertilizerDraft);
   const [error, setError] = useState("");
   const estimate = useMemo(() => summarizeFertilizerApplications(applications), [applications]);
+  const selectedPreset = FERTILIZER_PRESETS.find((preset) => preset.id === draft.presetId);
   const change = <Key extends keyof FertilizerDraft>(key: Key, value: FertilizerDraft[Key]) => (
     setDraft((current) => ({ ...current, [key]: value }))
   );
 
-  const selectKind = (kind: FertilizerMaterialKind) => {
-    const option = FERTILIZER_KIND_OPTIONS.find((item) => item.value === kind);
+  const applyPreset = (presetId: string) => {
+    const preset = FERTILIZER_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
     setDraft((current) => ({
       ...current,
-      materialKind: kind,
-      materialName: kind === "custom" ? "" : option?.label ?? current.materialName,
-      annualAvailablePercent: kind === "cattle_manure" ? "10" : "",
+      presetId: preset.id,
+      materialKind: preset.materialKind,
+      materialName: preset.materialName,
+      nPercent: preset.nPercent,
+      pPercent: preset.pPercent,
+      kPercent: preset.kPercent,
+      mgoPercent: preset.mgoPercent,
+      annualAvailablePercent: preset.annualAvailablePercent,
+      effectYears: preset.effectYears,
+      startDelayDays: preset.startDelayDays,
+      analysisSource: preset.analysisSource,
     }));
   };
+
+  const selectKind = (kind: FertilizerMaterialKind) => applyPreset(DEFAULT_FERTILIZER_PRESET_BY_KIND[kind]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -760,6 +865,15 @@ function FertilizerEffectPanel({
       {editing && (
         <form className="fertilizer-entry-form" data-fertilizer-form onSubmit={(event) => void submit(event)}>
           <div className="fertilizer-form-intro"><strong>実際に入れた肥料を記録</strong><span>製品kgと養分kgを分けて計算します。</span></div>
+          <div className="fertilizer-preset-picker">
+            <label>肥料プリセット<select name="fertilizer_preset" value={draft.presetId} onChange={(event) => applyPreset(event.target.value)}>{FERTILIZER_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
+            <div aria-live="polite">
+              <strong>{selectedPreset?.label}</strong>
+              <span>{selectedPreset?.summary}</span>
+              <small>一般的な参考値を入力しました。実際の製品ラベル・分析値があれば下の値を上書きしてください。空欄は参照資料に値がなく、0%を意味しません。</small>
+              {selectedPreset?.sourceUrl && <a href={selectedPreset.sourceUrl} target="_blank" rel="noreferrer">参考資料を別タブで確認</a>}
+            </div>
+          </div>
           <div className="fertilizer-form-grid three">
             <label>施肥日<input name="applied_on" type="date" required max={todayString()} value={draft.appliedOn} onChange={(event) => change("appliedOn", event.target.value)} /></label>
             <label>資材の種類<select name="material_kind" value={draft.materialKind} onChange={(event) => selectKind(event.target.value as FertilizerMaterialKind)}>{FERTILIZER_KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
@@ -773,10 +887,11 @@ function FertilizerEffectPanel({
             <label>MgO（苦土）<input name="mgo_percent" type="number" min="0" max="100" step="0.01" value={draft.mgoPercent} onChange={(event) => change("mgoPercent", event.target.value)} /></label>
           </div></fieldset>
           <fieldset><legend>肥効の見積条件</legend><div className="fertilizer-form-grid three">
-            <label>年間肥効率（%）<input name="annual_available_percent" type="number" required min="0.1" max="100" step="0.1" value={draft.annualAvailablePercent} onChange={(event) => change("annualAvailablePercent", event.target.value)} /><small>牛ふんの10%は編集可能な開始値です。</small></label>
+            <label>Nを基準にした年間肥効率（概算%）<input name="annual_available_percent" type="number" required min="0.1" max="100" step="0.1" value={draft.annualAvailablePercent} onChange={(event) => change("annualAvailablePercent", event.target.value)} /><small>{selectedPreset?.label ?? "選択した資材"}の{draft.annualAvailablePercent}%は編集可能な開始値です。</small></label>
             <label>肥効を見込む年数<input name="effect_years" type="number" required min="1" max="10" step="1" value={draft.effectYears} onChange={(event) => change("effectYears", event.target.value)} /></label>
             <label>効き始めるまで（日）<input name="start_delay_days" type="number" required min="0" max="3650" step="1" value={draft.startDelayDays} onChange={(event) => change("startDelayDays", event.target.value)} /></label>
           </div></fieldset>
+          <p className="fertilizer-estimate-note">P₂O₅・K₂O・MgOはNと肥効率が異なることがあります。この画面の残効は安全側の概算として使い、地域の施肥基準と土壌分析を優先してください。</p>
           <label>成分・肥効率の根拠<input maxLength={500} value={draft.analysisSource} onChange={(event) => change("analysisSource", event.target.value)} placeholder="製品ラベル、分析表、地域施肥基準など" /></label>
           <label>メモ<textarea maxLength={1000} value={draft.notes} onChange={(event) => change("notes", event.target.value)} placeholder="全面施用、畝内混和、施用範囲など" /></label>
           {error && <p className="form-error" role="alert">{error}</p>}

@@ -109,11 +109,55 @@ try {
   await calendarPage.$eval(".fertilizer-effect-panel .calendar-section-heading button", (button) => button.click());
   await calendarPage.waitForSelector("[data-fertilizer-form]");
   assert.match(await calendarPage.$eval("[data-fertilizer-form]", (form) => form.textContent || ""), /製品kgと養分kgを分けて計算/);
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] select[name="fertilizer_preset"]', (select) => select.options.length), 8, "fertilizer presets must be available");
+  await calendarPage.select('[data-fertilizer-form] select[name="material_kind"]', "poultry_manure");
+  await calendarPage.waitForFunction(() => document.querySelector('[data-fertilizer-form] select[name="fertilizer_preset"]')?.value === "poultry-manure-reference");
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="n_percent"]', (input) => input.value), "2.5");
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="p2o5_percent"]', (input) => input.value), "6.6");
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="k2o_percent"]', (input) => input.value), "3.6");
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="mgo_percent"]', (input) => input.value), "1.4");
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="annual_available_percent"]', (input) => input.value), "50");
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="effect_years"]', (input) => input.value), "1");
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="start_delay_days"]', (input) => input.value), "7");
+  assert.doesNotMatch(await calendarPage.$eval("[data-fertilizer-form]", (form) => form.textContent || ""), /牛ふんの10%/);
+  assert.match(await calendarPage.$eval("[data-fertilizer-form]", (form) => form.textContent || ""), /鶏ふん堆肥（公的資料の平均例）の50%は編集可能な開始値/);
+  await calendarPage.$eval("[data-fertilizer-form]", (form) => form.scrollIntoView({ block: "start" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-preset-poultry.png", fullPage: false });
+  await calendarPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await calendarPage.$eval("[data-fertilizer-form]", (form) => form.scrollIntoView({ block: "start" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-preset-poultry-mobile.png", fullPage: false });
+  await calendarPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  const presetExpectations = [
+    ["cattle-manure-reference", "1.2", "1.3", "1.6", "10", "3", "14"],
+    ["poultry-manure-reference", "2.5", "6.6", "3.6", "50", "1", "7"],
+    ["dried-poultry-manure", "3.6", "4.0", "2.2", "60", "1", "3"],
+    ["rice-straw-compost", "0.5", "", "", "1", "3", "21"],
+    ["rapeseed-oil-cake", "5.2", "2.0", "1.0", "50", "1", "7"],
+    ["fish-meal", "11.0", "7.0", "1.7", "50", "1", "7"],
+    ["compound-8-8-8", "8", "8", "8", "100", "1", "0"],
+  ];
+  for (const [presetId, n, p2o5, k2o, available, years, delay] of presetExpectations) {
+    await calendarPage.select('[data-fertilizer-form] select[name="fertilizer_preset"]', presetId);
+    const actual = await calendarPage.$eval("[data-fertilizer-form]", (form) => [
+      form.querySelector('input[name="n_percent"]')?.value,
+      form.querySelector('input[name="p2o5_percent"]')?.value,
+      form.querySelector('input[name="k2o_percent"]')?.value,
+      form.querySelector('input[name="annual_available_percent"]')?.value,
+      form.querySelector('input[name="effect_years"]')?.value,
+      form.querySelector('input[name="start_delay_days"]')?.value,
+    ]);
+    assert.deepEqual(actual, [n, p2o5, k2o, available, years, delay], `${presetId} must apply all reference values`);
+  }
+  await calendarPage.select('[data-fertilizer-form] select[name="fertilizer_preset"]', "poultry-manure-reference");
+  await calendarPage.waitForFunction(() => document.querySelector('[data-fertilizer-form] input[name="mgo_percent"]')?.value === "1.4");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="amount_kg"]', "20");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="n_percent"]', "2");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="p2o5_percent"]', "1");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="k2o_percent"]', "1.5");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="mgo_percent"]', "0.5");
+  await replaceValue(calendarPage, '[data-fertilizer-form] input[name="material_name"]', `鶏ふん堆肥 UI試験 ${Date.now()}`);
+  assert.equal(await calendarPage.$eval("[data-fertilizer-form]", (form) => form.checkValidity()), true, "the fertilizer preset must leave a submittable form");
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] button[type="submit"]', (button) => button.disabled), false, "the fertilizer save action must be available");
   await calendarPage.click('[data-fertilizer-form] button[type="submit"]');
   await calendarPage.waitForFunction((before) => document.querySelectorAll(".fertilizer-history-list article").length > before, {}, fertilizerCount);
   assert.match(await calendarPage.$eval(".fertilizer-balance", (panel) => panel.textContent || ""), /N.*P₂O₅.*K₂O/);
