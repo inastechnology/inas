@@ -1162,7 +1162,7 @@ function PlacementInspector({
               <dt>定植日</dt><dd>{formatDate(planting.planted_on)}</dd>
               <dt>株数</dt><dd>{planting.plant_count}株</dd>
             </dl>
-            <PlantTargetEditor planting={planting} busy={plantBusy} focusMetric={targetMetric} onSave={onUpdatePlanting} />
+            <PlantTargetEditor planting={planting} busy={plantBusy || generationActive} focusMetric={targetMetric} onSave={onUpdatePlanting} />
             {generationTask?.status === "failed" && <p className="generation-status failed" role="alert">AI計画の作成に失敗しました。カレンダー画面から再実行できます。{generationTask.error && ` (${generationTask.error})`}</p>}
             <div className="planting-links">
               <a href={calendarUrl} target="_blank" rel="noopener" aria-label="カレンダーを新しいタブで開く" className={generationActive ? "generation-active" : undefined}>

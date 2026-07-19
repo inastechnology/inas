@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import {
   Ban,
   CalendarRange,
@@ -68,6 +68,7 @@ interface CalendarActionCardProps {
   actionTypes: PlantActionTypeDefinition[];
   timingState?: TimingState;
   busy: boolean;
+  locked?: boolean;
   initialRecording?: boolean;
   readiness?: AgenticOperationReadiness;
   onEdit: (plantingId: string, actionId: string, payload: ActionUpdate) => Promise<void>;
@@ -157,8 +158,8 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
         onRequiredPeopleChange={setRequiredPeople}
         onEstimatedMinutesChange={setEstimatedMinutes}
       />
-      <label>理由<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-      <label>作業の要約<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="カードですぐ確認できる短い説明" /></label>
+      <label>この作業を考えたきっかけ<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例: 葉色が薄くなり、前回の追肥から時間が経っているため" /></label>
+      <label>今日やること<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="最初に目に入る作業内容を、短くやさしい言葉で" /></label>
       <RichActionContentField html={instructionsHtml} onHtmlChange={setInstructionsHtml} images={images} onImagesChange={setImages} />
       <DisabledActionReason id="new-calendar-action-blocked" reasons={blockingReasons} prefix="作業を追加するには" />
       {localError && <p className="form-error" role="alert">作業を追加できませんでした: {localError}</p>}
@@ -215,6 +216,7 @@ export function CalendarActionCard({
   actionTypes,
   timingState,
   busy,
+  locked = false,
   initialRecording = false,
   readiness,
   onEdit,
@@ -226,11 +228,18 @@ export function CalendarActionCard({
   const [recording, setRecording] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const capabilities = ACTION_CAPABILITIES[action.status];
-  const busyReason = busy ? "現在の処理が完了するまでお待ちください" : "";
+  const busyReason = locked ? "AI栽培計画の作成が完了すると編集できます" : busy ? "現在の処理が完了するまでお待ちください" : "";
 
   useEffect(() => {
     if (initialRecording && capabilities.record) setRecording(true);
   }, [capabilities.record, initialRecording]);
+
+  useEffect(() => {
+    if (!locked) return;
+    setEditing(false);
+    setRecording(false);
+    setSkipping(false);
+  }, [locked]);
 
   return (
     <article
@@ -249,19 +258,24 @@ export function CalendarActionCard({
               {capabilities.delete && <button type="button" className="action-icon-button danger" onClick={() => { if (window.confirm(`「${action.title}」を削除しますか？\nこの操作は元に戻せません。`)) void onDelete(plantingId, action.id); }} disabled={busy} title={busyReason || "作業を削除"}><Trash2 size={16} /></button>}
             </div>}
           </div>
-          <dl className="action-detail">
-            <dt>人員</dt><dd>{action.required_people}人</dd>
-            <dt>見積</dt><dd>{formatDuration(action.estimated_minutes)}</dd>
-            <dt>理由</dt><dd>{action.reason || "未設定"}</dd>
-            <dt>作業</dt><dd>{action.instructions || "未設定"}</dd>
-          </dl>
-          {action.instructions_html && <RichActionContent html={action.instructions_html} />}
-          {Boolean(action.attachments?.length) && <div className="action-content-images">{action.attachments.map((attachment) => <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer"><img src={attachment.url} alt={attachment.original_filename || "作業画像"} loading="lazy" /></a>)}</div>}
-          <WorkGuidance action={action} />
-          {readiness && <OperationReadinessPanel readiness={readiness} />}
+          <div className="action-workload" aria-label="作業量の目安">
+            <span><Users size={15} />{action.required_people}人で</span>
+            <span><Clock3 size={15} />{formatDuration(action.estimated_minutes)}ほど</span>
+          </div>
           {action.tags.length > 0 && <div className="action-tags">{action.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
       </div>
+
+      <ActionDecisionFlow action={action} />
+      {(action.instructions_html || Boolean(action.attachments?.length)) && (
+        <section className="action-journal-note" aria-label="写真つき作業メモ">
+          <header><span aria-hidden="true">✎</span><div><small>あとで見返せる</small><strong>写真つき作業メモ</strong></div></header>
+          {action.instructions_html && <RichActionContent html={action.instructions_html} />}
+          {Boolean(action.attachments?.length) && <div className="action-content-images">{action.attachments.map((attachment) => <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer"><img src={attachment.url} alt={attachment.original_filename || "作業画像"} loading="lazy" /></a>)}</div>}
+        </section>
+      )}
+      <WorkGuidance action={action} />
+      {readiness && <OperationReadinessPanel readiness={readiness} />}
 
       {action.completion && <CompletionRecord action={action} />}
       {action.skip_decision && <SkipDecisionRecord action={action} />}
@@ -313,6 +327,45 @@ export function CalendarActionCard({
         </ModalDialog>
       )}
     </article>
+  );
+}
+
+function ActionDecisionFlow({ action }: { action: PlantCalendarAction }) {
+  const details = action.work_plan;
+  const startConditions = details?.start_conditions ?? [];
+  const skipConditions = details?.skip_conditions ?? [];
+  const decisionFallback = details?.checkpoints?.[0] || "作物の様子を見て、無理のない日に進めます。";
+  return (
+    <section className="action-decision-story" aria-label="作業を決める流れ">
+      <header>
+        <div><span aria-hidden="true">☘</span><div><small>今回の作業ノート</small><strong>なぜやる？ どう決める？ 何をする？</strong></div></div>
+        <p>左から順にたどると、今日の判断が分かります。</p>
+      </header>
+      <div className="action-decision-flow">
+        <article className="action-flow-step context">
+          <span className="action-flow-number">1</span>
+          <small>この作業を考えたきっかけ</small>
+          <strong>なぜ今、見るの？</strong>
+          <p>{action.reason || "作物の今の様子を確かめるための作業です。"}</p>
+        </article>
+        <span className="action-flow-arrow" aria-hidden="true"><ChevronRight size={22} /></span>
+        <article className="action-flow-step decision">
+          <span className="action-flow-number">2</span>
+          <small>作物を見て決める</small>
+          <strong>やるか、今日は見送るか</strong>
+          {startConditions.length > 0 ? <div className="action-decision-choice go"><span>やる目安</span><p>{startConditions.join("、")}</p></div> : <p>{decisionFallback}</p>}
+          {skipConditions.length > 0 && <div className="action-decision-choice wait"><span>見送る目安</span><p>{skipConditions.join("、")}</p></div>}
+        </article>
+        <span className="action-flow-arrow" aria-hidden="true"><ChevronRight size={22} /></span>
+        <article className="action-flow-step task">
+          <span className="action-flow-number">3</span>
+          <small>いちばん大切なところ</small>
+          <strong>今日やること</strong>
+          <p>{action.instructions || "作業内容を確認して、無理のない範囲で進めます。"}</p>
+          <div><Users size={14} /><span>{action.required_people}人</span><Clock3 size={14} /><span>{formatDuration(action.estimated_minutes)}ほど</span></div>
+        </article>
+      </div>
+    </section>
   );
 }
 
@@ -390,15 +443,13 @@ function WorkGuidance({ action }: { action: PlantCalendarAction }) {
   const details = action.work_plan;
   if (!details || (!details.targets.length && !details.checkpoints.length && !details.method_options.length)) return null;
   return (
-    <section className="work-guidance" aria-label="作業の具体情報">
-      <div><ClipboardCheck size={15} /><strong>作業の具体情報</strong></div>
-      {details.targets.length > 0 && <p><span>対象</span>{details.targets.join("、")}</p>}
-      {details.start_conditions.length > 0 && <p><span>開始条件</span>{details.start_conditions.join("、")}</p>}
-      {details.skip_conditions.length > 0 && <p className="work-skip-condition"><span>見送り</span>{details.skip_conditions.join("、")}</p>}
-      {details.checkpoints.length > 0 && <p><span>確認点</span>{details.checkpoints.join("、")}</p>}
+    <section className="work-guidance" aria-label="迷わないための作業メモ">
+      <div><ClipboardCheck size={15} /><strong>迷わないための作業メモ</strong></div>
+      {details.targets.length > 0 && <p><span>見る場所</span>{details.targets.join("、")}</p>}
+      {details.checkpoints.length > 0 && <p><span>見ておくこと</span>{details.checkpoints.join("、")}</p>}
       {details.method_options.length > 0 && (
         <div className="work-method-options">
-          <span>方法候補</span>
+          <span>やり方</span>
           <div className="work-method-list">
             {details.method_options.map((method, index) => (
               <WorkMethodDetails key={method.id} method={method} initiallyOpen={index === 0} />
@@ -406,7 +457,7 @@ function WorkGuidance({ action }: { action: PlantCalendarAction }) {
           </div>
         </div>
       )}
-      {details.completion_criteria.length > 0 && <p><span>完了確認</span>{details.completion_criteria.join("、")}</p>}
+      {details.completion_criteria.length > 0 && <p><span>ここまでできたら完了</span>{details.completion_criteria.join("、")}</p>}
     </section>
   );
 }
@@ -725,34 +776,153 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
 }
 
 function RichActionContentField({ html, onHtmlChange, images, onImagesChange }: { html: string; onHtmlChange: (value: string) => void; images: File[]; onImagesChange: (value: File[]) => void }) {
-  const addImages = (files: File[], selectionStart = html.length, selectionEnd = html.length) => {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const selectionRef = useRef<Range | null>(null);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || document.activeElement === editor) return;
+    const next = actionEditorHtml(html, images);
+    if (editor.innerHTML !== next) editor.innerHTML = next;
+  }, [html, images]);
+
+  const currentHtml = () => editorRef.current ? actionEditorStoredHtml(editorRef.current.innerHTML) : html;
+  const refreshEditor = (nextHtml: string, nextImages = images) => {
+    if (editorRef.current) editorRef.current.innerHTML = actionEditorHtml(nextHtml, nextImages);
+  };
+  const syncEditor = () => {
+    if (editorRef.current) onHtmlChange(actionEditorStoredHtml(editorRef.current.innerHTML));
+  };
+  const rememberSelection = () => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (editor.contains(range.commonAncestorContainer)) selectionRef.current = range.cloneRange();
+  };
+  const runCommand = (command: string, value?: string) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, value);
+    syncEditor();
+  };
+  const wrapSelection = (tagName: "mark" | "span", className = "") => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) return;
+    const wrapper = document.createElement(tagName);
+    if (className) wrapper.className = className;
+    wrapper.appendChild(range.extractContents());
+    range.insertNode(wrapper);
+    range.selectNodeContents(wrapper);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    syncEditor();
+  };
+  const addImages = (files: File[]) => {
     const accepted = files.filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type)).slice(0, Math.max(0, 5 - images.length));
     if (accepted.length === 0) return;
-    const markers = accepted.map((_, offset) => `{{image:${images.length + offset}}}`).join("\n");
-    onImagesChange([...images, ...accepted]);
-    onHtmlChange(`${html.slice(0, selectionStart)}${markers}${html.slice(selectionEnd)}`);
+    const nextImages = [...images, ...accepted];
+    const editor = editorRef.current;
+    const savedRange = selectionRef.current;
+    if (editor && savedRange && editor.contains(savedRange.commonAncestorContainer)) {
+      const pendingHtml = accepted.map((file, offset) => actionEditorPendingImageHtml(images.length + offset, file.name)).join("<br>");
+      const fragment = savedRange.createContextualFragment(pendingHtml);
+      savedRange.deleteContents();
+      savedRange.insertNode(fragment);
+      savedRange.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(savedRange);
+    }
+    const markers = accepted.map((_, offset) => `<p>{{image:${images.length + offset}}}</p>`).join("");
+    const nextHtml = editor && savedRange && editor.contains(savedRange.commonAncestorContainer) ? actionEditorStoredHtml(editor.innerHTML) : `${currentHtml()}${markers}`;
+    onImagesChange(nextImages);
+    onHtmlChange(nextHtml);
+    refreshEditor(nextHtml, nextImages);
+  };
+  const removeImage = (removedIndex: number) => {
+    const nextImages = images.filter((_, index) => index !== removedIndex);
+    const nextHtml = currentHtml().replace(/\{\{image:(\d+)\}\}/g, (_match, rawIndex: string) => {
+      const index = Number(rawIndex);
+      if (index === removedIndex) return "";
+      return `{{image:${index > removedIndex ? index - 1 : index}}}`;
+    });
+    onImagesChange(nextImages);
+    onHtmlChange(nextHtml);
+    refreshEditor(nextHtml, nextImages);
   };
   return (
     <fieldset className="rich-action-content">
-      <legend>詳しい作業内容・画像</legend>
-      <p><code>&lt;p&gt;</code>、<code>&lt;strong&gt;</code>、<code>&lt;ul&gt;</code>などのHTMLを使用できます。画像は選択または貼り付けた位置へ挿入されます。</p>
-      <textarea
-        value={html}
-        onChange={(event) => onHtmlChange(event.target.value)}
+      <legend>写真つき作業メモ</legend>
+      <p>文章を選んで、見出しや色を付けられます。写真は選択または貼り付けるだけで本文へ追加されます。</p>
+      <div className="rich-action-toolbar" role="toolbar" aria-label="文章の書式">
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand("bold")} title="太字にする"><strong>B</strong><span>太字</span></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand("formatBlock", "H3")} title="見出しにする"><strong>見</strong><span>見出し</span></button>
+        <button type="button" className="marker-tool" onMouseDown={(event) => event.preventDefault()} onClick={() => wrapSelection("mark")} title="マーカーで目立たせる"><strong>A</strong><span>マーカー</span></button>
+        <button type="button" className="green-tool" onMouseDown={(event) => event.preventDefault()} onClick={() => wrapSelection("span", "action-text-green")} title="緑色にする"><strong>A</strong><span>緑</span></button>
+        <button type="button" className="earth-tool" onMouseDown={(event) => event.preventDefault()} onClick={() => wrapSelection("span", "action-text-earth")} title="土色にする"><strong>A</strong><span>土色</span></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand("insertUnorderedList")} title="箇条書きにする"><strong>•</strong><span>リスト</span></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand("insertOrderedList")} title="番号付きリストにする"><strong>1.</strong><span>手順</span></button>
+        <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand("removeFormat")} title="選択部分の装飾を外す"><strong>×</strong><span>装飾を外す</span></button>
+      </div>
+      <div
+        ref={editorRef}
+        className="rich-action-editor"
+        contentEditable
+        suppressContentEditableWarning
+        role="textbox"
+        aria-multiline="true"
+        aria-label="写真つき作業メモの本文"
+        data-placeholder="例：葉の裏側を見て、変化が分かる写真を1枚残します。"
+        onInput={() => { rememberSelection(); syncEditor(); }}
+        onKeyUp={rememberSelection}
+        onMouseUp={rememberSelection}
+        onFocus={rememberSelection}
         onPaste={(event) => {
           const files = Array.from(event.clipboardData.files);
-          if (files.length === 0) return;
+          if (files.length === 0) {
+            event.preventDefault();
+            document.execCommand("insertText", false, event.clipboardData.getData("text/plain"));
+            syncEditor();
+            return;
+          }
           event.preventDefault();
-          addImages(files, event.currentTarget.selectionStart, event.currentTarget.selectionEnd);
+          addImages(files);
         }}
-        placeholder={'<p>葉の裏側を確認します。</p>\n<strong>注意:</strong> 雨の日は延期します。'}
-        aria-label="HTML形式の詳しい作業内容"
       />
-      <label className="image-input"><span><ImagePlus size={15} />画像を選ぶ・ここへ貼り付ける</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => addImages(Array.from(event.target.files ?? []))} /></label>
-      {images.length > 0 && <ul className="pending-image-list">{images.map((image, index) => <li key={`${image.name}-${index}`}><span>{index + 1}</span>{image.name}<code>{`{{image:${index}}}`}</code></li>)}</ul>}
-      {html && <div className="rich-action-preview"><span>プレビュー</span><RichActionContent html={html.replace(/\{\{image:\d+\}\}/g, '<em class="pending-image-placeholder">画像（保存後に表示）</em>')} /></div>}
+      <label className="image-input rich-action-image-input" onMouseDown={rememberSelection}><span><ImagePlus size={15} />カーソル位置へ写真を追加</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => addImages(Array.from(event.target.files ?? []))} /></label>
+      {images.length > 0 && <ul className="pending-image-list">{images.map((image, index) => <li key={`${image.name}-${index}`}><span>{index + 1}</span><strong>{image.name}</strong><button type="button" onClick={() => removeImage(index)} title={`${image.name}を外す`}><Trash2 size={14} /></button></li>)}</ul>}
     </fieldset>
   );
+}
+
+function actionEditorHtml(value: string, images: File[]): string {
+  return sanitizeActionHtml(value).replace(/\{\{image:(\d+)\}\}/g, (_match, rawIndex: string) => {
+    const index = Number(rawIndex);
+    const label = images[index]?.name || `写真 ${index + 1}`;
+    return actionEditorPendingImageHtml(index, label);
+  });
+}
+
+function actionEditorPendingImageHtml(index: number, label: string): string {
+  return `<span class="pending-editor-image" data-image-marker="${index}" contenteditable="false"><span>写真 ${index + 1}</span><strong>${escapeActionHtml(label)}</strong></span>`;
+}
+
+function actionEditorStoredHtml(value: string): string {
+  const documentValue = new DOMParser().parseFromString(value, "text/html");
+  documentValue.body.querySelectorAll<HTMLElement>("[data-image-marker]").forEach((element) => {
+    const index = Number(element.dataset.imageMarker);
+    element.replaceWith(documentValue.createTextNode(`{{image:${Number.isFinite(index) ? index : 0}}}`));
+  });
+  return sanitizeActionHtml(documentValue.body.innerHTML);
+}
+
+function escapeActionHtml(value: string): string {
+  const element = document.createElement("span");
+  element.textContent = value;
+  return element.innerHTML;
 }
 
 function ImagePasteInput({ label, images, onChange }: { label: string; images: File[]; onChange: (images: File[]) => void }) {
@@ -772,7 +942,7 @@ function RichActionContent({ html }: { html: string }) {
 
 function sanitizeActionHtml(value: string): string {
   const documentValue = new DOMParser().parseFromString(value, "text/html");
-  const allowedTags = new Set(["P", "BR", "STRONG", "EM", "UL", "OL", "LI", "H3", "H4", "BLOCKQUOTE", "A", "IMG", "FIGURE", "CODE"]);
+  const allowedTags = new Set(["P", "BR", "STRONG", "EM", "UL", "OL", "LI", "H3", "H4", "BLOCKQUOTE", "A", "IMG", "FIGURE", "CODE", "SPAN", "MARK"]);
   [...documentValue.body.querySelectorAll("*")].forEach((element) => {
     if (!allowedTags.has(element.tagName)) {
       element.replaceWith(...element.childNodes);
@@ -781,7 +951,8 @@ function sanitizeActionHtml(value: string): string {
     [...element.attributes].forEach((attribute) => {
       const allowed = (element.tagName === "A" && ["href", "target", "rel"].includes(attribute.name))
         || (element.tagName === "IMG" && ["src", "alt", "loading"].includes(attribute.name))
-        || (element.tagName === "EM" && attribute.name === "class" && attribute.value === "pending-image-placeholder");
+        || (element.tagName === "EM" && attribute.name === "class" && attribute.value === "pending-image-placeholder")
+        || (element.tagName === "SPAN" && attribute.name === "class" && ["action-text-green", "action-text-earth"].includes(attribute.value));
       if (!allowed) element.removeAttribute(attribute.name);
     });
     if (element.tagName === "A") {
@@ -911,8 +1082,8 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
         onRequiredPeopleChange={setRequiredPeople}
         onEstimatedMinutesChange={setEstimatedMinutes}
       />
-      <label>理由<textarea value={reason} onChange={(event) => setReason(event.target.value)} /></label>
-      <label>作業の要約<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="カードですぐ確認できる短い説明" /></label>
+      <label>この作業を考えたきっかけ<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例: 葉色が薄くなり、前回の追肥から時間が経っているため" /></label>
+      <label>今日やること<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="最初に目に入る作業内容を、短くやさしい言葉で" /></label>
       <RichActionContentField html={instructionsHtml} onHtmlChange={setInstructionsHtml} images={images} onImagesChange={setImages} />
       <label>タグ<input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="結実, 樹勢, 防除" /></label>
       <label className="guidance-check">

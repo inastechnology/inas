@@ -23,6 +23,10 @@ Creating or regenerating a twelve-month cultivation calendar currently keeps the
 - [x] (2026-07-17 07:25Z) Added a reusable 100-point calendar quality evaluator and three representative CLI evaluation cases; deterministic plans score 100 in every case.
 - [x] (2026-07-17 07:29Z) Added an administrator-only advanced prompt-template setting with required placeholders, runtime persistence, safe default fallback, and UI/server tests.
 - [x] (2026-07-17 07:33Z) Completed validation with 249 Python tests, Ruff lint/format, the three-case evaluation CLI, and the TypeScript/Vite production build.
+- [x] (2026-07-19 15:00Z) Made queued/running generation a field-wide calendar mutation lock in both React and repository/API layers; read, search, filters, and navigation remain available.
+- [x] (2026-07-19 15:00Z) Restored fertilizer-history entry as a body-level modal portal and added a browser regression for its stacking and fixed backdrop.
+- [x] (2026-07-19 15:00Z) Stopped expanding recurring work across the initial twelve-month action list; each recurrence rule now contributes only its nearest action and completion creates the next occurrence.
+- [x] (2026-07-19 15:00Z) Validated 338 Python tests, three deterministic 100/100 quality cases, the production admin UI build, and the full field-detail browser smoke flow with screenshots of both lock and modal states.
 
 ## Surprises & Discoveries
 
@@ -82,6 +86,14 @@ Creating or regenerating a twelve-month cultivation calendar currently keeps the
   Rationale: the quality suite should be safe to run in CI without cost or credentials, while still supporting explicit before/after comparisons of a configured model and custom prompt.
   Date/Author: 2026-07-17 / Codex
 
+- Decision: Lock all calendar and fertilizer-history mutations for a field while any queued/running generation task can replace planned work.
+  Rationale: the work board aggregates every active planting in a field, so a field-wide read-only state is easier to understand and prevents stale browser tabs or direct API requests from racing the generated result. Awaiting-review remains editable through its explicit proposal decisions because generation itself has finished.
+  Date/Author: 2026-07-19 / Codex
+
+- Decision: Represent recurrence as one outstanding action plus a task rule, not as twelve months of duplicated cards.
+  Rationale: future monthly/weekly copies obscure work that can be acted on now and become stale before their date. The existing completion flow already uses the saved rule and completion date to create the next action, so eager expansion is unnecessary.
+  Date/Author: 2026-07-19 / Codex
+
 ## Outcomes & Retrospective
 
 Initial creation and regeneration now return HTTP 202 with a durable task instead of waiting for AI. The task worker is started in both production and demo entry points, serializes generation per planting, resumes interrupted work after Hub restart, and records failures without removing an existing calendar. Field bundles expose the latest state, so both the installation editor and standalone calendar page restore and poll progress after navigation.
@@ -95,6 +107,8 @@ The follow-up date-boundary fix now preserves a past planting date only as histo
 Calendar generation now records a structured quality report and has a repeatable evaluation CLI covering the reported established-lychee case, a new blueberry, and an automated hydroponic tomato. The fallback was extended across the full planning horizon and produces exactly one monthly suggestion when requested. Administrators can customize the initial calendar user-prompt format from `/settings`; required placeholders and an immutable system contract keep input facts, built-in requirements, and guidance present. Invalid UI input is rejected, and a manually corrupted persisted template safely falls back to the built-in format.
 
 Final validation after these additions is 249 passing Python tests, successful Ruff lint and format checks across source, tests, and the evaluation script, three 100/100 deterministic evaluation cases, and a successful TypeScript/Vite production build.
+
+The later concurrency and recurrence refinement makes the read-only interval explicit across the entire field work board. UI controls, open edit/record dialogs, drag operations, fertilizer history, crop target ranges, and their repository methods now agree on the same queued/running lock, with HTTP 409 protecting old tabs. Fertilizer history opens through the shared body-level modal portal again. Initial generation no longer creates a run of identical monthly review cards: it persists the recurrence rule and only the nearest occurrence, while a monthly manual-work request sets that rule's preferred follow-up to 30 days. The quality evaluator recognizes this lazy recurrence as horizon coverage instead of requiring placeholder cards. Validation increased to 338 passing Python tests, three deterministic 100/100 quality cases, a successful production build, and a passing field-detail browser smoke run; screenshots confirmed the lock banner and fertilizer modal visually.
 
 ## Context and Orientation
 

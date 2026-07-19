@@ -59,3 +59,17 @@ class PlantCalendarQualityTest(unittest.TestCase):
         self.assertIn("future_only", failed)
         self.assertIn("automation_boundary", failed)
         self.assertIn("history_aware", failed)
+
+    def test_recurring_rule_covers_horizon_without_eagerly_expanding_actions(self):
+        today = date.today()
+        context = {
+            "planting": {"crop_name": "イチゴ", "planted_on": today.isoformat()},
+            "planning": {"start_date": today.isoformat(), "current_date": today.isoformat(), "horizon_months": 12},
+        }
+        calendar = self.service.generate_plant_calendar(context)
+
+        report = evaluate_plant_calendar(context, calendar)
+        horizon = next(item for item in report["checks"] if item["id"] == "horizon_coverage")
+
+        self.assertTrue(horizon["passed"])
+        self.assertIn("完了時に次回生成", horizon["details"])

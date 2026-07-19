@@ -4,6 +4,7 @@ from datetime import date, timedelta
 def evaluate_plant_calendar(context: dict, calendar: dict, expectations: dict | None = None):
     expectations = expectations or {}
     actions = calendar.get("actions") if isinstance(calendar.get("actions"), list) else []
+    task_rules = calendar.get("task_rules") if isinstance(calendar.get("task_rules"), list) else []
     planning = context.get("planning") if isinstance(context.get("planning"), dict) else {}
     planting = context.get("planting") if isinstance(context.get("planting"), dict) else context
     current = _parse_date(planning.get("current_date")) or date.today()
@@ -87,7 +88,18 @@ def evaluate_plant_calendar(context: dict, calendar: dict, expectations: dict | 
     min_horizon_days = int(expectations.get("min_horizon_days") or 270)
     last_start = max((start for start, _end, _action in dated_actions), default=plan_start)
     horizon_days = (last_start - plan_start).days
-    _check(checks, "horizon_coverage", "季節変化まで計画する", horizon_days >= min_horizon_days, 5, f"{horizon_days}日 / 目標{min_horizon_days}日")
+    recurring_rules = [
+        rule
+        for rule in task_rules
+        if isinstance(rule, dict) and rule.get("recurrence_type") in {"interval_after_completion", "seasonal", "continuous_review"}
+    ]
+    horizon_covered = horizon_days >= min_horizon_days or bool(recurring_rules)
+    horizon_detail = (
+        f"直近{horizon_days}日＋継続規則{len(recurring_rules)}件（完了時に次回生成）"
+        if recurring_rules and horizon_days < min_horizon_days
+        else f"{horizon_days}日 / 目標{min_horizon_days}日"
+    )
+    _check(checks, "horizon_coverage", "季節変化まで計画する", horizon_covered, 5, horizon_detail)
     action_types = {str(action.get("action_type") or "") for action in actions}
     min_action_types = int(expectations.get("min_action_types") or 3)
     _check(checks, "action_diversity", "観察以外の重要作業も扱う", len(action_types) >= min_action_types, 5, f"{len(action_types)}種類")

@@ -553,6 +553,60 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         calendar = self.repository.get_calendar(planting["id"])
         self.assertEqual(sum(action["window_start"] == "2026-09-01" for action in calendar["actions"]), 1)
 
+    def test_calendar_and_fertilizer_mutations_are_locked_during_ai_generation(self):
+        planting = self._create_blueberry()
+        calendar = self._create_calendar(planting["id"])
+        action_id = calendar["actions"][0]["id"]
+        self.repository.update_action(planting["id"], action_id, {"status": "in_progress"})
+        application = self.repository.create_fertilizer_application(
+            planting["id"],
+            {
+                "applied_on": "2026-07-14",
+                "material_kind": "chemical_fertilizer",
+                "material_name": "化成肥料",
+                "amount_kg": 0.1,
+                "nutrient_percent": {"n": 8, "p2o5": 8, "k2o": 8, "mgo": 0},
+                "annual_available_percent": 80,
+                "effect_years": 1,
+            },
+        )
+        queued = self.repository.enqueue_calendar_generation(planting["id"], kind="regenerate", start_date="2026-07-20")
+
+        mutations = [
+            lambda: self.repository.update_planting(planting["id"], {"growth_targets": {"soil_moisture_percent": {"min": 30, "max": 60}}}),
+            lambda: self.repository.update_action(planting["id"], action_id, {"title": "変更"}),
+            lambda: self.repository.add_action(
+                planting["id"],
+                {"action_type": "observation", "title": "追加", "window_start": "2026-07-20", "window_end": "2026-07-21"},
+            ),
+            lambda: self.repository.skip_action(planting["id"], action_id, "2026-07-19", "other", "今回は見送る"),
+            lambda: self.repository.complete_action(planting["id"], action_id, "2026-07-19"),
+            lambda: self.repository.delete_fertilizer_application(planting["id"], application["id"]),
+            lambda: self.repository.create_fertilizer_application(
+                planting["id"],
+                {
+                    "applied_on": "2026-07-19",
+                    "material_kind": "chemical_fertilizer",
+                    "material_name": "追肥",
+                    "amount_kg": 0.1,
+                    "nutrient_percent": {"n": 8, "p2o5": 8, "k2o": 8, "mgo": 0},
+                    "annual_available_percent": 80,
+                    "effect_years": 1,
+                },
+            ),
+        ]
+        for mutation in mutations:
+            with self.assertRaisesRegex(PlantManagementConflictError, "AI栽培計画を作成中"):
+                mutation()
+
+        self.repository.claim_next_calendar_generation()
+        with self.assertRaises(PlantManagementConflictError):
+            self.repository.update_action(planting["id"], action_id, {"title": "実行中も変更不可"})
+
+        self.repository.fail_calendar_generation(queued["id"], "test")
+        changed = self.repository.update_action(planting["id"], action_id, {"title": "完了後は変更可能"})
+        self.assertEqual(changed["title"], "完了後は変更可能")
+
     def test_calendar_generation_task_is_durable_and_commits_generated_calendar(self):
         planting = self._create_blueberry()
         queued = self.repository.enqueue_calendar_generation(

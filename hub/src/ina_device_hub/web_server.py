@@ -15,7 +15,7 @@ from plotly.io import to_html
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from ina_device_hub.agri_action_service import METRIC_LABELS, build_action_candidates, build_calendar_operation_readiness
-from ina_device_hub.ai_content_service import ai_content_service
+from ina_device_hub.ai_content_service import AIRequestError, ai_content_service
 from ina_device_hub.camera_connector import camera_connector
 from ina_device_hub.camera_growth_monitoring_service import (
     CameraGrowthAIUnavailableError,
@@ -5476,6 +5476,104 @@ def _current_plant_advice_profile():
     return {"experience_level": experience_level}
 
 
+AI_TEMPERATURE_MODES = {"auto", "default", "custom"}
+AI_REASONING_EFFORTS = {"", "none", "minimal", "low", "medium", "high", "xhigh", "max"}
+
+
+def _parse_ai_model_parameters(source, prefix, current=None):
+    current = current if isinstance(current, dict) else {}
+    mode = str(source.get(f"{prefix}_temperature_mode", current.get(f"{prefix}_temperature_mode", "auto")) or "auto")
+    if mode not in AI_TEMPERATURE_MODES:
+        raise ValueError(f"{prefix}_temperature_mode is invalid")
+    raw_temperature = source.get(f"{prefix}_temperature", current.get(f"{prefix}_temperature", 1.0))
+    try:
+        temperature = float(raw_temperature)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{prefix}_temperature must be a number") from exc
+    if not 0 <= temperature <= 2:
+        raise ValueError(f"{prefix}_temperature must be between 0 and 2")
+    reasoning_effort = str(
+        source.get(f"{prefix}_reasoning_effort", current.get(f"{prefix}_reasoning_effort", "")) or ""
+    )
+    if reasoning_effort not in AI_REASONING_EFFORTS:
+        raise ValueError(f"{prefix}_reasoning_effort is invalid")
+    return {
+        f"{prefix}_temperature_mode": mode,
+        f"{prefix}_temperature": temperature,
+        f"{prefix}_reasoning_effort": reasoning_effort,
+    }
+
+
+def _redact_ai_error(value):
+    redacted = str(value or "")
+    ai_settings = setting().get("ai") or {}
+    for secret_key in ("text_analyze_api_key", "image_analyze_api_key"):
+        secret_value = str(ai_settings.get(secret_key) or "")
+        if secret_value:
+            redacted = redacted.replace(secret_value, "[redacted]")
+    return redacted
+
+
+def _ai_error_diagnostic(exc: AIRequestError | RuntimeError):
+    message = _redact_ai_error(exc)
+    detail = _redact_ai_error(getattr(exc, "technical_detail", ""))
+    code = str(getattr(exc, "code", "") or "")
+    parameter = str(getattr(exc, "parameter", "") or "")
+    status = getattr(exc, "upstream_status", None)
+    haystack = f"{message} {detail} {code} {parameter}".lower()
+    if "temperature" in haystack:
+        title = "出力の揺らぎ設定がモデルに対応していません"
+        summary = "選択したモデルは、指定した温度を受け付けませんでした。"
+        suggestions = [
+            "「モデル特性を調整」を開き、出力の揺らぎを「自動調整（おすすめ）」に変更します。",
+            "設定を保存してから、もう一度「接続を確認」を押します。",
+        ]
+        category = "unsupported_parameter"
+    elif "reasoning" in haystack or parameter == "reasoning_effort":
+        title = "考える深さがモデルに対応していません"
+        summary = "選択したモデルは、指定した推論レベルを受け付けませんでした。"
+        suggestions = [
+            "「考える深さ」を「モデルに任せる」に戻します。",
+            "設定を保存してから、もう一度接続を確認します。",
+        ]
+        category = "unsupported_parameter"
+    elif status in {401, 403} or any(marker in haystack for marker in ("api key", "authentication", "unauthorized")):
+        title = "APIキーを確認してください"
+        summary = "AIサービスが認証情報を受け付けませんでした。"
+        suggestions = ["APIキーが失効していないか確認します。", "正しいAPIキーを再登録して接続を確認します。"]
+        category = "authentication"
+    elif status == 404 or "model_not_found" in haystack or "does not exist" in haystack:
+        title = "モデル名または接続先を確認してください"
+        summary = "指定したモデルを接続先で見つけられませんでした。"
+        suggestions = ["モデルIDの綴りを確認します。", "そのモデルを利用できるBase URLとAPIキーか確認します。"]
+        category = "model_not_found"
+    elif status == 429 or "rate limit" in haystack or "quota" in haystack:
+        title = "AIサービスの利用上限に達しています"
+        summary = "短時間の利用上限または契約上の残量を超えました。"
+        suggestions = ["少し時間を置いて再試行します。", "AIサービス側の利用上限・残高を確認します。"]
+        category = "rate_limit"
+    elif code in {"connection_error", "timeout"} or status is None:
+        title = "AIサービスへ接続できませんでした"
+        summary = message or "ネットワークまたは接続先から応答を受け取れませんでした。"
+        suggestions = ["Base URLとHubのインターネット接続を確認します。", "少し時間を置いて再試行します。"]
+        category = "connection"
+    else:
+        title = "AI設定を確認してください"
+        summary = message or "AIサービスがリクエストを処理できませんでした。"
+        suggestions = ["モデルID、Base URL、上級者設定を確認します。", "設定を保存してから再試行します。"]
+        category = "provider_error"
+    return {
+        "title": title,
+        "summary": summary,
+        "suggestions": suggestions,
+        "category": category,
+        "code": code,
+        "parameter": parameter,
+        "upstream_status": status,
+        "technical_detail": detail or message,
+    }
+
+
 @app.route("/settings", methods=["GET", "POST"])
 def hub_settings_page():
     user = current_user_from_request(request)
@@ -5492,6 +5590,10 @@ def hub_settings_page():
                     1,
                     min(365, int(request.form.get("plant_calendar_web_knowledge_cache_days", "30"))),
                 )
+                model_parameters = {
+                    **_parse_ai_model_parameters(request.form, "text_analyze", current_ai),
+                    **_parse_ai_model_parameters(request.form, "image_analyze", current_ai),
+                }
             except ValueError as exc:
                 return str(exc), 400
             setting().set(
@@ -5505,6 +5607,7 @@ def hub_settings_page():
                     "plant_calendar_web_knowledge_enabled": request.form.get("plant_calendar_web_knowledge_enabled") == "on",
                     "plant_calendar_web_knowledge_cache_days": plant_calendar_web_knowledge_cache_days,
                     "plant_calendar_prompt_template": plant_calendar_prompt_template,
+                    **model_parameters,
                 },
             )
             for channel in ("text", "image"):
@@ -5544,8 +5647,14 @@ def hub_settings_page():
         "enabled": bool(current_ai.get("enabled")),
         "text_analyze_base_url": current_ai.get("text_analyze_base_url", ""),
         "text_analyze_model": current_ai.get("text_analyze_model", ""),
+        "text_analyze_temperature_mode": current_ai.get("text_analyze_temperature_mode", "auto"),
+        "text_analyze_temperature": float(current_ai.get("text_analyze_temperature", 1.0)),
+        "text_analyze_reasoning_effort": current_ai.get("text_analyze_reasoning_effort", ""),
         "image_analyze_base_url": current_ai.get("image_analyze_base_url", ""),
         "image_analyze_model": current_ai.get("image_analyze_model", ""),
+        "image_analyze_temperature_mode": current_ai.get("image_analyze_temperature_mode", "auto"),
+        "image_analyze_temperature": float(current_ai.get("image_analyze_temperature", 1.0)),
+        "image_analyze_reasoning_effort": current_ai.get("image_analyze_reasoning_effort", ""),
         "plant_calendar_web_knowledge_enabled": bool(current_ai.get("plant_calendar_web_knowledge_enabled", True)),
         "plant_calendar_web_knowledge_cache_days": int(current_ai.get("plant_calendar_web_knowledge_cache_days", 30)),
         "plant_calendar_prompt_template": current_ai.get("plant_calendar_prompt_template", DEFAULT_PLANT_CALENDAR_PROMPT_TEMPLATE),
@@ -5604,21 +5713,30 @@ def test_hub_ai_settings_api():
     if channel not in {"text", "image"}:
         return jsonify({"error": "channel must be text or image"}), 400
     try:
+        prefix = "image_analyze" if channel == "image" else "text_analyze"
+        parameter_values = _parse_ai_model_parameters(
+            {
+                f"{prefix}_temperature_mode": request_body.get("temperature_mode", "auto"),
+                f"{prefix}_temperature": request_body.get("temperature", 1.0),
+                f"{prefix}_reasoning_effort": request_body.get("reasoning_effort", ""),
+            },
+            prefix,
+        )
         result = ai_content_service().test_connection(
             channel,
             {
                 "base_url": str(request_body.get("base_url") or "").strip(),
                 "model": str(request_body.get("model") or "").strip(),
+                "temperature_mode": parameter_values[f"{prefix}_temperature_mode"],
+                "temperature": parameter_values[f"{prefix}_temperature"],
+                "reasoning_effort": parameter_values[f"{prefix}_reasoning_effort"],
             },
         )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
-        error_message = str(exc)
-        ai_settings = setting().get("ai") or {}
-        for secret_key in ("text_analyze_api_key", "image_analyze_api_key"):
-            secret_value = str(ai_settings.get(secret_key) or "")
-            if secret_value:
-                error_message = error_message.replace(secret_value, "[redacted]")
-        return jsonify({"error": error_message}), 502
+        diagnostic = _ai_error_diagnostic(exc)
+        return jsonify({"error": diagnostic["summary"], "diagnostic": diagnostic}), 422
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -6217,6 +6335,8 @@ def update_planting_api(planting_id):
         planting = plant_management_repository().update_planting(planting_id, request_body)
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(planting)
@@ -6286,6 +6406,8 @@ def create_fertilizer_application_api(planting_id):
         effect_context = repository.fertilizer_effect_context(planting_id)
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"application": application, **effect_context}), 201
@@ -6297,6 +6419,8 @@ def delete_fertilizer_application_api(planting_id, application_id):
         plant_management_repository().delete_fertilizer_application(planting_id, application_id)
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     return "", 204
 
 
@@ -6364,10 +6488,13 @@ def add_plant_calendar_action_api(planting_id):
         planting = repository.get_planting(planting_id)
         if planting is None:
             raise PlantManagementNotFoundError("planting not found")
+        repository.assert_calendar_mutation_unlocked(planting_id)
         request_body = _attach_plant_action_images(planting, request_body, request.files.getlist("images"))
         action = repository.add_action(planting_id, request_body)
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except (PlantManagementValidationError, FieldRecordMediaValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
     except FieldRecordMediaStorageError as exc:
@@ -6381,6 +6508,8 @@ def delete_plant_calendar_action_api(planting_id, action_id):
         plant_management_repository().delete_action(planting_id, action_id)
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return "", 204
@@ -6397,6 +6526,7 @@ def update_plant_calendar_action_api(planting_id, action_id):
         planting = repository.get_planting(planting_id)
         if planting is None:
             raise PlantManagementNotFoundError("planting not found")
+        repository.assert_calendar_mutation_unlocked(planting_id)
         current_calendar = repository.get_calendar(planting_id) or {}
         current_action = next((item for item in current_calendar.get("actions") or [] if item.get("id") == action_id), {})
         request_body = _attach_plant_action_images(
@@ -6413,6 +6543,8 @@ def update_plant_calendar_action_api(planting_id, action_id):
         )
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except (PlantManagementValidationError, FieldRecordMediaValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
     except FieldRecordMediaStorageError as exc:
@@ -6457,12 +6589,14 @@ def skip_plant_calendar_action_api(planting_id, action_id):
     request_body = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     if not isinstance(request_body, dict):
         return jsonify({"error": "request body must be an object"}), 400
+    repository = plant_management_repository()
     service = PlantActionDecisionService(
-        plant_repository=plant_management_repository(),
+        plant_repository=repository,
         field_repository=field_repository(),
         media_service=field_record_media_service(),
     )
     try:
+        repository.assert_calendar_mutation_unlocked(planting_id)
         result = service.skip_action(
             planting_id,
             action_id,
@@ -6472,6 +6606,8 @@ def skip_plant_calendar_action_api(planting_id, action_id):
         )
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     except (PlantManagementValidationError, FieldValidationError, FieldRecordMediaValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
     except FieldRecordMediaStorageError as exc:
@@ -6485,6 +6621,12 @@ def complete_plant_calendar_action_api(planting_id, action_id):  # noqa: PLR0911
     if not isinstance(request_body, dict):
         return jsonify({"error": "request body must be an object"}), 400
     repository = plant_management_repository()
+    try:
+        repository.assert_calendar_mutation_unlocked(planting_id)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
     planting = repository.get_planting(planting_id)
     if planting is None:
         return jsonify({"error": "planting not found"}), 404

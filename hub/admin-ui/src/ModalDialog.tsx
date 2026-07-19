@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
 interface ModalDialogProps {
@@ -24,8 +25,13 @@ export function ModalDialog({
 
   useEffect(() => {
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     window.requestAnimationFrame(() => dialogRef.current?.focus());
-    return () => returnFocusRef.current?.focus();
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      returnFocusRef.current?.focus();
+    };
   }, []);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -54,7 +60,7 @@ export function ModalDialog({
     }
   };
 
-  return (
+  return createPortal(
     <div className="hub-edit-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section
         ref={dialogRef}
@@ -71,6 +77,7 @@ export function ModalDialog({
         </header>
         <div className="hub-edit-modal-body">{children}</div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

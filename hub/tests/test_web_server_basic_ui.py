@@ -396,6 +396,12 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertNotIn("システム既定言語", html)
         self.assertIn('name="text_analyze_model"', html)
         self.assertIn('name="image_analyze_model"', html)
+        self.assertIn('name="text_analyze_temperature_mode"', html)
+        self.assertIn('name="text_analyze_temperature"', html)
+        self.assertIn('name="text_analyze_reasoning_effort"', html)
+        self.assertIn("モデル特性を調整（上級者向け）", html)
+        self.assertIn('id="ai-test-dialog"', html)
+        self.assertIn("次に行うこと", html)
         self.assertIn('name="plant_calendar_prompt_template"', html)
         self.assertIn('name="plant_calendar_web_knowledge_enabled"', html)
         self.assertIn('name="plant_calendar_web_knowledge_cache_days"', html)
@@ -476,6 +482,67 @@ class WebServerBasicUITest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("api_key", self.fake_ai_content_service.connection_overrides)
+        self.assertEqual(self.fake_ai_content_service.connection_overrides["temperature_mode"], "auto")
+        self.assertEqual(self.fake_ai_content_service.connection_overrides["temperature"], 1.0)
+
+    def test_ai_model_parameters_can_be_saved_and_invalid_values_are_rejected(self):
+        current_ai = dict(web_server.setting().get("ai"))
+        try:
+            response = self.client.post(
+                "/settings",
+                data={
+                    "settings_section": "ai",
+                    "plant_calendar_prompt_template": current_ai["plant_calendar_prompt_template"],
+                    "plant_calendar_web_knowledge_cache_days": "30",
+                    "text_analyze_temperature_mode": "custom",
+                    "text_analyze_temperature": "0.4",
+                    "text_analyze_reasoning_effort": "high",
+                    "image_analyze_temperature_mode": "default",
+                    "image_analyze_temperature": "1",
+                    "image_analyze_reasoning_effort": "",
+                },
+            )
+            saved = web_server.setting().get("ai")
+
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(saved["text_analyze_temperature_mode"], "custom")
+            self.assertEqual(saved["text_analyze_temperature"], 0.4)
+            self.assertEqual(saved["text_analyze_reasoning_effort"], "high")
+            self.assertEqual(saved["image_analyze_temperature_mode"], "default")
+
+            invalid = self.client.post(
+                "/settings",
+                data={
+                    "settings_section": "ai",
+                    "plant_calendar_prompt_template": current_ai["plant_calendar_prompt_template"],
+                    "plant_calendar_web_knowledge_cache_days": "30",
+                    "text_analyze_temperature_mode": "custom",
+                    "text_analyze_temperature": "3",
+                },
+            )
+            self.assertEqual(invalid.status_code, 400)
+        finally:
+            web_server.setting().set("ai", current_ai)
+
+    def test_ai_connection_error_returns_actionable_json_without_gateway_status(self):
+        provider_error = web_server.AIRequestError(
+            "Unsupported value for temperature",
+            upstream_status=400,
+            code="unsupported_value",
+            parameter="temperature",
+            technical_detail='{"error":{"message":"temperature is unsupported"}}',
+        )
+        with patch.object(self.fake_ai_content_service, "test_connection", side_effect=provider_error):
+            response = self.client.post(
+                "/local/api/settings/ai/test",
+                json={"channel": "text", "model": "gpt-5.6-luna", "temperature_mode": "custom", "temperature": 0},
+            )
+
+        body = response.get_json()
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.content_type, "application/json")
+        self.assertEqual(body["diagnostic"]["category"], "unsupported_parameter")
+        self.assertIn("自動調整", " ".join(body["diagnostic"]["suggestions"]))
 
     def test_instagram_settings_reject_invalid_post_schedule_before_saving(self):
         response = self.client.post("/settings", data={"settings_section": "instagram", "post_schedule_start": "invalid"})
@@ -1440,6 +1507,14 @@ class WebServerBasicUITest(unittest.TestCase):
         )
         self.assertEqual(regenerated.status_code, 202)
         self.assertEqual(regenerated.get_json()["generation_task"]["status"], "queued")
+        locked_action = self.client.post(
+            f"/local/api/plantings/{planting['id']}/calendar/actions",
+            json={"action_type": "observation", "title": "生成中の追加", "window_start": "2026-07-21", "window_end": "2026-07-22"},
+        )
+        self.assertEqual(locked_action.status_code, 409)
+        self.assertIn("AI栽培計画を作成中", locked_action.get_json()["error"])
+        locked_fertilizer = self.client.delete(f"/local/api/plantings/{planting['id']}/fertilizer-applications/{fertilizer.get_json()['application']['id']}")
+        self.assertEqual(locked_fertilizer.status_code, 409)
         previous_context_count = len(self.fake_ai_content_service.calendar_contexts)
         self.plant_calendar_generation_task.process_next()
         self.assertEqual(self.fake_ai_content_service.calendar_contexts[-1]["audience"]["experience_level"], "beginner")

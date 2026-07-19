@@ -32,6 +32,7 @@ VALID_CROP_CATEGORIES = {"vegetable", "fruit_tree", "flower", "herb", "other"}
 VALID_ACTION_STATUSES = {"planned", "in_progress", "completed", "skipped"}
 VALID_GENERATION_TASK_STATUSES = {"queued", "running", "awaiting_review", "succeeded", "failed"}
 ACTIVE_GENERATION_TASK_STATUSES = {"queued", "running", "awaiting_review"}
+CALENDAR_MUTATION_LOCK_TASK_STATUSES = {"queued", "running"}
 VALID_GENERATION_TASK_KINDS = {"initial", "regenerate"}
 VALID_GENERATION_MODES = {"automatic", "review"}
 VALID_GENERATION_PROPOSAL_DECISIONS = {"pending", "approved", "rejected"}
@@ -158,6 +159,7 @@ class PlantManagementRepository:
     @serialized_repository_write("repository_path")
     def update_planting(self, planting_id: str, value: dict):
         record = self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
         if not isinstance(value, dict):
             raise PlantManagementValidationError("planting data must be an object")
         for key in ("crop_name", "cultivar", "cultivation_method", "memo"):
@@ -430,6 +432,7 @@ class PlantManagementRepository:
     @serialized_repository_write("repository_path")
     def update_action(self, planting_id: str, action_id: str, value: dict, *, use_as_guidance: bool = False):
         planting = self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
         calendar = self._calendar_for_planting(planting)
         action = _find_action(calendar, action_id)
         if not isinstance(value, dict):
@@ -525,6 +528,7 @@ class PlantManagementRepository:
         use_as_guidance: bool = True,
     ):
         planting = self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
         calendar = self._calendar_for_planting(planting)
         action = _find_action(calendar, action_id)
         if action.get("status") not in {"planned", "in_progress"}:
@@ -582,6 +586,7 @@ class PlantManagementRepository:
     @serialized_repository_write("repository_path")
     def add_action(self, planting_id: str, value: dict):
         planting = self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
         calendar = self._calendar_for_planting(planting)
         if len(calendar["actions"]) >= MAX_ACTIONS_PER_CALENDAR:
             raise PlantManagementValidationError("calendar action limit reached")
@@ -597,6 +602,7 @@ class PlantManagementRepository:
     @serialized_repository_write("repository_path")
     def delete_action(self, planting_id: str, action_id: str):
         planting = self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
         calendar = self._calendar_for_planting(planting)
         action = _find_action(calendar, action_id)
         if action.get("status") != "planned":
@@ -679,6 +685,7 @@ class PlantManagementRepository:
         work_details: dict | None = None,
     ):
         planting = self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
         calendar = self._calendar_for_planting(planting)
         action = _find_action(calendar, action_id)
         if action.get("status") != "in_progress":
@@ -811,6 +818,7 @@ class PlantManagementRepository:
     @serialized_repository_write("repository_path")
     def create_fertilizer_application(self, planting_id: str, value: dict):
         planting = self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
         if not isinstance(value, dict):
             raise PlantManagementValidationError("fertilizer application must be an object")
         applications = self.data.setdefault("fertilizer_applications", [])
@@ -847,6 +855,7 @@ class PlantManagementRepository:
     @serialized_repository_write("repository_path")
     def delete_fertilizer_application(self, planting_id: str, application_id: str):
         planting = self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
         application = next(
             (
                 item
@@ -1090,6 +1099,25 @@ class PlantManagementRepository:
     def recent_work_logs(self, planting_id: str, limit: int = 20):
         self._planting(planting_id)
         return copy.deepcopy([item for item in reversed(self.data["work_logs"]) if item.get("planting_id") == planting_id][:limit])
+
+    def assert_calendar_mutation_unlocked(self, planting_id: str):
+        """Reject stale-browser mutations while AI is replacing planned work."""
+        self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
+
+    def _assert_calendar_mutation_unlocked(self, planting_id: str):
+        planting = self.data["plantings"].get(planting_id) or {}
+        field_id = planting.get("field_id")
+        active_task = next(
+            (
+                task
+                for task in reversed(self.data["generation_tasks"])
+                if task.get("field_id") == field_id and task.get("status") in CALENDAR_MUTATION_LOCK_TASK_STATUSES
+            ),
+            None,
+        )
+        if active_task is not None:
+            raise PlantManagementConflictError("AI栽培計画を作成中のため、栽培作業と施肥履歴は編集できません。完了後にもう一度お試しください。")
 
     def _planting(self, planting_id: str):
         record = self.data["plantings"].get(planting_id)

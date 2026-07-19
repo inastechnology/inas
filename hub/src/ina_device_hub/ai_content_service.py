@@ -62,6 +62,25 @@ VERIFIED_INPUT_RULES = (
 )
 
 
+class AIRequestError(RuntimeError):
+    """An AI provider error with enough metadata to give the user useful guidance."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        upstream_status: int | None = None,
+        code: str = "",
+        parameter: str = "",
+        technical_detail: str = "",
+    ):
+        super().__init__(message)
+        self.upstream_status = upstream_status
+        self.code = code
+        self.parameter = parameter
+        self.technical_detail = technical_detail
+
+
 class AIContentService:
     DEFAULT_BASE_URL = "https://api.openai.com/v1"
     DEFAULT_PROMPT_PATH = Path(__file__).resolve().parents[2] / "data" / "instagram_caption_prompt.txt"
@@ -183,16 +202,18 @@ class AIContentService:
     def generate_plant_calendar(self, context: dict, guidance_examples: list | None = None):
         guidance_examples = guidance_examples or []
         fallback_actions = self._fallback_plant_calendar(context)
-        self._ensure_action_work_plans(fallback_actions)
         fallback_targets = self._fallback_growth_targets(context)
         fallback_profile = self._fallback_care_profile(context)
         fallback_rules = self._fallback_task_rules(context)
+        self._assign_action_rule_ids(fallback_actions, fallback_rules)
+        fallback_actions = self._initial_recurrence_actions(fallback_actions, fallback_rules)
+        self._ensure_action_work_plans(fallback_actions)
         generation = {
             "source": "fallback",
             "model": "",
             "context_snapshot": context,
             "guidance_count": len(guidance_examples),
-            "quality_report": evaluate_plant_calendar(context, {"actions": fallback_actions}),
+            "quality_report": evaluate_plant_calendar(context, {"actions": fallback_actions, "task_rules": fallback_rules}),
         }
         if not self._channel_enabled("text_analyze"):
             return {
@@ -226,13 +247,16 @@ class AIContentService:
             care_profile = self._apply_crop_knowledge(care_profile, context)
             if not isinstance(task_rules, list) or not task_rules:
                 task_rules = fallback_rules
-            self._assign_action_rule_ids(actions[:24], task_rules[:40])
-            self._ensure_action_work_plans(actions[:24])
-            self._validate_calendar_actions(actions[:24], minimum_start=self._calendar_start_date(context))
+            actions = actions[:24]
+            task_rules = task_rules[:40]
+            self._assign_action_rule_ids(actions, task_rules)
+            actions = self._initial_recurrence_actions(actions, task_rules)
+            self._ensure_action_work_plans(actions)
+            self._validate_calendar_actions(actions, minimum_start=self._calendar_start_date(context))
             self._validate_task_rules(task_rules[:40])
             normalized_targets = self._normalize_generated_growth_targets(growth_targets, fallback_targets)
             return {
-                "actions": actions[:24],
+                "actions": actions,
                 "growth_targets": normalized_targets,
                 "care_profile": care_profile,
                 "task_rules": task_rules[:40],
@@ -240,7 +264,7 @@ class AIContentService:
                     **generation,
                     "source": "llm",
                     "model": self.ai_settings.get("text_analyze_model") or "",
-                    "quality_report": evaluate_plant_calendar(context, {"actions": actions[:24]}),
+                    "quality_report": evaluate_plant_calendar(context, {"actions": actions, "task_rules": task_rules}),
                 },
             }
         except (RuntimeError, ValueError, json.JSONDecodeError):
@@ -319,6 +343,7 @@ class AIContentService:
             "既存作業と同じ目的・時期・rule_idの作業を別作業として重複生成しないでください。不要になった既存予定は、出力する新しいactionsには含めないでください。"
             "残存肥効がある、ECが高い、成分分析が不足している、または作物状態を確認できない場合は、追加施肥ではなく測定・観察・見送りを提案してください。"
             "planning.notesに手作業頻度の上限があれば従い、自動潅水やカメラ監視として指定された日常管理を手作業actionへ展開しないでください。"
+            "反復作業はtask_rulesに間隔を定義し、actionsには各反復規則の直近1件だけを出してください。月次・週次の候補を12か月分まとめて展開してはいけません。次回分は作業完了時に生成します。"
             "ユーザーが次に何を観察し、どの条件なら実施・延期・見送りと判断するかが分かるサジェストにしてください。"
             "重要度と適期を優先し、目的が重複する作業を増やさず、利用者の作業可能頻度の範囲で季節変化を計画全体に配分してください。"
             "トップレベルはcare_profile, growth_targets, task_rules, actionsにしてください。\n"
@@ -433,6 +458,7 @@ class AIContentService:
         api_key = overrides.get("api_key") or self.ai_settings.get(f"{prefix}_api_key")
         base_url = overrides.get("base_url") or self.ai_settings.get(f"{prefix}_base_url")
         model = overrides.get("model") or self.ai_settings.get(f"{prefix}_model")
+        diagnostics = {}
         text = self._chat_completion(
             api_key=api_key,
             base_url=base_url,
@@ -442,8 +468,21 @@ class AIContentService:
                 {"role": "user", "content": "Connection check"},
             ],
             temperature=0,
+            parameter_prefix=prefix,
+            parameter_settings={
+                "temperature_mode": overrides.get("temperature_mode", self.ai_settings.get(f"{prefix}_temperature_mode", "auto")),
+                "temperature": overrides.get("temperature", self.ai_settings.get(f"{prefix}_temperature", 1.0)),
+                "reasoning_effort": overrides.get("reasoning_effort", self.ai_settings.get(f"{prefix}_reasoning_effort", "")),
+            },
+            diagnostics=diagnostics,
         )
-        return {"ok": bool(text), "model": model, "response": text[:120]}
+        return {
+            "ok": bool(text),
+            "model": model,
+            "response": text[:120],
+            "parameters": diagnostics.get("parameters", {}),
+            "adjustments": diagnostics.get("adjustments", []),
+        }
 
     def reload_settings(self):
         self.ai_settings = setting().get("ai") or {}
@@ -641,23 +680,117 @@ class AIContentService:
         model: str,
         messages: list,
         temperature: float,
+        parameter_prefix: str | None = None,
+        parameter_settings: dict | None = None,
+        diagnostics: dict | None = None,
     ):
         if not api_key or not model:
-            raise RuntimeError("AI settings are incomplete")
+            raise AIRequestError(
+                "APIキーまたはモデルが設定されていません。",
+                code="incomplete_settings",
+            )
 
         url = f"{(base_url or self.DEFAULT_BASE_URL).rstrip('/')}/chat/completions"
         language_instruction = "ユーザー向けの出力は日本語にしてください。"
         localized_messages = [{"role": "system", "content": language_instruction}, *messages]
-        payload = json.dumps(
-            {
-                "model": model,
-                "messages": localized_messages,
-                "temperature": temperature,
+        settings = self._model_parameter_settings(
+            api_key=api_key,
+            model=model,
+            parameter_prefix=parameter_prefix,
+            parameter_settings=parameter_settings,
+        )
+        payload = {"model": model, "messages": localized_messages}
+        temperature_mode = settings["temperature_mode"]
+        if temperature_mode == "custom":
+            payload["temperature"] = settings["temperature"]
+        elif temperature_mode == "auto":
+            payload["temperature"] = temperature
+        if settings["reasoning_effort"]:
+            payload["reasoning_effort"] = settings["reasoning_effort"]
+
+        if diagnostics is not None:
+            diagnostics["parameters"] = self._visible_model_parameters(payload, temperature_mode)
+            diagnostics["adjustments"] = []
+
+        try:
+            body = self._send_chat_completion(url, api_key, payload)
+        except AIRequestError as exc:
+            if not self._can_retry_without_temperature(exc, payload, temperature_mode):
+                raise
+            payload.pop("temperature", None)
+            if diagnostics is not None:
+                diagnostics["adjustments"] = [
+                    {
+                        "parameter": "temperature",
+                        "title": "出力の揺らぎはモデルに任せました",
+                        "message": "このモデルは指定された温度に対応しないため、温度を省略して再接続しました。",
+                    }
+                ]
+                diagnostics["parameters"] = self._visible_model_parameters(payload, temperature_mode)
+            body = self._send_chat_completion(url, api_key, payload)
+
+        return self._extract_text(body).strip()
+
+    def _model_parameter_settings(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        parameter_prefix: str | None,
+        parameter_settings: dict | None,
+    ):
+        if parameter_settings is None:
+            prefix = parameter_prefix or self._parameter_prefix_for_request(api_key, model)
+            parameter_settings = {
+                "temperature_mode": self.ai_settings.get(f"{prefix}_temperature_mode", "auto"),
+                "temperature": self.ai_settings.get(f"{prefix}_temperature", 1.0),
+                "reasoning_effort": self.ai_settings.get(f"{prefix}_reasoning_effort", ""),
             }
-        ).encode("utf-8")
+        mode = str(parameter_settings.get("temperature_mode") or "auto")
+        if mode not in {"auto", "default", "custom"}:
+            mode = "auto"
+        try:
+            custom_temperature = float(parameter_settings.get("temperature", 1.0))
+        except (TypeError, ValueError):
+            custom_temperature = 1.0
+        custom_temperature = max(0.0, min(2.0, custom_temperature))
+        reasoning_effort = str(parameter_settings.get("reasoning_effort") or "")
+        if reasoning_effort not in {"", "none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+            reasoning_effort = ""
+        return {
+            "temperature_mode": mode,
+            "temperature": custom_temperature,
+            "reasoning_effort": reasoning_effort,
+        }
+
+    def _parameter_prefix_for_request(self, api_key: str, model: str):
+        for prefix in ("image_analyze", "text_analyze"):
+            if self.ai_settings.get(f"{prefix}_api_key") == api_key and self.ai_settings.get(f"{prefix}_model") == model:
+                return prefix
+        return "text_analyze"
+
+    @staticmethod
+    def _visible_model_parameters(payload: dict, temperature_mode: str):
+        return {
+            "temperature_mode": temperature_mode,
+            "temperature": payload.get("temperature"),
+            "reasoning_effort": payload.get("reasoning_effort") or "default",
+        }
+
+    @staticmethod
+    def _can_retry_without_temperature(exc: AIRequestError, payload: dict, temperature_mode: str):
+        if temperature_mode != "auto" or "temperature" not in payload:
+            return False
+        haystack = f"{exc.parameter} {exc.code} {exc} {exc.technical_detail}".lower()
+        return "temperature" in haystack and any(
+            marker in haystack for marker in ("unsupported", "not support", "default", "invalid_value")
+        )
+
+    @staticmethod
+    def _send_chat_completion(url: str, api_key: str, payload: dict):
         req = request.Request(
             url,
-            data=payload,
+            data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
@@ -666,14 +799,46 @@ class AIContentService:
         )
         try:
             with request.urlopen(req, timeout=90) as response:
-                body = json.loads(response.read().decode("utf-8"))
+                return json.loads(response.read().decode("utf-8"))
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(detail) from exc
-        except (error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-            raise RuntimeError(str(exc)) from exc
-
-        return self._extract_text(body).strip()
+            message = detail or f"AI API returned HTTP {exc.code}"
+            code = ""
+            parameter = ""
+            try:
+                parsed = json.loads(detail)
+                provider_error = parsed.get("error") if isinstance(parsed, dict) else None
+                if isinstance(provider_error, dict):
+                    message = str(provider_error.get("message") or message)
+                    code = str(provider_error.get("code") or provider_error.get("type") or "")
+                    parameter = str(provider_error.get("param") or "")
+            except json.JSONDecodeError:
+                pass
+            raise AIRequestError(
+                message,
+                upstream_status=exc.code,
+                code=code,
+                parameter=parameter,
+                technical_detail=detail[:4000],
+            ) from exc
+        except error.URLError as exc:
+            raise AIRequestError(
+                "AI APIへ接続できませんでした。",
+                code="connection_error",
+                technical_detail=str(exc),
+            ) from exc
+        except TimeoutError as exc:
+            raise AIRequestError(
+                "AI APIから時間内に応答がありませんでした。",
+                code="timeout",
+                technical_detail=str(exc),
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise AIRequestError(
+                "AI APIから読み取れない応答を受け取りました。",
+                code="invalid_response",
+                technical_detail=str(exc),
+            ) from exc
 
     def _channel_enabled(self, prefix: str):
         return self.ai_settings.get("enabled", True) is not False and bool(self.ai_settings.get(f"{prefix}_api_key"))
@@ -823,21 +988,6 @@ class AIContentService:
                 ["季節管理", "休眠", "樹勢維持"],
             ),
         ]
-        review_offsets = range(180, 360, 30) if monthly_manual_work else (270, 330)
-        for offset in review_offsets:
-            actions.append(
-                self._calendar_action(
-                    "observation",
-                    "季節の生育変化と次の重点作業を確認",
-                    "recommended",
-                    plan_start + timedelta(days=offset),
-                    plan_start + timedelta(days=offset + 7),
-                    f"計画開始約{offset // 30}か月後",
-                    "葉色、新梢、花芽・果実、根域の変化と直近の作業記録から、次の1か月で優先する作業を絞るためです。",
-                    "同じ位置の写真と直近作業日を確認し、異常や季節変化がなければ不要な施肥・防除は追加しません。",
-                    ["月次確認", "観察", "作業計画"],
-                )
-            )
         if "ブルーベリー" in crop_name:
             pollination_action = self._calendar_action(
                 "pollination",
@@ -967,6 +1117,7 @@ class AIContentService:
         return ["AIまたは栽培根拠情報が未設定のため、一般的な観察基準を使用しています。"]
 
     def _fallback_task_rules(self, context: dict):
+        monthly_manual_work = self._monthly_manual_work_requested(context)
         return [
             {
                 "rule_id": "rule-observation",
@@ -974,7 +1125,7 @@ class AIContentService:
                 "title": "生育状態を確認",
                 "recurrence_type": "continuous_review",
                 "anchor": "completion_date",
-                "interval_days": {"min": 5, "preferred": 7, "max": 14},
+                "interval_days": {"min": 21, "preferred": 30, "max": 40} if monthly_manual_work else {"min": 5, "preferred": 7, "max": 14},
                 "active_months": list(range(1, 13)),
                 "conditions": ["葉色、萎れ、新梢、病斑を確認する"],
                 "skip_conditions": [],
@@ -1302,6 +1453,32 @@ class AIContentService:
                 continue
             if str(action.get("rule_id") or "") not in rule_ids:
                 action["rule_id"] = by_type.get(str(action.get("action_type") or ""), "")
+
+    @staticmethod
+    def _initial_recurrence_actions(actions: list, rules: list):
+        """Keep one actionable occurrence; completion creates the next one."""
+        recurrence_by_rule = {str(rule.get("rule_id") or ""): str(rule.get("recurrence_type") or "one_time") for rule in rules if isinstance(rule, dict)}
+        recurring = {"interval_after_completion", "seasonal", "continuous_review"}
+        retained = []
+        seen = set()
+        for action in sorted(
+            (item for item in actions if isinstance(item, dict)),
+            key=lambda item: (str(item.get("window_start") or ""), str(item.get("window_end") or ""), str(item.get("title") or "")),
+        ):
+            rule_id = str(action.get("rule_id") or "")
+            if recurrence_by_rule.get(rule_id) in recurring:
+                key = rule_id or (str(action.get("action_type") or ""), str(action.get("title") or "").strip().casefold())
+                if key in seen:
+                    continue
+                seen.add(key)
+            retained.append(action)
+        return retained
+
+    @staticmethod
+    def _monthly_manual_work_requested(context: dict):
+        planning = context.get("planning") if isinstance(context.get("planning"), dict) else {}
+        notes = str(planning.get("notes") or "").translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+        return any(token in notes for token in ("1か月に1回", "1ヶ月に1回", "月1回", "月に1回"))
 
     def _positive_int(self, value):
         try:

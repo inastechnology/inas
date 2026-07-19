@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeft, Beaker, CalendarDays, Check, Leaf, ListTodo, LoaderCircle, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
+import { ArrowLeft, Beaker, CalendarDays, Check, Leaf, ListTodo, LoaderCircle, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
 import { errorMessage, formatDate, todayString } from "../formatters";
@@ -87,7 +87,9 @@ export function PlantCalendarDrawer({
   const generationTask = planting ? bundle.generation_tasks.find((task) => task.planting_id === planting.id) ?? null : null;
   const generationActive = generationTask?.status === "queued" || generationTask?.status === "running";
   const generationReviewPending = generationTask?.status === "awaiting_review";
-  const calendarMutationBusy = busy || generationActive;
+  const generationLockTasks = bundle.generation_tasks.filter((task) => task.status === "queued" || task.status === "running");
+  const generationLockActive = generationLockTasks.length > 0;
+  const calendarMutationBusy = busy || generationLockActive;
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [questionError, setQuestionError] = useState("");
@@ -137,6 +139,14 @@ export function PlantCalendarDrawer({
     setRecordActionId(null);
     setActionQuery("");
   }, [planting?.id]);
+
+  useEffect(() => {
+    if (!generationLockActive) return;
+    setAddingAction(false);
+    setDraggedActionId(null);
+    setDragOverColumn(null);
+    setDropMessage("AI栽培計画の作成中は、圃場の作業編集を一時停止しています。");
+  }, [generationLockActive]);
 
   const actions = useMemo(
     () => [...(calendar?.actions ?? [])].sort((left, right) => left.window_start.localeCompare(right.window_start)),
@@ -274,7 +284,7 @@ export function PlantCalendarDrawer({
   };
 
   const panel = (
-      <aside className={`calendar-drawer ${presentation === "page" ? "calendar-page-panel" : "calendar-modal-panel"}`} role={presentation === "modal" ? "dialog" : undefined} aria-modal={presentation === "modal" ? "true" : undefined} aria-label="栽培カレンダー">
+      <aside className={`calendar-drawer ${presentation === "page" ? "calendar-page-panel" : "calendar-modal-panel"}${generationLockActive ? " calendar-edit-locked" : ""}`} data-calendar-edit-locked={generationLockActive ? "true" : "false"} role={presentation === "modal" ? "dialog" : undefined} aria-modal={presentation === "modal" ? "true" : undefined} aria-label="栽培カレンダー">
         <header className="calendar-header">
           <div className="calendar-header-identity">
             {presentation === "page" && <a className="icon-link" href={fieldDetailUrl} title={`${fieldName || "圃場"}へ戻る`}><ArrowLeft size={19} /></a>}
@@ -291,6 +301,13 @@ export function PlantCalendarDrawer({
               <button type="button" className={workspace === "work" ? "active" : ""} aria-pressed={workspace === "work"} onClick={() => setWorkspace("work")}><ListTodo size={17} /><span>圃場の作業</span><small>全作物をまとめて確認</small></button>
               <button type="button" className={workspace === "crop" ? "active" : ""} aria-pressed={workspace === "crop"} onClick={() => setWorkspace("crop")}><Leaf size={17} /><span>作物別の栽培計画</span><small>栽培基準・施肥・AI計画</small></button>
             </nav>
+            {generationLockActive && (
+              <div className="calendar-edit-lock" role="status" aria-live="polite">
+                <span className="calendar-edit-lock-icon"><LockKeyhole size={21} /></span>
+                <div><strong>AI栽培計画を作成中のため、作業編集を一時停止しています</strong><p>閲覧・検索・日付フィルタは利用できます。完了後に自動で編集できるようになります。</p></div>
+                <span className="calendar-edit-lock-count">{generationLockTasks.length}件を処理中</span>
+              </div>
+            )}
 
             {workspace === "crop" && <>
             <section className="calendar-plant-selector">
@@ -323,6 +340,7 @@ export function PlantCalendarDrawer({
               applications={fertilizerApplications}
               materials={bundle.fertilizer_materials}
               busy={calendarMutationBusy}
+              locked={generationLockActive}
               onAdd={onAddFertilizer}
               onDelete={onDeleteFertilizer}
               onSaveMaterial={onSaveFertilizerMaterial}
@@ -343,7 +361,7 @@ export function PlantCalendarDrawer({
               {generationActive && (
                 <div className="generation-status active" role="status" aria-live="polite">
                   <LoaderCircle className="spin" size={18} />
-                  <div><strong>{generationTask.status === "queued" ? "AI計画の作成を待っています" : "AI計画を作成しています"}</strong><p>この画面を離れても処理は続きます。他の作業を進めてかまいません。</p></div>
+                  <div><strong>{generationTask.status === "queued" ? "AI計画の作成を待っています" : "AI計画を作成しています"}</strong><p>この画面を離れても処理は続きます。閲覧や検索はできますが、計画の整合性を守るため作業編集は完了まで停止します。</p></div>
                 </div>
               )}
               {generationTask?.status === "failed" && (
@@ -429,7 +447,7 @@ export function PlantCalendarDrawer({
                 <output>{filteredActions.length} / {scopedActionEntries.length}件</output>
               </div>
               {(actionQuery || workDate || workScopePlantingId !== "all") && <p className="calendar-filter-summary">条件に合う作業だけを表示しています。作業期間が指定日を含む場合に表示されます。</p>}
-              <p className="kanban-dnd-help">カードを列へドラッグして状態を変更できます。完了列への移動では実績入力が開きます。</p>
+              <p className="kanban-dnd-help">{generationLockActive ? "AI計画の作成中は閲覧のみです。完了するとカードの移動と編集が自動で再開します。" : "カードを列へドラッグして状態を変更できます。完了列への移動では実績入力が開きます。"}</p>
               <p className="kanban-drop-status" role="status" aria-live="polite">{dropMessage}</p>
               <div className="calendar-kanban-scroll">
                 <div className="calendar-kanban" aria-label="管理作業カンバン">
@@ -527,6 +545,7 @@ export function PlantCalendarDrawer({
                       actionTypes={actionTypes}
                       timingState={suggestionByActionId.get(selectedAction.id)}
                       busy={calendarMutationBusy}
+                      locked={generationLockActive}
                       initialRecording={recordActionId === selectedAction.id}
                       readiness={bundle.operation_readiness?.[selectedAction.id]}
                       onEdit={onEditAction}
@@ -687,6 +706,7 @@ function FertilizerEffectPanel({
   applications,
   materials,
   busy,
+  locked,
   onAdd,
   onDelete,
   onSaveMaterial,
@@ -697,6 +717,7 @@ function FertilizerEffectPanel({
   applications: FertilizerApplication[];
   materials: FertilizerMaterial[];
   busy: boolean;
+  locked: boolean;
   onAdd: (plantingId: string, payload: Record<string, unknown>) => Promise<void>;
   onDelete: (plantingId: string, applicationId: string) => Promise<void>;
   onSaveMaterial: (materialId: string, payload: Record<string, unknown>) => Promise<void>;
@@ -711,6 +732,12 @@ function FertilizerEffectPanel({
   const change = <Key extends keyof FertilizerDraft>(key: Key, value: FertilizerDraft[Key]) => (
     setDraft((current) => ({ ...current, [key]: value }))
   );
+
+  useEffect(() => {
+    if (!locked) return;
+    setEditing(false);
+    setError("");
+  }, [locked]);
 
   const applyMaterial = (materialId: string) => {
     const material = materials.find((item) => item.id === materialId);
@@ -772,7 +799,7 @@ function FertilizerEffectPanel({
         <div><Beaker size={17} /><strong>培地の施肥と残存肥効</strong><span>{placementName}</span></div>
         <div className="fertilizer-heading-actions">
           <button type="button" disabled={busy} onClick={() => setCatalogOpen(true)}>肥料カタログ</button>
-          {!editing && <button type="button" disabled={busy} onClick={() => { setDraft(newFertilizerDraft(materials)); setEditing(true); }}><Plus size={15} />施肥履歴を追加</button>}
+          {!editing && <button type="button" disabled={busy} title={locked ? "AI栽培計画の作成が完了すると追加できます" : "施肥履歴をモーダルで追加"} onClick={() => { setDraft(newFertilizerDraft(materials)); setEditing(true); }}><Plus size={15} />施肥履歴を追加</button>}
         </div>
       </div>
       {applications.length === 0 ? (

@@ -65,6 +65,35 @@
       .test-result.ok { color:#166447; }
       .test-result.error,.disabled-reason { color:#9b3f36; }
       .disabled-reason { margin:0; font-size:11px; }
+      .model-hint { display:flex; align-items:start; gap:8px; margin:2px 0 0; padding:9px 11px; border-left:3px solid #7aa998; color:#43564d; background:#f2f7f4; font-size:11px; line-height:1.55; }
+      .model-hint::before { content:"AI"; flex:none; padding:2px 4px; border-radius:3px; color:#fff; background:#4e806e; font-size:9px; font-weight:900; }
+      .model-advanced { margin-top:2px; border:1px solid #d7e0da; border-radius:6px; background:#fafcfb; }
+      .model-advanced summary { padding:11px 13px; color:#315f4c; cursor:pointer; font-size:12px; font-weight:850; }
+      .model-advanced[open] summary { border-bottom:1px solid #e1e7e2; }
+      .model-advanced-body { display:grid; gap:13px; padding:13px; }
+      .parameter-grid { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(180px,1fr); gap:10px; }
+      .parameter-grid label,.temperature-panel label { display:grid; gap:5px; color:#58675e; font-size:11px; font-weight:800; }
+      .parameter-grid .wide { grid-column:1/-1; }
+      .temperature-range { display:grid; grid-template-columns:minmax(0,1fr) 44px; align-items:center; gap:10px; }
+      .temperature-range input { min-height:28px; padding:0; accent-color:var(--green); }
+      .temperature-range output { color:#245b47; font-size:16px; font-variant-numeric:tabular-nums; font-weight:900; text-align:right; }
+      .parameter-note { margin:0; color:#6a766f; font-size:11px; line-height:1.55; }
+      .ai-dialog-backdrop { position:fixed; z-index:1000; inset:0; display:grid; place-items:center; padding:18px; background:rgba(21,34,28,.58); }
+      .ai-dialog { width:min(560px,100%); max-height:min(720px,calc(100vh - 36px)); overflow:auto; border:0; border-radius:12px; background:#fff; box-shadow:0 24px 70px rgba(10,24,17,.3); }
+      .ai-dialog-header { display:flex; align-items:start; justify-content:space-between; gap:16px; padding:20px 22px 14px; border-bottom:1px solid #e2e8e3; }
+      .ai-dialog-header h2 { margin:5px 0 0; font-size:20px; line-height:1.35; }
+      .ai-dialog-badge { color:#527065; font-size:10px; font-weight:900; letter-spacing:.08em; }
+      .ai-dialog-close { min-width:36px; min-height:36px; padding:0; border-color:#d1dad4; color:#596960; font-size:21px; line-height:1; }
+      .ai-dialog-body { display:grid; gap:16px; padding:18px 22px; }
+      .ai-dialog-summary { margin:0; color:#405048; font-size:14px; line-height:1.7; }
+      .ai-dialog-section { padding:13px 14px; border-radius:7px; background:#f3f7f4; }
+      .ai-dialog-section h3 { margin:0 0 8px; font-size:12px; }
+      .ai-dialog-section ol { display:grid; gap:7px; margin:0; padding-left:22px; color:#405048; font-size:13px; line-height:1.55; }
+      .ai-dialog-adjustments { border-left:4px solid #c5963e; background:#fff8e9; }
+      .ai-dialog details { color:#66736c; font-size:11px; }
+      .ai-dialog pre { max-height:180px; overflow:auto; margin:8px 0 0; padding:10px; border-radius:5px; color:#33443b; background:#edf1ee; white-space:pre-wrap; overflow-wrap:anywhere; }
+      .ai-dialog-footer { display:flex; justify-content:flex-end; padding:0 22px 20px; }
+      body.dialog-open { overflow:hidden; }
       .environment-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
       .environment-item { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:42px; padding:9px 11px; border:1px solid #d8dfda; border-radius:5px; font-size:12px; font-weight:750; }
       .command { padding:8px 10px; border:1px solid #d4dad5; border-radius:4px; color:#3d4d44; background:#f5f7f5; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; overflow-wrap:anywhere; }
@@ -83,7 +112,11 @@
         .setting-row { grid-template-columns:1fr; gap:8px; }
         .provider-fields,.environment-grid { grid-template-columns:1fr; }
         .provider-fields .wide { grid-column:auto; }
+        .parameter-grid { grid-template-columns:1fr; }
+        .parameter-grid .wide { grid-column:auto; }
         .test-row { align-items:stretch; flex-direction:column; }
+        .ai-dialog-backdrop { place-items:end center; padding:0; }
+        .ai-dialog { width:100%; max-height:88vh; border-radius:14px 14px 0 0; }
       }
     </style>
     <link rel="stylesheet" href="/static/hub-ui.css">
@@ -123,7 +156,7 @@
                 <div class="setting-control">
                   <div class="provider-fields">
                     <label class="wide">OpenAI互換 Base URL<input name="{{ channel }}_analyze_base_url" value="{{ ai[channel + '_analyze_base_url'] }}" placeholder="https://api.openai.com/v1"></label>
-                    <label>モデル<input name="{{ channel }}_analyze_model" value="{{ ai[channel + '_analyze_model'] }}" placeholder="利用するモデルID"></label>
+                    <label>モデル<input name="{{ channel }}_analyze_model" value="{{ ai[channel + '_analyze_model'] }}" list="{{ channel }}-model-candidates" placeholder="利用するモデルID" data-model-input><datalist id="{{ channel }}-model-candidates"><option value="gpt-5.6-luna"><option value="gpt-5.6-terra"><option value="gpt-5.6-sol"><option value="gpt-5.4"></datalist></label>
                     <div class="wide secret-control">
                       <label>APIキー<input type="password" name="{{ channel }}_analyze_api_key" value="" autocomplete="new-password" spellcheck="false" placeholder="変更する場合のみ入力"></label>
                       <div class="secret-actions">
@@ -133,6 +166,39 @@
                       <span class="inline-help">保存済みの値は画面・APIへ返しません。空欄のまま保存すると現在のキーを維持します。</span>
                     </div>
                   </div>
+                  <p class="model-hint" data-model-hint>モデルによって、出力の揺らぎや考える深さに対応していない場合があります。通常は自動調整のままで利用できます。</p>
+                  <details class="model-advanced">
+                    <summary>モデル特性を調整（上級者向け）</summary>
+                    <div class="model-advanced-body">
+                      <div class="parameter-grid">
+                        <label class="wide">出力の揺らぎ
+                          <select name="{{ channel }}_analyze_temperature_mode" data-temperature-mode>
+                            <option value="auto"{% if ai[channel + '_analyze_temperature_mode'] == 'auto' %} selected{% endif %}>自動調整（おすすめ）</option>
+                            <option value="default"{% if ai[channel + '_analyze_temperature_mode'] == 'default' %} selected{% endif %}>モデルに任せる</option>
+                            <option value="custom"{% if ai[channel + '_analyze_temperature_mode'] == 'custom' %} selected{% endif %}>手動で指定</option>
+                          </select>
+                        </label>
+                        <div class="wide temperature-panel" data-temperature-panel{% if ai[channel + '_analyze_temperature_mode'] != 'custom' %} hidden{% endif %}>
+                          <label>温度（低いほど安定、高いほど多様）
+                            <span class="temperature-range"><input type="range" name="{{ channel }}_analyze_temperature" min="0" max="2" step="0.1" value="{{ ai[channel + '_analyze_temperature'] }}" data-temperature-range><output data-temperature-output>{{ ai[channel + '_analyze_temperature'] }}</output></span>
+                          </label>
+                        </div>
+                        <label class="wide">考える深さ
+                          <select name="{{ channel }}_analyze_reasoning_effort">
+                            <option value=""{% if not ai[channel + '_analyze_reasoning_effort'] %} selected{% endif %}>モデルに任せる</option>
+                            <option value="none"{% if ai[channel + '_analyze_reasoning_effort'] == 'none' %} selected{% endif %}>考え込まない（none）</option>
+                            <option value="minimal"{% if ai[channel + '_analyze_reasoning_effort'] == 'minimal' %} selected{% endif %}>最小（minimal）</option>
+                            <option value="low"{% if ai[channel + '_analyze_reasoning_effort'] == 'low' %} selected{% endif %}>軽め（low）</option>
+                            <option value="medium"{% if ai[channel + '_analyze_reasoning_effort'] == 'medium' %} selected{% endif %}>標準（medium）</option>
+                            <option value="high"{% if ai[channel + '_analyze_reasoning_effort'] == 'high' %} selected{% endif %}>深く（high）</option>
+                            <option value="xhigh"{% if ai[channel + '_analyze_reasoning_effort'] == 'xhigh' %} selected{% endif %}>かなり深く（xhigh）</option>
+                            <option value="max"{% if ai[channel + '_analyze_reasoning_effort'] == 'max' %} selected{% endif %}>最大（max）</option>
+                          </select>
+                        </label>
+                      </div>
+                      <p class="parameter-note">自動調整では用途に合う温度を試し、モデルが拒否した場合だけ温度を省略して再試行します。手動指定では値を変えず、非対応なら理由と直し方を表示します。</p>
+                    </div>
+                  </details>
                   {% set connection_ready = ai[channel + '_key_configured'] and ai[channel + '_analyze_model'] %}
                   <div class="test-row"><span class="test-result" aria-live="polite"></span><button type="button" data-test-ai{% if not connection_ready %} disabled aria-describedby="{{ channel }}-test-disabled" title="APIキーとモデルを設定してください"{% endif %}>接続を確認</button></div>
                   {% if not connection_ready %}<p class="disabled-reason" id="{{ channel }}-test-disabled">{% if not ai[channel + '_key_configured'] %}APIキー{% endif %}{% if not ai[channel + '_key_configured'] and not ai[channel + '_analyze_model'] %}と{% endif %}{% if not ai[channel + '_analyze_model'] %}モデル{% endif %}を保存すると確認できます。</p>{% endif %}
@@ -212,6 +278,21 @@
         <p class="empty-search" id="settings-empty" hidden>一致する設定がありません。</p>
       </div>
     </main>
+    <div class="ai-dialog-backdrop" id="ai-test-dialog" hidden>
+      <section class="ai-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-test-dialog-title" aria-describedby="ai-test-dialog-summary">
+        <header class="ai-dialog-header">
+          <div><span class="ai-dialog-badge" id="ai-test-dialog-badge">AI CONNECTION</span><h2 id="ai-test-dialog-title">接続結果</h2></div>
+          <button class="ai-dialog-close" type="button" data-ai-dialog-close aria-label="閉じる">×</button>
+        </header>
+        <div class="ai-dialog-body">
+          <p class="ai-dialog-summary" id="ai-test-dialog-summary"></p>
+          <section class="ai-dialog-section" id="ai-test-dialog-guide"><h3>次に行うこと</h3><ol id="ai-test-dialog-suggestions"></ol></section>
+          <section class="ai-dialog-section ai-dialog-adjustments" id="ai-test-dialog-adjustments" hidden><h3>自動で調整した内容</h3><ol></ol></section>
+          <details><summary>技術情報を確認</summary><pre id="ai-test-dialog-technical"></pre></details>
+        </div>
+        <footer class="ai-dialog-footer"><button class="primary" type="button" data-ai-dialog-close>閉じる</button></footer>
+      </section>
+    </div>
     <script src="/static/stateful-actions.js"></script>
     <script src="/static/select-filter.js"></script>
     <script>
@@ -242,21 +323,123 @@
       document.querySelector(`[data-settings-nav="${CSS.escape(activeSection)}"]`)?.classList.add("active");
       if (activeSection !== "ai") requestAnimationFrame(() => document.getElementById(activeSection)?.scrollIntoView({block:"start"}));
 
+      const aiTestDialog = document.getElementById("ai-test-dialog");
+      const closeAiTestDialog = () => {
+        aiTestDialog.hidden = true;
+        document.body.classList.remove("dialog-open");
+      };
+      const showAiTestDialog = ({ok, title, summary, suggestions = [], adjustments = [], technical = {}}) => {
+        document.getElementById("ai-test-dialog-badge").textContent = ok ? "CONNECTION READY" : "CHECK AI SETTINGS";
+        document.getElementById("ai-test-dialog-title").textContent = title;
+        document.getElementById("ai-test-dialog-summary").textContent = summary;
+        const suggestionList = document.getElementById("ai-test-dialog-suggestions");
+        suggestionList.replaceChildren(...suggestions.map((suggestion) => {
+          const item = document.createElement("li"); item.textContent = suggestion; return item;
+        }));
+        document.getElementById("ai-test-dialog-guide").hidden = suggestions.length === 0;
+        const adjustmentSection = document.getElementById("ai-test-dialog-adjustments");
+        adjustmentSection.hidden = adjustments.length === 0;
+        adjustmentSection.querySelector("ol").replaceChildren(...adjustments.map((adjustment) => {
+          const item = document.createElement("li");
+          item.textContent = `${adjustment.title || "設定を調整しました"}。${adjustment.message || ""}`;
+          return item;
+        }));
+        document.getElementById("ai-test-dialog-technical").textContent = JSON.stringify(technical, null, 2);
+        aiTestDialog.hidden = false;
+        document.body.classList.add("dialog-open");
+        aiTestDialog.querySelector("[data-ai-dialog-close]")?.focus();
+      };
+      aiTestDialog.querySelectorAll("[data-ai-dialog-close]").forEach((button) => button.addEventListener("click", closeAiTestDialog));
+      aiTestDialog.addEventListener("click", (event) => { if (event.target === aiTestDialog) closeAiTestDialog(); });
+      document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !aiTestDialog.hidden) closeAiTestDialog(); });
+
       document.querySelectorAll("[data-ai-provider]").forEach((section) => {
+        const channel = section.dataset.aiProvider;
+        const form = document.getElementById("ai-settings-form");
+        const modeSelect = section.querySelector("[data-temperature-mode]");
+        const temperaturePanel = section.querySelector("[data-temperature-panel]");
+        const temperatureRange = section.querySelector("[data-temperature-range]");
+        const temperatureOutput = section.querySelector("[data-temperature-output]");
+        const syncTemperature = () => {
+          temperaturePanel.hidden = modeSelect.value !== "custom";
+          temperatureOutput.textContent = Number(temperatureRange.value).toFixed(1);
+        };
+        modeSelect.addEventListener("change", syncTemperature);
+        temperatureRange.addEventListener("input", syncTemperature);
+        syncTemperature();
+
+        const modelInput = section.querySelector("[data-model-input]");
+        const modelHint = section.querySelector("[data-model-hint]");
+        const syncModelHint = () => {
+          const model = modelInput.value.trim().toLowerCase();
+          modelHint.textContent = model.startsWith("gpt-5.6")
+            ? "GPT-5.6系は、モデルや考える深さによって温度の指定条件が異なります。まずは自動調整がおすすめです。"
+            : "モデルによって、出力の揺らぎや考える深さに対応していない場合があります。通常は自動調整のままで利用できます。";
+        };
+        modelInput.addEventListener("input", syncModelHint);
+        syncModelHint();
+
         const button = section.querySelector("[data-test-ai]");
-        if (!button || button.disabled) return;
+        if (!button) return;
         const result = section.querySelector(".test-result");
         button.addEventListener("click", async () => {
-          const channel = section.dataset.aiProvider;
-          const form = document.getElementById("ai-settings-form");
           button.disabled = true; result.className = "test-result"; result.textContent = "接続確認中...";
           try {
-            const response = await fetch("/local/api/settings/ai/test", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({channel,base_url:form.elements[`${channel}_analyze_base_url`].value,model:form.elements[`${channel}_analyze_model`].value})});
-            const body = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
-            result.className = "test-result ok"; result.textContent = `接続できました: ${body.model}`;
+            const response = await fetch("/local/api/settings/ai/test", {
+              method:"POST",
+              headers:{"Accept":"application/json","Content-Type":"application/json"},
+              body:JSON.stringify({
+                channel,
+                base_url:form.elements[`${channel}_analyze_base_url`].value,
+                model:form.elements[`${channel}_analyze_model`].value,
+                temperature_mode:form.elements[`${channel}_analyze_temperature_mode`].value,
+                temperature:form.elements[`${channel}_analyze_temperature`].value,
+                reasoning_effort:form.elements[`${channel}_analyze_reasoning_effort`].value,
+              }),
+            });
+            const rawBody = await response.text();
+            let body = {};
+            try { body = rawBody ? JSON.parse(rawBody) : {}; } catch (_error) {
+              body = {error:"HubまたはAIサービスから読み取れない応答を受け取りました。",diagnostic:{
+                title:"接続結果を読み取れませんでした",
+                summary:"HTMLなど、想定外の形式で応答が返りました。",
+                suggestions:["Hubが起動しているか確認します。","少し時間を置いて再試行します。"],
+                category:"invalid_response",
+                upstream_status:response.status,
+                technical_detail:`HTTP ${response.status} / ${response.headers.get("content-type") || "unknown content type"}`,
+              }};
+            }
+            if (!response.ok) {
+              const diagnostic = body.diagnostic || {};
+              result.className = "test-result error"; result.textContent = "接続できませんでした。詳細を確認してください。";
+              showAiTestDialog({
+                ok:false,
+                title:diagnostic.title || "AI設定を確認してください",
+                summary:diagnostic.summary || body.error || `HTTP ${response.status}`,
+                suggestions:diagnostic.suggestions || ["設定内容を確認して再試行します。"],
+                technical:{status:response.status,category:diagnostic.category,code:diagnostic.code,parameter:diagnostic.parameter,detail:diagnostic.technical_detail},
+              });
+              return;
+            }
+            const adjustments = Array.isArray(body.adjustments) ? body.adjustments : [];
+            result.className = "test-result ok"; result.textContent = adjustments.length ? `接続できました（自動調整あり）: ${body.model}` : `接続できました: ${body.model}`;
+            showAiTestDialog({
+              ok:true,
+              title:adjustments.length ? "接続できました（自動調整あり）" : "接続できました",
+              summary:`${body.model || "選択したモデル"} をAI処理に利用できます。`,
+              suggestions:["この設定を使う場合は「AI設定を保存」を押してください。"],
+              adjustments,
+              technical:{model:body.model,response:body.response,parameters:body.parameters},
+            });
           } catch (error) {
-            result.className = "test-result error"; result.textContent = error instanceof Error ? error.message : "接続できませんでした";
+            result.className = "test-result error"; result.textContent = "接続できませんでした。詳細を確認してください。";
+            showAiTestDialog({
+              ok:false,
+              title:"Hubから接続確認を開始できませんでした",
+              summary:error instanceof Error ? error.message : "通信中に予期しない問題が発生しました。",
+              suggestions:["Hubのネットワーク接続を確認します。","画面を再読み込みして再試行します。"],
+              technical:{error:String(error)},
+            });
           } finally { button.disabled = false; }
         });
       });

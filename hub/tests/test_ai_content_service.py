@@ -1,7 +1,11 @@
+import json
 import os
 import tempfile
 import unittest
 from datetime import date, timedelta
+from io import BytesIO
+from unittest.mock import patch
+from urllib import error
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
@@ -17,7 +21,7 @@ os.environ.setdefault("MQTT_BROKER_USERNAME", "")
 os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
-from ina_device_hub.ai_content_service import AIContentService  # noqa: E402
+from ina_device_hub.ai_content_service import AIContentService, AIRequestError  # noqa: E402
 
 
 class AIContentServiceTest(unittest.TestCase):
@@ -31,6 +35,103 @@ class AIContentServiceTest(unittest.TestCase):
                 "placement_name": "鉢A",
             }
         }
+
+    def test_connection_auto_retries_without_unsupported_temperature(self):
+        self.service.ai_settings = {
+            "text_analyze_api_key": "server-secret",
+            "text_analyze_model": "gpt-5.6-luna",
+            "text_analyze_temperature_mode": "auto",
+        }
+        payloads = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"choices":[{"message":{"content":"OK"}}]}'
+
+        def fake_urlopen(req, timeout):
+            self.assertEqual(timeout, 90)
+            payloads.append(json.loads(req.data.decode("utf-8")))
+            if len(payloads) == 1:
+                detail = json.dumps(
+                    {
+                        "error": {
+                            "message": "Unsupported value: temperature only supports the default value",
+                            "type": "invalid_request_error",
+                            "param": "temperature",
+                            "code": "unsupported_value",
+                        }
+                    }
+                ).encode("utf-8")
+                raise error.HTTPError(req.full_url, 400, "Bad Request", {}, BytesIO(detail))
+            return FakeResponse()
+
+        with patch("ina_device_hub.ai_content_service.request.urlopen", side_effect=fake_urlopen):
+            result = self.service.test_connection("text")
+
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(payloads[0]["temperature"], 0)
+        self.assertNotIn("temperature", payloads[1])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["adjustments"][0]["parameter"], "temperature")
+        self.assertIsNone(result["parameters"]["temperature"])
+
+    def test_connection_custom_temperature_does_not_silently_change_the_value(self):
+        self.service.ai_settings = {
+            "text_analyze_api_key": "server-secret",
+            "text_analyze_model": "gpt-5.6-luna",
+            "text_analyze_temperature_mode": "custom",
+            "text_analyze_temperature": 0.2,
+        }
+        payloads = []
+
+        def fake_urlopen(req, timeout):
+            payloads.append(json.loads(req.data.decode("utf-8")))
+            detail = b'{"error":{"message":"temperature is unsupported","param":"temperature","code":"unsupported_value"}}'
+            raise error.HTTPError(req.full_url, 400, "Bad Request", {}, BytesIO(detail))
+
+        with patch("ina_device_hub.ai_content_service.request.urlopen", side_effect=fake_urlopen):
+            with self.assertRaises(AIRequestError) as captured:
+                self.service.test_connection("text")
+
+        self.assertEqual(len(payloads), 1)
+        self.assertEqual(payloads[0]["temperature"], 0.2)
+        self.assertEqual(captured.exception.parameter, "temperature")
+
+    def test_model_default_omits_temperature_and_can_send_reasoning_effort(self):
+        self.service.ai_settings = {
+            "text_analyze_api_key": "server-secret",
+            "text_analyze_model": "reasoning-model",
+            "text_analyze_temperature_mode": "default",
+            "text_analyze_reasoning_effort": "high",
+        }
+        payloads = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"choices":[{"message":{"content":"OK"}}]}'
+
+        def fake_urlopen(req, timeout):
+            payloads.append(json.loads(req.data.decode("utf-8")))
+            return FakeResponse()
+
+        with patch("ina_device_hub.ai_content_service.request.urlopen", side_effect=fake_urlopen):
+            result = self.service.test_connection("text")
+
+        self.assertNotIn("temperature", payloads[0])
+        self.assertEqual(payloads[0]["reasoning_effort"], "high")
+        self.assertEqual(result["parameters"]["reasoning_effort"], "high")
 
     def test_calendar_fallback_has_priorities_reasons_and_tags(self):
         self.service.ai_settings = {"text_analyze_api_key": ""}
@@ -201,8 +302,31 @@ class AIContentServiceTest(unittest.TestCase):
         self.assertNotIn("定植後の活着確認", [action["title"] for action in result["actions"]])
         self.assertTrue(all((right - left).days >= 30 for left, right in zip(starts, starts[1:])))
         self.assertFalse(any(action["action_type"] == "watering" for action in result["actions"]))
-        self.assertEqual(len(result["actions"]), 12)
+        self.assertNotIn("季節の生育変化と次の重点作業を確認", [action["title"] for action in result["actions"]])
+        recurring_rule_ids = {
+            rule["rule_id"] for rule in result["task_rules"] if rule["recurrence_type"] in {"interval_after_completion", "seasonal", "continuous_review"}
+        }
+        self.assertTrue(all(sum(action["rule_id"] == rule_id for action in result["actions"]) <= 1 for rule_id in recurring_rule_ids))
+        observation_rule = next(rule for rule in result["task_rules"] if rule["rule_id"] == "rule-observation")
+        self.assertEqual(observation_rule["interval_days"]["preferred"], 30)
         self.assertTrue(result["generation"]["quality_report"]["passed"])
+
+    def test_llm_initial_plan_keeps_only_first_occurrence_of_a_recurring_rule(self):
+        self.service.ai_settings = {"text_analyze_api_key": "test", "text_analyze_model": "test-model"}
+        self.service._chat_completion = lambda **kwargs: (
+            '{"actions":['
+            '{"rule_id":"rule-observation","action_type":"observation","title":"生育確認","window_start":"2026-07-20","window_end":"2026-07-27"},'
+            '{"rule_id":"rule-observation","action_type":"observation","title":"生育確認","window_start":"2026-08-20","window_end":"2026-08-27"}],'
+            '"task_rules":[{"rule_id":"rule-observation","action_type":"observation","title":"生育確認","recurrence_type":"continuous_review","anchor":"completion_date","interval_days":{"min":21,"preferred":30,"max":40},"active_months":[1,2,3,4,5,6,7,8,9,10,11,12]}]}'
+        )
+        context = {**self.context, "planning": {"start_date": "2026-07-20"}}
+
+        result = self.service.generate_plant_calendar(context)
+
+        self.assertEqual(result["generation"]["source"], "llm")
+        self.assertEqual(len(result["actions"]), 1)
+        self.assertEqual(result["actions"][0]["window_start"], "2026-07-20")
+        self.assertIn("直近1件だけ", self.service._initial_plant_plan_messages(context, [])[1]["content"])
 
     def test_calendar_parses_json_code_fence_from_llm(self):
         self.service.ai_settings = {

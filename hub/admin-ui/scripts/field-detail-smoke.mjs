@@ -170,7 +170,10 @@ try {
   await calendarPage.waitForSelector("[data-fertilizer-form]");
   await new Promise((resolve) => setTimeout(resolve, 250));
   assert.equal(await calendarPage.$eval(".fertilizer-entry-dialog", (dialog) => dialog.getAttribute("aria-modal")), "true", "fertilizer entry must open as a modal");
+  assert.equal(await calendarPage.$eval(".fertilizer-entry-dialog", (dialog) => dialog.parentElement?.parentElement === document.body), true, "fertilizer modal must be portaled above the calendar page");
+  assert.equal(await calendarPage.$eval(".fertilizer-entry-dialog", (dialog) => getComputedStyle(dialog.parentElement).position), "fixed", "fertilizer modal backdrop must cover the viewport");
   assert.match(await calendarPage.$eval("[data-fertilizer-form]", (form) => form.textContent || ""), /製品kgと養分kgを分けて計算/);
+  await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-entry-modal.png", fullPage: false });
   assert.equal(await calendarPage.$eval('[data-fertilizer-form] select[name="fertilizer_material"]', (select) => select.options.length), 8, "Hub fertilizer materials must be available");
   await calendarPage.select('[data-fertilizer-form] select[name="material_kind"]', "poultry_manure");
   await calendarPage.waitForFunction(() => document.querySelector('[data-fertilizer-form] select[name="fertilizer_material"]')?.value === "builtin:poultry-manure-reference");
@@ -252,7 +255,7 @@ try {
 
   await calendarPage.click('.calendar-action-list .calendar-section-heading button');
   await calendarPage.waitForSelector('.calendar-action-create-dialog .new-action-form');
-  assert.match(await calendarPage.$eval('.calendar-action-create-dialog', (dialog) => dialog.textContent || ""), /対象の作物.*詳しい作業内容・画像/);
+  assert.match(await calendarPage.$eval('.calendar-action-create-dialog', (dialog) => dialog.textContent || ""), /対象の作物.*今日やること.*写真つき作業メモ/s);
   await calendarPage.screenshot({ path: "/tmp/ina-calendar-add-action-modal.png", fullPage: true });
   await calendarPage.click('.calendar-action-create-dialog > header .icon-button');
 
@@ -286,6 +289,9 @@ try {
   await selectCalendarWorkspace(calendarPage, "圃場の作業");
   await calendarPage.click(".calendar-kanban-card");
   await calendarPage.waitForSelector(".calendar-action-detail-dialog .work-guidance");
+  assert.equal(await calendarPage.$$(".calendar-action-detail-dialog .action-flow-step").then((items) => items.length), 3, "action detail must show the three-step decision flow");
+  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .action-decision-flow", (panel) => panel.textContent || ""), /この作業を考えたきっかけ.*やるか、今日は見送るか.*今日やること/s);
+  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .action-flow-step.task", (panel) => panel.textContent || ""), /いちばん大切なところ.*今日やること/s);
   if (await calendarPage.$(".calendar-action-detail-dialog .calendar-action.planned")) {
     assert.equal(await calendarPage.$(".calendar-action-detail-dialog .complete-button"), null, "planned work must not offer completion recording");
     assert(await calendarPage.$(".calendar-action-detail-dialog .start-button"), "planned work must offer a start action");
@@ -293,6 +299,29 @@ try {
     await calendarPage.waitForSelector(".action-edit-dialog .rich-action-content");
     await new Promise((resolve) => setTimeout(resolve, 250));
     assert.match(await calendarPage.$eval(".action-edit-dialog > header", (header) => header.textContent || ""), /実績入力とは別に編集/);
+    assert(await calendarPage.$('.action-edit-dialog .rich-action-editor[contenteditable="true"]'), "detailed notes must use a visual rich text editor");
+    assert.equal(await calendarPage.$(".action-edit-dialog .rich-action-content textarea"), null, "users must not edit raw HTML tags");
+    assert.equal(await calendarPage.$$(".action-edit-dialog .rich-action-toolbar button").then((items) => items.length), 8, "the visual editor must expose its formatting tools");
+    await calendarPage.$eval(".action-edit-dialog .rich-action-editor", (editor) => {
+      editor.innerHTML = "<p>写真を残して変化を比べる</p>";
+      editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+      const text = editor.querySelector("p")?.firstChild;
+      if (!text) throw new Error("rich editor test text was not created");
+      const range = document.createRange();
+      range.setStart(text, 0);
+      range.setEnd(text, 5);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    });
+    await calendarPage.click(".action-edit-dialog .rich-action-toolbar .marker-tool");
+    assert(await calendarPage.$(".action-edit-dialog .rich-action-editor mark"), "marker tool must visibly format selected text");
+    const richImageInput = await calendarPage.$('.action-edit-dialog .rich-action-image-input input[type="file"]');
+    assert(richImageInput, "rich editor must provide an image picker");
+    await richImageInput.uploadFile("../src/ina_device_hub/static/plant-actions/pest-control.webp");
+    await calendarPage.waitForSelector(".action-edit-dialog .rich-action-editor .pending-editor-image");
+    assert.equal((await calendarPage.$eval(".action-edit-dialog .rich-action-editor", (editor) => editor.textContent || "")).includes("{{image:"), false, "image markers must be presented visually instead of as HTML text");
+    await calendarPage.evaluate(() => window.getSelection()?.removeAllRanges());
     await calendarPage.screenshot({ path: "/tmp/ina-calendar-edit-action-modal.png", fullPage: true });
     await calendarPage.click(".action-edit-dialog > header .icon-button");
     const deleteConfirmation = new Promise((resolve) => calendarPage.once("dialog", async (dialog) => { assert.match(dialog.message(), /元に戻せません/); await dialog.dismiss(); resolve(); }));
@@ -300,11 +329,19 @@ try {
     await deleteConfirmation;
     await calendarPage.screenshot({ path: "/tmp/ina-calendar-planned-action.png", fullPage: true });
   }
-  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-guidance", (panel) => panel.textContent || ""), /開始条件/);
-  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-guidance", (panel) => panel.textContent || ""), /見送り/);
-  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-guidance", (panel) => panel.textContent || ""), /完了確認/);
+  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .action-flow-step.decision", (panel) => panel.textContent || ""), /やる目安/);
+  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-guidance", (panel) => panel.textContent || ""), /見る場所/);
+  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-guidance", (panel) => panel.textContent || ""), /ここまでできたら完了/);
+  assert.doesNotMatch(await calendarPage.$eval(".calendar-action-detail-dialog .work-guidance", (panel) => panel.textContent || ""), /開始条件/, "decision conditions must not be repeated in the lower guide");
   assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-method-detail[open]", (panel) => panel.textContent || ""), /手順/);
   assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .work-method-detail[open]", (panel) => panel.textContent || ""), /頻度/);
+  await calendarPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert((await calendarPage.$eval(".calendar-action-detail-dialog", (dialog) => dialog.scrollWidth - dialog.clientWidth)) <= 1, "mobile action detail must not overflow horizontally");
+  await calendarPage.screenshot({ path: "/tmp/ina-calendar-action-journal-mobile.png", fullPage: true });
+  await calendarPage.$eval(".calendar-action-detail-dialog .action-flow-step.task", (step) => step.scrollIntoView({ block: "center" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-calendar-action-journal-mobile-task.png", fullPage: true });
+  await calendarPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
   await selectCalendarWorkspace(calendarPage, "作物別の栽培計画");
   await calendarPage.$eval('.gantt-period-controls input[type="month"]', (input) => {
@@ -362,6 +399,41 @@ try {
   assert(calendarOverflow <= 1, `mobile calendar page must not overflow horizontally: ${calendarOverflow}px`);
   await calendarPage.screenshot({ path: "/tmp/ina-calendar-mobile.png", fullPage: true });
   await calendarPage.close();
+
+  const lockPage = await browser.newPage();
+  await lockPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await lockPage.setRequestInterception(true);
+  lockPage.on("request", async (request) => {
+    if (!request.url().includes(`/local/api/fields/${fieldId}/plantings`)) {
+      await request.continue();
+      return;
+    }
+    try {
+      const response = await fetch(request.url());
+      const bundle = await response.json();
+      const active = bundle.plantings.find((item) => item.status === "active");
+      bundle.generation_tasks = active ? [{
+        id: "ui-smoke-running-generation",
+        field_id: fieldId,
+        planting_id: active.id,
+        kind: "regenerate",
+        status: "running",
+        updated_at: new Date().toISOString(),
+      }] : [];
+      await request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(bundle) });
+    } catch (error) {
+      await request.abort("failed");
+      browserErrors.push(String(error));
+    }
+  });
+  await lockPage.goto(`${baseUrl}/fields/${fieldId}/calendar`, { waitUntil: "networkidle0" });
+  await lockPage.waitForSelector('.calendar-drawer[data-calendar-edit-locked="true"] .calendar-edit-lock');
+  assert.match(await lockPage.$eval(".calendar-edit-lock", (banner) => banner.textContent || ""), /作業編集を一時停止.*閲覧・検索・日付フィルタ/s);
+  assert.equal(await lockPage.$eval(".calendar-action-list .calendar-section-heading button", (button) => button.disabled), true, "adding calendar work must be locked");
+  assert.equal(await lockPage.$$eval(".calendar-kanban-card", (cards) => cards.every((card) => card.getAttribute("draggable") === "false")), true, "kanban dragging must be locked");
+  assert.equal(await lockPage.$eval('.calendar-action-search input[type="search"]', (input) => input.disabled), false, "calendar search must remain available");
+  await lockPage.screenshot({ path: "/tmp/ina-calendar-generation-edit-lock.png", fullPage: false });
+  await lockPage.close();
   assert.match(await page.$eval("[data-field-tab='monitoring']", (tab) => tab.textContent || ""), /環境・設備/);
   await page.click("[data-field-tab='monitoring']");
   await page.waitForSelector("[data-tab-panel='monitoring']:not([hidden])");
@@ -422,10 +494,14 @@ try {
       "/tmp/ina-fertilizer-catalog-add.png",
       "/tmp/ina-fertilizer-catalog-mobile.png",
       "/tmp/ina-fertilizer-preset-poultry.png",
+      "/tmp/ina-fertilizer-entry-modal.png",
       "/tmp/ina-fertilizer-preset-poultry-mobile.png",
       "/tmp/ina-fertilizer-effect-desktop.png",
       "/tmp/ina-calendar-mobile.png",
+      "/tmp/ina-calendar-generation-edit-lock.png",
       "/tmp/ina-calendar-planned-action.png",
+      "/tmp/ina-calendar-action-journal-mobile.png",
+      "/tmp/ina-calendar-action-journal-mobile-task.png",
       "/tmp/ina-calendar-edit-action-modal.png",
       "/tmp/ina-work-record-desktop.png",
       "/tmp/ina-field-monitoring-desktop.png",
