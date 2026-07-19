@@ -62,20 +62,34 @@ Open:
 ```text
 http://127.0.0.1:39251/demo/mqtt-devices
 http://127.0.0.1:39251/fields/demo-strawberry-field/layout
+http://127.0.0.1:39251/fields/demo-strawberry-field/calendar
+http://127.0.0.1:39251/inas-app
 ```
 
-The demo provides 12 bindable WTR, WRS, ENV, SOI, PAR, and camera devices, plus
+Capture a reusable 16:9 advertising demo video from the running demo server:
+
+```bash
+HUB_URL=http://127.0.0.1:39251 npm --prefix admin-ui run capture:demo-video
+```
+
+The demo provides 13 bindable WTR, WRS, FGT, ENV, SOI, PAR, and camera devices, plus
 irrigation history, soil moisture charts, wake history, and device detail
 navigation. MQTT demo operations are not
 persisted. The installation layout uses the demo work directory and can be
-edited and saved while the demo server is running. A saved pot, ridge, tree, or
-other cultivation placement can also receive a planting record. The demo then
-creates a fallback plant-management calendar without calling an external LLM;
+edited and saved while the demo server is running. A fresh demo work directory
+is preloaded with a greenhouse, three ridges, a strawberry planting, a 12-month
+work calendar, completed/in-progress/skipped examples, and fertilizer history.
+The calendar is generated without calling an external LLM;
 calendar edits, selected work dates, and plant questions can be exercised from
 the same screen. The demo always uses the local libSQL file under
 `HUB_DEMO_WORK_DIR` and does not inherit the production Turso URL from `.env`.
 Set `HUB_DEMO_AI_TEXT_ANALYZE_API_KEY` only when an external calendar-generation
 call is intentionally required. The real admin UI remains `/mqtt-devices`.
+
+The `/inas-app` route is the public product landing page and doubles as an A4
+print brochure. To refresh its real Hub screenshots, first run `npm run smoke`
+against an isolated demo server, then run `npm run capture:marketing`. Validate
+the desktop, mobile, and three-page print outputs with `npm run smoke:marketing`.
 
 Build the React/Konva installation layout after changing `admin-ui/src`:
 

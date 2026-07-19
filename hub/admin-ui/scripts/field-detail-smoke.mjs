@@ -273,7 +273,10 @@ try {
   await page.screenshot({ path: "/tmp/ina-field-record-image-paste.png", fullPage: false });
   assert(await page.$('input[aria-label="栽培記録を検索"]'), "the growing record history must provide API search");
   await page.type('input[aria-label="栽培記録を検索"]', "一致しない栽培記録");
-  await page.waitForFunction(() => document.querySelector("#record-history-count")?.textContent?.trim() === "0 / 0件");
+  await page.waitForFunction(() => (
+    document.querySelector("#record-history-count")?.textContent?.trim() === "0 / 0件"
+    && document.querySelector("#record-history-status")?.textContent?.includes("一致する記録はありません")
+  ));
   assert.match(await page.$eval("#record-history-status", (status) => status.textContent || ""), /一致する記録はありません/);
   await page.$eval('input[aria-label="栽培記録を検索"]', (input) => {
     input.value = "";

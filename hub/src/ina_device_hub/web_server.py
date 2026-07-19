@@ -460,6 +460,11 @@ def index():
     return _render_field_catalog(home_mode=True)
 
 
+@app.route("/inas-app", methods=["GET"])
+def inas_app_landing_page():
+    return render_template("inas_app.html")
+
+
 @app.route("/devices/<device_id>", methods=["GET"])
 def get_device_info(device_id):
     device_info = sensor_device_repository().get(device_id)

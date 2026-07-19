@@ -561,6 +561,24 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(end_at.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-04 23:59:59")
         self.assertEqual(limit, 12)
 
+    def test_inas_app_landing_page_explains_real_product_and_two_adoption_paths(self):
+        response = self.client.get("/inas-app")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("育てる判断を、", html)
+        self.assertIn("小さな家庭菜園からプロの圃場まで", html)
+        self.assertIn("AI栽培計画", html)
+        self.assertIn("オープンソース", html)
+        self.assertIn("公開情報をもとに、自分でつくる", html)
+        self.assertIn("組み立て済みから、安心して始める", html)
+        self.assertIn("提供準備中", html)
+        self.assertIn("/static/inas-app/inas-app.css", html)
+        self.assertIn("/static/inas-app/hub-field-dashboard.png", html)
+        self.assertIn("/static/inas-app/hub-cultivation-calendar.png", html)
+        self.assertIn("/static/inas-app/hub-irrigation-device.png", html)
+        self.assertIn("data-print-button", html)
+
     def test_home_is_field_selector_without_global_device_list(self):
         field = self.field_repository.upsert(
             None,

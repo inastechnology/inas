@@ -11,6 +11,9 @@
     "smoke:device-detail": "node scripts/device-detail-smoke.mjs",
     "smoke:settings": "node scripts/settings-smoke.mjs",
     "smoke:skip-decision": "node scripts/skip-decision-smoke.mjs",
+    "smoke:marketing": "node scripts/marketing-smoke.mjs",
+    "capture:marketing": "node scripts/marketing-capture.mjs",
+    "capture:demo-video": "node scripts/capture-demo-video.mjs",
     "test:merge": "node --experimental-strip-types scripts/layout-merge-test.mjs",
     "typecheck": "tsc --noEmit"
   },
