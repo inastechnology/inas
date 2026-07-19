@@ -514,20 +514,31 @@ try {
   await reviewPage.goto(`${baseUrl}/fields/${fieldId}/calendar`, { waitUntil: "networkidle0" });
   await selectCalendarWorkspace(reviewPage, "作物別の栽培計画");
   await reviewPage.waitForSelector(".calendar-regeneration-review");
-  assert.equal(await reviewPage.$eval(".regeneration-commit-bar button", (button) => button.disabled), true, "batch apply must wait for every proposal selection");
-  await reviewPage.click(".regeneration-proposal:nth-child(1) .proposal-actions button:last-child");
-  await reviewPage.click(".regeneration-proposal:nth-child(2) .proposal-actions button:first-child");
-  assert.equal(reviewDecisionRequests, 0, "proposal selection must not call the API");
-  assert.equal(await reviewPage.$$(".proposal-actions button[aria-pressed=\"true\"]").then((items) => items.length), 2, "proposal choices must update immediately");
-  assert.match(await reviewPage.$eval(".regeneration-review-counts", (counts) => counts.textContent || ""), /取り入れる 1件.*変更しない 1件.*未選択 0件/s);
-  assert.equal(await reviewPage.$eval(".regeneration-commit-bar button", (button) => button.disabled), false, "batch apply must become available after all choices");
-  await reviewPage.screenshot({ path: "/tmp/ina-calendar-regeneration-batch-review.png", fullPage: true });
+  assert.equal(await reviewPage.$$(".regeneration-proposal-card").then((items) => items.length), 2, "every pending proposal must be available as a review card");
+  await reviewPage.click(".regeneration-review-entry");
+  await reviewPage.waitForSelector(".regeneration-review-dialog .regeneration-action-comparison");
+  assert.match(await reviewPage.$eval("#regeneration-review-dialog-title", (title) => title.textContent || ""), /AIが提案した確認作業/);
+  assert.equal(await reviewPage.$$(".regeneration-action-comparison .calendar-action-preview").then((items) => items.length), 2, "an update proposal must compare the current and proposed work details");
+  assert.equal(reviewDecisionRequests, 0, "opening a proposal comparison must not call the API");
+  await reviewPage.screenshot({ path: "/tmp/ina-calendar-regeneration-guided-review.png", fullPage: false });
+  await reviewPage.click(".regeneration-review-decision-bar button.approve");
+  await reviewPage.waitForFunction(() => document.querySelector("#regeneration-review-dialog-title")?.textContent?.includes("新しい生育確認"));
+  assert.equal(reviewDecisionRequests, 0, "choosing a proposal must not call the API");
+  assert.equal(await reviewPage.$$(".regeneration-action-comparison .calendar-action-preview").then((items) => items.length), 1, "an add proposal must explain the empty current side and show the proposed work details");
+  assert.match(await reviewPage.$eval(".regeneration-review-dialog > header span", (progress) => progress.textContent || ""), /2 \/ 2/);
   await reviewPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
   await new Promise((resolve) => setTimeout(resolve, 150));
   const reviewOverflow = await reviewPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   assert(reviewOverflow <= 1, `mobile regeneration review must not overflow horizontally: ${reviewOverflow}px`);
-  await reviewPage.screenshot({ path: "/tmp/ina-calendar-regeneration-batch-review-mobile.png", fullPage: true });
-  await reviewPage.click(".regeneration-commit-bar button");
+  await reviewPage.screenshot({ path: "/tmp/ina-calendar-regeneration-guided-review-mobile.png", fullPage: false });
+  await reviewPage.click(".regeneration-review-decision-bar button.reject");
+  await reviewPage.waitForSelector(".regeneration-review-complete");
+  assert.equal(reviewDecisionRequests, 0, "the complete guided review must still be local until final apply");
+  assert.match(await reviewPage.$eval(".regeneration-review-complete .regeneration-review-counts", (counts) => counts.textContent || ""), /取り入れる 1件.*取り入れない 1件/s);
+  await reviewPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  await reviewPage.screenshot({ path: "/tmp/ina-calendar-regeneration-guided-review-complete.png", fullPage: false });
+  await reviewPage.click(".regeneration-review-complete-actions button.primary");
   await reviewPage.waitForFunction(() => !document.querySelector(".calendar-regeneration-review"));
   assert.equal(reviewDecisionRequests, 1, "all proposal decisions must use one API request");
   assert.equal(submittedReviewDecisions.length, 2, "the batch request must include every pending proposal");
@@ -598,8 +609,9 @@ try {
       "/tmp/ina-fertilizer-effect-desktop.png",
       "/tmp/ina-calendar-mobile.png",
       "/tmp/ina-calendar-generation-edit-lock.png",
-      "/tmp/ina-calendar-regeneration-batch-review.png",
-      "/tmp/ina-calendar-regeneration-batch-review-mobile.png",
+      "/tmp/ina-calendar-regeneration-guided-review.png",
+      "/tmp/ina-calendar-regeneration-guided-review-mobile.png",
+      "/tmp/ina-calendar-regeneration-guided-review-complete.png",
       "/tmp/ina-calendar-planned-action.png",
       "/tmp/ina-calendar-action-journal-mobile.png",
       "/tmp/ina-calendar-action-journal-mobile-task.png",

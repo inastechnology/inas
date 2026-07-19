@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeft, Beaker, CalendarDays, Check, Leaf, ListTodo, LoaderCircle, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
+import { ArrowLeft, Beaker, CalendarDays, Check, ChevronRight, Leaf, ListTodo, LoaderCircle, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
 import { errorMessage, formatDate, todayString } from "../formatters";
@@ -18,7 +18,7 @@ import type {
   PlantQuestionRecord,
 } from "../types";
 import { AnnualCalendarGantt } from "./AnnualCalendarGantt";
-import { CalendarActionCard, CalendarKanbanCard, NewCalendarActionForm } from "./CalendarActionCard";
+import { CalendarActionCard, CalendarActionPreview, CalendarKanbanCard, NewCalendarActionForm } from "./CalendarActionCard";
 import { FALLBACK_ACTION_TYPES } from "./constants";
 
 type KanbanColumn = "planned" | "in_progress" | "completed";
@@ -104,6 +104,8 @@ export function PlantCalendarDrawer({
   const [generationMode, setGenerationMode] = useState<"automatic" | "review">("review");
   const [generationError, setGenerationError] = useState("");
   const [regenerationDecisions, setRegenerationDecisions] = useState<Record<string, RegenerationDecision>>({});
+  const [regenerationReviewOpen, setRegenerationReviewOpen] = useState(false);
+  const [activeRegenerationProposalId, setActiveRegenerationProposalId] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<"work" | "crop">("work");
   const [workScopePlantingId, setWorkScopePlantingId] = useState("all");
   const [workDate, setWorkDate] = useState("");
@@ -121,6 +123,12 @@ export function PlantCalendarDrawer({
   const approvedRegenerationCount = pendingRegenerationProposals.filter((proposal) => regenerationDecisions[proposal.id] === "approved").length;
   const rejectedRegenerationCount = pendingRegenerationProposals.filter((proposal) => regenerationDecisions[proposal.id] === "rejected").length;
   const undecidedRegenerationCount = pendingRegenerationProposals.length - approvedRegenerationCount - rejectedRegenerationCount;
+  const activeRegenerationProposal = activeRegenerationProposalId
+    ? pendingRegenerationProposals.find((proposal) => proposal.id === activeRegenerationProposalId) ?? null
+    : null;
+  const activeRegenerationProposalIndex = activeRegenerationProposal
+    ? pendingRegenerationProposals.findIndex((proposal) => proposal.id === activeRegenerationProposal.id)
+    : -1;
   const regenerationBlockingReasons = [
     ...(!generationStart ? ["計画開始日を選択してください"] : []),
     ...(generationActive ? ["AI計画を作成中です"] : []),
@@ -156,6 +164,8 @@ export function PlantCalendarDrawer({
     setRegenerationDecisions((current) => Object.fromEntries(
       Object.entries(current).filter(([proposalId]) => pendingProposalIds.has(proposalId)),
     ));
+    setRegenerationReviewOpen(false);
+    setActiveRegenerationProposalId(null);
     // The joined key changes only when the review task or its pending proposal set changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generationTask?.id, pendingRegenerationProposalKey]);
@@ -281,14 +291,24 @@ export function PlantCalendarDrawer({
     }
   };
 
-  const stageRegenerationDecision = (proposalId: string, decision: RegenerationDecision) => {
+  const openRegenerationReview = (proposalId?: string) => {
     setGenerationError("");
-    setRegenerationDecisions((current) => ({ ...current, [proposalId]: decision }));
+    const nextProposal = pendingRegenerationProposals.find((proposal) => !regenerationDecisions[proposal.id]);
+    setActiveRegenerationProposalId(proposalId ?? nextProposal?.id ?? null);
+    setRegenerationReviewOpen(true);
   };
 
-  const stageAllRegenerationDecisions = (decision: RegenerationDecision) => {
+  const decideRegenerationProposalAndContinue = (proposalId: string, decision: RegenerationDecision) => {
     setGenerationError("");
-    setRegenerationDecisions(Object.fromEntries(pendingRegenerationProposals.map((proposal) => [proposal.id, decision])));
+    const nextDecisions = { ...regenerationDecisions, [proposalId]: decision };
+    setRegenerationDecisions(nextDecisions);
+    const currentIndex = pendingRegenerationProposals.findIndex((proposal) => proposal.id === proposalId);
+    const followingProposals = [
+      ...pendingRegenerationProposals.slice(currentIndex + 1),
+      ...pendingRegenerationProposals.slice(0, Math.max(currentIndex, 0)),
+    ];
+    const nextProposal = followingProposals.find((proposal) => !nextDecisions[proposal.id]);
+    setActiveRegenerationProposalId(nextProposal?.id ?? null);
   };
 
   const applyRegenerationDecisions = async () => {
@@ -305,6 +325,8 @@ export function PlantCalendarDrawer({
         })),
       );
       setRegenerationDecisions({});
+      setRegenerationReviewOpen(false);
+      setActiveRegenerationProposalId(null);
     } catch (caught) {
       setGenerationError(errorMessage(caught));
     }
@@ -410,54 +432,57 @@ export function PlantCalendarDrawer({
               )}
               {generationReviewPending && generationTask && (
                 <div className="calendar-regeneration-review" role="region" aria-label="AI計画の変更案">
-                  <header><div><strong>AIから{pendingRegenerationProposals.length}件の変更案があります</strong><p>各案の扱いを先に選び、最後に一度だけ計画へ反映します。選択ボタンでは通信しません。</p></div></header>
-                  <div className="regeneration-review-toolbar">
-                    <div className="regeneration-review-counts" aria-live="polite">
-                      <span className="approved"><Check size={14} />取り入れる {approvedRegenerationCount}件</span>
-                      <span className="rejected"><X size={14} />変更しない {rejectedRegenerationCount}件</span>
-                      <span className={undecidedRegenerationCount ? "pending" : "complete"}>未選択 {undecidedRegenerationCount}件</span>
-                    </div>
-                    <div className="regeneration-bulk-actions">
-                      <button type="button" disabled={busy || !pendingRegenerationProposals.length} onClick={() => stageAllRegenerationDecisions("approved")}><Check size={14} />すべて取り入れる</button>
-                      <button type="button" disabled={busy || !pendingRegenerationProposals.length} onClick={() => stageAllRegenerationDecisions("rejected")}><X size={14} />すべて変更しない</button>
-                      <button type="button" disabled={busy || approvedRegenerationCount + rejectedRegenerationCount === 0} onClick={() => { setGenerationError(""); setRegenerationDecisions({}); }}>選択をクリア</button>
-                    </div>
+                  <button type="button" className="regeneration-review-entry" onClick={() => openRegenerationReview()}>
+                    <span className="regeneration-review-entry-icon"><Sparkles size={21} /></span>
+                    <span className="regeneration-review-entry-copy">
+                      <strong>AIから{pendingRegenerationProposals.length}件の変更案があります</strong>
+                      <small>カードを開いて現在の作業と比較し、1件ずつ判断します。選択中は通信しません。</small>
+                    </span>
+                    <span className="regeneration-review-entry-action">
+                      {undecidedRegenerationCount === pendingRegenerationProposals.length ? "確認を始める" : undecidedRegenerationCount > 0 ? "確認を続ける" : "確認結果を見る"}
+                      <ChevronRight size={17} />
+                    </span>
+                  </button>
+                  <div className="regeneration-review-counts" aria-live="polite">
+                    <span className="approved"><Check size={14} />取り入れる {approvedRegenerationCount}件</span>
+                    <span className="rejected"><X size={14} />取り入れない {rejectedRegenerationCount}件</span>
+                    <span className={undecidedRegenerationCount ? "pending" : "complete"}>未確認 {undecidedRegenerationCount}件</span>
                   </div>
-                  <div className="regeneration-proposal-list">
-                    {generationTask.proposals.map((proposal) => {
-                      const before = proposal.before;
-                      const after = proposal.after;
-                      const pending = proposal.decision === "pending";
-                      const stagedDecision = pending ? regenerationDecisions[proposal.id] : undefined;
-                      const displayDecision = stagedDecision ?? proposal.decision;
+                  <div className="regeneration-proposal-queue" aria-label="変更案の確認状況">
+                    {pendingRegenerationProposals.map((proposal, index) => {
+                      const previewAction = proposal.after ?? proposal.before;
+                      const stagedDecision = regenerationDecisions[proposal.id];
                       return (
-                        <article key={proposal.id} className={`regeneration-proposal ${proposal.change_type} ${displayDecision}${stagedDecision ? " staged" : ""}`}>
-                          <div className="proposal-heading">
-                            <span>{proposal.change_type === "add" ? "新しい作業" : proposal.change_type === "delete" ? "削除候補" : "作業を変更"}</span>
+                        <button
+                          key={proposal.id}
+                          type="button"
+                          className={`regeneration-proposal-card ${proposal.change_type}${stagedDecision ? ` ${stagedDecision}` : ""}`}
+                          onClick={() => openRegenerationReview(proposal.id)}
+                          aria-label={`${index + 1}件目「${proposal.title}」を比較する`}
+                        >
+                          <span className="regeneration-proposal-number">{index + 1}</span>
+                          <span className="regeneration-proposal-card-copy">
+                            <small>{regenerationChangeLabel(proposal.change_type)}</small>
                             <strong>{proposal.title}</strong>
-                            {displayDecision !== "pending" && <small>{pending ? (displayDecision === "approved" ? "取り入れる予定" : "変更しない予定") : (displayDecision === "approved" ? "反映済み" : "変更しない")}</small>}
-                          </div>
-                          <div className="proposal-comparison">
-                            {before && <div><span>現在</span><strong>{before.title}</strong><small>{formatDate(before.window_start)}〜{formatDate(before.window_end)}</small><p>{before.reason}</p></div>}
-                            {after && <div><span>AIの提案</span><strong>{after.title}</strong><small>{formatDate(after.window_start)}〜{formatDate(after.window_end)}</small><p>{after.reason}</p></div>}
-                          </div>
-                          {pending && <div className="proposal-actions">
-                            <button type="button" className={stagedDecision === "rejected" ? "selected rejected" : ""} aria-pressed={stagedDecision === "rejected"} disabled={busy} onClick={() => stageRegenerationDecision(proposal.id, "rejected")}><X size={14} />変更しない</button>
-                            <button type="button" className={stagedDecision === "approved" ? "selected approved" : ""} aria-pressed={stagedDecision === "approved"} disabled={busy} onClick={() => stageRegenerationDecision(proposal.id, "approved")}><Check size={14} />{proposal.change_type === "add" ? "追加する" : proposal.change_type === "delete" ? "削除する" : "変更する"}</button>
-                          </div>}
-                        </article>
+                            {previewAction && <span>{formatDate(previewAction.window_start)}〜{formatDate(previewAction.window_end)}</span>}
+                          </span>
+                          <span className={`regeneration-proposal-decision ${stagedDecision ?? "pending"}`}>
+                            {stagedDecision === "approved" ? "取り入れる" : stagedDecision === "rejected" ? "取り入れない" : "未確認"}
+                          </span>
+                          <ChevronRight size={17} aria-hidden="true" />
+                        </button>
                       );
                     })}
                   </div>
                   {generationError && <p className="form-error">{generationError}</p>}
                   <div className="regeneration-commit-bar">
                     <div>
-                      <strong>{undecidedRegenerationCount > 0 ? `あと${undecidedRegenerationCount}件を選択してください` : `${pendingRegenerationProposals.length}件の選択が完了しました`}</strong>
-                      <span>{generationError ? "選択内容は残っています。確認してもう一度反映できます。" : "確定時だけ一度通信し、まとめて安全に反映します。"}</span>
+                      <strong>{undecidedRegenerationCount > 0 ? `あと${undecidedRegenerationCount}件を確認してください` : `${pendingRegenerationProposals.length}件の確認が完了しました`}</strong>
+                      <span>{generationError ? "選択内容は残っています。比較画面からもう一度反映できます。" : "判断すると自動で次の変更案へ進みます。"}</span>
                     </div>
-                    <button type="button" className="primary" disabled={busy || !pendingRegenerationProposals.length || undecidedRegenerationCount > 0} onClick={() => void applyRegenerationDecisions()}>
-                      {busy ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}
-                      {busy ? "まとめて反映中..." : "選択した内容を一括反映"}
+                    <button type="button" className="primary" disabled={!pendingRegenerationProposals.length} onClick={() => openRegenerationReview()}>
+                      {undecidedRegenerationCount > 0 ? <ChevronRight size={15} /> : <Check size={15} />}
+                      {undecidedRegenerationCount > 0 ? "1件ずつ比較する" : "確認結果を反映する"}
                     </button>
                   </div>
                 </div>
@@ -584,6 +609,96 @@ export function PlantCalendarDrawer({
               {answer && <div className="question-answer"><strong>回答</strong><p>{answer}</p></div>}
               <p className="safety-note">農薬を使う場合は、対象作物への登録、ラベル、希釈倍率、収穫前日数と地域の指針を必ず確認してください。</p>
             </section>}
+
+            {regenerationReviewOpen && generationTask && (
+              <div className="calendar-action-detail-backdrop regeneration-review-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRegenerationReviewOpen(false); }}>
+                <section className="calendar-action-detail-dialog regeneration-review-dialog" role="dialog" aria-modal="true" aria-labelledby="regeneration-review-dialog-title">
+                  <header>
+                    <div>
+                      <span>{activeRegenerationProposal ? `AI変更案 ${activeRegenerationProposalIndex + 1} / ${pendingRegenerationProposals.length}` : "AI変更案の確認結果"}</span>
+                      <h2 id="regeneration-review-dialog-title">{activeRegenerationProposal?.title ?? `${pendingRegenerationProposals.length}件の確認が完了しました`}</h2>
+                    </div>
+                    <button type="button" className="icon-button" onClick={() => setRegenerationReviewOpen(false)} title="変更案一覧へ戻る"><X size={19} /></button>
+                  </header>
+                  <div className="calendar-action-detail-body regeneration-review-dialog-body">
+                    {activeRegenerationProposal ? (
+                      <>
+                        <div className="regeneration-review-progress" aria-label={`${activeRegenerationProposalIndex + 1}件目 / 全${pendingRegenerationProposals.length}件`}>
+                          <span style={{ width: `${((activeRegenerationProposalIndex + 1) / pendingRegenerationProposals.length) * 100}%` }} />
+                        </div>
+                        <div className="regeneration-review-guidance">
+                          <span>{regenerationChangeLabel(activeRegenerationProposal.change_type)}</span>
+                          <p>現在の計画とAIの案を見比べて、この変更を取り入れるか判断してください。判断すると次の未確認案へ進みます。</p>
+                        </div>
+                        <div className={`regeneration-action-comparison ${activeRegenerationProposal.change_type}`}>
+                          <section className="regeneration-comparison-side current" aria-label="現在の栽培カレンダー">
+                            <header><span>現在</span><strong>現在の栽培カレンダー</strong></header>
+                            {activeRegenerationProposal.before ? (
+                              <CalendarActionPreview
+                                action={activeRegenerationProposal.before}
+                                actionType={actionTypeByCode.get(activeRegenerationProposal.before.action_type) ?? actionTypeByCode.get("other") ?? FALLBACK_ACTION_TYPES[FALLBACK_ACTION_TYPES.length - 1]}
+                              />
+                            ) : (
+                              <div className="regeneration-comparison-empty"><PackageOpen size={29} /><strong>現在はこの作業がありません</strong><p>AIが新しく追加を提案しています。</p></div>
+                            )}
+                          </section>
+                          <section className="regeneration-comparison-side proposed" aria-label="AIの提案">
+                            <header><span>変更後</span><strong>AIの提案</strong></header>
+                            {activeRegenerationProposal.after ? (
+                              <CalendarActionPreview
+                                action={activeRegenerationProposal.after}
+                                actionType={actionTypeByCode.get(activeRegenerationProposal.after.action_type) ?? actionTypeByCode.get("other") ?? FALLBACK_ACTION_TYPES[FALLBACK_ACTION_TYPES.length - 1]}
+                              />
+                            ) : (
+                              <div className="regeneration-comparison-empty delete"><Trash2 size={29} /><strong>この作業を削除する提案です</strong><p>取り入れると現在の栽培カレンダーから削除されます。</p></div>
+                            )}
+                          </section>
+                        </div>
+                        <div className="regeneration-review-decision-bar">
+                          <div>
+                            <small>この変更案をどうしますか？</small>
+                            {regenerationDecisions[activeRegenerationProposal.id] && <span>前回の選択: {regenerationDecisions[activeRegenerationProposal.id] === "approved" ? "取り入れる" : "取り入れない"}</span>}
+                          </div>
+                          <div>
+                            <button
+                              type="button"
+                              className="reject"
+                              aria-pressed={regenerationDecisions[activeRegenerationProposal.id] === "rejected"}
+                              disabled={busy}
+                              onClick={() => decideRegenerationProposalAndContinue(activeRegenerationProposal.id, "rejected")}
+                            ><X size={17} />取り入れない</button>
+                            <button
+                              type="button"
+                              className="approve"
+                              aria-pressed={regenerationDecisions[activeRegenerationProposal.id] === "approved"}
+                              disabled={busy}
+                              onClick={() => decideRegenerationProposalAndContinue(activeRegenerationProposal.id, "approved")}
+                            ><Check size={17} />{regenerationApproveLabel(activeRegenerationProposal.change_type)}</button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="regeneration-review-complete">
+                        <span className="regeneration-review-complete-icon"><Check size={30} /></span>
+                        <div><small>すべての変更案を確認しました</small><h3>{pendingRegenerationProposals.length}件の判断を栽培カレンダーへ反映します</h3><p>ここで初めてAPI通信を1回行い、選んだ内容をまとめて安全に反映します。</p></div>
+                        <div className="regeneration-review-counts">
+                          <span className="approved"><Check size={14} />取り入れる {approvedRegenerationCount}件</span>
+                          <span className="rejected"><X size={14} />取り入れない {rejectedRegenerationCount}件</span>
+                        </div>
+                        {generationError && <p className="form-error">{generationError}<small>選択内容は保持されています。そのまま再試行できます。</small></p>}
+                        <div className="regeneration-review-complete-actions">
+                          <button type="button" onClick={() => setRegenerationReviewOpen(false)} disabled={busy}>変更案一覧へ戻る</button>
+                          <button type="button" className="primary" onClick={() => void applyRegenerationDecisions()} disabled={busy || undecidedRegenerationCount > 0}>
+                            {busy ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}
+                            {busy ? "まとめて反映中..." : "選択した内容を一括反映"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+            )}
 
             {addingAction && (
               <div className="calendar-action-detail-backdrop calendar-action-create-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddingAction(false); }}>
@@ -1200,6 +1315,18 @@ function formatInterval(interval?: { min: number | null; preferred: number | nul
   if (interval.preferred) return `標準 ${interval.preferred}日`;
   if (interval.min || interval.max) return `${interval.min ?? "?"}〜${interval.max ?? "?"}日`;
   return "条件で判断";
+}
+
+function regenerationChangeLabel(changeType: "add" | "update" | "delete") {
+  if (changeType === "add") return "新しい作業を追加";
+  if (changeType === "delete") return "現在の作業を削除";
+  return "作業内容を変更";
+}
+
+function regenerationApproveLabel(changeType: "add" | "update" | "delete") {
+  if (changeType === "add") return "この作業を追加する";
+  if (changeType === "delete") return "この作業を削除する";
+  return "この変更を取り入れる";
 }
 
 function calendarPlanningContext(calendar: PlantCalendar | null): Record<string, unknown> {

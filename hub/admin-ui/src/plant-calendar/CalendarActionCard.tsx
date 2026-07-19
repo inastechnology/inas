@@ -77,6 +77,11 @@ interface CalendarActionCardProps {
   onDelete: (plantingId: string, actionId: string) => Promise<void>;
 }
 
+interface CalendarActionPreviewProps {
+  action: PlantCalendarAction;
+  actionType: PlantActionTypeDefinition;
+}
+
 interface NewCalendarActionFormProps {
   actionTypes: PlantActionTypeDefinition[];
   busy: boolean;
@@ -326,6 +331,41 @@ export function CalendarActionCard({
           />
         </ModalDialog>
       )}
+    </article>
+  );
+}
+
+export function CalendarActionPreview({ action, actionType }: CalendarActionPreviewProps) {
+  return (
+    <article
+      className={`calendar-action calendar-action-preview ${action.status}`}
+      data-action-id={action.id}
+      style={{ borderLeftColor: actionType.accent }}
+    >
+      <ActionStatusLine action={action} />
+      <div className="action-main">
+        <ActionIllustration actionType={actionType} />
+        <div className="action-copy">
+          <div className="action-heading">
+            <div><small>{actionType.label}</small><h3>{action.title}</h3></div>
+          </div>
+          <div className="action-workload" aria-label="作業量の目安">
+            <span><Users size={15} />{action.required_people}人で</span>
+            <span><Clock3 size={15} />{formatDuration(action.estimated_minutes)}ほど</span>
+          </div>
+          {action.tags.length > 0 && <div className="action-tags">{action.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+        </div>
+      </div>
+
+      <ActionDecisionFlow action={action} />
+      {(action.instructions_html || Boolean(action.attachments?.length)) && (
+        <section className="action-journal-note" aria-label="写真つき作業メモ">
+          <header><span aria-hidden="true">✎</span><div><small>あとで見返せる</small><strong>写真つき作業メモ</strong></div></header>
+          {action.instructions_html && <RichActionContent html={action.instructions_html} />}
+          {Boolean(action.attachments?.length) && <div className="action-content-images">{action.attachments.map((attachment) => <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer"><img src={attachment.url} alt={attachment.original_filename || "作業画像"} loading="lazy" /></a>)}</div>}
+        </section>
+      )}
+      <WorkGuidance action={action} />
     </article>
   );
 }
