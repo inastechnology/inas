@@ -355,7 +355,11 @@
     <header class="field-header">
       <div class="header-inner">
         <div><p class="breadcrumb"><a href="/fields">圃場一覧</a> / {{ field.name }}</p><h1>{{ field.name }}</h1><p class="meta">{{ field.location.prefecture }}{{ field.location.municipality }}{% if field.location.locality %} {{ field.location.locality }}{% endif %} / {{ environment_labels.get(field.location.environment_type, '環境未設定') }}</p></div>
+<<<<<<< HEAD
         <div class="header-actions"><a class="header-action" href="/fields/{{ field.id }}/growth-monitoring" title="カメラで生育状態を確認">&#9673; 生育モニタ</a><a class="header-action" href="/preferences" title="個人設定">&#9786; 個人設定</a>{% if current_user.role == 'admin' %}<a class="header-action" href="/settings" title="アプリ設定">&#9881; アプリ設定</a>{% endif %}</div>
+=======
+        <div class="header-actions"><a class="header-action" href="/preferences" target="_blank" rel="noopener" title="個人設定を新しいタブで開く">&#9786; 個人設定 ↗</a>{% if current_user.role == 'admin' %}<a class="header-action" href="/settings" target="_blank" rel="noopener" title="アプリ設定を新しいタブで開く">&#9881; アプリ設定 ↗</a>{% endif %}</div>
+>>>>>>> agent/device-definitions-fgt
       </div>
     </header>
     <nav class="tabs-shell" aria-label="圃場詳細メニュー">
@@ -390,7 +394,7 @@
           </div>
           <div class="range-grid">
             {% for metric in context.dashboard.metrics %}
-            <a class="range-card state-{{ metric.state }}" href="{{ metric.target_url }}" aria-label="{{ metric.label }}の目標値を設定">
+            <a class="range-card state-{{ metric.state }}" href="{{ metric.target_url }}" target="_blank" rel="noopener" aria-label="{{ metric.label }}の目標値を新しいタブで設定">
               <div class="range-card-header"><div><div class="range-card-title">{{ metric.label }}</div><div class="range-value">{{ metric.value_display }}<small>{{ metric.unit }}</small></div></div><span class="state-label">{{ metric.state_label }}</span></div>
               <div><div class="range-track">{% if metric.minimum is not none or metric.maximum is not none %}<span class="target-zone" style="left:{{ metric.target_left_pct }}%;width:{{ metric.target_width_pct }}%"></span>{% endif %}<span class="value-marker" style="left:{{ metric.marker_pct }}%"></span></div><div class="range-scale"><span>{{ metric.domain_min_display }}</span><span>{{ metric.domain_max_display }} {{ metric.unit }}</span></div></div>
               <div class="target-scale">{% if metric.minimum is not none or metric.maximum is not none %}目標 {{ metric.minimum_display }} - {{ metric.maximum_display }} {{ metric.unit }}{% else %}目標未設定{% endif %}</div>
@@ -406,7 +410,7 @@
           <div class="section-heading"><div><span class="eyebrow">人間が行うこと</span><h2>作業TODO</h2></div><span class="task-count">{{ context.todo_count }}件</span></div>
           <div class="task-list">
             {% for task in context.calendar_todo_items %}
-            <a class="candidate calendar-task {{ task.timing_state }}" href="{{ task.calendar_url }}" style="border-left-color: {{ task.accent }}" aria-label="{{ task.title }}の詳細を開く">
+            <a class="candidate calendar-task {{ task.timing_state }}" href="{{ task.calendar_url }}" target="_blank" rel="noopener" style="border-left-color: {{ task.accent }}" aria-label="{{ task.title }}の詳細を新しいタブで開く">
               <div class="calendar-task-layout{% if not task.illustration_url %} no-illustration{% endif %}">
                 {% if task.illustration_url %}<img class="calendar-task-illustration" src="{{ task.illustration_url }}" alt="{{ task.action_type_label }}の作業イラスト" loading="lazy">{% endif %}
                 <div class="calendar-task-copy">
@@ -438,10 +442,10 @@
       <section class="surface layout-section" data-tab-panel="overview">
         <div class="section-heading"><div><span class="eyebrow">設置状況</span><h2>設置ビュー</h2></div><span class="meta">{{ context.layout_preview.placements|length }}配置</span></div>
         <div class="installation-preview-wrap">
-          <a class="installation-edit" href="/fields/{{ field.id }}/layout" title="設置ビューを編集" aria-label="設置ビューを編集">&#9998;</a>
+          <a class="installation-edit" href="/fields/{{ field.id }}/layout" target="_blank" rel="noopener" title="設置ビューを新しいタブで編集" aria-label="設置ビューを新しいタブで編集">&#9998;</a>
             <div class="installation-preview-image" role="group" aria-label="{{ field.name }}の設置ビュー">
               {% for placement in context.layout_preview.placements %}
-            <a class="preview-placement {{ placement.preset }}" href="{{ placement.href }}" title="{{ placement.name }}の詳細を開く" style="left:{{ placement.left }}%;top:{{ placement.top }}%;width:{{ placement.width }}%;height:{{ placement.height }}%"><strong>{{ placement.name }}</strong>{% if placement.subtitle %}<small>{{ placement.subtitle }}</small>{% endif %}{% if placement.bound %}<span class="bound-dot"></span>{% endif %}</a>
+            <a class="preview-placement {{ placement.preset }}" href="{{ placement.href }}" target="_blank" rel="noopener" title="{{ placement.name }}の詳細を新しいタブで開く" style="left:{{ placement.left }}%;top:{{ placement.top }}%;width:{{ placement.width }}%;height:{{ placement.height }}%"><strong>{{ placement.name }}</strong>{% if placement.subtitle %}<small>{{ placement.subtitle }}</small>{% endif %}{% if placement.bound %}<span class="bound-dot"></span>{% endif %}</a>
             {% endfor %}
           </div>
         </div>
@@ -449,7 +453,7 @@
 
       <details class="surface installation-tree-details" id="field-installation-tree" data-tab-panel="overview">
         <summary><div class="section-heading"><div><span class="eyebrow">設置場所と機器</span><h2>圃場構成</h2></div><span class="meta">{{ context.installation_tree|length }}項目</span></div></summary>
-        {% if context.installation_tree %}<label class="collection-filter"><input id="installation-tree-filter" type="search" placeholder="場所、培地、機器を検索" aria-label="圃場構成を検索"></label><p id="installation-tree-empty" class="collection-filter-empty" hidden>一致する項目はありません。</p><div class="installation-tree" role="tree" aria-label="圃場の設置階層">{% for node in context.installation_tree %}<a class="tree-row kind-{{ node.kind }}" href="{{ node.href }}" role="treeitem" aria-level="{{ node.depth + 1 }}" aria-label="{{ node.label }}、{{ node.action_label }}" data-filter-text="{{ node.label }} {{ node.detail }} {{ node.relation }}" style="--depth: {{ node.depth }}"><span class="tree-mark" aria-hidden="true"></span><span class="tree-label"><strong>{{ node.label }}</strong><small>{{ node.detail }}</small></span>{% if node.relation %}<span class="tree-relation {{ node.relation_kind }}">{{ node.relation }}</span>{% endif %}<span class="tree-open" aria-hidden="true">&#8250;</span></a>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに配置物はありません。</p>{% endif %}
+        {% if context.installation_tree %}<label class="collection-filter"><input id="installation-tree-filter" type="search" placeholder="場所、培地、機器を検索" aria-label="圃場構成を検索"></label><p id="installation-tree-empty" class="collection-filter-empty" hidden>一致する項目はありません。</p><div class="installation-tree" role="tree" aria-label="圃場の設置階層">{% for node in context.installation_tree %}<a class="tree-row kind-{{ node.kind }}" href="{{ node.href }}" target="_blank" rel="noopener" role="treeitem" aria-level="{{ node.depth + 1 }}" aria-label="{{ node.label }}、{{ node.action_label }}（新しいタブ）" data-filter-text="{{ node.label }} {{ node.detail }} {{ node.relation }}" style="--depth: {{ node.depth }}"><span class="tree-mark" aria-hidden="true"></span><span class="tree-label"><strong>{{ node.label }}</strong><small>{{ node.detail }}</small></span>{% if node.relation %}<span class="tree-relation {{ node.relation_kind }}">{{ node.relation }}</span>{% endif %}<span class="tree-open" aria-hidden="true">&#8599;</span></a>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに配置物はありません。</p>{% endif %}
       </details>
 
       <section class="surface" data-tab-panel="monitoring">
@@ -459,13 +463,13 @@
 
       <section class="surface" data-tab-panel="monitoring">
         <div class="section-heading"><div><span class="eyebrow">物理スコープ</span><h2>空間ごとの環境・設備</h2></div><span class="meta">{{ context.monitoring_scopes|length }}区分</span></div>
-        {% if context.monitoring_scopes %}<div class="monitoring-scopes">{% for scope in context.monitoring_scopes %}<article class="scope-panel"><header><h3>{{ scope.label }}</h3><span class="meta">{{ scope.devices|length }}機器</span></header>{% if scope.devices %}<div class="scope-device-list">{% for device in scope.devices %}<span class="scope-device"><span>{{ device.device_name or device.device_id }} / {{ device.device_role_label }}</span><a class="scope-device-settings" href="/mqtt-devices/{{ device.device_id }}?tab=settings" title="{{ device.device_name or device.device_id }}の動作設定" aria-label="{{ device.device_name or device.device_id }}の動作設定">&#9881;</a></span>{% endfor %}</div>{% endif %}{% if scope.sensor_values %}<div class="sensor-values">{% for item in scope.sensor_values %}{% for key, value in item["values"].items() %}<a class="sensor-value" href="/mqtt-devices/{{ item.device_id }}?tab=monitoring" aria-label="{{ item.device_id }}の{{ metric_labels.get(key, key) }}推移を開く"><span>{{ item.device_id }} / {{ metric_labels.get(key, key) }}</span><strong>{{ value }}</strong></a>{% endfor %}{% endfor %}</div>{% else %}<p class="meta">この空間の直近計測値はありません。</p>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに機器を配置すると、空間ごとにここへ整理されます。</p>{% endif %}
+        {% if context.monitoring_scopes %}<div class="monitoring-scopes">{% for scope in context.monitoring_scopes %}<article class="scope-panel"><header><h3>{{ scope.label }}</h3><span class="meta">{{ scope.devices|length }}機器</span></header>{% if scope.devices %}<div class="scope-device-list">{% for device in scope.devices %}<span class="scope-device"><span>{{ device.device_name or device.device_id }} / {{ device.device_role_label }}</span><a class="scope-device-settings" href="/mqtt-devices/{{ device.device_id }}?tab=settings" target="_blank" rel="noopener" title="{{ device.device_name or device.device_id }}の動作設定を新しいタブで開く" aria-label="{{ device.device_name or device.device_id }}の動作設定を新しいタブで開く">&#9881;</a></span>{% endfor %}</div>{% endif %}{% if scope.sensor_values %}<div class="sensor-values">{% for item in scope.sensor_values %}{% for key, value in item["values"].items() %}<a class="sensor-value" href="/mqtt-devices/{{ item.device_id }}?tab=monitoring" target="_blank" rel="noopener" aria-label="{{ item.device_id }}の{{ metric_labels.get(key, key) }}推移を新しいタブで開く"><span>{{ item.device_id }} / {{ metric_labels.get(key, key) }}</span><strong>{{ value }}</strong></a>{% endfor %}{% endfor %}</div>{% else %}<p class="meta">この空間の直近計測値はありません。</p>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに機器を配置すると、空間ごとにここへ整理されます。</p>{% endif %}
       </section>
 
       <!-- field-primary-stream-complete -->
       {% set deferred_context = build_deferred_context(context) %}
       <section class="surface" data-tab-panel="cultivation">
-        <div class="section-heading"><div><span class="eyebrow">作物単位</span><h2>定植中の作物</h2></div><a class="icon-link" href="/fields/{{ field.id }}/layout" title="設置ビューで配置を編集" aria-label="設置ビューで配置を編集">&#9998;</a></div>
+        <div class="section-heading"><div><span class="eyebrow">作物単位</span><h2>定植中の作物</h2></div><a class="icon-link" href="/fields/{{ field.id }}/layout" target="_blank" rel="noopener" title="設置ビューを新しいタブで編集" aria-label="設置ビューを新しいタブで編集">&#9998;</a></div>
         {% if deferred_context.active_plantings %}
         {% if deferred_context.active_plantings|length > 1 %}<label class="collection-filter compact"><input id="planting-card-filter" type="search" placeholder="作物、品種、設置場所を検索" aria-label="定植中の作物を検索"></label><p id="planting-card-empty" class="collection-filter-empty" hidden>一致する作物はありません。</p>{% endif %}
         <div class="planting-grid">
@@ -480,7 +484,7 @@
             </form>
             <div class="planting-side">
               {% if planting.next_action %}<div class="next-crop-action"><span>次の計画 {{ planting.next_action.window_start }} - {{ planting.next_action.window_end }}</span><strong>{{ planting.next_action.title }}</strong><p>{{ planting.next_action.reason }}</p></div>{% endif %}
-              <a class="planting-calendar-link" href="/fields/{{ field.id }}/calendar?planting={{ planting.id }}">年間カレンダーを開く ↗</a>
+              <a class="planting-calendar-link" href="/fields/{{ field.id }}/calendar?planting={{ planting.id }}" target="_blank" rel="noopener" aria-label="年間カレンダーを新しいタブで開く">年間カレンダーを開く ↗</a>
               <div><div class="section-heading"><h3>直近の履歴</h3><span class="meta">最大10件</span></div><div class="crop-stepper">{% for activity in planting.recent_activity %}<div class="crop-step"><time>{{ activity.at_display }}</time><span class="crop-step-marker"></span><div class="crop-step-body"><strong>{{ activity.kind_label }} / {{ activity.title }}</strong>{% if activity.detail %}<small>{{ activity.detail }}</small>{% endif %}</div></div>{% endfor %}</div></div>
             </div>
           </article>

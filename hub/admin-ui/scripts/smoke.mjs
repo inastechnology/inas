@@ -10,7 +10,7 @@ const plantApiUrl = `${baseUrl}/local/api/fields/${fieldId}/plantings`;
 
 const current = await fetchJson(apiUrl);
 const demoDevices = await fetchJson(deviceApiUrl);
-assert.equal(demoDevices.length, 12, "demo must provide twelve bindable devices");
+assert.equal(demoDevices.length, 13, "demo must provide thirteen bindable devices including FGT");
 assert.deepEqual(
   new Set(demoDevices.map((device) => device.group_label)),
   new Set(["潅水デバイス", "環境センサー", "土壌センサー", "日射・PARセンサー", "カメラ"]),
@@ -50,6 +50,7 @@ try {
   await page.goto(layoutUrl, { waitUntil: "networkidle0" });
   await page.waitForSelector(".installation-app");
   await page.waitForSelector(".layout-canvas canvas");
+  assert.equal(await page.$eval(".calendar-button", (link) => link.getAttribute("target")), "_blank", "the calendar must open without discarding layout edits");
   await page.type('input[aria-label="配置物を検索"]', "照明");
   assert.equal(await page.$$eval(".preset-button", (buttons) => buttons.length), 1, "palette search must narrow presets");
   assert.match(await page.$eval(".preset-button", (button) => button.textContent || ""), /植物育成ライト/);
@@ -194,6 +195,8 @@ try {
   });
   await page.click('.plant-target-editor > button[type="submit"]');
   await page.waitForFunction(() => document.querySelector(".plant-target-heading")?.textContent?.includes("保存済み"));
+  assert.equal(await page.$eval(".planting-links a:first-child", (link) => link.getAttribute("target")), "_blank");
+  assert.equal(await page.$eval(".planting-links a:last-child", (link) => link.getAttribute("target")), "_blank");
 
   const desktopZoom = await page.$eval(".zoom-control span", (element) => element.textContent);
   await page.screenshot({ path: "/tmp/ina-layout-desktop.png" });

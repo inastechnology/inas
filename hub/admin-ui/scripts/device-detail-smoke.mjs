@@ -34,7 +34,8 @@ try {
   await page.goto(`${baseUrl}/mqtt-devices`, { waitUntil: "networkidle0" });
   assert(await page.$("#device-list-search"), "the device collection must provide a search field");
   assert(await page.$('.device-guide img[src$="/device-family.png"]'), "the device collection must share the field-view visual language");
-  assert.equal(await page.$$('.nav a[href="/demo/mqtt-devices"]').then((items) => items.length), 0, "the demo must not compete in normal navigation");
+  assert.equal(await page.$$('a[href="/demo/mqtt-devices"]').then((items) => items.length), 0, "the normal device screen must not expose the UI demo link");
+  assert.equal(await page.$$(".developer-tools").then((items) => items.length), 0, "the normal device screen must not expose developer-only controls");
   await page.screenshot({ path: "/tmp/ina-device-list.png", fullPage: true });
   const deviceCount = await page.$$("#device-list-grid .device-tile").then((items) => items.length);
   assert(deviceCount > 1, "the demo must expose multiple devices for filtering");
@@ -99,6 +100,9 @@ try {
   assert.equal(await page.$eval("#save-push-runtime-config", (button) => button.disabled), true, "unchanged runtime config must not be sent");
   assert(await page.$("#output-connection-map"), "watering settings must visualize the current equipment connections");
   assert.equal(await page.$$("#output-connection-map .switch-output").then((items) => items.length), 2);
+  assert.equal(await page.$eval("#open-output-settings", (trigger) => trigger.getAttribute("role")), "button");
+  assert.equal(await page.$eval("#open-output-settings", (trigger) => trigger.getAttribute("tabindex")), "0");
+  assert.match(await page.$eval("#open-output-settings", (trigger) => trigger.innerText || ""), /現在の水やりルート.*クリックして変更/s);
   assert.equal(await page.$$(".setup-journey .setup-step").then((items) => items.length), 3, "watering setup must expose a three-step journey");
   assert.equal(await page.$eval('.setup-step[href="#output-connections"]', (link) => link.textContent?.includes("設備をつなぐ")), true);
   await page.screenshot({ path: "/tmp/ina-device-wtr-settings.png", fullPage: true });
@@ -110,23 +114,39 @@ try {
   assert.match(outputDialogText, /水やりルートを組み立てる/);
   assert.match(outputDialogText, /ポンプ|バルブ|点滴チューブ|スプリンクラー/);
   assert.doesNotMatch(outputDialogText, /内部ID|接続端子|系統番号|MOSFET|mask/);
+  const layoutReference = "#output-settings-dialog [data-preserve-current-work]";
+  assert.equal(await page.$eval(layoutReference, (link) => link.getAttribute("target")), "_blank");
+  assert.match(await page.$eval(layoutReference, (link) => link.getAttribute("rel") || ""), /noopener/);
+  await page.$eval(layoutReference, (link) => link.scrollIntoView({ block: "center" }));
+  await page.screenshot({ path: "/tmp/ina-device-route-new-tab-link.png" });
+  const layoutTargetPromise = browser.waitForTarget((target) => target.url().includes(`/fields/demo-strawberry-field/layout`));
+  await page.click(layoutReference);
+  const layoutTarget = await layoutTargetPromise;
+  const layoutReferencePage = await layoutTarget.page();
+  assert(layoutReferencePage, "the installation view must open in another tab");
+  assert.equal(await page.$eval("#output-settings-dialog", (dialog) => dialog.open), true, "opening the installation view must keep the route builder open");
+  await layoutReferencePage.close();
+  await page.bringToFront();
+  await page.$eval("#output-settings-dialog", (dialog) => { dialog.scrollTop = 0; });
   const firstBuilderLane = "#output-settings-dialog .output-edit-row:first-child";
   await page.$eval(`${firstBuilderLane} [data-mosfet-enabled]`, (input) => input.click());
   assert.equal(await page.$eval(firstBuilderLane, (lane) => lane.classList.contains("disconnected")), true, "disabled ports must visibly disconnect their wire");
   assert.equal(await page.$eval(`${firstBuilderLane} [data-equipment-type="pump"]`, (card) => card.disabled), true, "equipment cards must rest while disconnected");
   await page.$eval(`${firstBuilderLane} [data-mosfet-enabled]`, (input) => input.click());
   assert.equal(await page.$eval(firstBuilderLane, (lane) => lane.classList.contains("connected")), true, "enabled ports must draw their wire immediately");
-  await page.click(`${firstBuilderLane} [data-equipment-type="sprinkler"]`);
+  await page.$eval(`${firstBuilderLane} [data-equipment-type="sprinkler"]`, (card) => card.click());
   assert.equal(await page.$eval(`${firstBuilderLane} [data-equipment-type="sprinkler"]`, (card) => card.getAttribute("aria-pressed")), "true");
   assert(await page.$(`${firstBuilderLane} [data-equipment-preview] svg`), "type selection must update the route preview icon");
   const firstSprinklerTarget = `${firstBuilderLane} [data-equipment-target]:not([data-equipment-target=""])`;
   assert(await page.$(firstSprinklerTarget), "the selected type must reveal matching destination cards");
-  await page.click(firstSprinklerTarget);
+  await page.$eval(firstSprinklerTarget, (card) => card.click());
   assert.notEqual(await page.$eval(`${firstBuilderLane} [data-mosfet-load]`, (input) => input.value), "");
   await page.screenshot({ path: "/tmp/ina-device-builder-dialog.png" });
   await page.click("[data-cancel-output-dialog]");
   assert.equal(await page.$eval('#runtime-config-form button[type="submit"]', (button) => button.disabled), true, "cancelled connection edits must keep the form pristine");
-  await page.click("#open-output-settings");
+  assert.equal(await page.$eval("#open-output-settings", (trigger) => document.activeElement === trigger), true, "closing the builder must return focus to the route card");
+  await page.keyboard.press("Enter");
+  assert.equal(await page.$eval("#output-settings-dialog", (dialog) => dialog.open), true, "the current route card must open the builder from the keyboard");
   await page.click(`${firstBuilderLane} [data-equipment-type="sprinkler"]`);
   await page.click(`${firstBuilderLane} [data-equipment-target]:not([data-equipment-target=""])`);
   await page.click("[data-apply-output-dialog]");
@@ -266,8 +286,9 @@ try {
       "/tmp/ina-device-wtr-monitoring.png",
       "/tmp/ina-device-list.png",
       "/tmp/ina-device-wtr-overview.png",
-      "/tmp/ina-device-wtr-settings.png",
-      "/tmp/ina-device-builder-dialog.png",
+    "/tmp/ina-device-wtr-settings.png",
+    "/tmp/ina-device-builder-dialog.png",
+    "/tmp/ina-device-route-new-tab-link.png",
       "/tmp/ina-device-wtr-settings-mobile.png",
       "/tmp/ina-device-calibration-guide.png",
       "/tmp/ina-device-wtr-firmware.png",

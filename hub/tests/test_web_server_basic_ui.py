@@ -918,7 +918,8 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn("設置場所と機器", html)
         self.assertIn("INADS-soi", html)
         self.assertIn('href="/mqtt-devices/INADS-soi?tab=settings"', html)
-        self.assertIn('aria-label="INADS-soiの動作設定"', html)
+        self.assertIn('target="_blank" rel="noopener"', html)
+        self.assertIn('aria-label="INADS-soiの動作設定を新しいタブで開く"', html)
         self.assertNotIn("<h3>監視単位</h3>", html)
         self.assertNotIn("東ベッド", html)
 
