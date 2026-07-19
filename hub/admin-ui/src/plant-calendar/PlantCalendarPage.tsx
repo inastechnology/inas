@@ -6,20 +6,23 @@ import {
   askPlantQuestion,
   completePlantAction,
   createFertilizerApplication,
+  createFertilizerMaterial,
   decidePlantCalendarRegenerationProposal,
   deleteFertilizerApplication,
+  deleteFertilizerMaterial,
   deletePlantAction,
   loadPlantBundle,
   regeneratePlantCalendar,
   skipPlantAction,
   updatePlantAction,
+  updateFertilizerMaterial,
 } from "../api";
 import { errorMessage } from "../formatters";
 import type { PlantActionMutationPayload, PlantBundle } from "../types";
 import { PlantCalendarDrawer } from "./PlantCalendarDrawer";
 
 const EMPTY_BUNDLE: PlantBundle = {
-  action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [],
+  action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {},
 };
 
 interface PlantCalendarPageProps {
@@ -153,6 +156,13 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
         })}
         onDeleteFertilizer={(plantingId, applicationId) => execute(async () => {
           await deleteFertilizerApplication(plantingId, applicationId);
+        })}
+        onSaveFertilizerMaterial={(materialId, payload) => execute(async () => {
+          if (materialId) await updateFertilizerMaterial(materialId, payload);
+          else await createFertilizerMaterial(payload);
+        })}
+        onDeleteFertilizerMaterial={(materialId) => execute(async () => {
+          await deleteFertilizerMaterial(materialId);
         })}
       />
     </>

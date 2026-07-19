@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, Beaker, CalendarDays, Check, Leaf, ListTodo, LoaderCircle, MessageCircle, Plus, RefreshCw, Search, Sparkles, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ArrowLeft, Beaker, CalendarDays, Check, Leaf, ListTodo, LoaderCircle, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
 import { errorMessage, formatDate, todayString } from "../formatters";
+import { ModalDialog } from "../ModalDialog";
 import { SearchableSelect } from "../SearchableSelect";
 import type {
   FertilizerApplication,
+  FertilizerMaterial,
   FertilizerMaterialKind,
   PlantActionCompletionPayload,
   PlantActionMutationPayload,
@@ -52,6 +54,8 @@ export interface PlantCalendarDrawerProps {
   onDeleteAction: (plantingId: string, actionId: string) => Promise<void>;
   onAddFertilizer: (plantingId: string, payload: Record<string, unknown>) => Promise<void>;
   onDeleteFertilizer: (plantingId: string, applicationId: string) => Promise<void>;
+  onSaveFertilizerMaterial: (materialId: string, payload: Record<string, unknown>) => Promise<void>;
+  onDeleteFertilizerMaterial: (materialId: string) => Promise<void>;
 }
 
 export function PlantCalendarDrawer({
@@ -74,6 +78,8 @@ export function PlantCalendarDrawer({
   onDeleteAction,
   onAddFertilizer,
   onDeleteFertilizer,
+  onSaveFertilizerMaterial,
+  onDeleteFertilizerMaterial,
 }: PlantCalendarDrawerProps) {
   const activePlantings = bundle.plantings.filter((planting) => planting.status === "active");
   const planting = activePlantings.find((item) => item.id === selectedPlantingId) ?? activePlantings[0] ?? null;
@@ -315,9 +321,12 @@ export function PlantCalendarDrawer({
               plantingId={planting.id}
               placementName={planting.placement_name}
               applications={fertilizerApplications}
+              materials={bundle.fertilizer_materials}
               busy={calendarMutationBusy}
               onAdd={onAddFertilizer}
               onDelete={onDeleteFertilizer}
+              onSaveMaterial={onSaveFertilizerMaterial}
+              onDeleteMaterial={onDeleteFertilizerMaterial}
             />
             {calendar && <CareProfileSummary calendar={calendar} />}
             {calendar && <AnnualCalendarGantt actions={actions} onActionSelect={openActionFromGantt} />}
@@ -325,7 +334,7 @@ export function PlantCalendarDrawer({
             <section className="calendar-generation" aria-label="計画の生成設定">
               <div className="calendar-section-heading">
                 <div><Sparkles size={17} /><strong>AI栽培計画を作り直す</strong></div>
-                <button type="button" disabled={generationActive || generationReviewPending} onClick={() => setGenerationOpen((value) => !value)}>
+                <button type="button" disabled={generationActive || generationReviewPending} onClick={() => setGenerationOpen(true)}>
                   {generationActive ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
                   {generationActive ? "AI計画を作成中..." : generationReviewPending ? "変更案を確認中" : calendar ? "作り直す条件を確認" : "作成条件を確認"}
                 </button>
@@ -365,8 +374,16 @@ export function PlantCalendarDrawer({
                   {generationError && <p className="form-error">{generationError}</p>}
                 </div>
               )}
-              {generationOpen && (
-                <form onSubmit={(event) => void regenerate(event)}>
+            </section>
+            {generationOpen && (
+              <ModalDialog
+                title={calendar ? "AI栽培計画を作り直す" : "AI栽培計画を作成する"}
+                eyebrow="現在の記録を守りながら、これからの計画を更新"
+                onClose={() => setGenerationOpen(false)}
+                className="calendar-generation-dialog"
+                size="wide"
+              >
+                <form className="calendar-generation-form" onSubmit={(event) => void regenerate(event)}>
                   <label>計画開始日<input type="date" required value={generationStart} onChange={(event) => setGenerationStart(event.target.value)} /></label>
                   <label>今回の生成条件<textarea value={generationNotes} onChange={(event) => setGenerationNotes(event.target.value)} placeholder="今年は収穫を優先、農薬を使わない、現在は開花直前など" /></label>
                   {calendar && <fieldset className="generation-mode-fieldset"><legend>変更の反映方法</legend><div className="generation-mode-options">
@@ -381,8 +398,8 @@ export function PlantCalendarDrawer({
                     <button type="submit" disabled={regenerationBlockingReasons.length > 0} aria-describedby={regenerationBlockingReasons.length > 0 ? "calendar-regeneration-blocked" : undefined} title={disabledActionTitle(regenerationBlockingReasons)}><Sparkles size={15} />{calendar && generationMode === "review" ? "変更案を作成" : `これからの12か月計画を${calendar ? "作り直す" : "作成"}`}</button>
                   </div>
                 </form>
-              )}
-            </section>
+              </ModalDialog>
+            )}
             </>}
 
             {workspace === "work" && actionEntries.length > 0 && <section className="calendar-action-list" aria-label="管理作業">
@@ -511,6 +528,7 @@ export function PlantCalendarDrawer({
                       timingState={suggestionByActionId.get(selectedAction.id)}
                       busy={calendarMutationBusy}
                       initialRecording={recordActionId === selectedAction.id}
+                      readiness={bundle.operation_readiness?.[selectedAction.id]}
                       onEdit={onEditAction}
                       onComplete={onCompleteAction}
                       onSkip={onSkipAction}
@@ -626,98 +644,8 @@ const FERTILIZER_KIND_OPTIONS: Array<{ value: FertilizerMaterialKind; label: str
   { value: "custom", label: "その他・独自資材" },
 ];
 
-interface FertilizerPreset {
-  id: string;
-  label: string;
-  summary: string;
-  materialKind: FertilizerMaterialKind;
-  materialName: string;
-  nPercent: string;
-  pPercent: string;
-  kPercent: string;
-  mgoPercent: string;
-  annualAvailablePercent: string;
-  effectYears: string;
-  startDelayDays: string;
-  analysisSource: string;
-  sourceUrl?: string;
-}
-
-const FERTILIZER_PRESETS: FertilizerPreset[] = [
-  {
-    id: "cattle-manure-reference", label: "牛ふん堆肥（公的資料の参考値）", summary: "土づくりを主目的に、ゆっくり効く開始値",
-    materialKind: "cattle_manure", materialName: "牛ふん堆肥",
-    nPercent: "1.2", pPercent: "1.3", kPercent: "1.6", mgoPercent: "0.7",
-    annualAvailablePercent: "10", effectYears: "3", startDelayDays: "14",
-    analysisSource: "千葉県の牛ふん堆肥計算例（N 1.2%、P₂O₅ 1.3%、K₂O 1.6%、MgO 0.7%）・窒素肥効率目安",
-    sourceUrl: "https://www.pref.chiba.lg.jp/chikusan/taihiriyou/sanshutsuhou.html",
-  },
-  {
-    id: "poultry-manure-reference", label: "鶏ふん堆肥（公的資料の平均例）", summary: "牛ふんより成分が高く、比較的早く効く開始値",
-    materialKind: "poultry_manure", materialName: "鶏ふん堆肥",
-    nPercent: "2.5", pPercent: "6.6", kPercent: "3.6", mgoPercent: "1.4",
-    annualAvailablePercent: "50", effectYears: "1", startDelayDays: "7",
-    analysisSource: "千葉県の採卵鶏ふん主体堆肥の平均例（N 2.5%、P₂O₅ 6.6%、K₂O 3.6%、MgO 1.4%）・窒素肥効率目安",
-    sourceUrl: "https://www.pref.chiba.lg.jp/chikusan/taihiriyou/tokuchou.html",
-  },
-  {
-    id: "dried-poultry-manure", label: "乾燥鶏ふん", summary: "濃度が高いため、少量から扱う開始値",
-    materialKind: "poultry_manure", materialName: "乾燥鶏ふん",
-    nPercent: "3.6", pPercent: "4.0", kPercent: "2.2", mgoPercent: "",
-    annualAvailablePercent: "60", effectYears: "1", startDelayDays: "3",
-    analysisSource: "農林水産省掲載の乾燥鶏ふん成分例・家畜ふん堆肥の窒素肥効率目安",
-    sourceUrl: "https://www.maff.go.jp/j/seisan/kankyo/hozen_type/h_sehi_kizyun/pdf/sisin2.pdf",
-  },
-  {
-    id: "rice-straw-compost", label: "植物性堆肥（稲わら堆肥の参考）", summary: "肥料より土づくり向け。成分表示があれば必ず上書き",
-    materialKind: "compost", materialName: "植物性堆肥",
-    nPercent: "0.5", pPercent: "", kPercent: "", mgoPercent: "",
-    annualAvailablePercent: "1", effectYears: "3", startDelayDays: "21",
-    analysisSource: "千葉県の稲わら堆肥の窒素成分例。肥効は原則見込まず、便宜上1%で概算",
-    sourceUrl: "https://www.pref.chiba.lg.jp/chikusan/taihiriyou/sanshutsuhou.html",
-  },
-  {
-    id: "rapeseed-oil-cake", label: "菜種油かす", summary: "有機質肥料の代表例。温度・水分で効き方が変化",
-    materialKind: "organic_fertilizer", materialName: "菜種油かす",
-    nPercent: "5.2", pPercent: "2.0", kPercent: "1.0", mgoPercent: "",
-    annualAvailablePercent: "50", effectYears: "1", startDelayDays: "7",
-    analysisSource: "農研機構の試験使用資材の成分例。肥効率50%は保守的な編集可能な開始値",
-    sourceUrl: "https://www.naro.go.jp/org/tarc/to-noken/DB/DATA/077/077-069.pdf",
-  },
-  {
-    id: "fish-meal", label: "魚かす（研究例）", summary: "速効性が比較的高い研究例。製品表示を優先",
-    materialKind: "organic_fertilizer", materialName: "魚かす",
-    nPercent: "11.0", pPercent: "7.0", kPercent: "1.7", mgoPercent: "",
-    annualAvailablePercent: "50", effectYears: "1", startDelayDays: "7",
-    analysisSource: "農研機構の魚かす試験例（N 11%、P₂O₅ 7%、K₂O 1.7%、20℃で7日以内に窒素約50%無機化）",
-    sourceUrl: "https://www.naro.go.jp/org/warc/research_results/h20/02_kankyo/p22/index.html",
-  },
-  {
-    id: "compound-8-8-8", label: "化成肥料 8-8-8", summary: "袋に8-8-8と表示された速効性肥料の入力例",
-    materialKind: "chemical_fertilizer", materialName: "化成肥料 8-8-8",
-    nPercent: "8", pPercent: "8", kPercent: "8", mgoPercent: "",
-    annualAvailablePercent: "100", effectYears: "1", startDelayDays: "0",
-    analysisSource: "製品表示8-8-8を入力した例。実際に使用した袋の保証成分へ変更",
-  },
-  {
-    id: "custom", label: "製品ラベルから入力", summary: "袋・分析表の数値をそのまま入力",
-    materialKind: "custom", materialName: "",
-    nPercent: "", pPercent: "", kPercent: "", mgoPercent: "",
-    annualAvailablePercent: "50", effectYears: "1", startDelayDays: "0", analysisSource: "",
-  },
-];
-
-const DEFAULT_FERTILIZER_PRESET_BY_KIND: Record<FertilizerMaterialKind, string> = {
-  cattle_manure: "cattle-manure-reference",
-  poultry_manure: "poultry-manure-reference",
-  compost: "rice-straw-compost",
-  organic_fertilizer: "rapeseed-oil-cake",
-  chemical_fertilizer: "compound-8-8-8",
-  custom: "custom",
-};
-
 interface FertilizerDraft {
-  presetId: string;
+  materialId: string;
   appliedOn: string;
   materialKind: FertilizerMaterialKind;
   materialName: string;
@@ -733,22 +661,22 @@ interface FertilizerDraft {
   notes: string;
 }
 
-function newFertilizerDraft(): FertilizerDraft {
-  const preset = FERTILIZER_PRESETS[0];
+function newFertilizerDraft(materials: FertilizerMaterial[]): FertilizerDraft {
+  const material = materials[0];
   return {
-    presetId: preset.id,
+    materialId: material?.id ?? "",
     appliedOn: todayString(),
-    materialKind: preset.materialKind,
-    materialName: preset.materialName,
+    materialKind: material?.material_kind ?? "custom",
+    materialName: material?.material_name ?? "",
     amountKg: "",
-    nPercent: preset.nPercent,
-    pPercent: preset.pPercent,
-    kPercent: preset.kPercent,
-    mgoPercent: preset.mgoPercent,
-    annualAvailablePercent: preset.annualAvailablePercent,
-    effectYears: preset.effectYears,
-    startDelayDays: preset.startDelayDays,
-    analysisSource: preset.analysisSource,
+    nPercent: String(material?.nutrient_percent.n ?? ""),
+    pPercent: String(material?.nutrient_percent.p2o5 ?? ""),
+    kPercent: String(material?.nutrient_percent.k2o ?? ""),
+    mgoPercent: String(material?.nutrient_percent.mgo ?? ""),
+    annualAvailablePercent: String(material?.annual_available_percent ?? 50),
+    effectYears: String(material?.effect_years ?? 1),
+    startDelayDays: String(material?.start_delay_days ?? 0),
+    analysisSource: material?.analysis_source ?? "",
     notes: "",
   };
 }
@@ -757,46 +685,57 @@ function FertilizerEffectPanel({
   plantingId,
   placementName,
   applications,
+  materials,
   busy,
   onAdd,
   onDelete,
+  onSaveMaterial,
+  onDeleteMaterial,
 }: {
   plantingId: string;
   placementName: string;
   applications: FertilizerApplication[];
+  materials: FertilizerMaterial[];
   busy: boolean;
   onAdd: (plantingId: string, payload: Record<string, unknown>) => Promise<void>;
   onDelete: (plantingId: string, applicationId: string) => Promise<void>;
+  onSaveMaterial: (materialId: string, payload: Record<string, unknown>) => Promise<void>;
+  onDeleteMaterial: (materialId: string) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<FertilizerDraft>(newFertilizerDraft);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [draft, setDraft] = useState<FertilizerDraft>(() => newFertilizerDraft(materials));
   const [error, setError] = useState("");
   const estimate = useMemo(() => summarizeFertilizerApplications(applications), [applications]);
-  const selectedPreset = FERTILIZER_PRESETS.find((preset) => preset.id === draft.presetId);
+  const selectedMaterial = materials.find((material) => material.id === draft.materialId);
   const change = <Key extends keyof FertilizerDraft>(key: Key, value: FertilizerDraft[Key]) => (
     setDraft((current) => ({ ...current, [key]: value }))
   );
 
-  const applyPreset = (presetId: string) => {
-    const preset = FERTILIZER_PRESETS.find((item) => item.id === presetId);
-    if (!preset) return;
+  const applyMaterial = (materialId: string) => {
+    const material = materials.find((item) => item.id === materialId);
+    if (!material) return;
     setDraft((current) => ({
       ...current,
-      presetId: preset.id,
-      materialKind: preset.materialKind,
-      materialName: preset.materialName,
-      nPercent: preset.nPercent,
-      pPercent: preset.pPercent,
-      kPercent: preset.kPercent,
-      mgoPercent: preset.mgoPercent,
-      annualAvailablePercent: preset.annualAvailablePercent,
-      effectYears: preset.effectYears,
-      startDelayDays: preset.startDelayDays,
-      analysisSource: preset.analysisSource,
+      materialId: material.id,
+      materialKind: material.material_kind,
+      materialName: material.material_name,
+      nPercent: String(material.nutrient_percent.n),
+      pPercent: String(material.nutrient_percent.p2o5),
+      kPercent: String(material.nutrient_percent.k2o),
+      mgoPercent: String(material.nutrient_percent.mgo),
+      annualAvailablePercent: String(material.annual_available_percent),
+      effectYears: String(material.effect_years),
+      startDelayDays: String(material.start_delay_days),
+      analysisSource: material.analysis_source,
     }));
   };
 
-  const selectKind = (kind: FertilizerMaterialKind) => applyPreset(DEFAULT_FERTILIZER_PRESET_BY_KIND[kind]);
+  const selectKind = (kind: FertilizerMaterialKind) => {
+    const matching = materials.find((material) => material.material_kind === kind);
+    if (matching) applyMaterial(matching.id);
+    else setDraft((current) => ({ ...current, materialId: "", materialKind: kind }));
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -808,6 +747,7 @@ function FertilizerEffectPanel({
     }
     try {
       await onAdd(plantingId, {
+        material_id: draft.materialId,
         applied_on: draft.appliedOn,
         material_kind: draft.materialKind,
         material_name: draft.materialName,
@@ -819,7 +759,7 @@ function FertilizerEffectPanel({
         analysis_source: draft.analysisSource,
         notes: draft.notes,
       });
-      setDraft(newFertilizerDraft());
+      setDraft(newFertilizerDraft(materials));
       setEditing(false);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -830,7 +770,10 @@ function FertilizerEffectPanel({
     <section className="fertilizer-effect-panel" aria-label="培地の施肥履歴と肥効見込み">
       <div className="calendar-section-heading">
         <div><Beaker size={17} /><strong>培地の施肥と残存肥効</strong><span>{placementName}</span></div>
-        {!editing && <button type="button" disabled={busy} onClick={() => setEditing(true)}><Plus size={15} />施肥履歴を追加</button>}
+        <div className="fertilizer-heading-actions">
+          <button type="button" disabled={busy} onClick={() => setCatalogOpen(true)}>肥料カタログ</button>
+          {!editing && <button type="button" disabled={busy} onClick={() => { setDraft(newFertilizerDraft(materials)); setEditing(true); }}><Plus size={15} />施肥履歴を追加</button>}
+        </div>
       </div>
       {applications.length === 0 ? (
         <p className="fertilizer-empty">この培地の施肥履歴は未登録です。元肥や堆肥を登録すると、AI計画が残存肥効を考慮します。</p>
@@ -863,15 +806,19 @@ function FertilizerEffectPanel({
       <p className="fertilizer-caution">概算値です。製品分析値・地域の施肥基準・土壌分析・EC・葉色・樹勢・収穫品質を優先し、残効が不明なまま追加施肥しないでください。</p>
       {applications.length > 0 && <p className="fertilizer-regenerate-note">施肥履歴を追加・削除した後は「AI栽培計画を作り直す」から変更案を作ると、12か月計画へ反映できます。</p>}
       {editing && (
-        <form className="fertilizer-entry-form" data-fertilizer-form onSubmit={(event) => void submit(event)}>
+        <ModalDialog title="施肥履歴を追加" eyebrow={`${placementName}の培地へ実際に入れた肥料を記録`} onClose={() => { setEditing(false); setError(""); }} className="fertilizer-entry-dialog" size="wide">
+          <form className="fertilizer-entry-form" data-fertilizer-form onSubmit={(event) => void submit(event)}>
           <div className="fertilizer-form-intro"><strong>実際に入れた肥料を記録</strong><span>製品kgと養分kgを分けて計算します。</span></div>
           <div className="fertilizer-preset-picker">
-            <label>肥料プリセット<select name="fertilizer_preset" value={draft.presetId} onChange={(event) => applyPreset(event.target.value)}>{FERTILIZER_PRESETS.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}</select></label>
+            <label>肥料カタログ<select name="fertilizer_material" value={draft.materialId} onChange={(event) => applyMaterial(event.target.value)}>
+              <optgroup label="一般的な肥料">{materials.filter((material) => material.scope === "builtin").map((material) => <option key={material.id} value={material.id}>{material.label}</option>)}</optgroup>
+              {materials.some((material) => material.scope === "user") && <optgroup label="登録した肥料">{materials.filter((material) => material.scope === "user").map((material) => <option key={material.id} value={material.id}>{material.label}</option>)}</optgroup>}
+            </select></label>
             <div aria-live="polite">
-              <strong>{selectedPreset?.label}</strong>
-              <span>{selectedPreset?.summary}</span>
-              <small>一般的な参考値を入力しました。実際の製品ラベル・分析値があれば下の値を上書きしてください。空欄は参照資料に値がなく、0%を意味しません。</small>
-              {selectedPreset?.sourceUrl && <a href={selectedPreset.sourceUrl} target="_blank" rel="noreferrer">参考資料を別タブで確認</a>}
+              <strong>{selectedMaterial?.label ?? "製品ラベルから入力"}</strong>
+              <span>{selectedMaterial?.summary}</span>
+              <small>一般値は編集可能な開始値です。手元の袋・分析表に値があれば必ず上書きしてください。</small>
+              {selectedMaterial?.source_url && <a href={selectedMaterial.source_url} target="_blank" rel="noreferrer">参考資料を別タブで確認</a>}
             </div>
           </div>
           <div className="fertilizer-form-grid three">
@@ -887,7 +834,7 @@ function FertilizerEffectPanel({
             <label>MgO（苦土）<input name="mgo_percent" type="number" min="0" max="100" step="0.01" value={draft.mgoPercent} onChange={(event) => change("mgoPercent", event.target.value)} /></label>
           </div></fieldset>
           <fieldset><legend>肥効の見積条件</legend><div className="fertilizer-form-grid three">
-            <label>Nを基準にした年間肥効率（概算%）<input name="annual_available_percent" type="number" required min="0.1" max="100" step="0.1" value={draft.annualAvailablePercent} onChange={(event) => change("annualAvailablePercent", event.target.value)} /><small>{selectedPreset?.label ?? "選択した資材"}の{draft.annualAvailablePercent}%は編集可能な開始値です。</small></label>
+            <label>Nを基準にした年間肥効率（概算%）<input name="annual_available_percent" type="number" required min="0.1" max="100" step="0.1" value={draft.annualAvailablePercent} onChange={(event) => change("annualAvailablePercent", event.target.value)} /><small>{selectedMaterial?.label ?? "選択した資材"}の{draft.annualAvailablePercent}%は編集可能な開始値です。</small></label>
             <label>肥効を見込む年数<input name="effect_years" type="number" required min="1" max="10" step="1" value={draft.effectYears} onChange={(event) => change("effectYears", event.target.value)} /></label>
             <label>効き始めるまで（日）<input name="start_delay_days" type="number" required min="0" max="3650" step="1" value={draft.startDelayDays} onChange={(event) => change("startDelayDays", event.target.value)} /></label>
           </div></fieldset>
@@ -896,9 +843,165 @@ function FertilizerEffectPanel({
           <label>メモ<textarea maxLength={1000} value={draft.notes} onChange={(event) => change("notes", event.target.value)} placeholder="全面施用、畝内混和、施用範囲など" /></label>
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="form-actions"><button type="button" onClick={() => { setEditing(false); setError(""); }}>キャンセル</button><button type="submit" disabled={busy}>履歴と肥効を保存</button></div>
-        </form>
+          </form>
+        </ModalDialog>
+      )}
+      {catalogOpen && (
+        <FertilizerCatalogDialog
+          materials={materials}
+          busy={busy}
+          onClose={() => setCatalogOpen(false)}
+          onSave={onSaveMaterial}
+          onDelete={onDeleteMaterial}
+        />
       )}
     </section>
+  );
+}
+
+interface FertilizerCatalogDraft {
+  id: string;
+  label: string;
+  summary: string;
+  materialKind: FertilizerMaterialKind;
+  materialName: string;
+  nPercent: string;
+  pPercent: string;
+  kPercent: string;
+  mgoPercent: string;
+  annualAvailablePercent: string;
+  effectYears: string;
+  startDelayDays: string;
+  analysisSource: string;
+  sourceUrl: string;
+}
+
+function fertilizerCatalogDraft(material?: FertilizerMaterial): FertilizerCatalogDraft {
+  return {
+    id: material?.id ?? "",
+    label: material?.label ?? "",
+    summary: material?.summary ?? "",
+    materialKind: material?.material_kind ?? "custom",
+    materialName: material?.material_name ?? "",
+    nPercent: String(material?.nutrient_percent.n ?? ""),
+    pPercent: String(material?.nutrient_percent.p2o5 ?? ""),
+    kPercent: String(material?.nutrient_percent.k2o ?? ""),
+    mgoPercent: String(material?.nutrient_percent.mgo ?? ""),
+    annualAvailablePercent: String(material?.annual_available_percent ?? 50),
+    effectYears: String(material?.effect_years ?? 1),
+    startDelayDays: String(material?.start_delay_days ?? 7),
+    analysisSource: material?.analysis_source ?? "製品ラベル",
+    sourceUrl: material?.source_url ?? "",
+  };
+}
+
+function FertilizerCatalogDialog({
+  materials,
+  busy,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  materials: FertilizerMaterial[];
+  busy: boolean;
+  onClose: () => void;
+  onSave: (materialId: string, payload: Record<string, unknown>) => Promise<void>;
+  onDelete: (materialId: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<FertilizerCatalogDraft | null>(null);
+  const [error, setError] = useState("");
+  const customMaterials = materials.filter((material) => material.scope === "user");
+  const change = <Key extends keyof FertilizerCatalogDraft>(key: Key, value: FertilizerCatalogDraft[Key]) => (
+    setDraft((current) => current ? { ...current, [key]: value } : current)
+  );
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!draft) return;
+    setError("");
+    const nutrients = [draft.nPercent, draft.pPercent, draft.kPercent, draft.mgoPercent].map(Number);
+    if (!nutrients.some((value) => value > 0)) {
+      setError("袋の表示を見て、N・P₂O₅・K₂O・MgO（苦土）のいずれかを入力してください。");
+      return;
+    }
+    try {
+      await onSave(draft.id, {
+        label: draft.label,
+        summary: draft.summary,
+        material_kind: draft.materialKind,
+        material_name: draft.materialName,
+        nutrient_percent: { n: nutrients[0], p2o5: nutrients[1], k2o: nutrients[2], mgo: nutrients[3] },
+        annual_available_percent: Number(draft.annualAvailablePercent),
+        effect_years: Number(draft.effectYears),
+        start_delay_days: Number(draft.startDelayDays),
+        analysis_source: draft.analysisSource,
+        source_url: draft.sourceUrl,
+      });
+      setDraft(null);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  };
+
+  return (
+    <ModalDialog title="肥料カタログ" eyebrow="よく使う肥料を選びやすくする" onClose={onClose} className="fertilizer-catalog-dialog" size="wide">
+      <div className="fertilizer-catalog-intro">
+        <div className="fertilizer-bag-illustration" aria-hidden="true"><PackageOpen size={25} /></div>
+        <div><strong>袋の表示を登録すると、次回から選ぶだけ</strong><span>一般値は目安です。実際の製品ラベルや分析結果を優先します。</span></div>
+        {!draft && <button type="button" onClick={() => setDraft(fertilizerCatalogDraft())}><Plus size={15} />自分の肥料を追加</button>}
+      </div>
+      {!draft ? (
+        <div className="fertilizer-catalog-sections">
+          <section><h3>一般的な肥料</h3><div className="fertilizer-catalog-grid">{materials.filter((material) => material.scope === "builtin").map((material) => <FertilizerMaterialCard key={material.id} material={material} />)}</div></section>
+          <section><h3>登録した肥料 <span>{customMaterials.length}件</span></h3>{customMaterials.length === 0 ? <p className="fertilizer-empty">製品袋の成分を登録すると、施肥記録で何度でも使えます。</p> : <div className="fertilizer-catalog-grid">{customMaterials.map((material) => (
+            <FertilizerMaterialCard key={material.id} material={material} actions={
+              <><button type="button" onClick={() => setDraft(fertilizerCatalogDraft(material))}>編集</button><button type="button" className="danger" disabled={busy} onClick={() => { if (window.confirm(`${material.label}をカタログから削除しますか？\n過去の施肥履歴は残ります。`)) void onDelete(material.id); }}>削除</button></>
+            } />
+          ))}</div>}</section>
+        </div>
+      ) : (
+        <form className="fertilizer-entry-form fertilizer-catalog-form" onSubmit={(event) => void submit(event)}>
+          <div className="fertilizer-form-intro"><strong>{draft.id ? "登録した肥料を編集" : "肥料袋の情報を登録"}</strong><span>まず袋の表にある名前とN-P-Kを写します。</span></div>
+          <div className="fertilizer-form-grid three">
+            <label>選ぶときの名前<input required maxLength={180} value={draft.label} onChange={(event) => change("label", event.target.value)} placeholder="例：いちご用 有機配合" /></label>
+            <label>袋に書かれた製品名<input required maxLength={180} value={draft.materialName} onChange={(event) => change("materialName", event.target.value)} /></label>
+            <label>種類<select value={draft.materialKind} onChange={(event) => change("materialKind", event.target.value as FertilizerMaterialKind)}>{FERTILIZER_KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+          </div>
+          <label>ひとこと説明<input maxLength={500} value={draft.summary} onChange={(event) => change("summary", event.target.value)} placeholder="例：元肥に使う、ゆっくり効く" /></label>
+          <fieldset><legend>袋の「保証成分量」（%）</legend><div className="fertilizer-form-grid four">
+            <label>N<input type="number" min="0" max="100" step="0.01" value={draft.nPercent} onChange={(event) => change("nPercent", event.target.value)} /></label>
+            <label>P₂O₅<input type="number" min="0" max="100" step="0.01" value={draft.pPercent} onChange={(event) => change("pPercent", event.target.value)} /></label>
+            <label>K₂O<input type="number" min="0" max="100" step="0.01" value={draft.kPercent} onChange={(event) => change("kPercent", event.target.value)} /></label>
+            <label>MgO（苦土）<input type="number" min="0" max="100" step="0.01" value={draft.mgoPercent} onChange={(event) => change("mgoPercent", event.target.value)} /></label>
+          </div></fieldset>
+          <details className="fertilizer-advanced-fields"><summary>肥効の見積りを調整（上級者向け）</summary><div className="fertilizer-form-grid three">
+            <label>年間肥効率（%）<input type="number" required min="0.1" max="100" step="0.1" value={draft.annualAvailablePercent} onChange={(event) => change("annualAvailablePercent", event.target.value)} /></label>
+            <label>肥効を見込む年数<input type="number" required min="1" max="10" value={draft.effectYears} onChange={(event) => change("effectYears", event.target.value)} /></label>
+            <label>効き始めるまで（日）<input type="number" required min="0" max="3650" value={draft.startDelayDays} onChange={(event) => change("startDelayDays", event.target.value)} /></label>
+            <label>数値の根拠<input maxLength={500} value={draft.analysisSource} onChange={(event) => change("analysisSource", event.target.value)} /></label>
+            <label>参考URL<input type="url" maxLength={1000} value={draft.sourceUrl} onChange={(event) => change("sourceUrl", event.target.value)} /></label>
+          </div></details>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="form-actions"><button type="button" onClick={() => { setDraft(null); setError(""); }}>一覧へ戻る</button><button type="submit" disabled={busy}>{draft.id ? "変更を保存" : "カタログへ追加"}</button></div>
+        </form>
+      )}
+    </ModalDialog>
+  );
+}
+
+function FertilizerMaterialCard({ material, actions }: { material: FertilizerMaterial; actions?: ReactNode }) {
+  const MaterialIcon = material.material_kind === "chemical_fertilizer"
+    ? Zap
+    : material.material_kind === "cattle_manure" || material.material_kind === "poultry_manure"
+      ? Wheat
+      : material.material_kind === "compost"
+        ? Sprout
+        : Leaf;
+  return (
+    <article className="fertilizer-material-card">
+      <div className={`fertilizer-material-icon kind-${material.material_kind}`} aria-hidden="true"><MaterialIcon size={21} /></div>
+      <div><strong>{material.label}</strong><span>{material.summary || fertilizerKindLabel(material.material_kind)}</span><small>N {material.nutrient_percent.n}%・P {material.nutrient_percent.p2o5}%・K {material.nutrient_percent.k2o}% / 効き始め 約{material.start_delay_days}日</small></div>
+      {actions && <footer>{actions}</footer>}
+    </article>
   );
 }
 
@@ -975,6 +1078,19 @@ function CareProfileSummary({ calendar }: { calendar: PlantCalendar }) {
               </div>
             ))}
           </div>
+        )}
+        {profile?.knowledge_evidence?.length > 0 && (
+          <section className="care-evidence" aria-label="栽培根拠の出典">
+            <strong>参考にした公的資料</strong>
+            <ul>
+              {profile.knowledge_evidence.map((source) => (
+                <li key={source.url}>
+                  <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a>
+                  <small>{[source.publisher, source.applicable_region, source.published_at && `発行・改訂 ${source.published_at}`, source.fetched_at && `取得 ${source.fetched_at.slice(0, 10)}`].filter(Boolean).join(" / ")}</small>
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
         {profile?.assumptions?.length > 0 && <p className="care-assumptions">前提: {profile.assumptions.join(" / ")}</p>}
       </div>

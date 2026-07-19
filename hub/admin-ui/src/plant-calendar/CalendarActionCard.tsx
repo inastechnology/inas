@@ -7,6 +7,7 @@ import {
   CirclePlay,
   ClipboardCheck,
   Clock3,
+  Droplets,
   Edit3,
   ExternalLink,
   GripVertical,
@@ -16,13 +17,16 @@ import {
   RotateCcw,
   Save,
   Trash2,
+  UserRound,
   Users,
 } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
 import { errorMessage, formatDate, formatDateRange, todayString } from "../formatters";
+import { ModalDialog } from "../ModalDialog";
 import { SearchableSelect } from "../SearchableSelect";
 import type {
+  AgenticOperationReadiness,
   PlantActionCompletionPayload,
   PlantActionMutationPayload,
   PlantActionPriority,
@@ -65,6 +69,7 @@ interface CalendarActionCardProps {
   timingState?: TimingState;
   busy: boolean;
   initialRecording?: boolean;
+  readiness?: AgenticOperationReadiness;
   onEdit: (plantingId: string, actionId: string, payload: ActionUpdate) => Promise<void>;
   onComplete: (plantingId: string, actionId: string, payload: PlantActionCompletionPayload) => Promise<void>;
   onSkip: (plantingId: string, actionId: string, payload: PlantActionSkipPayload) => Promise<void>;
@@ -211,6 +216,7 @@ export function CalendarActionCard({
   timingState,
   busy,
   initialRecording = false,
+  readiness,
   onEdit,
   onComplete,
   onSkip,
@@ -252,6 +258,7 @@ export function CalendarActionCard({
           {action.instructions_html && <RichActionContent html={action.instructions_html} />}
           {Boolean(action.attachments?.length) && <div className="action-content-images">{action.attachments.map((attachment) => <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer"><img src={attachment.url} alt={attachment.original_filename || "作業画像"} loading="lazy" /></a>)}</div>}
           <WorkGuidance action={action} />
+          {readiness && <OperationReadinessPanel readiness={readiness} />}
           {action.tags.length > 0 && <div className="action-tags">{action.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
       </div>
@@ -259,26 +266,26 @@ export function CalendarActionCard({
       {action.completion && <CompletionRecord action={action} />}
       {action.skip_decision && <SkipDecisionRecord action={action} />}
       {editing && (
-        <div className="action-edit-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditing(false); }}>
-          <section className="action-edit-dialog" role="dialog" aria-modal="true" aria-labelledby={`action-edit-title-${action.id}`}>
-            <header><div><span>実績入力とは別に編集します</span><h3 id={`action-edit-title-${action.id}`}>作業内容を編集</h3></div><button type="button" className="icon-button" onClick={() => setEditing(false)} title="閉じる">×</button></header>
-            <div className="action-edit-dialog-body"><ActionEditForm action={action} actionTypes={actionTypes} busy={busy} onCancel={() => setEditing(false)} onSave={async (payload) => { await onEdit(plantingId, action.id, payload); setEditing(false); }} /></div>
-          </section>
-        </div>
+        <ModalDialog title="作業内容を編集" eyebrow="実績入力とは別に編集します" onClose={() => setEditing(false)} className="action-edit-dialog" size="standard">
+          <ActionEditForm action={action} actionTypes={actionTypes} busy={busy} onCancel={() => setEditing(false)} onSave={async (payload) => { await onEdit(plantingId, action.id, payload); setEditing(false); }} />
+        </ModalDialog>
       )}
       {!editing && (capabilities.start || capabilities.returnToPlanned || capabilities.record || capabilities.skip) && (
-        skipping && capabilities.skip ? (
-          <SkipDecisionForm
-            plantingId={plantingId}
-            action={action}
-            busy={busy}
-            onCancel={() => setSkipping(false)}
-            onSkip={async (...args) => {
-              await onSkip(...args);
-              setSkipping(false);
-            }}
-          />
-        ) : recording && capabilities.record ? (
+        <div className={`action-state-panel ${action.status}`}>
+          <div className="action-state-guidance">
+            <strong>{actionStateGuidance(action.status).title}</strong>
+            <span>{actionStateGuidance(action.status).description}</span>
+          </div>
+          <div className="action-state-controls">
+            {capabilities.start && <button type="button" className="start-button" onClick={() => void onEdit(plantingId, action.id, { status: "in_progress", use_as_guidance: false })} disabled={busy} title={busyReason || "この作業を作業中へ移動"}><CirclePlay size={16} />作業を開始</button>}
+            {capabilities.returnToPlanned && <button type="button" onClick={() => void onEdit(plantingId, action.id, { status: "planned", use_as_guidance: false })} disabled={busy} title={busyReason || "この作業を未完了へ戻す"}><RotateCcw size={16} />未完了に戻す</button>}
+            {capabilities.record && <button type="button" className="complete-button" onClick={() => setRecording(true)} disabled={busy} title={busyReason || "実施内容を記録して完了にする"}><Check size={16} />実績を記録して完了</button>}
+            {capabilities.skip && <button type="button" className="skip-button" onClick={() => setSkipping(true)} disabled={busy} title={busyReason || "確認結果を記録して、この作業を見送る"}><Ban size={16} />確認して見送る</button>}
+          </div>
+        </div>
+      )}
+      {recording && capabilities.record && (
+        <ModalDialog title="作業実績を記録" eyebrow={action.title} onClose={() => setRecording(false)} className="work-record-dialog" size="wide">
           <WorkRecordForm
             plantingId={plantingId}
             action={action}
@@ -289,22 +296,63 @@ export function CalendarActionCard({
               setRecording(false);
             }}
           />
-        ) : (
-          <div className={`action-state-panel ${action.status}`}>
-            <div className="action-state-guidance">
-              <strong>{actionStateGuidance(action.status).title}</strong>
-              <span>{actionStateGuidance(action.status).description}</span>
-            </div>
-            <div className="action-state-controls">
-              {capabilities.start && <button type="button" className="start-button" onClick={() => void onEdit(plantingId, action.id, { status: "in_progress", use_as_guidance: false })} disabled={busy} title={busyReason || "この作業を作業中へ移動"}><CirclePlay size={16} />作業を開始</button>}
-              {capabilities.returnToPlanned && <button type="button" onClick={() => void onEdit(plantingId, action.id, { status: "planned", use_as_guidance: false })} disabled={busy} title={busyReason || "この作業を未完了へ戻す"}><RotateCcw size={16} />未完了に戻す</button>}
-              {capabilities.record && <button type="button" className="complete-button" onClick={() => setRecording(true)} disabled={busy} title={busyReason || "実施内容を記録して完了にする"}><Check size={16} />実績を記録して完了</button>}
-              {capabilities.skip && <button type="button" className="skip-button" onClick={() => setSkipping(true)} disabled={busy} title={busyReason || "確認結果を記録して、この作業を見送る"}><Ban size={16} />確認して見送る</button>}
-            </div>
-          </div>
-        )
+        </ModalDialog>
+      )}
+      {skipping && capabilities.skip && (
+        <ModalDialog title="確認して見送る" eyebrow={action.title} onClose={() => setSkipping(false)} className="skip-decision-dialog" size="standard">
+          <SkipDecisionForm
+            plantingId={plantingId}
+            action={action}
+            busy={busy}
+            onCancel={() => setSkipping(false)}
+            onSkip={async (...args) => {
+              await onSkip(...args);
+              setSkipping(false);
+            }}
+          />
+        </ModalDialog>
       )}
     </article>
+  );
+}
+
+function OperationReadinessPanel({ readiness }: { readiness: AgenticOperationReadiness }) {
+  const deviceAssisted = readiness.executor_mode === "device_assisted";
+  return (
+    <section className={`agentic-operation-readiness ${readiness.executor_mode}`} aria-label="この作業の実施準備">
+      <header>
+        <span className="agentic-operation-icon" aria-hidden="true">{deviceAssisted ? <Droplets size={22} /> : <UserRound size={22} />}</span>
+        <div>
+          <small>この作業の実施準備</small>
+          <strong>{deviceAssisted ? "接続済みの機器を利用できます" : "人が確認して実施します"}</strong>
+        </div>
+        <span className={`agentic-operation-badge ${deviceAssisted ? "device" : "human"}`}>{deviceAssisted ? "機器＋確認" : "作業ガイド"}</span>
+      </header>
+      <p>{readiness.summary}</p>
+      {readiness.executor_candidates.length > 0 && (
+        <div className="agentic-executor-list">
+          {readiness.executor_candidates.map((candidate) => (
+            <a key={candidate.device_id} href={candidate.manage_url} target="_blank" rel="noopener noreferrer" aria-label={`${candidate.name}の設定を新しいタブで開く`}>
+              <Droplets size={17} />
+              <span><strong>{candidate.name}</strong><small>{candidate.placement_name || "設置先を確認"}{candidate.resource_id ? ` / ${candidate.resource_id}` : ""}</small></span>
+              <ExternalLink size={15} />
+            </a>
+          ))}
+        </div>
+      )}
+      <div className="agentic-operation-checks">
+        {readiness.decision_checks.length > 0 && <div><strong>始める前</strong><ul>{readiness.decision_checks.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+        {readiness.stop_conditions.length > 0 && <div className="stop"><strong>この場合は止める</strong><ul>{readiness.stop_conditions.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+        {readiness.verification_checks.length > 0 && <div><strong>終わったら</strong><ul>{readiness.verification_checks.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+      </div>
+      <div className="agentic-operation-safety">
+        <span>{readiness.can_dispatch ? "実行できます" : "自動実行はまだ行いません"}</span>
+        <p>{readiness.dispatch_reason}</p>
+      </div>
+      {readiness.next_href && readiness.next_label && (
+        <a className="agentic-operation-next" href={readiness.next_href} target="_blank" rel="noopener noreferrer">{readiness.next_label}<ExternalLink size={15} /></a>
+      )}
+    </section>
   );
 }
 

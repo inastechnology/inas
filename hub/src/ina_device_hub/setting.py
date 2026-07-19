@@ -150,6 +150,8 @@ AI_IMAGE_ANALYZE_MODEL = os.environ.get("AI_IMAGE_ANALYZE_MODEL", "").strip()
 AI_TEXT_ANALYZE_API_KEY = os.environ.get("AI_TEXT_ANALYZE_API_KEY", "").strip()
 AI_TEXT_ANALYZE_BASE_URL = os.environ.get("AI_TEXT_ANALYZE_BASE_URL", "").strip()
 AI_TEXT_ANALYZE_MODEL = os.environ.get("AI_TEXT_ANALYZE_MODEL", "").strip()
+AI_PLANT_CALENDAR_WEB_KNOWLEDGE_ENABLED = _bool_env("AI_PLANT_CALENDAR_WEB_KNOWLEDGE_ENABLED", True)
+AI_PLANT_CALENDAR_WEB_KNOWLEDGE_CACHE_DAYS = _int_env("AI_PLANT_CALENDAR_WEB_KNOWLEDGE_CACHE_DAYS", 30)
 
 DEVICE_CONFIG_DEFAULT_NTP_SERVER = os.environ.get("DEVICE_CONFIG_DEFAULT_NTP_SERVER", DEVICE_NAME)
 DEVICE_CONFIG_DEFAULT_TIMEZONE_OFFSET_SEC = int(os.environ.get("DEVICE_CONFIG_DEFAULT_TIMEZONE_OFFSET_SEC", "32400"))
@@ -280,6 +282,8 @@ DEFAULT_SETTINGS = {
         "text_analyze_api_key": AI_TEXT_ANALYZE_API_KEY,
         "text_analyze_base_url": AI_TEXT_ANALYZE_BASE_URL,
         "text_analyze_model": AI_TEXT_ANALYZE_MODEL,
+        "plant_calendar_web_knowledge_enabled": AI_PLANT_CALENDAR_WEB_KNOWLEDGE_ENABLED,
+        "plant_calendar_web_knowledge_cache_days": AI_PLANT_CALENDAR_WEB_KNOWLEDGE_CACHE_DAYS,
         "plant_calendar_prompt_template": DEFAULT_PLANT_CALENDAR_PROMPT_TEMPLATE,
     },
     "sensor": {
@@ -323,6 +327,8 @@ RUNTIME_SETTING_FIELDS = {
         "image_analyze_model",
         "text_analyze_base_url",
         "text_analyze_model",
+        "plant_calendar_web_knowledge_enabled",
+        "plant_calendar_web_knowledge_cache_days",
         "plant_calendar_prompt_template",
     },
     "instagram": {

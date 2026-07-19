@@ -77,7 +77,20 @@ class PlantManagementRepositoryTest(unittest.TestCase):
                 },
             ],
             {"source": "fallback", "context_snapshot": {"crop_name": "ブルーベリー"}},
-            care_profile={"summary": "ブルーベリーの栽培基準", "fertilization": {"strategy": "葉色とECで判断"}},
+            care_profile={
+                "summary": "ブルーベリーの栽培基準",
+                "fertilization": {"strategy": "葉色とECで判断"},
+                "knowledge_evidence": [
+                    {
+                        "title": "栽培指針",
+                        "url": "https://www.naro.go.jp/manual",
+                        "publisher": "農研機構",
+                        "applicable_region": "日本",
+                        "published_at": "2025-03",
+                        "fetched_at": "2026-07-19T00:00:00+00:00",
+                    }
+                ],
+            },
             task_rules=[
                 {
                     "rule_id": "rule-fertilization",
@@ -99,6 +112,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
 
         self.assertEqual(calendar["revision"], 1)
         self.assertEqual(calendar["care_profile"]["summary"], "ブルーベリーの栽培基準")
+        self.assertEqual(calendar["care_profile"]["knowledge_evidence"][0]["publisher"], "農研機構")
         self.assertEqual(calendar["task_rules"][0]["interval_days"]["preferred"], 45)
         self.assertEqual(bundle["plantings"][0]["placement_name"], "鉢A")
         action_types = {item["code"]: item for item in bundle["action_types"]}
@@ -151,6 +165,40 @@ class PlantManagementRepositoryTest(unittest.TestCase):
                     "effect_years": 1,
                 },
             )
+
+    def test_fertilizer_catalog_custom_material_and_application_snapshot(self):
+        planting = self._create_blueberry()
+        builtins = self.repository.list_fertilizer_materials()
+        self.assertIn("builtin:cattle-manure-reference", {item["id"] for item in builtins})
+        self.assertEqual(self.repository.data.get("fertilizer_materials", []), [])
+
+        custom = self.repository.create_fertilizer_material(
+            {
+                "label": "わが家のぼかし",
+                "summary": "袋の分析値を登録",
+                "material_kind": "organic_fertilizer",
+                "material_name": "わが家のぼかし 5-3-2",
+                "nutrient_percent": {"n": 5, "p2o5": 3, "k2o": 2, "mgo": 0.5},
+                "annual_available_percent": 45,
+                "effect_years": 1,
+                "start_delay_days": 10,
+                "analysis_source": "製品ラベル 2026年7月",
+            }
+        )
+        application = self.repository.create_fertilizer_application(
+            planting["id"],
+            {"material_id": custom["id"], "applied_on": "2026-07-14", "amount_kg": 2},
+        )
+        self.repository.update_fertilizer_material(custom["id"], {"material_name": "変更後", "nutrient_percent": {"n": 6, "p2o5": 3, "k2o": 2}})
+        self.repository.delete_fertilizer_material(custom["id"])
+
+        self.assertEqual(application["material_name"], "わが家のぼかし 5-3-2")
+        self.assertEqual(application["material_snapshot"]["nutrient_percent"]["n"], 5.0)
+        saved = self.repository.fertilizer_applications_for_planting(planting["id"])[0]
+        self.assertEqual(saved["material_snapshot"]["material_name"], "わが家のぼかし 5-3-2")
+        self.assertNotIn(custom["id"], {item["id"] for item in self.repository.list_fertilizer_materials()})
+        with self.assertRaises(PlantManagementValidationError):
+            self.repository.delete_fertilizer_material("builtin:cattle-manure-reference")
 
     def test_suggestions_start_seven_days_before_work_window(self):
         planting = self._create_blueberry()
@@ -264,9 +312,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         with self.assertRaises(PlantManagementValidationError):
             self.repository.skip_action(planting["id"], action_id, "2026-07-19", "other", "")
         with self.assertRaises(PlantManagementValidationError):
-            self.repository.skip_action(
-                planting["id"], action_id, "2026-07-19", "other", "確認済み", next_review_on="2026-07-18"
-            )
+            self.repository.skip_action(planting["id"], action_id, "2026-07-19", "other", "確認済み", next_review_on="2026-07-18")
         with self.assertRaises(PlantManagementValidationError):
             self.repository.update_action(planting["id"], action_id, {"status": "skipped"})
 
@@ -549,9 +595,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         planting = self._create_blueberry()
         original = self._create_calendar(planting["id"])
         original_fertilizer_id = original["actions"][0]["id"]
-        queued = self.repository.enqueue_calendar_generation(
-            planting["id"], kind="regenerate", start_date="2026-07-20", mode="automatic"
-        )
+        queued = self.repository.enqueue_calendar_generation(planting["id"], kind="regenerate", start_date="2026-07-20", mode="automatic")
         self.repository.claim_next_calendar_generation()
 
         result = self.repository.complete_calendar_generation(
@@ -586,9 +630,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         planting = self._create_blueberry()
         original = self._create_calendar(planting["id"])
         original_titles = [action["title"] for action in original["actions"]]
-        queued = self.repository.enqueue_calendar_generation(
-            planting["id"], kind="regenerate", start_date="2026-07-20", mode="review"
-        )
+        queued = self.repository.enqueue_calendar_generation(planting["id"], kind="regenerate", start_date="2026-07-20", mode="review")
         self.repository.claim_next_calendar_generation()
 
         result = self.repository.complete_calendar_generation(
@@ -645,9 +687,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
                 }
             ],
         )
-        queued = self.repository.enqueue_calendar_generation(
-            planting["id"], kind="regenerate", start_date="2026-07-20", mode="review"
-        )
+        queued = self.repository.enqueue_calendar_generation(planting["id"], kind="regenerate", start_date="2026-07-20", mode="review")
         self.repository.claim_next_calendar_generation()
 
         result = self.repository.complete_calendar_generation(
@@ -679,12 +719,8 @@ class PlantManagementRepositoryTest(unittest.TestCase):
     def test_regeneration_does_not_duplicate_an_in_progress_action(self):
         planting = self._create_blueberry()
         calendar = self._create_calendar(planting["id"])
-        in_progress = self.repository.update_action(
-            planting["id"], calendar["actions"][0]["id"], {"status": "in_progress"}
-        )
-        queued = self.repository.enqueue_calendar_generation(
-            planting["id"], kind="regenerate", start_date="2026-07-20", mode="review"
-        )
+        in_progress = self.repository.update_action(planting["id"], calendar["actions"][0]["id"], {"status": "in_progress"})
+        queued = self.repository.enqueue_calendar_generation(planting["id"], kind="regenerate", start_date="2026-07-20", mode="review")
         self.repository.claim_next_calendar_generation()
 
         result = self.repository.complete_calendar_generation(

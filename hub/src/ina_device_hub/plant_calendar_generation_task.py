@@ -3,6 +3,7 @@ import threading
 from datetime import date
 
 from ina_device_hub.ai_content_service import ai_content_service
+from ina_device_hub.crop_knowledge_provider import crop_knowledge_provider
 from ina_device_hub.field_layout_repository import field_layout_repository
 from ina_device_hub.field_repository import field_repository
 from ina_device_hub.general_log import logger
@@ -10,11 +11,12 @@ from ina_device_hub.plant_management_repository import plant_management_reposito
 
 
 class PlantCalendarGenerationTask:
-    def __init__(self, *, plant_repository, field_repository, layout_repository, ai_service):
+    def __init__(self, *, plant_repository, field_repository, layout_repository, ai_service, knowledge_provider=None):
         self.plant_repository = plant_repository
         self.field_repository = field_repository
         self.layout_repository = layout_repository
         self.ai_service = ai_service
+        self.knowledge_provider = knowledge_provider
         self._wake_event = threading.Event()
         self._worker_thread = None
 
@@ -52,6 +54,17 @@ class PlantCalendarGenerationTask:
             context = self._generation_context(task)
             planting = context["planting"]
             guidance = self.plant_repository.guidance_examples(planting["crop_name"])
+            if self.knowledge_provider is not None:
+                try:
+                    context["crop_knowledge"] = self.knowledge_provider.get(context)
+                except Exception:  # noqa: BLE001
+                    logger.exception("Crop knowledge provider failed; continuing with the general cultivation baseline")
+                    context["crop_knowledge"] = {
+                        "status": "error",
+                        "summary": [],
+                        "assumptions": [],
+                        "sources": [],
+                    }
             generated = self.ai_service.generate_plant_calendar(context, guidance_examples=guidance)
             return self.plant_repository.complete_calendar_generation(task["id"], generated)
         except Exception as exc:  # noqa: BLE001
@@ -101,12 +114,17 @@ class PlantCalendarGenerationTask:
             planting["id"],
             as_of=effective_start,
         )
+        context["fertilizer_catalog"] = self.plant_repository.list_fertilizer_materials()
         existing_calendar = self.plant_repository.get_calendar(planting["id"])
-        context["existing_calendar"] = {
-            "actions": [_calendar_action_generation_snapshot(action) for action in existing_calendar.get("actions") or []],
-            "care_profile": copy.deepcopy(existing_calendar.get("care_profile") or {}),
-            "task_rules": copy.deepcopy(existing_calendar.get("task_rules") or []),
-        } if existing_calendar else None
+        context["existing_calendar"] = (
+            {
+                "actions": [_calendar_action_generation_snapshot(action) for action in existing_calendar.get("actions") or []],
+                "care_profile": copy.deepcopy(existing_calendar.get("care_profile") or {}),
+                "task_rules": copy.deepcopy(existing_calendar.get("task_rules") or []),
+            }
+            if existing_calendar
+            else None
+        )
         context["planning"]["regeneration_mode"] = task.get("mode") or "automatic"
         return context
 
@@ -144,14 +162,27 @@ def _calendar_action_generation_snapshot(action):
     return {
         key: copy.deepcopy(action.get(key))
         for key in (
-            "id", "rule_id", "action_type", "title", "priority", "window_start", "window_end",
-            "timing_label", "reason", "instructions", "tags", "status", "source", "required_people",
-            "estimated_minutes", "completion", "skip_decision",
+            "id",
+            "rule_id",
+            "action_type",
+            "title",
+            "priority",
+            "window_start",
+            "window_end",
+            "timing_label",
+            "reason",
+            "instructions",
+            "tags",
+            "status",
+            "source",
+            "required_people",
+            "estimated_minutes",
+            "completion",
+            "skip_decision",
         )
     } | {
         "work_plan": {
-            key: copy.deepcopy(work_plan.get(key) or [])
-            for key in ("targets", "checkpoints", "start_conditions", "skip_conditions", "completion_criteria")
+            key: copy.deepcopy(work_plan.get(key) or []) for key in ("targets", "checkpoints", "start_conditions", "skip_conditions", "completion_criteria")
         }
     }
 
@@ -167,5 +198,6 @@ def plant_calendar_generation_task():
             field_repository=field_repository(),
             layout_repository=field_layout_repository(),
             ai_service=ai_content_service(),
+            knowledge_provider=crop_knowledge_provider(),
         )
     return __instance

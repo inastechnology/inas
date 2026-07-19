@@ -12,6 +12,7 @@
 - [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md): hub、firmware、contract、storage、UI、adapter の全体レイヤ境界。
 - [DEVICE_DEFINITION_SPECIFICATION.md](DEVICE_DEFINITION_SPECIFICATION.md): 各ファームウェアが Hub へ伝えるデバイスの決まり事、定義駆動 UI、Runtime Config、既存 DB との互換方針。
 - [CULTIVATION_SYSTEM_ORCHESTRATION.md](CULTIVATION_SYSTEM_ORCHESTRATION.md): イチゴ点滴栽培のような作物別システムを、複数デバイスと hub のオーケストレーションとして扱う設計方針。
+- [AGENTIC_AGRICULTURE_VISION.md](AGENTIC_AGRICULTURE_VISION.md): 人・固定設備・ロボットを段階的に組み合わせ、判断、実行、確認、学習を循環させるエージェンティック農耕の思想と判断基準。
 - [../../hub/doc/jp/README.md](../../hub/doc/jp/README.md): hub の日本語ドキュメント入口。
 - [../../client-devices/docs/jp/README.md](../../client-devices/docs/jp/README.md): client device firmware と配線・製造ドキュメントの日本語入口。
 

@@ -397,6 +397,9 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('name="text_analyze_model"', html)
         self.assertIn('name="image_analyze_model"', html)
         self.assertIn('name="plant_calendar_prompt_template"', html)
+        self.assertIn('name="plant_calendar_web_knowledge_enabled"', html)
+        self.assertIn('name="plant_calendar_web_knowledge_cache_days"', html)
+        self.assertIn("公的な栽培根拠を検索", html)
         self.assertIn("プロンプトフォーマットを編集", html)
         self.assertIn("{default_instructions}", html)
         self.assertIn('type="password" name="text_analyze_api_key" value=""', html)
@@ -427,18 +430,37 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn("必須項目", invalid.get_data(as_text=True))
 
     def test_plant_calendar_prompt_template_can_be_saved(self):
-        current = web_server.setting().get("ai")["plant_calendar_prompt_template"]
+        current_ai = dict(web_server.setting().get("ai"))
         template = "優先作業を先にする\n{default_instructions}\n{context_json}\n{guidance_json}"
         try:
             response = self.client.post(
                 "/settings",
-                data={"settings_section": "ai", "plant_calendar_prompt_template": template},
+                data={
+                    "settings_section": "ai",
+                    "plant_calendar_prompt_template": template,
+                    "plant_calendar_web_knowledge_enabled": "on",
+                    "plant_calendar_web_knowledge_cache_days": "45",
+                },
             )
 
             self.assertEqual(response.status_code, 302)
             self.assertEqual(web_server.setting().get("ai")["plant_calendar_prompt_template"], template)
+            self.assertTrue(web_server.setting().get("ai")["plant_calendar_web_knowledge_enabled"])
+            self.assertEqual(web_server.setting().get("ai")["plant_calendar_web_knowledge_cache_days"], 45)
         finally:
-            web_server.setting().set("ai", {"plant_calendar_prompt_template": current})
+            web_server.setting().set("ai", current_ai)
+
+    def test_plant_calendar_web_knowledge_rejects_invalid_cache_days(self):
+        response = self.client.post(
+            "/settings",
+            data={
+                "settings_section": "ai",
+                "plant_calendar_prompt_template": web_server.setting().get("ai")["plant_calendar_prompt_template"],
+                "plant_calendar_web_knowledge_cache_days": "not-a-number",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
 
     def test_legacy_ai_settings_url_redirects_to_global_app_settings(self):
         response = self.client.get("/settings/ai")
@@ -1252,6 +1274,9 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(planting["growth_targets"]["soil_moisture_percent"], {"min": 32.0, "max": 62.0})
         self.assertEqual(action["priority"], "recommended")
         self.assertEqual(self.fake_ai_content_service.calendar_contexts[-1]["audience"]["experience_level"], "beginner")
+        generated_bundle = self.client.get(f"/local/api/fields/{field['id']}/plantings").get_json()
+        self.assertIn(action["id"], generated_bundle["operation_readiness"])
+        self.assertEqual(generated_bundle["operation_readiness"][action["id"]]["executor_mode"], "human")
 
         target_update = self.client.patch(
             f"/local/api/plantings/{planting['id']}",
@@ -1260,9 +1285,29 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(target_update.status_code, 200)
         self.assertEqual(target_update.get_json()["growth_targets"]["soil_moisture_percent"]["max"], 65.0)
 
+        catalog = self.client.get("/local/api/fertilizer-materials")
+        self.assertEqual(catalog.status_code, 200)
+        self.assertIn("builtin:poultry-manure-reference", {item["id"] for item in catalog.get_json()["materials"]})
+        custom_material = self.client.post(
+            "/local/api/fertilizer-materials",
+            json={
+                "label": "園芸店の有機配合",
+                "material_kind": "organic_fertilizer",
+                "material_name": "有機配合 6-4-3",
+                "nutrient_percent": {"n": 6, "p2o5": 4, "k2o": 3},
+                "annual_available_percent": 50,
+                "effect_years": 1,
+                "start_delay_days": 7,
+                "analysis_source": "製品ラベル",
+            },
+        )
+        self.assertEqual(custom_material.status_code, 201)
+        custom_material_id = custom_material.get_json()["id"]
+
         fertilizer = self.client.post(
             f"/local/api/plantings/{planting['id']}/fertilizer-applications",
             json={
+                "material_id": custom_material_id,
                 "applied_on": "2026-07-14",
                 "material_kind": "cattle_manure",
                 "material_name": "牛ふん堆肥",
@@ -1276,11 +1321,13 @@ class WebServerBasicUITest(unittest.TestCase):
         )
         self.assertEqual(fertilizer.status_code, 201)
         self.assertEqual(fertilizer.get_json()["application"]["placement_id"], "pot-a")
+        self.assertEqual(fertilizer.get_json()["application"]["material_snapshot"]["label"], "園芸店の有機配合")
         self.assertGreater(fertilizer.get_json()["effect_summary"]["nutrients"]["n"]["remaining_kg"], 0)
         self.assertGreater(fertilizer.get_json()["effect_summary"]["nutrients"]["mgo"]["remaining_kg"], 0)
         fertilizer_list = self.client.get(f"/local/api/plantings/{planting['id']}/fertilizer-applications?as_of=2026-07-14")
         self.assertEqual(fertilizer_list.status_code, 200)
         self.assertEqual(fertilizer_list.get_json()["applications"][0]["material_name"], "牛ふん堆肥")
+        self.assertEqual(self.client.delete(f"/local/api/fertilizer-materials/{custom_material_id}").status_code, 204)
 
         blocked_completion = self.client.post(
             f"/local/api/plantings/{planting['id']}/calendar/actions/{action['id']}/complete",

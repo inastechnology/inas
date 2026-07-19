@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "materials": [
+    {
+      "id": "builtin:cattle-manure-reference",
+      "label": "牛ふん堆肥（公的資料の参考値）",
+      "summary": "土づくりを主目的に、ゆっくり効く開始値",
+      "material_kind": "cattle_manure",
+      "material_name": "牛ふん堆肥",
+      "nutrient_percent": {"n": 1.2, "p2o5": 1.3, "k2o": 1.6, "mgo": 0.7},
+      "annual_available_percent": 10,
+      "effect_years": 3,
+      "start_delay_days": 14,
+      "analysis_source": "千葉県の牛ふん堆肥計算例・窒素肥効率目安",
+      "source_url": "https://www.pref.chiba.lg.jp/chikusan/taihiriyou/sanshutsuhou.html"
+    },
+    {
+      "id": "builtin:poultry-manure-reference",
+      "label": "鶏ふん堆肥（公的資料の平均例）",
+      "summary": "牛ふんより成分が高く、比較的早く効く開始値",
+      "material_kind": "poultry_manure",
+      "material_name": "鶏ふん堆肥",
+      "nutrient_percent": {"n": 2.5, "p2o5": 6.6, "k2o": 3.6, "mgo": 1.4},
+      "annual_available_percent": 50,
+      "effect_years": 1,
+      "start_delay_days": 7,
+      "analysis_source": "千葉県の採卵鶏ふん主体堆肥の平均例・窒素肥効率目安",
+      "source_url": "https://www.pref.chiba.lg.jp/chikusan/taihiriyou/tokuchou.html"
+    },
+    {
+      "id": "builtin:dried-poultry-manure",
+      "label": "乾燥鶏ふん",
+      "summary": "濃度が高いため、少量から扱う開始値",
+      "material_kind": "poultry_manure",
+      "material_name": "乾燥鶏ふん",
+      "nutrient_percent": {"n": 3.6, "p2o5": 4.0, "k2o": 2.2, "mgo": 0},
+      "annual_available_percent": 60,
+      "effect_years": 1,
+      "start_delay_days": 3,
+      "analysis_source": "農林水産省掲載の乾燥鶏ふん成分例・家畜ふん堆肥の窒素肥効率目安",
+      "source_url": "https://www.maff.go.jp/j/seisan/kankyo/hozen_type/h_sehi_kizyun/pdf/sisin2.pdf"
+    },
+    {
+      "id": "builtin:rice-straw-compost",
+      "label": "植物性堆肥（稲わら堆肥の参考）",
+      "summary": "肥料より土づくり向け。成分表示があれば必ず上書き",
+      "material_kind": "compost",
+      "material_name": "植物性堆肥",
+      "nutrient_percent": {"n": 0.5, "p2o5": 0, "k2o": 0, "mgo": 0},
+      "annual_available_percent": 1,
+      "effect_years": 3,
+      "start_delay_days": 21,
+      "analysis_source": "千葉県の稲わら堆肥の窒素成分例。肥効は原則見込まず、便宜上1%で概算",
+      "source_url": "https://www.pref.chiba.lg.jp/chikusan/taihiriyou/sanshutsuhou.html"
+    },
+    {
+      "id": "builtin:rapeseed-oil-cake",
+      "label": "菜種油かす",
+      "summary": "有機質肥料の代表例。温度・水分で効き方が変化",
+      "material_kind": "organic_fertilizer",
+      "material_name": "菜種油かす",
+      "nutrient_percent": {"n": 5.2, "p2o5": 2.0, "k2o": 1.0, "mgo": 0},
+      "annual_available_percent": 50,
+      "effect_years": 1,
+      "start_delay_days": 7,
+      "analysis_source": "農研機構の試験使用資材の成分例。肥効率50%は保守的な編集可能な開始値",
+      "source_url": "https://www.naro.go.jp/org/tarc/to-noken/DB/DATA/077/077-069.pdf"
+    },
+    {
+      "id": "builtin:fish-meal",
+      "label": "魚かす（研究例）",
+      "summary": "速効性が比較的高い研究例。製品表示を優先",
+      "material_kind": "organic_fertilizer",
+      "material_name": "魚かす",
+      "nutrient_percent": {"n": 11.0, "p2o5": 7.0, "k2o": 1.7, "mgo": 0},
+      "annual_available_percent": 50,
+      "effect_years": 1,
+      "start_delay_days": 7,
+      "analysis_source": "農研機構の魚かす試験例。製品表示を優先",
+      "source_url": "https://www.naro.go.jp/org/warc/research_results/h20/02_kankyo/p22/index.html"
+    },
+    {
+      "id": "builtin:compound-8-8-8",
+      "label": "化成肥料 8-8-8",
+      "summary": "袋に8-8-8と表示された速効性肥料の入力例",
+      "material_kind": "chemical_fertilizer",
+      "material_name": "化成肥料 8-8-8",
+      "nutrient_percent": {"n": 8, "p2o5": 8, "k2o": 8, "mgo": 0},
+      "annual_available_percent": 100,
+      "effect_years": 1,
+      "start_delay_days": 0,
+      "analysis_source": "製品表示8-8-8を入力した例。実際に使用した袋の保証成分へ変更",
+      "source_url": ""
+    }
+  ]
+}

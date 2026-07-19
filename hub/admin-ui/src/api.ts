@@ -128,6 +128,18 @@ export function deleteFertilizerApplication(plantingId: string, applicationId: s
   );
 }
 
+export function createFertilizerMaterial(payload: Record<string, unknown>): Promise<unknown> {
+  return requestJson("/local/api/fertilizer-materials", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function updateFertilizerMaterial(materialId: string, payload: Record<string, unknown>): Promise<unknown> {
+  return requestJson(`/local/api/fertilizer-materials/${encodeURIComponent(materialId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export function deleteFertilizerMaterial(materialId: string): Promise<void> {
+  return requestJson(`/local/api/fertilizer-materials/${encodeURIComponent(materialId)}`, { method: "DELETE" });
+}
+
 export function regeneratePlantCalendar(plantingId: string, payload: { start_date: string; planning_notes: string; mode: "automatic" | "review" }): Promise<unknown> {
   return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/regenerate`, {
     method: "POST",

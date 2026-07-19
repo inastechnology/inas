@@ -237,11 +237,29 @@ def _ensure_demo_layout(repository):
 
 
 def _ensure_demo_fertilizer(repository, planting: dict, today: date):
+    custom_material = next(
+        (item for item in repository.list_fertilizer_materials() if item.get("scope") == "user" and item.get("label") == "瀬戸内いちご有機配合"), None
+    )
+    if custom_material is None:
+        custom_material = repository.create_fertilizer_material(
+            {
+                "label": "瀬戸内いちご有機配合",
+                "summary": "デモ圃場で元肥と追肥に使う登録済み製品",
+                "material_kind": "organic_fertilizer",
+                "material_name": "瀬戸内いちご有機配合 6-4-3",
+                "nutrient_percent": {"n": 6, "p2o5": 4, "k2o": 3, "mgo": 1},
+                "annual_available_percent": 50,
+                "effect_years": 1,
+                "start_delay_days": 7,
+                "analysis_source": "製品ラベルを想定したデモ値",
+            }
+        )
     if repository.fertilizer_applications_for_planting(planting["id"]):
         return
     repository.create_fertilizer_application(
         planting["id"],
         {
+            "material_id": custom_material["id"],
             "applied_on": (today - timedelta(days=45)).isoformat(),
             "material_kind": "cattle_manure",
             "material_name": "完熟牛ふん堆肥（デモ）",
@@ -257,11 +275,7 @@ def _ensure_demo_fertilizer(repository, planting: dict, today: date):
 
 
 def _ensure_demo_cultivation(layout: dict, plant_repository, ai_service, *, today: date):
-    valid_placement_ids = {
-        placement.get("id")
-        for space in layout.get("spaces", [])
-        for placement in space.get("placements", [])
-    }
+    valid_placement_ids = {placement.get("id") for space in layout.get("spaces", []) for placement in space.get("placements", [])}
     bundle = plant_repository.field_bundle(DEMO_FIELD_ID)
     for planting in bundle["plantings"]:
         if planting.get("status") == "active" and planting.get("placement_id") not in valid_placement_ids:
@@ -320,6 +334,35 @@ def _ensure_demo_cultivation(layout: dict, plant_repository, ai_service, *, toda
             "notes": "1か月に1回の定期作業。それ以外は自動潅水とカメラで監視。",
         },
         "fertilizer_history": plant_repository.fertilizer_effect_context(active["id"], as_of=today),
+        "crop_knowledge": {
+            "status": "available",
+            "provider": "demo_fixture",
+            "cache_hit": False,
+            "summary": [
+                "施肥量は都道府県の施肥基準、土壌分析、土壌診断基準を照合して調整します。",
+                "イチゴの株姿と葉・花・果実の変化を定点観察し、作業判断を記録します。",
+            ],
+            "assumptions": ["デモでは公的資料の表示とリンク動作を確認できる要約を使用しています。"],
+            "fetched_at": today.isoformat(),
+            "sources": [
+                {
+                    "title": "都道府県施肥基準等",
+                    "url": "https://www.maff.go.jp/j/seisan/kankyo/hozen_type/h_sehi_kizyun/index.html",
+                    "publisher": "農林水産省",
+                    "applicable_region": "都道府県別",
+                    "published_at": "",
+                    "fetched_at": today.isoformat(),
+                },
+                {
+                    "title": "種苗管理センターが作成した特性調査マニュアル（イチゴ属）",
+                    "url": "https://www.naro.go.jp/laboratory/ncss/saibaishiken/manual/index.html",
+                    "publisher": "農研機構",
+                    "applicable_region": "日本",
+                    "published_at": "",
+                    "fetched_at": today.isoformat(),
+                },
+            ],
+        },
     }
     generated = ai_service.generate_plant_calendar(context)
     actions = _prepare_demo_calendar_actions(generated["actions"], today)

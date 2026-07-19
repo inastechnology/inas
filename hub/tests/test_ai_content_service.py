@@ -82,6 +82,55 @@ class AIContentServiceTest(unittest.TestCase):
 
         self.assertEqual(result["generation"]["source"], "fallback")
 
+    def test_calendar_fallback_uses_public_evidence_and_specific_assumption(self):
+        self.service.ai_settings = {"text_analyze_api_key": ""}
+        context = {
+            **self.context,
+            "crop_knowledge": {
+                "status": "available",
+                "cache_hit": True,
+                "summary": ["鉢では根域の乾きと排水を確認して潅水する。"],
+                "sources": [
+                    {
+                        "title": "果樹栽培指針",
+                        "url": "https://www.pref.ehime.jp/example/fruit.pdf",
+                        "publisher": "愛媛県",
+                        "applicable_region": "愛媛県",
+                        "published_at": "2025-03",
+                        "fetched_at": "2026-07-19T00:00:00+00:00",
+                    }
+                ],
+            },
+        }
+
+        result = self.service.generate_plant_calendar(context)
+
+        self.assertIn("公的資料1件", result["care_profile"]["summary"])
+        self.assertIn("AI未設定", result["care_profile"]["assumptions"][0])
+        self.assertEqual(result["care_profile"]["knowledge_evidence"][0]["publisher"], "愛媛県")
+        self.assertIn("https://www.pref.ehime.jp", result["care_profile"]["knowledge_sources"][0])
+
+    def test_llm_cannot_persist_a_source_that_was_not_in_validated_context(self):
+        self.service.ai_settings = {"text_analyze_api_key": "test", "text_analyze_model": "test-model"}
+        self.service._chat_completion = lambda **kwargs: (
+            '{"care_profile":{"summary":"案","assumptions":[],"knowledge_sources":["https://example.com/fake"]},'
+            '"actions":[{"action_type":"observation","title":"観察","priority":"recommended",'
+            '"window_start":"2026-08-01","window_end":"2026-08-02"}]}'
+        )
+        context = {
+            **self.context,
+            "crop_knowledge": {
+                "status": "available",
+                "summary": ["公的要点"],
+                "sources": [{"title": "農研機構", "url": "https://www.naro.go.jp/manual", "publisher": "農研機構"}],
+            },
+        }
+
+        result = self.service.generate_plant_calendar(context)
+
+        self.assertEqual(result["care_profile"]["knowledge_sources"], ["農研機構 / 農研機構 / https://www.naro.go.jp/manual"])
+        self.assertNotIn("example.com", str(result["care_profile"]))
+
     def test_calendar_prompt_and_fallback_use_remaining_fertilizer_effect(self):
         context = {
             **self.context,

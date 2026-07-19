@@ -85,6 +85,23 @@ class SettingTest(unittest.TestCase):
 
             self.assertEqual(Setting(path).get("ai")["plant_calendar_prompt_template"], template)
 
+    def test_plant_calendar_web_knowledge_settings_are_runtime_editable(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.json"
+            current = Setting(path)
+
+            current.set(
+                "ai",
+                {
+                    "plant_calendar_web_knowledge_enabled": False,
+                    "plant_calendar_web_knowledge_cache_days": 45,
+                },
+            )
+
+            reloaded = Setting(path).get("ai")
+            self.assertFalse(reloaded["plant_calendar_web_knowledge_enabled"])
+            self.assertEqual(reloaded["plant_calendar_web_knowledge_cache_days"], 45)
+
     def test_non_runtime_section_cannot_be_saved(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             current = Setting(Path(temporary_directory) / "config.json")

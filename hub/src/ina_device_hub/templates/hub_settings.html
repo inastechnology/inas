@@ -139,6 +139,14 @@
                 </div>
               </div>
               {% endfor %}
+              <div class="setting-row" data-setting-row data-search="栽培根拠 Web検索 公的資料 農林水産省 農研機構 キャッシュ">
+                <div class="setting-label">公的な栽培根拠を検索<small>AI栽培計画の作成前に、農林水産省・農研機構・自治体の資料を検索して要約します。</small></div>
+                <div class="setting-control">
+                  <label class="toggle"><input type="checkbox" name="plant_calendar_web_knowledge_enabled"{% if ai.plant_calendar_web_knowledge_enabled %} checked{% endif %}>計画作成時にWeb検索する</label>
+                  <label>再検索までの日数<input type="number" name="plant_calendar_web_knowledge_cache_days" min="1" max="365" step="1" value="{{ ai.plant_calendar_web_knowledge_cache_days or 30 }}"></label>
+                  <span class="inline-help">公式OpenAI APIのResponses Web Searchを利用できる場合だけ実行します。根拠は取得日と出典URL付きで保存し、同じ条件では指定期間再利用します。検索ツール利用料が発生する場合があります。</span>
+                </div>
+              </div>
               <div class="setting-row" data-setting-row data-search="上級者 栽培計画 prompt プロンプト template テンプレート JSON">
                 <div class="setting-label">AI栽培計画プロンプト<small>上級者向け。既定の安全・日付・出力検証は変更せず、モデルへ渡す入力の構成と追加指示を調整します。</small></div>
                 <div class="setting-control">

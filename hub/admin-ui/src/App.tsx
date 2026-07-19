@@ -30,9 +30,11 @@ import {
   addPlantAction,
   completePlantAction,
   createFertilizerApplication,
+  createFertilizerMaterial,
   createPlanting,
   decidePlantCalendarRegenerationProposal,
   deleteFertilizerApplication,
+  deleteFertilizerMaterial,
   deletePlantAction,
   loadLayout,
   loadLayoutDevices,
@@ -43,6 +45,7 @@ import {
   skipPlantAction,
   updatePlantAction,
   updatePlanting,
+  updateFertilizerMaterial,
 } from "./api";
 import { DisabledActionReason, disabledActionTitle } from "./DisabledActionReason";
 import { errorMessage, formatDate, todayString } from "./formatters";
@@ -75,7 +78,7 @@ interface AppProps {
 
 const HISTORY_LIMIT = 40;
 const EMPTY_PLANT_BUNDLE: PlantBundle = {
-  action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [],
+  action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {},
 };
 const PLANTABLE_PRESETS = new Set<PlacementPreset>(["ridge", "tree", "pot", "hydroponic_bed"]);
 const SPACE_TARGET_PRESETS = new Set<PlacementPreset>(["greenhouse", "open_field", "shade_area"]);
@@ -319,6 +322,35 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     try {
       await deleteFertilizerApplication(plantingId, applicationId);
       await refreshPlants(plantingId);
+    } catch (caught) {
+      setError(errorMessage(caught));
+      throw caught;
+    } finally {
+      setPlantBusy(false);
+    }
+  };
+
+  const saveFertilizerMaterial = async (materialId: string, payload: Record<string, unknown>) => {
+    setPlantBusy(true);
+    setError("");
+    try {
+      if (materialId) await updateFertilizerMaterial(materialId, payload);
+      else await createFertilizerMaterial(payload);
+      await refreshPlants(calendarPlantingId);
+    } catch (caught) {
+      setError(errorMessage(caught));
+      throw caught;
+    } finally {
+      setPlantBusy(false);
+    }
+  };
+
+  const removeFertilizerMaterial = async (materialId: string) => {
+    setPlantBusy(true);
+    setError("");
+    try {
+      await deleteFertilizerMaterial(materialId);
+      await refreshPlants(calendarPlantingId);
     } catch (caught) {
       setError(errorMessage(caught));
       throw caught;
@@ -777,6 +809,8 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
           onDeleteAction={removePlantAction}
           onAddFertilizer={addFertilizerApplication}
           onDeleteFertilizer={removeFertilizerApplication}
+          onSaveFertilizerMaterial={saveFertilizerMaterial}
+          onDeleteFertilizerMaterial={removeFertilizerMaterial}
         />
       )}
       {layoutConflict && (

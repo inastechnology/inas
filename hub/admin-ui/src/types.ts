@@ -293,6 +293,14 @@ export interface PlantCareProfile {
   summary: string;
   assumptions: string[];
   knowledge_sources: string[];
+  knowledge_evidence: Array<{
+    title: string;
+    url: string;
+    publisher: string;
+    applicable_region: string;
+    published_at: string;
+    fetched_at: string;
+  }>;
   irrigation: {
     strategy: string;
     baseline_interval_days: { min: number | null; preferred: number | null; max: number | null };
@@ -358,6 +366,24 @@ export type FertilizerMaterialKind =
   | "chemical_fertilizer"
   | "custom";
 
+export interface FertilizerMaterial {
+  id: string;
+  scope: "builtin" | "user";
+  catalog_revision: number;
+  label: string;
+  summary: string;
+  material_kind: FertilizerMaterialKind;
+  material_name: string;
+  nutrient_percent: { n: number; p2o5: number; k2o: number; mgo: number };
+  annual_available_percent: number;
+  effect_years: number;
+  start_delay_days: number;
+  analysis_source: string;
+  source_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FertilizerApplication {
   id: string;
   field_id: string;
@@ -376,6 +402,8 @@ export interface FertilizerApplication {
   analysis_source: string;
   notes: string;
   created_at: string;
+  material_id: string;
+  material_snapshot: Partial<FertilizerMaterial>;
 }
 
 export interface FertilizerEffectSummary {
@@ -436,6 +464,35 @@ export interface PlantCalendarRegenerationProposal {
   decided_at: string;
 }
 
+export interface AgenticOperationExecutorCandidate {
+  device_id: string;
+  name: string;
+  device_kind: string;
+  placement_name: string;
+  resource_id: string;
+  channel_mask: number | null;
+  manage_url: string;
+}
+
+export interface AgenticOperationReadiness {
+  action_type: string;
+  operation_label: string;
+  executor_mode: "human" | "device_assisted";
+  automation_stage: "guidance_only" | "supervised_device";
+  summary: string;
+  decision_checks: string[];
+  stop_conditions: string[];
+  verification_checks: string[];
+  executor_candidates: AgenticOperationExecutorCandidate[];
+  allowed_by_policy: boolean;
+  autonomy_level: string;
+  requires_approval: boolean;
+  can_dispatch: boolean;
+  dispatch_reason: string;
+  next_href: string;
+  next_label: string;
+}
+
 export interface PlantBundle {
   action_types: PlantActionTypeDefinition[];
   plantings: Planting[];
@@ -444,6 +501,8 @@ export interface PlantBundle {
   suggestions: PlantSuggestion[];
   work_logs: PlantWorkLog[];
   fertilizer_applications: FertilizerApplication[];
+  fertilizer_materials: FertilizerMaterial[];
+  operation_readiness: Record<string, AgenticOperationReadiness>;
 }
 
 export interface PlantQuestionRecord {

@@ -9,6 +9,10 @@ ina-device-hub は、MQTT で受信したセンサーデータやカメラ画像
 
 hub と client device を横断した全体仕様は [../../../docs/jp/SYSTEM_SPECIFICATION.md](../../../docs/jp/SYSTEM_SPECIFICATION.md) を参照してください。Cloudflare、デバイス種別、圃場データ、OTA の関係を図付きでまとめています。
 
+栽培カレンダーの施肥履歴、一般・独自肥料カタログ、土壌検査、施肥後の降雨・潅水、残効信頼度、初心者向けサジェストの実装方針は [施肥計画・肥料サジェスト実装方針](HUB_FERTILIZATION_RECOMMENDATION_POLICY.md) を参照してください。
+
+定植・水やり・剪定・収穫をレール非依存で段階的に自動化する共通ライフサイクル、機器能力と設置先の照合、安全境界は [エージェンティック農作業の実装方針](HUB_AGENTIC_FARM_OPERATIONS_POLICY.md) を参照してください。
+
 なにができるか（要点）
 
 - デバイスからのデータ受信（MQTT）と加工
@@ -96,7 +100,7 @@ Cloudflare hosted option は 2 種類あります。
 
 Tunnel 版のネットワーク構成図は [NETWORK_ARCHITECTURE.md](NETWORK_ARCHITECTURE.md) を参照してください。
 
-hub の管理 UI は、TOPで圃場を検索・選択し、選択後に圃場の現在状態、設置物、デバイス、栽培作業へ進む構成です。全デバイスをTOPへ列挙しません。設置ビューは空間ごとの北向きを保持し、Canvas 上の方位マークで常時確認できます。UI 改善方針は [HUB_ADMIN_UX_IMPLEMENTATION.md](HUB_ADMIN_UX_IMPLEMENTATION.md)、状態ごとの操作可否と表示原則は [HUB_UI_STATE_ACTION_POLICY.md](HUB_UI_STATE_ACTION_POLICY.md)、設置ビューの操作とデータモデルは [HUB_INSTALLATION_LAYOUT_SPEC.md](HUB_INSTALLATION_LAYOUT_SPEC.md)、圃場・設置物・デバイスの階層と大量件数への対応は [HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md](HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md) を参照してください。
+hub の管理 UI は、TOPで圃場を検索・選択し、選択後に圃場の現在状態、設置物、デバイス、栽培作業へ進む構成です。全デバイスをTOPへ列挙しません。設置ビューは空間ごとの北向きを保持し、Canvas 上の方位マークで常時確認できます。UI 改善方針は [HUB_ADMIN_UX_IMPLEMENTATION.md](HUB_ADMIN_UX_IMPLEMENTATION.md)、追加・編集画面のモーダル原則は [HUB_MODAL_EDITING_UX_POLICY.md](HUB_MODAL_EDITING_UX_POLICY.md)、状態ごとの操作可否と表示原則は [HUB_UI_STATE_ACTION_POLICY.md](HUB_UI_STATE_ACTION_POLICY.md)、設置ビューの操作とデータモデルは [HUB_INSTALLATION_LAYOUT_SPEC.md](HUB_INSTALLATION_LAYOUT_SPEC.md)、圃場・設置物・デバイスの階層と大量件数への対応は [HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md](HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md) を参照してください。
 
 定植単位の年間計画、作業期間、優先度、防除対象、作業実績、LLM呼び出し条件、FAMIC/WAGRIを使う農薬検索方針は [HUB_PLANT_MANAGEMENT_CALENDAR_SPEC.md](HUB_PLANT_MANAGEMENT_CALENDAR_SPEC.md) にまとめています。
 
@@ -239,6 +243,8 @@ Instagram 自動投稿を使う場合は、追加で次を設定してくださ�
 - INSTAGRAM_WEATHER_FORECAST_URL, INSTAGRAM_WEATHER_AREA_NAME
 - INSTAGRAM_WEATHER_OFFICE_NAME, INSTAGRAM_WEATHER_FORECAST_TITLE
 - AI_IMAGE_ANALYZE_API_KEY, AI_TEXT_ANALYZE_API_KEY
+
+AI栽培計画の「公的な栽培根拠を検索」を有効にすると、公式OpenAI APIを設定している場合に限り、計画作成前に農林水産省・農研機構・自治体の資料をResponses Web Searchで検索します。検索結果は出典URLと取得日付きで保存され、同じ栽培条件では既定30日間キャッシュを再利用します。検索の有効・無効と再検索までの日数は「アプリ設定」から変更できます。OpenAI互換接続先がResponses Web Searchに対応しない場合は検索せず、従来の一般基準へ安全にフォールバックします。
 
 AI有効/無効、AI APIキー、Base URL、モデル、Instagram投稿処理開始時刻、投稿元カメラ、植物位置の補足はHubの `/settings`、ユーザーのタイムゾーンと日付形式は `/preferences` で管理します。AI APIキーの保存値は画面へ再表示されません。
 

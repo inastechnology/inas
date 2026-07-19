@@ -1,6 +1,7 @@
 import unittest
+from copy import deepcopy
 
-from ina_device_hub.agri_action_service import build_action_candidates
+from ina_device_hub.agri_action_service import build_action_candidates, build_operation_readiness
 
 
 class AgriActionServiceTest(unittest.TestCase):
@@ -23,13 +24,20 @@ class AgriActionServiceTest(unittest.TestCase):
                         "allowed_actions": ["watering"],
                     },
                 },
-                "devices": [{"device_id": "wtr-1", "record": {"device_kind": "WTR"}}],
+                "devices": [
+                    {
+                        "device_id": "wtr-1",
+                        "record": {"device_kind": "WTR"},
+                        "placement": {"target_placement_ids": ["ridge-1"]},
+                    }
+                ],
                 "latest_sensor_values": [{"device_id": "soi-1", "values": {"soil_moisture_percent": 31.5}}],
             }
         )
 
         self.assertEqual(candidates[0]["action_type"], "watering")
-        self.assertTrue(candidates[0]["can_execute_now"])
+        self.assertFalse(candidates[0]["can_execute_now"])
+        self.assertTrue(candidates[0]["support"]["supported"])
         self.assertEqual(candidates[0]["preconditions"]["crop_name"], "トマト")
         self.assertEqual(candidates[0]["preconditions"]["monitoring_units"][0]["name"], "1番畝")
         self.assertEqual(candidates[0]["evidence"]["current_value"], 31.5)
@@ -66,14 +74,35 @@ class AgriActionServiceTest(unittest.TestCase):
                     "growth_targets": {"soil_moisture_percent": {"min": 40, "max": 70}},
                     "control_policy": {"allowed_actions": ["watering"], "autonomy_level": "manual_approval"},
                 },
-                "devices": [{"device_id": "wrs-1", "record": {"device_kind": "WRS"}}],
+                "devices": [
+                    {
+                        "device_id": "wrs-1",
+                        "record": {"device_kind": "WRS"},
+                        "placement": {"target_placement_ids": ["ridge-a"]},
+                    }
+                ],
                 "latest_sensor_values": [{"device_id": "wrs-1", "values": {"soil_moisture_percent": 30}}],
             }
         )
 
         self.assertEqual(candidates[0]["action_type"], "watering")
-        self.assertTrue(candidates[0]["can_execute_now"])
+        self.assertFalse(candidates[0]["can_execute_now"])
         self.assertIn("WTR/WRS", candidates[0]["support"]["reason"])
+
+    def test_unrouted_watering_device_is_not_reported_as_controllable(self):
+        candidates = build_action_candidates(
+            {
+                "field": {
+                    "growth_targets": {"soil_moisture_percent": {"min": 40, "max": 70}},
+                    "control_policy": {"allowed_actions": ["watering"], "autonomy_level": "manual_approval"},
+                },
+                "devices": [{"device_id": "wtr-1", "record": {"device_kind": "WTR"}}],
+                "latest_sensor_values": [{"device_id": "soi-1", "values": {"soil_moisture_percent": 30}}],
+            }
+        )
+
+        self.assertFalse(candidates[0]["support"]["supported"])
+        self.assertIn("水やりルート", candidates[0]["support"]["reason"])
 
     def test_no_gap_builds_observation_candidate(self):
         candidates = build_action_candidates(
@@ -88,6 +117,58 @@ class AgriActionServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(candidates[0]["action_type"], "observation")
+
+    def test_watering_readiness_requires_layout_route_to_planting(self):
+        action = {
+            "action_type": "watering",
+            "title": "根域へ水やり",
+            "work_plan": {"start_conditions": ["土が乾いた"], "skip_conditions": [], "completion_criteria": []},
+        }
+        planting = {"placement_id": "ridge-a"}
+        field = {"id": "field-a", "control_policy": {"allowed_actions": ["watering"], "autonomy_level": "manual_approval"}}
+        devices = {"WTR-001": {"name": "潅水機A", "device_kind": "WTR", "state": "active"}}
+        unrelated_layout = {
+            "spaces": [
+                {
+                    "placements": [
+                        {
+                            "id": "watering-a",
+                            "name": "点滴制御盤",
+                            "binding": {"device_id": "WTR-001", "resource_id": "irr1", "target_placement_ids": ["ridge-b"]},
+                        }
+                    ]
+                }
+            ]
+        }
+
+        unrelated = build_operation_readiness(action, planting, field, unrelated_layout, devices)
+        self.assertEqual(unrelated["executor_mode"], "human")
+        self.assertEqual(unrelated["executor_candidates"], [])
+        self.assertIn("水やりルート", unrelated["dispatch_reason"])
+
+        related_layout = deepcopy(unrelated_layout)
+        related_layout["spaces"][0]["placements"][0]["binding"]["target_placement_ids"] = ["ridge-a"]
+        related = build_operation_readiness(action, planting, field, related_layout, devices)
+        self.assertEqual(related["executor_mode"], "device_assisted")
+        self.assertEqual(related["executor_candidates"][0]["resource_id"], "irr1")
+        self.assertEqual(related["executor_candidates"][0]["channel_mask"], 1)
+        self.assertFalse(related["can_dispatch"])
+        self.assertIn("実行プロトコル", related["dispatch_reason"])
+
+    def test_pruning_and_harvest_stay_human_guided(self):
+        for action_type in ("pruning", "harvest", "repotting"):
+            with self.subTest(action_type=action_type):
+                readiness = build_operation_readiness(
+                    {"action_type": action_type, "title": action_type, "work_plan": {}},
+                    {"placement_id": "ridge-a"},
+                    {"id": "field-a"},
+                    {"spaces": []},
+                    {},
+                )
+                self.assertEqual(readiness["executor_mode"], "human")
+                self.assertEqual(readiness["automation_stage"], "guidance_only")
+                self.assertFalse(readiness["can_dispatch"])
+                self.assertTrue(readiness["decision_checks"])
 
 
 if __name__ == "__main__":

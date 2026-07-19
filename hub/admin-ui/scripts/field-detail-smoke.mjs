@@ -88,30 +88,92 @@ try {
   await calendarPage.waitForSelector(`.calendar-action-detail-dialog .calendar-action[data-action-id="${todoActionId}"]`);
   await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
   assert.match(new URL(calendarPage.url()).pathname, /\/calendar$/);
+  const agenticExamples = await calendarPage.evaluate(async (activeFieldId) => {
+    const response = await fetch(`/local/api/fields/${encodeURIComponent(activeFieldId)}/plantings`);
+    const bundle = await response.json();
+    const result = {};
+    const activePlantingIds = new Set((bundle.plantings || []).filter((planting) => planting.status === "active").map((planting) => planting.id));
+    for (const [plantingId, calendar] of Object.entries(bundle.calendars || {})) {
+      if (!activePlantingIds.has(plantingId)) continue;
+      for (const action of calendar.actions || []) {
+        const readiness = bundle.operation_readiness?.[action.id];
+        if (action.action_type === "watering" && readiness?.executor_candidates?.length && !result.watering) result.watering = { plantingId, actionId: action.id };
+        if (["pruning", "harvest", "repotting"].includes(action.action_type) && readiness?.executor_mode === "human" && !result.human) result.human = { plantingId, actionId: action.id };
+      }
+    }
+    return result;
+  }, fieldId);
+  assert(agenticExamples.watering, "the demo must include a watering action with a physically linked device");
+  await calendarPage.goto(`${baseUrl}/fields/${fieldId}/calendar?planting=${agenticExamples.watering.plantingId}&action=${agenticExamples.watering.actionId}`, { waitUntil: "networkidle0" });
+  await calendarPage.waitForSelector(".calendar-action-detail-dialog .agentic-operation-readiness.device_assisted");
+  assert.match(await calendarPage.$eval(".agentic-operation-readiness", (panel) => panel.textContent || ""), /接続済みの機器を利用できます.*デモ潅水機1.*始める前.*この場合は止める.*終わったら.*自動実行はまだ行いません/s);
+  assert.equal(await calendarPage.$eval(".agentic-executor-list a", (link) => link.getAttribute("target")), "_blank", "device settings must preserve the open calendar work");
+  await calendarPage.$eval(".agentic-operation-readiness", (panel) => panel.scrollIntoView({ block: "center" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-agentic-watering-readiness.png", fullPage: false });
+  await calendarPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  await calendarPage.$eval(".agentic-operation-readiness", (panel) => panel.scrollIntoView({ block: "start" }));
+  assert((await calendarPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 1, "watering readiness must not overflow on mobile");
+  await calendarPage.screenshot({ path: "/tmp/ina-agentic-watering-readiness-mobile.png", fullPage: false });
+  await calendarPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  assert(agenticExamples.human, "the demo must include a human-guided pruning, harvest, or repotting action");
+  await calendarPage.goto(`${baseUrl}/fields/${fieldId}/calendar?planting=${agenticExamples.human.plantingId}&action=${agenticExamples.human.actionId}`, { waitUntil: "networkidle0" });
+  await calendarPage.waitForSelector(".calendar-action-detail-dialog .agentic-operation-readiness.human");
+  assert.match(await calendarPage.$eval(".agentic-operation-readiness", (panel) => panel.textContent || ""), /人が確認して実施します.*自動実行はまだ行いません/s);
+  await calendarPage.$eval(".agentic-operation-readiness", (panel) => panel.scrollIntoView({ block: "center" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-agentic-human-readiness.png", fullPage: false });
+  await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
   assert.equal(await calendarPage.$$(".installation-app").then((items) => items.length), 0, "calendar page must not mount the installation editor");
   assert.match(await calendarPage.$eval(".calendar-workspace-tabs button.active", (button) => button.textContent || ""), /圃場の作業/);
   assert.match(await calendarPage.$eval(".calendar-work-scope", (scope) => scope.textContent || ""), /圃場のすべての作物/, "the work board must offer all crops in the field");
   assert.equal(await calendarPage.$$(".calendar-section-heading small").then((items) => items.filter((item) => /^r\d+/.test(item.textContent || "")).length), 0, "internal calendar revisions must stay hidden");
   await selectCalendarWorkspace(calendarPage, "作物別の栽培計画");
   await calendarPage.evaluate(() => { const shell = document.querySelector('.calendar-page-shell'); if (shell instanceof HTMLElement) shell.scrollTop = 0; });
+  await calendarPage.click(".care-profile-summary > summary");
+  await calendarPage.waitForSelector(".care-evidence a");
+  assert.equal(await calendarPage.$$(".care-evidence a").then((items) => items.length), 2, "the demo plan must show its public evidence sources");
+  assert.equal(await calendarPage.$eval(".care-evidence a", (link) => link.getAttribute("target")), "_blank", "evidence must open without losing the calendar");
+  assert.match(await calendarPage.$eval(".care-evidence", (panel) => panel.textContent || ""), /農林水産省.*農研機構/s);
   await calendarPage.screenshot({ path: "/tmp/ina-calendar-crop-plan-desktop.png", fullPage: true });
   await calendarPage.click(".calendar-generation .calendar-section-heading button");
-  await calendarPage.waitForSelector('.generation-mode-options input[value="review"]:checked');
+  await calendarPage.waitForSelector('.calendar-generation-dialog .generation-mode-options input[value="review"]:checked');
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal(await calendarPage.$eval(".calendar-generation-dialog", (dialog) => dialog.getAttribute("aria-modal")), "true", "AI regeneration must open as a modal");
   assert.equal(await calendarPage.$$(".generation-mode-options label").then((items) => items.length), 2, "regeneration must offer review and automatic modes");
-  assert.match(await calendarPage.$eval(".calendar-generation form", (form) => form.textContent || ""), /現在の.*件の作業.*重複させません/s);
-  await calendarPage.$eval(".calendar-generation", (section) => section.scrollIntoView({ block: "start" }));
+  assert.match(await calendarPage.$eval(".calendar-generation-dialog form", (form) => form.textContent || ""), /現在の.*件の作業.*重複させません/s);
   await calendarPage.screenshot({ path: "/tmp/ina-calendar-regeneration-modes.png", fullPage: false });
-  await calendarPage.click('.calendar-generation .form-actions button[type="button"]');
-  await calendarPage.waitForFunction(() => !document.querySelector(".calendar-generation form"));
+  await calendarPage.click('.calendar-generation-dialog .form-actions button[type="button"]');
+  await calendarPage.waitForFunction(() => !document.querySelector(".calendar-generation-dialog"));
   assert.equal(await calendarPage.$$(".gantt-period-controls").then((items) => items.length), 1);
   assert.match(await calendarPage.$eval(".fertilizer-effect-panel", (panel) => panel.textContent || ""), /培地の施肥と残存肥効/);
   const fertilizerCount = await calendarPage.$$(".fertilizer-history-list article").then((items) => items.length);
-  await calendarPage.$eval(".fertilizer-effect-panel .calendar-section-heading button", (button) => button.click());
+  await calendarPage.$$eval(".fertilizer-effect-panel .calendar-section-heading button", (buttons) => buttons.find((button) => button.textContent?.includes("肥料カタログ"))?.click());
+  await calendarPage.waitForSelector(".fertilizer-catalog-dialog");
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal(await calendarPage.$$(".fertilizer-catalog-sections section:first-child .fertilizer-material-card").then((items) => items.length), 7, "the built-in catalog must come from the Hub");
+  assert.match(await calendarPage.$eval(".fertilizer-catalog-sections", (panel) => panel.textContent || ""), /瀬戸内いちご有機配合/);
+  assert.match(await calendarPage.$eval(".fertilizer-catalog-intro", (panel) => panel.textContent || ""), /製品ラベルや分析結果を優先/);
+  await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-catalog-desktop.png", fullPage: false });
+  await calendarPage.click(".fertilizer-catalog-intro button");
+  await calendarPage.waitForSelector(".fertilizer-catalog-form");
+  assert.equal(await calendarPage.$eval(".fertilizer-advanced-fields", (details) => details.hasAttribute("open")), false, "advanced fertilizer estimates must be collapsed initially");
+  assert.match(await calendarPage.$eval(".fertilizer-catalog-form", (form) => form.textContent || ""), /袋の「保証成分量」.*上級者向け/s);
+  await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-catalog-add.png", fullPage: false });
+  await calendarPage.click('.fertilizer-catalog-form .form-actions button[type="button"]');
+  await calendarPage.waitForSelector(".fertilizer-catalog-sections");
+  await calendarPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-catalog-mobile.png", fullPage: false });
+  await calendarPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await calendarPage.click(".fertilizer-catalog-dialog > header .icon-button");
+  await calendarPage.waitForFunction(() => !document.querySelector(".fertilizer-catalog-dialog"));
+  await calendarPage.$$eval(".fertilizer-effect-panel .calendar-section-heading button", (buttons) => buttons.find((button) => button.textContent?.includes("施肥履歴を追加"))?.click());
   await calendarPage.waitForSelector("[data-fertilizer-form]");
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal(await calendarPage.$eval(".fertilizer-entry-dialog", (dialog) => dialog.getAttribute("aria-modal")), "true", "fertilizer entry must open as a modal");
   assert.match(await calendarPage.$eval("[data-fertilizer-form]", (form) => form.textContent || ""), /製品kgと養分kgを分けて計算/);
-  assert.equal(await calendarPage.$eval('[data-fertilizer-form] select[name="fertilizer_preset"]', (select) => select.options.length), 8, "fertilizer presets must be available");
+  assert.equal(await calendarPage.$eval('[data-fertilizer-form] select[name="fertilizer_material"]', (select) => select.options.length), 8, "Hub fertilizer materials must be available");
   await calendarPage.select('[data-fertilizer-form] select[name="material_kind"]', "poultry_manure");
-  await calendarPage.waitForFunction(() => document.querySelector('[data-fertilizer-form] select[name="fertilizer_preset"]')?.value === "poultry-manure-reference");
+  await calendarPage.waitForFunction(() => document.querySelector('[data-fertilizer-form] select[name="fertilizer_material"]')?.value === "builtin:poultry-manure-reference");
   assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="n_percent"]', (input) => input.value), "2.5");
   assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="p2o5_percent"]', (input) => input.value), "6.6");
   assert.equal(await calendarPage.$eval('[data-fertilizer-form] input[name="k2o_percent"]', (input) => input.value), "3.6");
@@ -128,16 +190,16 @@ try {
   await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-preset-poultry-mobile.png", fullPage: false });
   await calendarPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   const presetExpectations = [
-    ["cattle-manure-reference", "1.2", "1.3", "1.6", "10", "3", "14"],
-    ["poultry-manure-reference", "2.5", "6.6", "3.6", "50", "1", "7"],
-    ["dried-poultry-manure", "3.6", "4.0", "2.2", "60", "1", "3"],
-    ["rice-straw-compost", "0.5", "", "", "1", "3", "21"],
-    ["rapeseed-oil-cake", "5.2", "2.0", "1.0", "50", "1", "7"],
-    ["fish-meal", "11.0", "7.0", "1.7", "50", "1", "7"],
-    ["compound-8-8-8", "8", "8", "8", "100", "1", "0"],
+    ["builtin:cattle-manure-reference", "1.2", "1.3", "1.6", "10", "3", "14"],
+    ["builtin:poultry-manure-reference", "2.5", "6.6", "3.6", "50", "1", "7"],
+    ["builtin:dried-poultry-manure", "3.6", "4", "2.2", "60", "1", "3"],
+    ["builtin:rice-straw-compost", "0.5", "0", "0", "1", "3", "21"],
+    ["builtin:rapeseed-oil-cake", "5.2", "2", "1", "50", "1", "7"],
+    ["builtin:fish-meal", "11", "7", "1.7", "50", "1", "7"],
+    ["builtin:compound-8-8-8", "8", "8", "8", "100", "1", "0"],
   ];
   for (const [presetId, n, p2o5, k2o, available, years, delay] of presetExpectations) {
-    await calendarPage.select('[data-fertilizer-form] select[name="fertilizer_preset"]', presetId);
+    await calendarPage.select('[data-fertilizer-form] select[name="fertilizer_material"]', presetId);
     const actual = await calendarPage.$eval("[data-fertilizer-form]", (form) => [
       form.querySelector('input[name="n_percent"]')?.value,
       form.querySelector('input[name="p2o5_percent"]')?.value,
@@ -148,7 +210,7 @@ try {
     ]);
     assert.deepEqual(actual, [n, p2o5, k2o, available, years, delay], `${presetId} must apply all reference values`);
   }
-  await calendarPage.select('[data-fertilizer-form] select[name="fertilizer_preset"]', "poultry-manure-reference");
+  await calendarPage.select('[data-fertilizer-form] select[name="fertilizer_material"]', "builtin:poultry-manure-reference");
   await calendarPage.waitForFunction(() => document.querySelector('[data-fertilizer-form] input[name="mgo_percent"]')?.value === "1.4");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="amount_kg"]', "20");
   await replaceValue(calendarPage, '[data-fertilizer-form] input[name="n_percent"]', "2");
@@ -229,6 +291,7 @@ try {
     assert(await calendarPage.$(".calendar-action-detail-dialog .start-button"), "planned work must offer a start action");
     await calendarPage.click(".calendar-action-detail-dialog .action-edit-button");
     await calendarPage.waitForSelector(".action-edit-dialog .rich-action-content");
+    await new Promise((resolve) => setTimeout(resolve, 250));
     assert.match(await calendarPage.$eval(".action-edit-dialog > header", (header) => header.textContent || ""), /実績入力とは別に編集/);
     await calendarPage.screenshot({ path: "/tmp/ina-calendar-edit-action-modal.png", fullPage: true });
     await calendarPage.click(".action-edit-dialog > header .icon-button");
@@ -272,22 +335,25 @@ try {
     }
     await calendarPage.waitForSelector(".calendar-action-detail-dialog .complete-button");
     await calendarPage.click(".calendar-action-detail-dialog .complete-button");
-    await calendarPage.waitForSelector(".work-detail-fields");
-    const workMethodSelect = ".work-detail-fields .searchable-select";
+    await calendarPage.waitForSelector(".work-record-dialog .work-detail-fields");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.equal(await calendarPage.$eval(".work-record-dialog", (dialog) => dialog.getAttribute("aria-modal")), "true", "work records must open as a modal");
+    const workMethodSelect = ".work-record-dialog .work-detail-fields .searchable-select";
     assert.equal(await calendarPage.$(`${workMethodSelect} input[type="search"]`), null, "work method search must be inside the closed dropdown");
     await calendarPage.click(`${workMethodSelect} .searchable-select-control`);
     await calendarPage.waitForSelector(`${workMethodSelect} input[type="search"]`);
     await calendarPage.type(`${workMethodSelect} input[type="search"]`, "一致しない方法");
     assert(await calendarPage.$(`${workMethodSelect} [data-searchable-option][data-value="custom"]`), "custom method must remain available while filtering");
     await calendarPage.click(`${workMethodSelect} [data-searchable-option][data-value="custom"]`);
-    await calendarPage.select('.work-detail-fields select', "material_application");
-    assert.match(await calendarPage.$eval(".work-detail-fields", (fields) => fields.textContent || ""), /実施内容/);
-    assert.match(await calendarPage.$eval(".work-detail-fields", (fields) => fields.textContent || ""), /使用した資材・製品/);
-    assert.match(await calendarPage.$eval(".work-detail-fields", (fields) => fields.textContent || ""), /実際の使用量・希釈・処理時間/);
-    assert.match(await calendarPage.$eval(".work-detail-fields", (fields) => fields.textContent || ""), /次回の確認目安.*AIの提案値/);
-    assert(Number(await calendarPage.$eval('.follow-up-default-field input', (input) => input.value)) > 0, "AI work must provide a default follow-up day");
+    await calendarPage.select('.work-record-dialog .work-detail-fields select', "material_application");
+    assert.match(await calendarPage.$eval(".work-record-dialog .work-detail-fields", (fields) => fields.textContent || ""), /実施内容/);
+    assert.match(await calendarPage.$eval(".work-record-dialog .work-detail-fields", (fields) => fields.textContent || ""), /使用した資材・製品/);
+    assert.match(await calendarPage.$eval(".work-record-dialog .work-detail-fields", (fields) => fields.textContent || ""), /実際の使用量・希釈・処理時間/);
+    assert.match(await calendarPage.$eval(".work-record-dialog .work-detail-fields", (fields) => fields.textContent || ""), /次回の確認目安.*AIの提案値/);
+    assert(Number(await calendarPage.$eval('.work-record-dialog .follow-up-default-field input', (input) => input.value)) > 0, "AI work must provide a default follow-up day");
     await calendarPage.screenshot({ path: "/tmp/ina-work-record-desktop.png", fullPage: true });
-    await calendarPage.click('.work-record-form button[type="button"]');
+    await calendarPage.click('.work-record-dialog > header .icon-button');
+    await calendarPage.waitForFunction(() => !document.querySelector(".work-record-dialog"));
     await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
   }
   await calendarPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
@@ -346,12 +412,22 @@ try {
     placementDeepLink: true,
     screenshots: [
       "/tmp/ina-field-todo-desktop.png",
+      "/tmp/ina-agentic-watering-readiness.png",
+      "/tmp/ina-agentic-watering-readiness-mobile.png",
+      "/tmp/ina-agentic-human-readiness.png",
       "/tmp/ina-environment-target-direct.png",
       "/tmp/ina-care-profile-desktop.png",
       "/tmp/ina-calendar-regeneration-modes.png",
+      "/tmp/ina-fertilizer-catalog-desktop.png",
+      "/tmp/ina-fertilizer-catalog-add.png",
+      "/tmp/ina-fertilizer-catalog-mobile.png",
+      "/tmp/ina-fertilizer-preset-poultry.png",
+      "/tmp/ina-fertilizer-preset-poultry-mobile.png",
       "/tmp/ina-fertilizer-effect-desktop.png",
       "/tmp/ina-calendar-mobile.png",
       "/tmp/ina-calendar-planned-action.png",
+      "/tmp/ina-calendar-edit-action-modal.png",
+      "/tmp/ina-work-record-desktop.png",
       "/tmp/ina-field-monitoring-desktop.png",
       "/tmp/ina-field-cultivation-desktop.png",
       "/tmp/ina-field-record-image-paste.png",

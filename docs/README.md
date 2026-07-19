@@ -15,6 +15,9 @@ firmware, Cloudflare hosted options, field data, OTA, and operational model.
 - [CULTIVATION_SYSTEM_ORCHESTRATION.md](CULTIVATION_SYSTEM_ORCHESTRATION.md):
   design policy for composing crop-specific systems such as strawberry drip
   cultivation from multiple devices orchestrated by the hub.
+- [AGENTIC_AGRICULTURE_VISION.md](AGENTIC_AGRICULTURE_VISION.md): product
+  philosophy for evidence-backed, bounded, rail-independent cooperation between
+  growers, fixed equipment, services, and future robots.
 - [jp/](jp/): Japanese versions of the same level of documentation.
 - [assets/inas_system_diagrams.drawio](assets/inas_system_diagrams.drawio):
   draw.io source for the system architecture, data/control flow, field placement

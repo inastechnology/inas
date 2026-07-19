@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 
 from ina_device_hub.collection_search import matches_search, paginate, search_terms
 from ina_device_hub.fertilizer_effect import fertilizer_effect_summary
+from ina_device_hub.fertilizer_material_catalog import builtin_fertilizer_materials
 from ina_device_hub.json_repository_io import atomic_write_json, serialized_repository_write
 from ina_device_hub.plant_action_catalog import (
     is_known_plant_action_type,
@@ -24,6 +25,7 @@ MAX_WORK_LOGS = 5000
 MAX_QUESTIONS = 1000
 MAX_GENERATION_TASKS = 500
 MAX_FERTILIZER_APPLICATIONS = 5000
+MAX_FERTILIZER_MATERIALS = 500
 
 VALID_PLANTING_STATUSES = {"active", "harvested", "removed"}
 VALID_CROP_CATEGORIES = {"vegetable", "fruit_tree", "flower", "herb", "other"}
@@ -735,6 +737,78 @@ class PlantManagementRepository:
         return copy.deepcopy(record)
 
     @serialized_repository_write("repository_path")
+    def create_fertilizer_material(self, value: dict):
+        if not isinstance(value, dict):
+            raise PlantManagementValidationError("fertilizer material must be an object")
+        materials = self.data.setdefault("fertilizer_materials", [])
+        if len(materials) >= MAX_FERTILIZER_MATERIALS:
+            raise PlantManagementValidationError("fertilizer material limit reached")
+        now = _utc_now()
+        record = _normalize_fertilizer_material(
+            {
+                **value,
+                "id": f"custom:{uuid.uuid4()}",
+                "scope": "user",
+                "catalog_revision": 1,
+                "created_at": now,
+                "updated_at": now,
+            },
+            expected_scope="user",
+        )
+        materials.append(record)
+        self.data["fertilizer_materials"] = materials[-MAX_FERTILIZER_MATERIALS:]
+        self.save()
+        return copy.deepcopy(record)
+
+    @serialized_repository_write("repository_path")
+    def update_fertilizer_material(self, material_id: str, value: dict):
+        if not isinstance(value, dict):
+            raise PlantManagementValidationError("fertilizer material must be an object")
+        material_id = _required_string(material_id, "material_id", 120)
+        if material_id.startswith("builtin:"):
+            raise PlantManagementValidationError("built-in fertilizer materials cannot be changed")
+        materials = self.data.setdefault("fertilizer_materials", [])
+        index = next((index for index, item in enumerate(materials) if item.get("id") == material_id), None)
+        if index is None:
+            raise PlantManagementNotFoundError("fertilizer material not found")
+        current = materials[index]
+        replacement = _normalize_fertilizer_material(
+            {
+                **current,
+                **value,
+                "id": material_id,
+                "scope": "user",
+                "catalog_revision": int(current.get("catalog_revision") or 1) + 1,
+                "created_at": current.get("created_at"),
+                "updated_at": _utc_now(),
+            },
+            expected_scope="user",
+        )
+        materials[index] = replacement
+        self.save()
+        return copy.deepcopy(replacement)
+
+    @serialized_repository_write("repository_path")
+    def delete_fertilizer_material(self, material_id: str):
+        material_id = _required_string(material_id, "material_id", 120)
+        if material_id.startswith("builtin:"):
+            raise PlantManagementValidationError("built-in fertilizer materials cannot be deleted")
+        materials = self.data.setdefault("fertilizer_materials", [])
+        if not any(item.get("id") == material_id for item in materials):
+            raise PlantManagementNotFoundError("fertilizer material not found")
+        self.data["fertilizer_materials"] = [item for item in materials if item.get("id") != material_id]
+        self.save()
+
+    def list_fertilizer_materials(self):
+        builtins = [_normalize_fertilizer_material(item, expected_scope="builtin") for item in builtin_fertilizer_materials()]
+        custom = [copy.deepcopy(item) for item in self.data.get("fertilizer_materials", [])]
+        return builtins + sorted(custom, key=lambda item: (item.get("label") or "", item.get("id") or ""))
+
+    def get_fertilizer_material(self, material_id: str):
+        material_id = _clean_string(material_id)[:120]
+        return next((item for item in self.list_fertilizer_materials() if item.get("id") == material_id), None)
+
+    @serialized_repository_write("repository_path")
     def create_fertilizer_application(self, planting_id: str, value: dict):
         planting = self._planting(planting_id)
         if not isinstance(value, dict):
@@ -742,8 +816,14 @@ class PlantManagementRepository:
         applications = self.data.setdefault("fertilizer_applications", [])
         if len(applications) >= MAX_FERTILIZER_APPLICATIONS:
             raise PlantManagementValidationError("fertilizer application limit reached")
+        material_id = _clean_string(value.get("material_id"))[:120]
+        material = self.get_fertilizer_material(material_id) if material_id else None
+        if material_id and material is None:
+            raise PlantManagementNotFoundError("fertilizer material not found")
+        defaults = _fertilizer_application_defaults(material) if material else {}
         record = _normalize_fertilizer_application(
             {
+                **defaults,
                 **value,
                 "id": str(uuid.uuid4()),
                 "field_id": planting["field_id"],
@@ -754,6 +834,9 @@ class PlantManagementRepository:
                 "created_at": _utc_now(),
             }
         )
+        if material:
+            record["material_id"] = material["id"]
+            record["material_snapshot"] = _fertilizer_application_snapshot(record, material.get("label", ""))
         if _date_value(record["applied_on"], "applied_on") > date.today():
             raise PlantManagementValidationError("applied_on must not be in the future")
         applications.append(record)
@@ -921,6 +1004,7 @@ class PlantManagementRepository:
                 for item in self.data.get("fertilizer_applications", [])
                 if item.get("field_id") == field_id and (calendar_filter is None or item.get("placement_id") in placement_filter)
             ],
+            "fertilizer_materials": self.list_fertilizer_materials(),
         }
 
     def list_suggestions(self, field_id: str, today: str | None = None, lead_days: int = 7):
@@ -1039,6 +1123,7 @@ def _empty_data():
         "work_logs": [],
         "questions": [],
         "fertilizer_applications": [],
+        "fertilizer_materials": [],
     }
 
 
@@ -1072,15 +1157,18 @@ def _normalize_data(value):
             for item in list(value.get("fertilizer_applications") or [])[-MAX_FERTILIZER_APPLICATIONS:]
             if isinstance(item, dict)
         ],
+        "fertilizer_materials": [
+            _normalize_fertilizer_material(item, expected_scope="user")
+            for item in list(value.get("fertilizer_materials") or [])[-MAX_FERTILIZER_MATERIALS:]
+            if isinstance(item, dict) and not _clean_string(item.get("id")).startswith("builtin:")
+        ],
     }
 
 
 def _calendar_regeneration_proposals(existing_actions: list, generated_actions: list, start_date: str):
     in_progress_actions = [copy.deepcopy(action) for action in existing_actions if action.get("status") == "in_progress"]
     future_existing = [
-        copy.deepcopy(action)
-        for action in existing_actions
-        if action.get("status") == "planned" and str(action.get("window_end") or "") >= start_date
+        copy.deepcopy(action) for action in existing_actions if action.get("status") == "planned" and str(action.get("window_end") or "") >= start_date
     ]
     unmatched = {action["id"]: action for action in future_existing}
     proposals = []
@@ -1125,13 +1213,7 @@ def _calendar_action_match_score(existing: dict, generated: dict):
     end = min(str(existing.get("window_end") or ""), str(generated.get("window_end") or ""))
     overlaps = bool(start and end and start <= end)
     exact_title = bool(existing.get("title")) and _clean_string(existing.get("title")) == _clean_string(generated.get("title"))
-    return (
-        (0.35 if rule_match else 0)
-        + (0.15 if type_match else 0)
-        + title_similarity * 0.45
-        + (0.35 if overlaps else 0)
-        + (0.25 if exact_title else 0)
-    )
+    return (0.35 if rule_match else 0) + (0.15 if type_match else 0) + title_similarity * 0.45 + (0.35 if overlaps else 0) + (0.25 if exact_title else 0)
 
 
 def _calendar_action_revision_signature(action: dict):
@@ -1197,6 +1279,69 @@ def _generation_review_payload(generated: dict):
     }
 
 
+def _normalize_fertilizer_material(value: dict, *, expected_scope: str):
+    material_kind = _clean_string(value.get("material_kind"), "custom")
+    if material_kind not in VALID_FERTILIZER_MATERIAL_KINDS:
+        material_kind = "custom"
+    nutrient_value = value.get("nutrient_percent") if isinstance(value.get("nutrient_percent"), dict) else {}
+    nutrient_percent = {
+        key: _optional_float(nutrient_value.get(key), 0, 100, f"fertilizer_material.nutrient_percent.{key}") or 0.0 for key in ("n", "p2o5", "k2o", "mgo")
+    }
+    if not any(nutrient_percent.values()):
+        raise PlantManagementValidationError("at least one fertilizer nutrient percentage is required")
+    annual_available_percent = _optional_float(value.get("annual_available_percent"), 0.1, 100, "fertilizer_material.annual_available_percent")
+    if annual_available_percent is None:
+        raise PlantManagementValidationError("fertilizer_material.annual_available_percent is required")
+    material_id = _required_string(value.get("id"), "fertilizer_material.id", 120)
+    required_prefix = "builtin:" if expected_scope == "builtin" else "custom:"
+    if not material_id.startswith(required_prefix):
+        raise PlantManagementValidationError(f"fertilizer material id must use the {required_prefix} prefix")
+    return {
+        "id": material_id,
+        "scope": expected_scope,
+        "catalog_revision": _bounded_int(value.get("catalog_revision"), 1, 1, 1_000_000, "fertilizer_material.catalog_revision"),
+        "label": _required_string(value.get("label"), "fertilizer_material.label", 180),
+        "summary": _clean_string(value.get("summary"))[:500],
+        "material_kind": material_kind,
+        "material_name": _required_string(value.get("material_name"), "fertilizer_material.material_name", 180),
+        "nutrient_percent": nutrient_percent,
+        "annual_available_percent": annual_available_percent,
+        "effect_years": _bounded_int(value.get("effect_years"), 1, 1, 10, "fertilizer_material.effect_years"),
+        "start_delay_days": _bounded_int(value.get("start_delay_days"), 0, 0, 3650, "fertilizer_material.start_delay_days"),
+        "analysis_source": _clean_string(value.get("analysis_source"))[:500],
+        "source_url": _clean_string(value.get("source_url"))[:1000],
+        "created_at": _clean_string(value.get("created_at"))[:80],
+        "updated_at": _clean_string(value.get("updated_at"))[:80],
+    }
+
+
+def _fertilizer_application_defaults(material: dict):
+    return {
+        "material_id": material.get("id"),
+        "material_kind": material.get("material_kind"),
+        "material_name": material.get("material_name"),
+        "nutrient_percent": copy.deepcopy(material.get("nutrient_percent")),
+        "annual_available_percent": material.get("annual_available_percent"),
+        "effect_years": material.get("effect_years"),
+        "start_delay_days": material.get("start_delay_days"),
+        "analysis_source": material.get("analysis_source"),
+    }
+
+
+def _fertilizer_application_snapshot(record: dict, label: str):
+    return {
+        "material_id": _clean_string(record.get("material_id"))[:120],
+        "label": _clean_string(label)[:180],
+        "material_kind": record["material_kind"],
+        "material_name": record["material_name"],
+        "nutrient_percent": copy.deepcopy(record["nutrient_percent"]),
+        "annual_available_percent": record["annual_available_percent"],
+        "effect_years": record["effect_years"],
+        "start_delay_days": record["start_delay_days"],
+        "analysis_source": record["analysis_source"],
+    }
+
+
 def _normalize_fertilizer_application(value: dict):
     material_kind = _clean_string(value.get("material_kind"), "custom")
     if material_kind not in VALID_FERTILIZER_MATERIAL_KINDS:
@@ -1221,7 +1366,7 @@ def _normalize_fertilizer_application(value: dict):
     )
     if annual_available_percent is None:
         raise PlantManagementValidationError("fertilizer_application.annual_available_percent is required")
-    return {
+    record = {
         "id": _clean_string(value.get("id"))[:120] or str(uuid.uuid4()),
         "field_id": _required_string(value.get("field_id"), "fertilizer_application.field_id", 120),
         "planting_id": _clean_string(value.get("planting_id"))[:120],
@@ -1240,6 +1385,27 @@ def _normalize_fertilizer_application(value: dict):
         "notes": _clean_string(value.get("notes"))[:1000],
         "created_at": _clean_string(value.get("created_at"), _utc_now())[:80],
     }
+    material_id = _clean_string(value.get("material_id"))[:120]
+    record["material_id"] = material_id
+    snapshot = value.get("material_snapshot")
+    if isinstance(snapshot, dict) and material_id:
+        record["material_snapshot"] = _fertilizer_application_snapshot(
+            {
+                **record,
+                "material_id": material_id,
+                "material_kind": snapshot.get("material_kind", record["material_kind"]),
+                "material_name": snapshot.get("material_name", record["material_name"]),
+                "nutrient_percent": snapshot.get("nutrient_percent", record["nutrient_percent"]),
+                "annual_available_percent": snapshot.get("annual_available_percent", record["annual_available_percent"]),
+                "effect_years": snapshot.get("effect_years", record["effect_years"]),
+                "start_delay_days": snapshot.get("start_delay_days", record["start_delay_days"]),
+                "analysis_source": snapshot.get("analysis_source", record["analysis_source"]),
+            },
+            snapshot.get("label", ""),
+        )
+    else:
+        record["material_snapshot"] = {}
+    return record
 
 
 def _normalize_planting_record(planting_id: str, value: dict):
@@ -1266,7 +1432,9 @@ def _normalize_generation_task(value: dict):
         "planning_notes": _clean_string(record.get("planning_notes"))[:2000],
         "audience": copy.deepcopy(record.get("audience")) if isinstance(record.get("audience"), dict) else {},
         "mode": mode if mode in VALID_GENERATION_MODES else "automatic",
-        "proposals": [_normalize_generation_proposal(item) for item in list(record.get("proposals") or []) if isinstance(item, dict)][:MAX_ACTIONS_PER_CALENDAR * 2],
+        "proposals": [_normalize_generation_proposal(item) for item in list(record.get("proposals") or []) if isinstance(item, dict)][
+            : MAX_ACTIONS_PER_CALENDAR * 2
+        ],
         "generated_payload": _generation_review_payload(record.get("generated_payload") if isinstance(record.get("generated_payload"), dict) else {}),
         "attempts": max(0, _bounded_int(record.get("attempts"), 0, 0, 1000, "generation_task.attempts")),
         "error": _clean_string(record.get("error"))[:500],
@@ -1411,6 +1579,7 @@ def _normalize_care_profile(value):
         "summary": _clean_string(value.get("summary"))[:2000],
         "assumptions": _clean_string_list(value.get("assumptions"), limit=20, item_length=300),
         "knowledge_sources": _clean_string_list(value.get("knowledge_sources"), limit=20, item_length=500),
+        "knowledge_evidence": _normalize_knowledge_evidence(value.get("knowledge_evidence")),
         "irrigation": {
             "strategy": _clean_string(irrigation.get("strategy"))[:1200],
             "baseline_interval_days": _normalize_interval_days(irrigation.get("baseline_interval_days")),
@@ -1426,6 +1595,31 @@ def _normalize_care_profile(value):
         },
         "stage_notes": _normalize_stage_notes(value.get("stage_notes")),
     }
+
+
+def _normalize_knowledge_evidence(value):
+    if not isinstance(value, list):
+        return []
+    evidence = []
+    seen_urls = set()
+    for item in value[:20]:
+        if not isinstance(item, dict):
+            continue
+        url = _clean_string(item.get("url"))[:1000]
+        if not url.startswith("https://") or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        evidence.append(
+            {
+                "title": _clean_string(item.get("title"), "公的栽培資料")[:300],
+                "url": url,
+                "publisher": _clean_string(item.get("publisher"))[:180],
+                "applicable_region": _clean_string(item.get("applicable_region"))[:120],
+                "published_at": _clean_string(item.get("published_at"))[:80],
+                "fetched_at": _clean_string(item.get("fetched_at"))[:80],
+            }
+        )
+    return evidence
 
 
 def _normalize_task_rules(value):

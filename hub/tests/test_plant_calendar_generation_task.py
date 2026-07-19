@@ -41,6 +41,24 @@ class FakeAIService:
         }
 
 
+class FakeKnowledgeProvider:
+    def __init__(self):
+        self.contexts = []
+
+    def get(self, context):
+        self.contexts.append(context)
+        return {
+            "status": "available",
+            "summary": ["公的資料の要点"],
+            "sources": [{"title": "農研機構資料", "url": "https://www.naro.go.jp/manual"}],
+        }
+
+
+class FailingKnowledgeProvider:
+    def get(self, context):
+        raise RuntimeError("search unavailable")
+
+
 class PlantCalendarGenerationTaskTest(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = tempfile.TemporaryDirectory()
@@ -83,12 +101,13 @@ class PlantCalendarGenerationTaskTest(unittest.TestCase):
     def tearDown(self):
         self.tmp_dir.cleanup()
 
-    def _task(self, ai_service):
+    def _task(self, ai_service, knowledge_provider=None):
         return PlantCalendarGenerationTask(
             plant_repository=self.plant_repository,
             field_repository=self.field_repository,
             layout_repository=self.layout_repository,
             ai_service=ai_service,
+            knowledge_provider=knowledge_provider,
         )
 
     def test_process_next_builds_context_and_completes_calendar(self):
@@ -121,12 +140,35 @@ class PlantCalendarGenerationTaskTest(unittest.TestCase):
         self.assertEqual(result["task"]["status"], "succeeded")
         self.assertEqual(result["calendar"]["actions"][0]["title"], "新梢を確認")
         self.assertEqual(ai_service.contexts[0]["fertilizer_history"]["applications"][0]["material_name"], "牛ふん堆肥")
+        self.assertIn("builtin:compound-8-8-8", {item["id"] for item in ai_service.contexts[0]["fertilizer_catalog"]})
         self.assertGreater(ai_service.contexts[0]["fertilizer_history"]["effect_summary"]["nutrients"]["n"]["remaining_kg"], 0)
         self.assertEqual(ai_service.contexts[0]["placement"]["name"], "鉢A")
         self.assertEqual(ai_service.contexts[0]["planning"]["start_date"], requested_start)
         self.assertEqual(ai_service.contexts[0]["planning"]["current_date"], date.today().isoformat())
         self.assertEqual(ai_service.contexts[0]["planning"]["notes"], "週末だけ作業")
         self.assertEqual(ai_service.contexts[0]["audience"]["experience_level"], "beginner")
+
+    def test_process_next_adds_public_crop_knowledge_before_ai_generation(self):
+        ai_service = FakeAIService()
+        knowledge_provider = FakeKnowledgeProvider()
+        task_runner = self._task(ai_service, knowledge_provider)
+        task_runner.enqueue(self.planting["id"], kind="initial", start_date=date.today().isoformat())
+
+        task_runner.process_next()
+
+        self.assertEqual(len(knowledge_provider.contexts), 1)
+        self.assertEqual(ai_service.contexts[0]["crop_knowledge"]["status"], "available")
+        self.assertEqual(ai_service.contexts[0]["crop_knowledge"]["sources"][0]["title"], "農研機構資料")
+
+    def test_crop_knowledge_failure_does_not_fail_calendar_generation(self):
+        ai_service = FakeAIService()
+        task_runner = self._task(ai_service, FailingKnowledgeProvider())
+        task_runner.enqueue(self.planting["id"], kind="initial", start_date=date.today().isoformat())
+
+        result = task_runner.process_next()
+
+        self.assertEqual(result["task"]["status"], "succeeded")
+        self.assertEqual(ai_service.contexts[0]["crop_knowledge"]["status"], "error")
 
     def test_process_next_persists_failure_without_creating_calendar(self):
         task_runner = self._task(FakeAIService(RuntimeError("AI unavailable")))

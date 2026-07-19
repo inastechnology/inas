@@ -14,7 +14,7 @@ from plotly import graph_objs as go
 from plotly.io import to_html
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from ina_device_hub.agri_action_service import METRIC_LABELS, build_action_candidates
+from ina_device_hub.agri_action_service import METRIC_LABELS, build_action_candidates, build_calendar_operation_readiness
 from ina_device_hub.ai_content_service import ai_content_service
 from ina_device_hub.camera_connector import camera_connector
 from ina_device_hub.camera_growth_monitoring_service import (
@@ -5488,6 +5488,10 @@ def hub_settings_page():
         if section == "ai":
             try:
                 plant_calendar_prompt_template = validate_plant_calendar_prompt_template(request.form.get("plant_calendar_prompt_template", ""))
+                plant_calendar_web_knowledge_cache_days = max(
+                    1,
+                    min(365, int(request.form.get("plant_calendar_web_knowledge_cache_days", "30"))),
+                )
             except ValueError as exc:
                 return str(exc), 400
             setting().set(
@@ -5498,6 +5502,8 @@ def hub_settings_page():
                     "text_analyze_model": request.form.get("text_analyze_model", "").strip(),
                     "image_analyze_base_url": request.form.get("image_analyze_base_url", "").strip(),
                     "image_analyze_model": request.form.get("image_analyze_model", "").strip(),
+                    "plant_calendar_web_knowledge_enabled": request.form.get("plant_calendar_web_knowledge_enabled") == "on",
+                    "plant_calendar_web_knowledge_cache_days": plant_calendar_web_knowledge_cache_days,
                     "plant_calendar_prompt_template": plant_calendar_prompt_template,
                 },
             )
@@ -5540,6 +5546,8 @@ def hub_settings_page():
         "text_analyze_model": current_ai.get("text_analyze_model", ""),
         "image_analyze_base_url": current_ai.get("image_analyze_base_url", ""),
         "image_analyze_model": current_ai.get("image_analyze_model", ""),
+        "plant_calendar_web_knowledge_enabled": bool(current_ai.get("plant_calendar_web_knowledge_enabled", True)),
+        "plant_calendar_web_knowledge_cache_days": int(current_ai.get("plant_calendar_web_knowledge_cache_days", 30)),
         "plant_calendar_prompt_template": current_ai.get("plant_calendar_prompt_template", DEFAULT_PLANT_CALENDAR_PROMPT_TEMPLATE),
         "text_key_configured": setting().secret_configured("ai", "text_analyze_api_key"),
         "image_key_configured": setting().secret_configured("ai", "image_analyze_api_key"),
@@ -6099,15 +6107,16 @@ def list_field_plantings_api(field_id):
     compact = _is_truthy_request_arg(request.args.get("compact"))
     calendar_planting_ids = _query_list("calendar_planting_id")
     try:
-        return jsonify(
-            plant_management_repository().field_bundle(
-                field_id,
-                today=today,
-                statuses=["active"] if compact else None,
-                calendar_planting_ids=calendar_planting_ids if compact else None,
-                include_work_logs=not compact or bool(calendar_planting_ids),
-            )
+        bundle = plant_management_repository().field_bundle(
+            field_id,
+            today=today,
+            statuses=["active"] if compact else None,
+            calendar_planting_ids=calendar_planting_ids if compact else None,
+            include_work_logs=not compact or bool(calendar_planting_ids),
         )
+        layout = field_layout_repository().get(field_id, field_name=field.get("name", ""))
+        bundle["operation_readiness"] = build_calendar_operation_readiness(bundle, field, layout, _field_device_records(field, layout))
+        return jsonify(bundle)
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -6222,6 +6231,48 @@ def list_fertilizer_applications_api(planting_id):
         return jsonify({"error": str(exc)}), 404
     except (PlantManagementValidationError, ValueError) as exc:
         return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/local/api/fertilizer-materials", methods=["GET"])
+def list_fertilizer_materials_api():
+    return jsonify({"materials": plant_management_repository().list_fertilizer_materials()})
+
+
+@app.route("/local/api/fertilizer-materials", methods=["POST"])
+def create_fertilizer_material_api():
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        material = plant_management_repository().create_fertilizer_material(request_body)
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(material), 201
+
+
+@app.route("/local/api/fertilizer-materials/<material_id>", methods=["PATCH"])
+def update_fertilizer_material_api(material_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        material = plant_management_repository().update_fertilizer_material(material_id, request_body)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(material)
+
+
+@app.route("/local/api/fertilizer-materials/<material_id>", methods=["DELETE"])
+def delete_fertilizer_material_api(material_id):
+    try:
+        plant_management_repository().delete_fertilizer_material(material_id)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return "", 204
 
 
 @app.route("/local/api/plantings/<planting_id>/fertilizer-applications", methods=["POST"])

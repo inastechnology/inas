@@ -78,6 +78,13 @@ class AdminDemoServerTest(unittest.TestCase):
         harvest = next(item for item in actions if item["action_type"] == "harvest")
         self.assertEqual(harvest["window_end"], "2027-05-15")
 
+    def test_demo_cultivation_source_contains_public_evidence_fixture(self):
+        source = Path(run_admin_demo_server.__file__).read_text(encoding="utf-8")
+
+        self.assertIn('"crop_knowledge": {', source)
+        self.assertIn("https://www.maff.go.jp/j/seisan/kankyo/hozen_type/h_sehi_kizyun/index.html", source)
+        self.assertIn("https://www.naro.go.jp/laboratory/ncss/saibaishiken/manual/index.html", source)
+
     def test_demo_environment_does_not_inherit_external_turso_or_ai(self):
         inherited = {
             "TURSO_DATABASE_URL": "libsql://production.example",
