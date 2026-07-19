@@ -32,7 +32,7 @@ import {
   createFertilizerApplication,
   createFertilizerMaterial,
   createPlanting,
-  decidePlantCalendarRegenerationProposal,
+  decidePlantCalendarRegenerationProposals,
   deleteFertilizerApplication,
   deleteFertilizerMaterial,
   deletePlantAction,
@@ -792,12 +792,12 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
           onSkipAction={skipPlantCalendarAction}
           onAskQuestion={answerPlantQuestion}
           onRegenerate={regenerateCalendar}
-          onDecideRegeneration={async (plantingId, taskId, proposalId, decision) => {
+          onDecideRegeneration={async (plantingId, taskId, decisions) => {
             setPlantBusy(true);
             setError("");
             try {
-              await decidePlantCalendarRegenerationProposal(plantingId, taskId, proposalId, decision);
-              await refreshPlants(plantingId);
+              const result = await decidePlantCalendarRegenerationProposals(plantingId, taskId, decisions);
+              setPlantBundle(result.bundle);
             } catch (caught) {
               setError(errorMessage(caught));
               throw caught;

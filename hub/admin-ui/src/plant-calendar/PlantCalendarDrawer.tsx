@@ -23,6 +23,7 @@ import { FALLBACK_ACTION_TYPES } from "./constants";
 
 type KanbanColumn = "planned" | "in_progress" | "completed";
 type ActionTimingState = PlantBundle["suggestions"][number]["timing_state"];
+type RegenerationDecision = "approved" | "rejected";
 
 const KANBAN_COLUMNS: Array<{ id: KanbanColumn; label: string; description: string }> = [
   { id: "planned", label: "未完了", description: "着手を待っている作業" },
@@ -49,7 +50,11 @@ export interface PlantCalendarDrawerProps {
   onSkipAction: (plantingId: string, actionId: string, payload: PlantActionSkipPayload) => Promise<void>;
   onAskQuestion: (plantingId: string, question: string) => Promise<PlantQuestionRecord>;
   onRegenerate: (plantingId: string, startDate: string, planningNotes: string, mode: "automatic" | "review") => Promise<void>;
-  onDecideRegeneration: (plantingId: string, taskId: string, proposalId: string, decision: "approved" | "rejected") => Promise<void>;
+  onDecideRegeneration: (
+    plantingId: string,
+    taskId: string,
+    decisions: Array<{ proposal_id: string; decision: RegenerationDecision }>,
+  ) => Promise<void>;
   onAddAction: (plantingId: string, payload: PlantActionMutationPayload) => Promise<void>;
   onDeleteAction: (plantingId: string, actionId: string) => Promise<void>;
   onAddFertilizer: (plantingId: string, payload: Record<string, unknown>) => Promise<void>;
@@ -98,6 +103,7 @@ export function PlantCalendarDrawer({
   const [generationNotes, setGenerationNotes] = useState("");
   const [generationMode, setGenerationMode] = useState<"automatic" | "review">("review");
   const [generationError, setGenerationError] = useState("");
+  const [regenerationDecisions, setRegenerationDecisions] = useState<Record<string, RegenerationDecision>>({});
   const [workspace, setWorkspace] = useState<"work" | "crop">("work");
   const [workScopePlantingId, setWorkScopePlantingId] = useState("all");
   const [workDate, setWorkDate] = useState("");
@@ -110,6 +116,11 @@ export function PlantCalendarDrawer({
   const [dragOverColumn, setDragOverColumn] = useState<KanbanColumn | null>(null);
   const [dropMessage, setDropMessage] = useState("");
   const consumedInitialActionId = useRef("");
+  const pendingRegenerationProposals = (generationTask?.proposals ?? []).filter((proposal) => proposal.decision === "pending");
+  const pendingRegenerationProposalKey = pendingRegenerationProposals.map((proposal) => proposal.id).join("|");
+  const approvedRegenerationCount = pendingRegenerationProposals.filter((proposal) => regenerationDecisions[proposal.id] === "approved").length;
+  const rejectedRegenerationCount = pendingRegenerationProposals.filter((proposal) => regenerationDecisions[proposal.id] === "rejected").length;
+  const undecidedRegenerationCount = pendingRegenerationProposals.length - approvedRegenerationCount - rejectedRegenerationCount;
   const regenerationBlockingReasons = [
     ...(!generationStart ? ["計画開始日を選択してください"] : []),
     ...(generationActive ? ["AI計画を作成中です"] : []),
@@ -139,6 +150,15 @@ export function PlantCalendarDrawer({
     setRecordActionId(null);
     setActionQuery("");
   }, [planting?.id]);
+
+  useEffect(() => {
+    const pendingProposalIds = new Set(pendingRegenerationProposals.map((proposal) => proposal.id));
+    setRegenerationDecisions((current) => Object.fromEntries(
+      Object.entries(current).filter(([proposalId]) => pendingProposalIds.has(proposalId)),
+    ));
+    // The joined key changes only when the review task or its pending proposal set changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generationTask?.id, pendingRegenerationProposalKey]);
 
   useEffect(() => {
     if (!generationLockActive) return;
@@ -261,11 +281,30 @@ export function PlantCalendarDrawer({
     }
   };
 
-  const decideRegeneration = async (proposalId: string, decision: "approved" | "rejected") => {
+  const stageRegenerationDecision = (proposalId: string, decision: RegenerationDecision) => {
+    setGenerationError("");
+    setRegenerationDecisions((current) => ({ ...current, [proposalId]: decision }));
+  };
+
+  const stageAllRegenerationDecisions = (decision: RegenerationDecision) => {
+    setGenerationError("");
+    setRegenerationDecisions(Object.fromEntries(pendingRegenerationProposals.map((proposal) => [proposal.id, decision])));
+  };
+
+  const applyRegenerationDecisions = async () => {
     if (!planting || !generationTask) return;
+    if (!pendingRegenerationProposals.length || undecidedRegenerationCount > 0) return;
     setGenerationError("");
     try {
-      await onDecideRegeneration(planting.id, generationTask.id, proposalId, decision);
+      await onDecideRegeneration(
+        planting.id,
+        generationTask.id,
+        pendingRegenerationProposals.map((proposal) => ({
+          proposal_id: proposal.id,
+          decision: regenerationDecisions[proposal.id]!,
+        })),
+      );
+      setRegenerationDecisions({});
     } catch (caught) {
       setGenerationError(errorMessage(caught));
     }
@@ -371,25 +410,56 @@ export function PlantCalendarDrawer({
               )}
               {generationReviewPending && generationTask && (
                 <div className="calendar-regeneration-review" role="region" aria-label="AI計画の変更案">
-                  <header><div><strong>AIから{generationTask.proposals.filter((item) => item.decision === "pending").length}件の変更案があります</strong><p>今の予定と比較し、1件ずつ計画へ取り入れるか選択してください。</p></div></header>
+                  <header><div><strong>AIから{pendingRegenerationProposals.length}件の変更案があります</strong><p>各案の扱いを先に選び、最後に一度だけ計画へ反映します。選択ボタンでは通信しません。</p></div></header>
+                  <div className="regeneration-review-toolbar">
+                    <div className="regeneration-review-counts" aria-live="polite">
+                      <span className="approved"><Check size={14} />取り入れる {approvedRegenerationCount}件</span>
+                      <span className="rejected"><X size={14} />変更しない {rejectedRegenerationCount}件</span>
+                      <span className={undecidedRegenerationCount ? "pending" : "complete"}>未選択 {undecidedRegenerationCount}件</span>
+                    </div>
+                    <div className="regeneration-bulk-actions">
+                      <button type="button" disabled={busy || !pendingRegenerationProposals.length} onClick={() => stageAllRegenerationDecisions("approved")}><Check size={14} />すべて取り入れる</button>
+                      <button type="button" disabled={busy || !pendingRegenerationProposals.length} onClick={() => stageAllRegenerationDecisions("rejected")}><X size={14} />すべて変更しない</button>
+                      <button type="button" disabled={busy || approvedRegenerationCount + rejectedRegenerationCount === 0} onClick={() => { setGenerationError(""); setRegenerationDecisions({}); }}>選択をクリア</button>
+                    </div>
+                  </div>
                   <div className="regeneration-proposal-list">
                     {generationTask.proposals.map((proposal) => {
                       const before = proposal.before;
                       const after = proposal.after;
                       const pending = proposal.decision === "pending";
+                      const stagedDecision = pending ? regenerationDecisions[proposal.id] : undefined;
+                      const displayDecision = stagedDecision ?? proposal.decision;
                       return (
-                        <article key={proposal.id} className={`regeneration-proposal ${proposal.change_type} ${proposal.decision}`}>
-                          <div className="proposal-heading"><span>{proposal.change_type === "add" ? "新しい作業" : proposal.change_type === "delete" ? "削除候補" : "作業を変更"}</span><strong>{proposal.title}</strong>{!pending && <small>{proposal.decision === "approved" ? "変更済み" : "変更しない"}</small>}</div>
+                        <article key={proposal.id} className={`regeneration-proposal ${proposal.change_type} ${displayDecision}${stagedDecision ? " staged" : ""}`}>
+                          <div className="proposal-heading">
+                            <span>{proposal.change_type === "add" ? "新しい作業" : proposal.change_type === "delete" ? "削除候補" : "作業を変更"}</span>
+                            <strong>{proposal.title}</strong>
+                            {displayDecision !== "pending" && <small>{pending ? (displayDecision === "approved" ? "取り入れる予定" : "変更しない予定") : (displayDecision === "approved" ? "反映済み" : "変更しない")}</small>}
+                          </div>
                           <div className="proposal-comparison">
                             {before && <div><span>現在</span><strong>{before.title}</strong><small>{formatDate(before.window_start)}〜{formatDate(before.window_end)}</small><p>{before.reason}</p></div>}
                             {after && <div><span>AIの提案</span><strong>{after.title}</strong><small>{formatDate(after.window_start)}〜{formatDate(after.window_end)}</small><p>{after.reason}</p></div>}
                           </div>
-                          {pending && <div className="proposal-actions"><button type="button" disabled={busy} onClick={() => void decideRegeneration(proposal.id, "rejected")}><X size={14} />変更しない</button><button type="button" disabled={busy} onClick={() => void decideRegeneration(proposal.id, "approved")}><Check size={14} />{proposal.change_type === "delete" ? "削除する" : "変更する"}</button></div>}
+                          {pending && <div className="proposal-actions">
+                            <button type="button" className={stagedDecision === "rejected" ? "selected rejected" : ""} aria-pressed={stagedDecision === "rejected"} disabled={busy} onClick={() => stageRegenerationDecision(proposal.id, "rejected")}><X size={14} />変更しない</button>
+                            <button type="button" className={stagedDecision === "approved" ? "selected approved" : ""} aria-pressed={stagedDecision === "approved"} disabled={busy} onClick={() => stageRegenerationDecision(proposal.id, "approved")}><Check size={14} />{proposal.change_type === "add" ? "追加する" : proposal.change_type === "delete" ? "削除する" : "変更する"}</button>
+                          </div>}
                         </article>
                       );
                     })}
                   </div>
                   {generationError && <p className="form-error">{generationError}</p>}
+                  <div className="regeneration-commit-bar">
+                    <div>
+                      <strong>{undecidedRegenerationCount > 0 ? `あと${undecidedRegenerationCount}件を選択してください` : `${pendingRegenerationProposals.length}件の選択が完了しました`}</strong>
+                      <span>{generationError ? "選択内容は残っています。確認してもう一度反映できます。" : "確定時だけ一度通信し、まとめて安全に反映します。"}</span>
+                    </div>
+                    <button type="button" className="primary" disabled={busy || !pendingRegenerationProposals.length || undecidedRegenerationCount > 0} onClick={() => void applyRegenerationDecisions()}>
+                      {busy ? <LoaderCircle className="spin" size={15} /> : <Check size={15} />}
+                      {busy ? "まとめて反映中..." : "選択した内容を一括反映"}
+                    </button>
+                  </div>
                 </div>
               )}
             </section>
@@ -405,7 +475,7 @@ export function PlantCalendarDrawer({
                   <label>計画開始日<input type="date" required value={generationStart} onChange={(event) => setGenerationStart(event.target.value)} /></label>
                   <label>今回の生成条件<textarea value={generationNotes} onChange={(event) => setGenerationNotes(event.target.value)} placeholder="今年は収穫を優先、農薬を使わない、現在は開花直前など" /></label>
                   {calendar && <fieldset className="generation-mode-fieldset"><legend>変更の反映方法</legend><div className="generation-mode-options">
-                    <label className={generationMode === "review" ? "selected" : ""}><input type="radio" name="generation_mode" value="review" checked={generationMode === "review"} onChange={() => setGenerationMode("review")} /><strong>確認しながら変更</strong><span>おすすめ。変更・追加・削除を今の予定と比較し、1件ずつ承認します。</span></label>
+                    <label className={generationMode === "review" ? "selected" : ""}><input type="radio" name="generation_mode" value="review" checked={generationMode === "review"} onChange={() => setGenerationMode("review")} /><strong>確認しながら変更</strong><span>おすすめ。変更・追加・削除を今の予定と比較して選び、最後にまとめて反映します。</span></label>
                     <label className={generationMode === "automatic" ? "selected" : ""}><input type="radio" name="generation_mode" value="automatic" checked={generationMode === "automatic"} onChange={() => setGenerationMode("automatic")} /><strong>全自動で立て直す</strong><span>現在の計画をAIが整理し、妥当な作業を残しながら必要な差分を自動反映します。</span></label>
                   </div></fieldset>}
                   <p>現在の{calendar?.actions.length ?? 0}件の作業、実績、施肥履歴、栽培条件をAIへ渡します。実施済み・作業中の記録は削除せず、同じ目的の作業は重複させません。</p>

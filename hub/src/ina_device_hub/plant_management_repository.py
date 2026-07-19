@@ -377,44 +377,93 @@ class PlantManagementRepository:
 
     @serialized_repository_write("repository_path")
     def decide_calendar_generation_proposal(self, task_id: str, proposal_id: str, decision: str):
+        result = self._decide_calendar_generation_proposals(
+            task_id,
+            [{"proposal_id": proposal_id, "decision": decision}],
+        )
+        return {
+            "task": result["task"],
+            "proposal": result["proposals"][0],
+            "calendar": result["calendar"],
+        }
+
+    @serialized_repository_write("repository_path")
+    def decide_calendar_generation_proposals(self, task_id: str, decisions: list):
+        return self._decide_calendar_generation_proposals(task_id, decisions)
+
+    def _decide_calendar_generation_proposals(self, task_id: str, decisions: list):
         task = self._generation_task(task_id)
         if task.get("status") != "awaiting_review":
             raise PlantManagementConflictError("calendar generation is not awaiting review")
-        decision = _clean_string(decision)
-        if decision not in {"approved", "rejected"}:
-            raise PlantManagementValidationError("proposal decision must be approved or rejected")
+        if not isinstance(decisions, list) or not decisions:
+            raise PlantManagementValidationError("proposal decisions must be a non-empty array")
+        if len(decisions) > MAX_ACTIONS_PER_CALENDAR * 2:
+            raise PlantManagementValidationError("too many proposal decisions")
+
         proposals = copy.deepcopy(task.get("proposals") or [])
-        proposal = next((item for item in proposals if item.get("id") == proposal_id), None)
-        if proposal is None:
-            raise PlantManagementNotFoundError("calendar generation proposal not found")
-        if proposal.get("decision") != "pending":
-            raise PlantManagementConflictError("calendar generation proposal is already decided")
+        proposals_by_id = {item.get("id"): item for item in proposals}
+        normalized_decisions = []
+        seen_proposal_ids = set()
+        for item in decisions:
+            if not isinstance(item, dict):
+                raise PlantManagementValidationError("each proposal decision must be an object")
+            proposal_id = _clean_string(item.get("proposal_id"))[:120]
+            decision = _clean_string(item.get("decision"))
+            if not proposal_id:
+                raise PlantManagementValidationError("proposal_id is required")
+            if proposal_id in seen_proposal_ids:
+                raise PlantManagementValidationError("proposal decisions must not contain duplicate proposal_id values")
+            if decision not in {"approved", "rejected"}:
+                raise PlantManagementValidationError("proposal decision must be approved or rejected")
+            proposal = proposals_by_id.get(proposal_id)
+            if proposal is None:
+                raise PlantManagementNotFoundError("calendar generation proposal not found")
+            if proposal.get("decision") != "pending":
+                raise PlantManagementConflictError("calendar generation proposal is already decided")
+            seen_proposal_ids.add(proposal_id)
+            normalized_decisions.append((proposal, decision))
 
         planting = self._planting(task["planting_id"])
         calendar = self._calendar_for_planting(planting)
-        proposal["decision"] = decision
-        proposal["decided_at"] = _utc_now()
-        if decision == "approved":
+        for proposal, decision in normalized_decisions:
+            if decision != "approved":
+                continue
             if proposal.get("change_type") in {"update", "delete"}:
                 current = next((action for action in calendar["actions"] if action.get("id") == proposal.get("existing_action_id")), None)
                 if current is None or _calendar_action_revision_signature(current) != _calendar_action_revision_signature(proposal.get("before") or {}):
                     raise PlantManagementConflictError("calendar action changed after the AI proposal was created")
-            calendar["actions"] = _apply_calendar_regeneration_proposals(calendar["actions"], [proposal])
+
+        now = _utc_now()
+        approved_proposals = []
+        decided_proposals = []
+        for proposal, decision in normalized_decisions:
+            proposal["decision"] = decision
+            proposal["decided_at"] = now
+            decided_proposals.append(copy.deepcopy(proposal))
+            if decision == "approved":
+                approved_proposals.append(proposal)
+
+        if approved_proposals:
+            calendar["actions"] = _apply_calendar_regeneration_proposals(calendar["actions"], approved_proposals)
             calendar["revision"] += 1
-            calendar["updated_at"] = _utc_now()
+            calendar["updated_at"] = now
 
         task["proposals"] = proposals
         if not any(item.get("decision") == "pending" for item in proposals):
             generated_payload = task.get("generated_payload") if isinstance(task.get("generated_payload"), dict) else {}
             calendar["generation"] = _normalize_generation(generated_payload.get("generation") or calendar.get("generation"))
             task["status"] = "succeeded"
-            task["finished_at"] = _utc_now()
-        task["updated_at"] = _utc_now()
+            task["finished_at"] = now
+        task["updated_at"] = now
         self.data["plantings"][planting["id"]] = planting
         self.data["calendars"][calendar["id"]] = calendar
         self._replace_generation_task(task)
         self.save()
-        return {"task": copy.deepcopy(task), "proposal": copy.deepcopy(proposal), "calendar": copy.deepcopy(calendar)}
+        return {
+            "task": copy.deepcopy(task),
+            "proposals": decided_proposals,
+            "calendar": copy.deepcopy(calendar),
+        }
 
     @serialized_repository_write("repository_path")
     def fail_calendar_generation(self, task_id: str, error: str):

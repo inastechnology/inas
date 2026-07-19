@@ -13,6 +13,7 @@ os.environ.setdefault("S3_SECRET_KEY", "x")
 
 from ina_device_hub.plant_management_repository import (  # noqa: E402
     PlantManagementConflictError,
+    PlantManagementNotFoundError,
     PlantManagementRepository,
     PlantManagementValidationError,
 )
@@ -716,16 +717,68 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         with self.assertRaises(PlantManagementConflictError):
             self.repository.enqueue_calendar_generation(planting["id"], kind="regenerate", start_date="2026-08-01")
 
-        for proposal in result["task"]["proposals"]:
-            decision = "rejected" if proposal["change_type"] == "add" else "approved"
-            decided = self.repository.decide_calendar_generation_proposal(result["task"]["id"], proposal["id"], decision)
+        revision_before_review = self.repository.get_calendar(planting["id"])["revision"]
+        decided = self.repository.decide_calendar_generation_proposals(
+            result["task"]["id"],
+            [
+                {
+                    "proposal_id": proposal["id"],
+                    "decision": "rejected" if proposal["change_type"] == "add" else "approved",
+                }
+                for proposal in result["task"]["proposals"]
+            ],
+        )
 
         self.assertEqual(decided["task"]["status"], "succeeded")
+        self.assertEqual(len(decided["proposals"]), len(result["task"]["proposals"]))
+        self.assertEqual(decided["calendar"]["revision"], revision_before_review + 1)
         titles = [action["title"] for action in decided["calendar"]["actions"]]
         self.assertIn("追肥前にECを確認", titles)
         self.assertNotIn("葉の病害虫確認", titles)
         self.assertNotIn("収穫適期を確認", titles)
         self.assertEqual(self.repository.get_planting(planting["id"])["growth_targets"]["soil_moisture_percent"], {"min": 35.0, "max": 65.0})
+
+    def test_batch_regeneration_decisions_are_atomic_when_one_proposal_is_invalid(self):
+        planting = self._create_blueberry()
+        original = self._create_calendar(planting["id"])
+        queued = self.repository.enqueue_calendar_generation(planting["id"], kind="regenerate", start_date="2026-07-20", mode="review")
+        self.repository.claim_next_calendar_generation()
+        result = self.repository.complete_calendar_generation(
+            queued["id"],
+            {
+                "actions": [
+                    {
+                        "rule_id": "rule-fertilization",
+                        "action_type": "fertilization",
+                        "title": "追肥前にECを確認",
+                        "window_start": "2026-07-23",
+                        "window_end": "2026-08-03",
+                    },
+                    {
+                        "action_type": "harvest",
+                        "title": "収穫適期を確認",
+                        "window_start": "2026-08-10",
+                        "window_end": "2026-08-20",
+                    },
+                ],
+            },
+        )
+        first_proposal = result["task"]["proposals"][0]
+
+        with self.assertRaises(PlantManagementNotFoundError):
+            self.repository.decide_calendar_generation_proposals(
+                result["task"]["id"],
+                [
+                    {"proposal_id": first_proposal["id"], "decision": "approved"},
+                    {"proposal_id": "missing-proposal", "decision": "rejected"},
+                ],
+            )
+
+        task_after_failure = self.repository.field_bundle("field-1")["generation_tasks"][0]
+        self.assertEqual(task_after_failure["status"], "awaiting_review")
+        self.assertTrue(all(proposal["decision"] == "pending" for proposal in task_after_failure["proposals"]))
+        self.assertEqual(self.repository.get_calendar(planting["id"])["revision"], original["revision"])
+        self.assertEqual(self.repository.get_calendar(planting["id"])["actions"], original["actions"])
 
     def test_regeneration_does_not_match_unrelated_recurring_actions_by_rule_id_alone(self):
         planting = self._create_blueberry()

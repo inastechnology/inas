@@ -564,11 +564,23 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .calendar-regeneration-review { display: grid; gap: 10px; padding: 12px; border: 1px solid #b9cbbf; border-radius: 6px; background: #fff; }
 .calendar-regeneration-review > header strong, .calendar-regeneration-review > header p { margin: 0; }
 .calendar-regeneration-review > header p { margin-top: 3px; color: #607168; font-size: 10px; }
+.regeneration-review-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px; border: 1px solid #d5e0d8; border-radius: 6px; background: #f5f9f6; }
+.regeneration-review-counts, .regeneration-bulk-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.regeneration-review-counts span { display: inline-flex; align-items: center; gap: 4px; min-height: 25px; padding: 3px 7px; border-radius: 999px; color: #56675e; background: #e9eeeb; font-size: 9px; font-weight: 850; }
+.regeneration-review-counts .approved { color: #225c45; background: #dceee4; }
+.regeneration-review-counts .rejected { color: #73514d; background: #f1e5e2; }
+.regeneration-review-counts .pending { color: #78500f; background: #faeccd; }
+.regeneration-review-counts .complete { color: #fff; background: #327158; }
+.regeneration-bulk-actions { justify-content: flex-end; }
+.regeneration-bulk-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 29px; padding: 4px 7px; border: 1px solid #b9c7be; border-radius: 5px; color: #40584c; background: #fff; font-size: 9px; font-weight: 850; }
 .regeneration-proposal-list { display: grid; gap: 9px; }
 .regeneration-proposal { display: grid; gap: 8px; padding: 10px; border: 1px solid #d4ddd7; border-left: 4px solid #4d806c; border-radius: 5px; background: #fbfcfb; }
 .regeneration-proposal.add { border-left-color: #2c7e5d; }
 .regeneration-proposal.delete { border-left-color: #b85c4f; }
 .regeneration-proposal.rejected { opacity: .65; }
+.regeneration-proposal.staged { background: #fff; box-shadow: 0 3px 10px rgb(33 63 48 / 9%); }
+.regeneration-proposal.staged.approved { border-color: #7fb39a; border-left-color: #247154; }
+.regeneration-proposal.staged.rejected { border-color: #d7b6b0; border-left-color: #a65a50; opacity: .78; }
 .proposal-heading { display: flex; align-items: center; gap: 7px; }
 .proposal-heading > span, .proposal-heading > small { padding: 2px 5px; border-radius: 4px; color: #3e6554; background: #e7f1eb; font-size: 9px; font-weight: 800; }
 .proposal-heading > small { margin-left: auto; }
@@ -578,6 +590,16 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .proposal-comparison small { color: #4f665a; font-size: 9px; }
 .proposal-comparison p { margin: 2px 0 0; color: #68736d; font-size: 9px; line-height: 1.45; }
 .proposal-actions { display: flex; justify-content: flex-end; gap: 7px; }
+.proposal-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 31px; padding: 5px 9px; border: 1px solid #b8c4bc; border-radius: 5px; color: #43584d; background: #fff; font-size: 10px; font-weight: 850; }
+.proposal-actions button.selected { color: #fff; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 24%); }
+.proposal-actions button.selected.approved { border-color: #276e54; background: #276e54; }
+.proposal-actions button.selected.rejected { border-color: #8d5149; background: #8d5149; }
+.regeneration-commit-bar { position: sticky; bottom: -12px; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 -12px -12px; padding: 11px 12px; border-top: 1px solid #b9cbbf; border-radius: 0 0 6px 6px; background: rgb(247 251 248 / 97%); box-shadow: 0 -7px 18px rgb(29 58 44 / 10%); backdrop-filter: blur(8px); }
+.regeneration-commit-bar > div { display: grid; gap: 2px; }
+.regeneration-commit-bar strong { color: #2f4f40; font-size: 11px; }
+.regeneration-commit-bar span { color: #64756c; font-size: 9px; line-height: 1.45; }
+.regeneration-commit-bar button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 7px 11px; border: 1px solid #286c53; border-radius: 5px; color: #fff; background: #286c53; font-size: 11px; font-weight: 900; }
+.regeneration-commit-bar button:disabled { border-color: #b8c2bc; color: #77837c; background: #e5e9e6; }
 .new-action-form { padding:12px; border:1px solid #bccac1; background:#fff; }
 .new-action-crop-selector { margin-bottom: 10px; padding: 11px 12px; border: 1px solid #c8d3ca; border-radius: 6px; background: #eef5f1; }
 .new-action-crop-selector .field-label { display: block; margin-bottom: 5px; color: #315c49; font-size: 10px; font-weight: 900; }
@@ -936,6 +958,12 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   .gantt-period-controls output { grid-column: 1 / -1; text-align: left; }
   .care-profile-body dl { grid-template-columns: 1fr; }
   .fertilizer-balance, .fertilizer-form-grid.three, .fertilizer-form-grid.four, .generation-mode-options, .proposal-comparison { grid-template-columns: 1fr; }
+  .regeneration-review-toolbar { grid-template-columns: 1fr; }
+  .regeneration-bulk-actions { justify-content: flex-start; }
+  .regeneration-bulk-actions button { flex: 1 1 120px; }
+  .proposal-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .regeneration-commit-bar { align-items: stretch; flex-direction: column; }
+  .regeneration-commit-bar button { width: 100%; }
   .fertilizer-history-list article { grid-template-columns: 1fr; }
   .fertilizer-history-list article button { justify-self: start; }
   .care-rule-list > div { align-items: flex-start; flex-direction: column; gap: 3px; }

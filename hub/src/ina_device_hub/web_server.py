@@ -5492,9 +5492,7 @@ def _parse_ai_model_parameters(source, prefix, current=None):
         raise ValueError(f"{prefix}_temperature must be a number") from exc
     if not 0 <= temperature <= 2:
         raise ValueError(f"{prefix}_temperature must be between 0 and 2")
-    reasoning_effort = str(
-        source.get(f"{prefix}_reasoning_effort", current.get(f"{prefix}_reasoning_effort", "")) or ""
-    )
+    reasoning_effort = str(source.get(f"{prefix}_reasoning_effort", current.get(f"{prefix}_reasoning_effort", "")) or "")
     if reasoning_effort not in AI_REASONING_EFFORTS:
         raise ValueError(f"{prefix}_reasoning_effort is invalid")
     return {
@@ -6464,7 +6462,11 @@ def decide_plant_calendar_regeneration_proposal_api(planting_id, task_id, propos
         return jsonify({"error": "request body must be a JSON object"}), 400
     repository = plant_management_repository()
     planting = repository.get_planting(planting_id)
-    task = next((item for item in repository.field_bundle(planting["field_id"]).get("generation_tasks", []) if item.get("id") == task_id), None) if planting else None
+    task = (
+        next((item for item in repository.field_bundle(planting["field_id"]).get("generation_tasks", []) if item.get("id") == task_id), None)
+        if planting
+        else None
+    )
     if task is None or task.get("planting_id") != planting_id:
         return jsonify({"error": "calendar generation task not found"}), 404
     try:
@@ -6475,6 +6477,32 @@ def decide_plant_calendar_regeneration_proposal_api(planting_id, task_id, propos
         return jsonify({"error": str(exc)}), 400
     except PlantManagementConflictError as exc:
         return jsonify({"error": str(exc)}), 409
+    return jsonify(result)
+
+
+@app.route("/local/api/plantings/<planting_id>/calendar/regeneration-proposals/<task_id>/decisions", methods=["POST"])
+def decide_plant_calendar_regeneration_proposals_api(planting_id, task_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    repository = plant_management_repository()
+    planting = repository.get_planting(planting_id)
+    task = (
+        next((item for item in repository.field_bundle(planting["field_id"]).get("generation_tasks", []) if item.get("id") == task_id), None)
+        if planting
+        else None
+    )
+    if task is None or task.get("planting_id") != planting_id:
+        return jsonify({"error": "calendar generation task not found"}), 404
+    try:
+        result = repository.decide_calendar_generation_proposals(task_id, request_body.get("decisions"))
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+    result["bundle"] = repository.field_bundle(planting["field_id"])
     return jsonify(result)
 
 
@@ -6816,11 +6844,7 @@ def get_field_record_image_api(field_id, attachment_id):
         plant_bundle = plant_management_repository().field_bundle(field_id)
         attachment = _find_attachment_in_records(plant_bundle.get("work_logs") or [], attachment_id)
         if attachment is None:
-            calendar_actions = [
-                action
-                for calendar in (plant_bundle.get("calendars") or {}).values()
-                for action in calendar.get("actions") or []
-            ]
+            calendar_actions = [action for calendar in (plant_bundle.get("calendars") or {}).values() for action in calendar.get("actions") or []]
             attachment = _find_attachment_in_records(calendar_actions, attachment_id)
     if attachment is None:
         return jsonify({"error": "record image not found"}), 404

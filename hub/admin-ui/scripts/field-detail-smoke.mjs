@@ -434,6 +434,105 @@ try {
   assert.equal(await lockPage.$eval('.calendar-action-search input[type="search"]', (input) => input.disabled), false, "calendar search must remain available");
   await lockPage.screenshot({ path: "/tmp/ina-calendar-generation-edit-lock.png", fullPage: false });
   await lockPage.close();
+
+  let reviewDecisionRequests = 0;
+  let submittedReviewDecisions = [];
+  let interceptedReviewBundle = null;
+  const reviewPage = await browser.newPage();
+  await reviewPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await reviewPage.setRequestInterception(true);
+  reviewPage.on("request", async (request) => {
+    try {
+      if (request.method() === "POST" && request.url().includes("/calendar/regeneration-proposals/ui-smoke-review-generation/decisions")) {
+        reviewDecisionRequests += 1;
+        const payload = JSON.parse(request.postData() || "{}");
+        submittedReviewDecisions = payload.decisions || [];
+        assert(interceptedReviewBundle, "review bundle must be loaded before decisions are submitted");
+        const nextBundle = structuredClone(interceptedReviewBundle);
+        nextBundle.generation_tasks[0].status = "succeeded";
+        nextBundle.generation_tasks[0].proposals = nextBundle.generation_tasks[0].proposals.map((proposal) => ({
+          ...proposal,
+          decision: submittedReviewDecisions.find((decision) => decision.proposal_id === proposal.id)?.decision || proposal.decision,
+        }));
+        await request.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ bundle: nextBundle }) });
+        return;
+      }
+      if (!request.url().includes(`/local/api/fields/${fieldId}/plantings`)) {
+        await request.continue();
+        return;
+      }
+      const response = await fetch(request.url());
+      const bundle = await response.json();
+      const active = bundle.plantings.find((item) => item.status === "active");
+      const currentAction = active ? bundle.calendars[active.id]?.actions?.[0] : null;
+      assert(active && currentAction, "review smoke requires an active planting with a calendar action");
+      bundle.generation_tasks = [{
+        id: "ui-smoke-review-generation",
+        field_id: fieldId,
+        planting_id: active.id,
+        kind: "regenerate",
+        status: "awaiting_review",
+        mode: "review",
+        start_date: "2026-07-20",
+        planning_notes: "",
+        attempts: 1,
+        error: "",
+        created_at: new Date().toISOString(),
+        started_at: new Date().toISOString(),
+        finished_at: "",
+        updated_at: new Date().toISOString(),
+        proposals: [
+          {
+            id: "ui-smoke-update-proposal",
+            change_type: "update",
+            decision: "pending",
+            existing_action_id: currentAction.id,
+            title: "AIが提案した確認作業",
+            before: currentAction,
+            after: { ...currentAction, title: "AIが提案した確認作業", reason: "最新の栽培記録を反映するため" },
+            decided_at: "",
+          },
+          {
+            id: "ui-smoke-add-proposal",
+            change_type: "add",
+            decision: "pending",
+            existing_action_id: "",
+            title: "新しい生育確認",
+            before: null,
+            after: { ...currentAction, id: "ui-smoke-new-action", title: "新しい生育確認", source: "ai_replanned" },
+            decided_at: "",
+          },
+        ],
+      }];
+      interceptedReviewBundle = structuredClone(bundle);
+      await request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(bundle) });
+    } catch (error) {
+      await request.abort("failed");
+      browserErrors.push(String(error));
+    }
+  });
+  await reviewPage.goto(`${baseUrl}/fields/${fieldId}/calendar`, { waitUntil: "networkidle0" });
+  await selectCalendarWorkspace(reviewPage, "作物別の栽培計画");
+  await reviewPage.waitForSelector(".calendar-regeneration-review");
+  assert.equal(await reviewPage.$eval(".regeneration-commit-bar button", (button) => button.disabled), true, "batch apply must wait for every proposal selection");
+  await reviewPage.click(".regeneration-proposal:nth-child(1) .proposal-actions button:last-child");
+  await reviewPage.click(".regeneration-proposal:nth-child(2) .proposal-actions button:first-child");
+  assert.equal(reviewDecisionRequests, 0, "proposal selection must not call the API");
+  assert.equal(await reviewPage.$$(".proposal-actions button[aria-pressed=\"true\"]").then((items) => items.length), 2, "proposal choices must update immediately");
+  assert.match(await reviewPage.$eval(".regeneration-review-counts", (counts) => counts.textContent || ""), /取り入れる 1件.*変更しない 1件.*未選択 0件/s);
+  assert.equal(await reviewPage.$eval(".regeneration-commit-bar button", (button) => button.disabled), false, "batch apply must become available after all choices");
+  await reviewPage.screenshot({ path: "/tmp/ina-calendar-regeneration-batch-review.png", fullPage: true });
+  await reviewPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const reviewOverflow = await reviewPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  assert(reviewOverflow <= 1, `mobile regeneration review must not overflow horizontally: ${reviewOverflow}px`);
+  await reviewPage.screenshot({ path: "/tmp/ina-calendar-regeneration-batch-review-mobile.png", fullPage: true });
+  await reviewPage.click(".regeneration-commit-bar button");
+  await reviewPage.waitForFunction(() => !document.querySelector(".calendar-regeneration-review"));
+  assert.equal(reviewDecisionRequests, 1, "all proposal decisions must use one API request");
+  assert.equal(submittedReviewDecisions.length, 2, "the batch request must include every pending proposal");
+  await reviewPage.close();
+
   assert.match(await page.$eval("[data-field-tab='monitoring']", (tab) => tab.textContent || ""), /環境・設備/);
   await page.click("[data-field-tab='monitoring']");
   await page.waitForSelector("[data-tab-panel='monitoring']:not([hidden])");
@@ -499,6 +598,8 @@ try {
       "/tmp/ina-fertilizer-effect-desktop.png",
       "/tmp/ina-calendar-mobile.png",
       "/tmp/ina-calendar-generation-edit-lock.png",
+      "/tmp/ina-calendar-regeneration-batch-review.png",
+      "/tmp/ina-calendar-regeneration-batch-review-mobile.png",
       "/tmp/ina-calendar-planned-action.png",
       "/tmp/ina-calendar-action-journal-mobile.png",
       "/tmp/ina-calendar-action-journal-mobile-task.png",

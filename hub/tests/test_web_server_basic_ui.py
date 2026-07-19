@@ -1523,13 +1523,13 @@ class WebServerBasicUITest(unittest.TestCase):
         review_task = self.plant_management_repository.field_bundle(field["id"])["generation_tasks"][0]
         self.assertEqual(review_task["status"], "awaiting_review")
         self.assertTrue(review_task["proposals"])
-        for proposal in review_task["proposals"]:
-            decision = self.client.post(
-                f"/local/api/plantings/{planting['id']}/calendar/regeneration-proposals/{review_task['id']}/{proposal['id']}",
-                json={"decision": "approved"},
-            )
-            self.assertEqual(decision.status_code, 200)
+        decision = self.client.post(
+            f"/local/api/plantings/{planting['id']}/calendar/regeneration-proposals/{review_task['id']}/decisions",
+            json={"decisions": [{"proposal_id": proposal["id"], "decision": "approved"} for proposal in review_task["proposals"]]},
+        )
+        self.assertEqual(decision.status_code, 200)
         self.assertEqual(decision.get_json()["task"]["status"], "succeeded")
+        self.assertEqual(decision.get_json()["bundle"]["generation_tasks"][0]["status"], "succeeded")
         self.assertTrue(any(item["status"] == "completed" for item in self.plant_management_repository.get_calendar(planting["id"])["actions"]))
 
         detail = self.client.get(f"/fields/{field['id']}?planting={planting['id']}#cultivation")

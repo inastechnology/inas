@@ -159,6 +159,17 @@ export function decidePlantCalendarRegenerationProposal(
   );
 }
 
+export function decidePlantCalendarRegenerationProposals(
+  plantingId: string,
+  taskId: string,
+  decisions: Array<{ proposal_id: string; decision: "approved" | "rejected" }>,
+): Promise<{ bundle: PlantBundle }> {
+  return requestJson(
+    `/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/regeneration-proposals/${encodeURIComponent(taskId)}/decisions`,
+    { method: "POST", body: JSON.stringify({ decisions }) },
+  );
+}
+
 export function addPlantAction(plantingId: string, payload: PlantActionMutationPayload): Promise<PlantCalendarAction> {
   const form = actionMutationForm(payload);
   return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/actions`, {

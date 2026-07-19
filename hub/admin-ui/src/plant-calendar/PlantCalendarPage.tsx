@@ -7,7 +7,7 @@ import {
   completePlantAction,
   createFertilizerApplication,
   createFertilizerMaterial,
-  decidePlantCalendarRegenerationProposal,
+  decidePlantCalendarRegenerationProposals,
   deleteFertilizerApplication,
   deleteFertilizerMaterial,
   deletePlantAction,
@@ -142,9 +142,10 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
         })}
         onAskQuestion={(plantingId, question) => execute(() => askPlantQuestion(plantingId, question), false)}
         onRegenerate={regenerate}
-        onDecideRegeneration={(plantingId, taskId, proposalId, decision) => execute(async () => {
-          await decidePlantCalendarRegenerationProposal(plantingId, taskId, proposalId, decision);
-        })}
+        onDecideRegeneration={(plantingId, taskId, decisions) => execute(async () => {
+          const result = await decidePlantCalendarRegenerationProposals(plantingId, taskId, decisions);
+          setBundle(result.bundle);
+        }, false)}
         onAddAction={(plantingId, payload: PlantActionMutationPayload) => execute(async () => {
           await addPlantAction(plantingId, payload);
         })}
