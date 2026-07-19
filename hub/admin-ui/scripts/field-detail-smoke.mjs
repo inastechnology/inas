@@ -43,6 +43,7 @@ try {
   assert.equal(await page.$$eval("[data-field-tab]", (tabs) => tabs.length), 5);
   assert.equal(await page.$eval("#field-installation-tree", (details) => details.hasAttribute("open")), false);
   const targetSettingsHref = await page.$eval("#field-status-dashboard .range-card", (link) => link.href);
+  assert.equal(await page.$eval("#field-status-dashboard .range-card", (link) => link.getAttribute("target")), "_blank");
   const targetSettingsUrl = new URL(targetSettingsHref);
   const targetMetric = targetSettingsUrl.searchParams.get("target_metric");
   assert(targetMetric, "an environment metric must carry its target metric to the editor");
@@ -70,6 +71,7 @@ try {
   assert.match(await page.$eval("#field-action-candidates", (panel) => panel.textContent || ""), /(そろそろ|今やる|期限超過)/);
   await page.screenshot({ path: "/tmp/ina-field-todo-desktop.png", fullPage: true });
   const calendarHref = await page.$eval(".calendar-task", (link) => link.href);
+  assert.equal(await page.$eval(".calendar-task", (link) => link.getAttribute("target")), "_blank");
   const todoActionId = new URL(calendarHref).searchParams.get("action");
   assert(todoActionId, "a TODO link must identify the selected action");
   const calendarPage = await browser.newPage();
@@ -199,11 +201,13 @@ try {
   assert.match(await page.$eval("[data-field-tab='monitoring']", (tab) => tab.textContent || ""), /環境・設備/);
   await page.click("[data-field-tab='monitoring']");
   await page.waitForSelector("[data-tab-panel='monitoring']:not([hidden])");
+  assert.equal(await page.$eval(".scope-device-settings", (link) => link.getAttribute("target")), "_blank");
   await page.screenshot({ path: "/tmp/ina-field-monitoring-desktop.png", fullPage: true });
 
   await page.click("[data-field-tab='cultivation']");
   await page.waitForSelector("[data-planting-form]");
   assert.match(await page.$eval("[data-tab-panel='cultivation']", (panel) => panel.textContent || ""), /年間カレンダーを開く/);
+  assert.equal(await page.$eval(".planting-calendar-link", (link) => link.getAttribute("target")), "_blank");
   assert.match(await page.$eval("[data-tab-panel='cultivation']", (panel) => panel.textContent || ""), /直近の履歴/);
   await page.screenshot({ path: "/tmp/ina-field-cultivation-desktop.png", fullPage: true });
 

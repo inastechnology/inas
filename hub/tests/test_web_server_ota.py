@@ -189,6 +189,9 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn(f'data-delete-device="{device_id}"', html)
         self.assertNotIn("灌水推移", html)
         self.assertNotIn('id="metadata-form"', html)
+        self.assertNotIn('href="/demo/mqtt-devices"', html)
+        self.assertNotIn("UIデモを開く", html)
+        self.assertNotIn('class="developer-tools"', html)
 
     def test_mqtt_device_can_be_deleted_without_recreating_detail_record(self):
         device_id = "INADS-OLD-FIRMWARE-ID"
@@ -370,6 +373,9 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("OTA Status History", html)
         self.assertIn('id="output-connection-map"', html)
         self.assertIn('id="open-output-settings"', html)
+        self.assertIn('role="button" tabindex="0" aria-haspopup="dialog" aria-controls="output-settings-dialog"', html)
+        self.assertIn('aria-label="現在の水やりルートを変更"', html)
+        self.assertIn("クリックして変更", html)
         self.assertIn('id="output-settings-dialog"', html)
         self.assertIn("水やりルートを組み立てる", html)
         self.assertIn("設備をつなぐ", html)

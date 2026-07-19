@@ -615,7 +615,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
           ))}
         </nav>
         <div className="editor-actions">
-          <a className="calendar-button" href={`/fields/${encodeURIComponent(fieldId)}/calendar`}>
+          <a className="calendar-button" href={`/fields/${encodeURIComponent(fieldId)}/calendar`} target="_blank" rel="noopener" aria-label="栽培カレンダーを新しいタブで開く" title="栽培カレンダーを新しいタブで開く">
             <CalendarDays size={17} />
             <span>栽培カレンダー</span>
             {plantBundle.suggestions.length > 0 && <strong>{plantBundle.suggestions.length}</strong>}
@@ -1096,11 +1096,11 @@ function PlacementInspector({
             <PlantTargetEditor planting={planting} busy={plantBusy} focusMetric={targetMetric} onSave={onUpdatePlanting} />
             {generationTask?.status === "failed" && <p className="generation-status failed" role="alert">AI計画の作成に失敗しました。カレンダー画面から再実行できます。{generationTask.error && ` (${generationTask.error})`}</p>}
             <div className="planting-links">
-              <a href={calendarUrl} className={generationActive ? "generation-active" : undefined}>
+              <a href={calendarUrl} target="_blank" rel="noopener" aria-label="カレンダーを新しいタブで開く" className={generationActive ? "generation-active" : undefined}>
                 {generationActive ? <LoaderCircle className="spin" size={16} /> : <CalendarDays size={16} />}
                 {generationActive ? "AI計画を作成中..." : "カレンダーを開く"}
               </a>
-              <a href={`${fieldDetailUrl}?planting=${encodeURIComponent(planting.id)}#cultivation`} title="栽培タブで定植情報を編集"><ExternalLink size={16} />作物情報を編集</a>
+              <a href={`${fieldDetailUrl}?planting=${encodeURIComponent(planting.id)}#cultivation`} target="_blank" rel="noopener" title="栽培タブを新しいタブで開いて定植情報を編集"><ExternalLink size={16} />作物情報を編集</a>
             </div>
           </section>
         ) : (

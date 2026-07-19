@@ -758,7 +758,7 @@ def camera_images(device_id):
           {% if images %}
           <div class="grid">
             {% for image in images %}
-            <a class="image-card" href="{{ image.url }}" target="_blank" rel="noreferrer">
+            <a class="image-card" href="{{ image.url }}" target="_blank" rel="noopener noreferrer">
               <img src="{{ image.url }}" alt="{{ image.captured_at }}">
               <div class="meta">{{ image.captured_at }}</div>
             </a>
@@ -2532,8 +2532,6 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .device-guide-copy h2 { margin: 5px 0 0; color: #20372b; font-size: 25px; }
           .device-guide-copy p { max-width: 620px; margin: 8px 0 0; color: var(--muted); font-size: 13px; }
           .device-guide img { width: 100%; height: 100%; min-height: 190px; object-fit: cover; border-left: 1px solid #c9d8ce; }
-          .developer-tools { margin-top: 18px; color: var(--muted); font-size: 12px; }
-          .developer-tools summary { padding: 9px 11px; }
           .quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
           .quick-actions a {
             display: inline-flex;
@@ -2877,10 +2875,16 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .switch-row input { width: auto; }
           .schedule-editor, .mosfet-switch-editor { display: grid; gap: 10px; }
           .output-routing { display: grid; grid-template-columns: minmax(220px, .65fr) minmax(360px, 1.35fr); gap: 14px; margin-top: 9px; padding: 14px; border: 1px solid #cddbd2; border-radius: 9px; background: #f8fbf8; }
+          .output-routing-trigger { cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease; }
+          .output-routing-trigger:hover { border-color: #6eaa89; background: #f3faf5; box-shadow: 0 10px 26px rgba(32, 94, 65, .12); }
+          .output-routing-trigger:focus-visible { outline: 3px solid rgba(45, 123, 89, .28); outline-offset: 3px; border-color: #2d7b59; }
           .output-routing > img { width: 100%; height: 100%; min-height: 210px; object-fit: cover; border-radius: 7px; }
           .output-overview { display: grid; gap: 12px; align-content: start; }
           .output-overview-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
           .output-overview-head h4 { margin: 0; font-size: 16px; }
+          .route-edit-prompt { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 6px 9px; border-radius: 999px; color: #286248; background: #e3f2e8; font-size: 11px; font-weight: 800; }
+          .route-edit-prompt svg { width: 14px; height: 14px; }
+          .output-routing-trigger:hover .route-edit-prompt { color: #fff; background: #2d7b59; }
           .switch-flow-board { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 16px; align-items: center; }
           .controller-node { display: grid; place-items: center; min-height: 112px; padding: 12px; border: 2px solid #4d846b; border-radius: 12px; color: #245740; background: #e4f1e8; font-weight: 800; text-align: center; }
           .switch-output-list { position: relative; display: grid; gap: 8px; }
@@ -3242,7 +3246,6 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             {% endif %}
             {% if device_catalog.has_previous or device_catalog.has_next %}<nav class="device-pagination" aria-label="機器一覧ページ">{% if device_catalog.previous_url %}<a href="{{ device_catalog.previous_url }}">前へ</a>{% endif %}<span>{{ device_catalog.page }} / {{ device_catalog.page_count }}</span>{% if device_catalog.next_url %}<a href="{{ device_catalog.next_url }}">次へ</a>{% endif %}</nav>{% endif %}
           </section>
-          {% if not demo_mode %}<details class="developer-tools"><summary>開発・画面確認</summary><div class="detail-body"><p>実データを変更せずに画面構成を確認できます。</p><a href="/demo/mqtt-devices">UIデモを開く</a></div></details>{% endif %}
           {% endif %}
 
           {% if is_detail_page and admin_view.selected %}
@@ -3251,7 +3254,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             <div class="device-identity"><div class="detail-header">
               <div>
                 <h2>{{ selected.title }}</h2>
-                <p class="lead">{{ selected.kind_label }} / {% if selected.location_href %}<a href="{{ selected.location_href }}">{{ selected.location }}</a>{% else %}{{ selected.location }}{% endif %} / {{ selected.id }}</p>
+                <p class="lead">{{ selected.kind_label }} / {% if selected.location_href %}<a href="{{ selected.location_href }}" target="_blank" rel="noopener" aria-label="{{ selected.location }}を新しいタブで開く">{{ selected.location }} ↗</a>{% else %}{{ selected.location }}{% endif %} / {{ selected.id }}</p>
                 {% if selected.memo %}<p>{{ selected.memo }}</p>{% endif %}
               </div>
               <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span>
@@ -3292,13 +3295,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   {% for assignment in selected.layout_context.assignments %}
                   <div class="location-row">
                     <div class="location-path">
-                      <a href="{{ assignment.href }}">{{ assignment.path }}</a>
+                      <a href="{{ assignment.href }}" target="_blank" rel="noopener" aria-label="{{ assignment.path }}を新しいタブで開く">{{ assignment.path }} ↗</a>
                       <small>{{ assignment.placement_kind }}{% if not assignment.field_level %} / {{ assignment.resource_name }}{% endif %}</small>
                     </div>
                     <div class="relation-targets">
-                      {% if assignment.targets %}<span>{{ assignment.relation_label }}</span>{% for target in assignment.targets %}<a href="{{ target.href }}" title="{{ target.path }}">{{ target.name }}</a>{% endfor %}{% else %}<span>{{ assignment.relation_label }}は未設定</span>{% endif %}
+                      {% if assignment.targets %}<span>{{ assignment.relation_label }}</span>{% for target in assignment.targets %}<a href="{{ target.href }}" target="_blank" rel="noopener" title="{{ target.path }}を新しいタブで開く">{{ target.name }} ↗</a>{% endfor %}{% else %}<span>{{ assignment.relation_label }}は未設定</span>{% endif %}
                     </div>
-                    <div class="location-actions"><a href="{{ assignment.field_href }}">圃場を開く</a><a href="{{ assignment.layout_href }}">設置ビューを編集</a></div>
+                    <div class="location-actions"><a href="{{ assignment.field_href }}" target="_blank" rel="noopener" aria-label="圃場を新しいタブで開く">圃場を開く ↗</a><a href="{{ assignment.layout_href }}" target="_blank" rel="noopener" aria-label="設置ビューを新しいタブで開く">設置ビューを編集 ↗</a></div>
                   </div>
                   {% endfor %}
                 </div>
@@ -3421,18 +3424,18 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <details><summary>通信・開発者向け設定</summary><div class="detail-body"><p class="lead">通常は変更不要です。時刻同期、保守確認間隔、デバッグ送信を調整します。</p><div class="config-toolbar"><div class="config-field"><label for="timezone-offset">機器の時刻基準</label><select id="timezone-offset"><option value="32400">日本時間（UTC+09:00）</option><option value="0">UTC</option></select></div><div class="config-field"><label for="ntp-server">時刻同期サーバー（NTP）</label><input id="ntp-server" type="text" autocomplete="off"></div><label class="switch-row" for="debug-log-on-wake"><input id="debug-log-on-wake" type="checkbox">次回起動時に診断ログを送る</label><div class="config-field"><label for="ota-check-interval">更新確認の間隔</label><select id="ota-check-interval"><option value="3600">1時間</option><option value="10800">3時間</option><option value="21600">6時間</option><option value="43200">12時間</option><option value="86400">24時間</option></select></div></div></div></details>
 
               <section id="output-connections" class="setup-stage connection-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
-                <div class="setup-stage-head"><div><h3>設備をつなぐ</h3><p class="lead">制御ボックスから水を送る設備まで、今のつながりを確認できます。</p></div><button type="button" id="open-output-settings" class="primary">ルートを組み立てる</button></div>
-                <div class="output-routing">
+                <div class="setup-stage-head"><div><h3>設備をつなぐ</h3><p class="lead">制御ボックスから水を送る設備まで、今のつながりを確認できます。接続図を選ぶとルートを変更できます。</p></div></div>
+                <div id="open-output-settings" class="output-routing output-routing-trigger" role="button" tabindex="0" aria-haspopup="dialog" aria-controls="output-settings-dialog" aria-label="現在の水やりルートを変更">
                   <img src="/static/ui-illustrations/controller-flow.png" alt="制御機器から潅水設備やセンサーへつながるイラスト" loading="lazy">
                   <div class="output-overview">
-                    <div class="output-overview-head"><h4>現在の水やりルート</h4></div>
+                    <div class="output-overview-head"><h4>現在の水やりルート</h4><span class="route-edit-prompt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>クリックして変更</span></div>
                     <div class="switch-flow-board"><div class="controller-node">制御<br>ボックス</div><div id="output-connection-map" class="switch-output-list" aria-live="polite">{% for output in selected.output_settings.outputs %}<div class="switch-output {{ 'enabled' if output.enabled else 'disabled' }}"><span class="switch-output-dot"></span><span class="switch-output-icon" aria-hidden="true">💧</span><div><strong>{{ output.name }}</strong><small>{{ output.controlled_load or '接続先未設定' }}</small></div><span class="terminal">接続口 {{ output.number }}</span></div>{% endfor %}</div></div>
                   </div>
                   {% if selected.output_settings.unsupported_count %}<p class="notice warn output-warning">保存済み設定に、この機種では編集できない接続が {{ selected.output_settings.unsupported_count }} 件あります。既存値は維持されます。</p>{% endif %}
                 </div>
                 <dialog id="output-settings-dialog" class="config-dialog builder-dialog" aria-labelledby="output-settings-title">
                   <div class="dialog-head"><div><h3 id="output-settings-title">水やりルートを組み立てる</h3><p class="lead">接続口をONにすると線がつながります。絵を選んで、設備までのルートを完成させましょう。</p></div><button type="button" data-close-output-dialog aria-label="閉じる">×</button></div>
-                  <div class="dialog-body"><div class="builder-intro"><span class="builder-intro-icon" aria-hidden="true">3</span><span><strong>作り方は3ステップ</strong><br><small>接続口を使う → 設備の種類を選ぶ → 圃場の設備を選ぶ</small></span></div><div id="mosfet-switch-editor" class="mosfet-switch-editor"></div>{% if selected.output_settings.layout_href %}<p class="muted">候補に設備がない場合は、<a href="{{ selected.output_settings.layout_href }}">圃場の設置ビュー</a>で、この機器の対象を設定してください。</p>{% endif %}<p class="muted">「組み立てを反映」後、設定画面下部の「機器へ送る」を押すと実機へ反映されます。</p></div>
+                  <div class="dialog-body"><div class="builder-intro"><span class="builder-intro-icon" aria-hidden="true">3</span><span><strong>作り方は3ステップ</strong><br><small>接続口を使う → 設備の種類を選ぶ → 圃場の設備を選ぶ</small></span></div><div id="mosfet-switch-editor" class="mosfet-switch-editor"></div>{% if selected.output_settings.layout_href %}<p class="muted">候補に設備がない場合は、<a href="{{ selected.output_settings.layout_href }}" target="_blank" rel="noopener" data-preserve-current-work aria-label="圃場の設置ビューを新しいタブで開く">圃場の設置ビュー ↗</a>で、この機器の対象を設定してください。組み立て中の内容はこの画面に残ります。</p>{% endif %}<p class="muted">「組み立てを反映」後、設定画面下部の「機器へ送る」を押すと実機へ反映されます。</p></div>
                   <div class="dialog-actions"><button type="button" data-cancel-output-dialog>キャンセル</button><button type="button" class="primary" data-apply-output-dialog>組み立てを反映</button></div>
                 </dialog>
               </section>
@@ -3715,7 +3718,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                       <td>{{ artifact.rollout_state }}</td>
                       <td>{{ artifact.size }}</td>
                       <td>{{ artifact.sha256 }}</td>
-                      <td><a href="{{ artifact.url }}">{{ artifact.url }}</a></td>
+                      <td><a href="{{ artifact.url }}" target="_blank" rel="noopener" aria-label="ファームウェア成果物を新しいタブで開く">{{ artifact.url }} ↗</a></td>
                       <td>{{ artifact.updated_at }}</td>
                     </tr>
                     {% endfor %}
@@ -4465,15 +4468,23 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           }
 
           const outputSettingsDialog = document.getElementById("output-settings-dialog");
+          const outputSettingsTrigger = document.getElementById("open-output-settings");
           let outputSettingsSnapshot = [];
-          document.getElementById("open-output-settings")?.addEventListener("click", () => {
+          function openOutputSettings() {
             outputSettingsSnapshot = JSON.parse(JSON.stringify(collectMosfetSwitches()));
             openDialog(outputSettingsDialog);
+          }
+          outputSettingsTrigger?.addEventListener("click", openOutputSettings);
+          outputSettingsTrigger?.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            openOutputSettings();
           });
           function cancelOutputSettings() {
             renderMosfetSwitches(outputSettingsSnapshot);
             refreshScheduleChannelOptions();
             closeDialog(outputSettingsDialog);
+            outputSettingsTrigger?.focus();
           }
           document.querySelectorAll("[data-close-output-dialog], [data-cancel-output-dialog]").forEach((button) => {
             button.addEventListener("click", cancelOutputSettings);
@@ -4485,6 +4496,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             refreshRuntimeConfigPreview();
             document.getElementById("runtime-config-form")?.dispatchEvent(new Event("change", { bubbles: true }));
             closeDialog(outputSettingsDialog);
+            outputSettingsTrigger?.focus();
           });
 
           function updateSoilCalibrationAction(mode) {

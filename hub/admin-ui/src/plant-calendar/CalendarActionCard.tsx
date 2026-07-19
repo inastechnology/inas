@@ -339,7 +339,7 @@ function WorkMethodDetails({ method, initiallyOpen }: { method: WorkMethodOption
       {method.completion_checks.length > 0 && <div><span>終了確認</span><ul>{method.completion_checks.map((item) => <li key={item}>{item}</li>)}</ul></div>}
       {method.precautions.length > 0 && <div className="method-precautions"><span>注意</span><ul>{method.precautions.map((item) => <li key={item}>{item}</li>)}</ul></div>}
       {method.registration_number && <small>登録番号 {method.registration_number}</small>}
-      {method.source_url && <a href={method.source_url} target="_blank" rel="noreferrer">{method.source_name || "根拠情報"}<ExternalLink size={12} /></a>}
+      {method.source_url && <a href={method.source_url} target="_blank" rel="noopener noreferrer">{method.source_name || "根拠情報"}<ExternalLink size={12} /></a>}
     </details>
   );
 }
@@ -375,7 +375,7 @@ function CompletionRecord({ action }: { action: PlantCalendarAction }) {
       {Boolean(completion.attachments?.length) && (
         <div className="completion-images">
           {completion.attachments?.map((attachment) => (
-            <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer">
+            <a key={attachment.id} href={attachment.url} target="_blank" rel="noopener noreferrer">
               <img src={attachment.url} alt={attachment.original_filename || "作業記録画像"} loading="lazy" />
             </a>
           ))}
