@@ -10,6 +10,7 @@
     "smoke:field-detail": "node scripts/field-detail-smoke.mjs",
     "smoke:device-detail": "node scripts/device-detail-smoke.mjs",
     "smoke:settings": "node scripts/settings-smoke.mjs",
+    "smoke:accessibility": "node scripts/accessibility-smoke.mjs",
     "smoke:skip-decision": "node scripts/skip-decision-smoke.mjs",
     "smoke:marketing": "node scripts/marketing-smoke.mjs",
     "capture:marketing": "node scripts/marketing-capture.mjs",

@@ -83,7 +83,7 @@
       .ai-dialog-header { display:flex; align-items:start; justify-content:space-between; gap:16px; padding:20px 22px 14px; border-bottom:1px solid #e2e8e3; }
       .ai-dialog-header h2 { margin:5px 0 0; font-size:20px; line-height:1.35; }
       .ai-dialog-badge { color:#527065; font-size:10px; font-weight:900; letter-spacing:.08em; }
-      .ai-dialog-close { min-width:36px; min-height:36px; padding:0; border-color:#d1dad4; color:#596960; font-size:21px; line-height:1; }
+      .ai-dialog-close { display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto; gap:6px; min-width:48px; min-height:48px; padding:7px 10px; border-color:#d1dad4; color:#596960; font-size:15px; font-weight:800; line-height:1; white-space:nowrap; }
       .ai-dialog-body { display:grid; gap:16px; padding:18px 22px; }
       .ai-dialog-summary { margin:0; color:#405048; font-size:14px; line-height:1.7; }
       .ai-dialog-section { padding:13px 14px; border-radius:7px; background:#f3f7f4; }
@@ -121,7 +121,7 @@
     </style>
     <link rel="stylesheet" href="/static/hub-ui.css">
   </head>
-  <body class="hub-shell hub-settings">
+  <body class="hub-shell hub-settings {{ accessibility_body_class }}">
     <header class="page-header">
       <div class="header-inner">
         <div><a class="brand" href="/">INA Device Hub</a><h1>アプリ設定</h1></div>
@@ -155,8 +155,7 @@
                 <div class="setting-label">{{ title }}<small>{{ description }}に使用します。</small></div>
                 <div class="setting-control">
                   <div class="provider-fields">
-                    <label class="wide">OpenAI互換 Base URL<input name="{{ channel }}_analyze_base_url" value="{{ ai[channel + '_analyze_base_url'] }}" placeholder="https://api.openai.com/v1"></label>
-                    <label>モデル<input name="{{ channel }}_analyze_model" value="{{ ai[channel + '_analyze_model'] }}" list="{{ channel }}-model-candidates" placeholder="利用するモデルID" data-model-input><datalist id="{{ channel }}-model-candidates"><option value="gpt-5.6-luna"><option value="gpt-5.6-terra"><option value="gpt-5.6-sol"><option value="gpt-5.4"></datalist></label>
+                    <label class="wide">利用するAIモデル<input name="{{ channel }}_analyze_model" value="{{ ai[channel + '_analyze_model'] }}" list="{{ channel }}-model-candidates" placeholder="利用するモデル名" data-model-input><datalist id="{{ channel }}-model-candidates"><option value="gpt-5.6-luna"><option value="gpt-5.6-terra"><option value="gpt-5.6-sol"><option value="gpt-5.4"></datalist></label>
                     <div class="wide secret-control">
                       <label>APIキー<input type="password" name="{{ channel }}_analyze_api_key" value="" autocomplete="new-password" spellcheck="false" placeholder="変更する場合のみ入力"></label>
                       <div class="secret-actions">
@@ -168,9 +167,10 @@
                   </div>
                   <p class="model-hint" data-model-hint>モデルによって、出力の揺らぎや考える深さに対応していない場合があります。通常は自動調整のままで利用できます。</p>
                   <details class="model-advanced">
-                    <summary>モデル特性を調整（上級者向け）</summary>
+                    <summary>接続先とモデル特性を調整（上級者向け）</summary>
                     <div class="model-advanced-body">
                       <div class="parameter-grid">
+                        <label class="wide">OpenAI互換の接続先（Base URL）<input name="{{ channel }}_analyze_base_url" value="{{ ai[channel + '_analyze_base_url'] }}" placeholder="https://api.openai.com/v1"><span class="parameter-note">公式OpenAI以外の互換サービスを使う場合だけ変更します。</span></label>
                         <label class="wide">出力の揺らぎ
                           <select name="{{ channel }}_analyze_temperature_mode" data-temperature-mode>
                             <option value="auto"{% if ai[channel + '_analyze_temperature_mode'] == 'auto' %} selected{% endif %}>自動調整（おすすめ）</option>
@@ -205,12 +205,12 @@
                 </div>
               </div>
               {% endfor %}
-              <div class="setting-row" data-setting-row data-search="栽培根拠 Web検索 公的資料 農林水産省 農研機構 キャッシュ">
-                <div class="setting-label">公的な栽培根拠を検索<small>AI栽培計画の作成前に、農林水産省・農研機構・自治体の資料を検索して要約します。</small></div>
+              <div class="setting-row" data-setting-row data-search="栽培情報 栽培根拠 Web検索 公的資料 農林水産省 農研機構 キャッシュ">
+                <div class="setting-label">栽培情報を自動で調べる<small>AI栽培計画の作成前に、公的な資料を検索して要点をまとめます。</small></div>
                 <div class="setting-control">
-                  <label class="toggle"><input type="checkbox" name="plant_calendar_web_knowledge_enabled"{% if ai.plant_calendar_web_knowledge_enabled %} checked{% endif %}>計画作成時にWeb検索する</label>
-                  <label>再検索までの日数<input type="number" name="plant_calendar_web_knowledge_cache_days" min="1" max="365" step="1" value="{{ ai.plant_calendar_web_knowledge_cache_days or 30 }}"></label>
-                  <span class="inline-help">公式OpenAI APIのResponses Web Searchを利用できる場合だけ実行します。根拠は取得日と出典URL付きで保存し、同じ条件では指定期間再利用します。検索ツール利用料が発生する場合があります。</span>
+                  <label class="toggle"><input type="checkbox" name="plant_calendar_web_knowledge_enabled"{% if ai.plant_calendar_web_knowledge_enabled %} checked{% endif %}>計画作成時に公的資料を検索する</label>
+                  <span class="inline-help">農林水産省、農研機構、自治体などの資料を優先し、出典を栽培計画に残します。</span>
+                  <details class="model-advanced"><summary>検索の詳しい設定（上級者向け）</summary><div class="model-advanced-body"><label>同じ情報を再利用する日数<input type="number" name="plant_calendar_web_knowledge_cache_days" min="1" max="365" step="1" value="{{ ai.plant_calendar_web_knowledge_cache_days or 30 }}"></label><span class="inline-help">公式OpenAI APIのWeb検索を利用できる場合だけ実行します。検索機能の利用料が発生する場合があります。</span></div></details>
                 </div>
               </div>
               <div class="setting-row" data-setting-row data-search="上級者 栽培計画 prompt プロンプト template テンプレート JSON">
@@ -218,7 +218,8 @@
                 <div class="setting-control">
                   <details>
                     <summary>プロンプトフォーマットを編集</summary>
-                    <textarea name="plant_calendar_prompt_template" maxlength="{{ plant_calendar_prompt_max_length }}" spellcheck="false" aria-describedby="plant-calendar-prompt-help">{{ ai.plant_calendar_prompt_template }}</textarea>
+                    <label for="plant-calendar-prompt-template">AI栽培計画の入力フォーマット</label>
+                    <textarea id="plant-calendar-prompt-template" name="plant_calendar_prompt_template" maxlength="{{ plant_calendar_prompt_max_length }}" spellcheck="false" aria-describedby="plant-calendar-prompt-help">{{ ai.plant_calendar_prompt_template }}</textarea>
                   </details>
                   <span class="inline-help" id="plant-calendar-prompt-help"><code>{default_instructions}</code>、<code>{context_json}</code>、<code>{guidance_json}</code> は必須です。<code>{experience_instruction}</code> は任意です。空欄は既定フォーマットへ戻します。管理者の追加指示より、サーバ固定の安全条件と日付検証が優先されます。</span>
                 </div>
@@ -234,8 +235,8 @@
             <input type="hidden" name="settings_section" value="instagram">
             <div class="setting-list">
               <div class="setting-row" data-setting-row data-search="投稿 開始 時刻 schedule 日次">
-                <div class="setting-label">投稿処理開始時刻<small>Instagramの自動投稿処理を開始する時刻です。他の日次処理には使用しません。</small></div>
-                <div class="setting-control"><input type="time" name="post_schedule_start" value="{{ instagram.post_schedule_start or '09:01' }}" required></div>
+                <div class="setting-label" id="post-schedule-start-label">投稿処理開始時刻<small>Instagramの自動投稿処理を開始する時刻です。他の日次処理には使用しません。</small></div>
+                <div class="setting-control"><input type="time" name="post_schedule_start" value="{{ instagram.post_schedule_start or '09:01' }}" required aria-labelledby="post-schedule-start-label"></div>
               </div>
               <div class="setting-row" data-setting-row data-search="カメラ device camera タイムラプス 選択">
                 <div class="setting-label">投稿元カメラ<small>登録済みのカメラデバイスから選択します。</small></div>
@@ -245,8 +246,8 @@
                 </div>
               </div>
               <div class="setting-row" data-setting-row data-search="植物 位置 配置 解析 prompt プロンプト">
-                <div class="setting-label">植物位置の補足<small>画像内の作物の位置や、誤認を避けるための前提を投稿文生成へ渡します。</small></div>
-                <div class="setting-control"><textarea name="plant_position_prompt" maxlength="4000" placeholder="例: 画面中央はライチ。左端の鉢は解析対象外。">{{ instagram.plant_position_prompt }}</textarea></div>
+                <div class="setting-label" id="plant-position-prompt-label">植物位置の補足<small>画像内の作物の位置や、誤認を避けるための前提を投稿文生成へ渡します。</small></div>
+                <div class="setting-control"><textarea name="plant_position_prompt" maxlength="4000" placeholder="例: 画面中央はライチ。左端の鉢は解析対象外。" aria-labelledby="plant-position-prompt-label">{{ instagram.plant_position_prompt }}</textarea></div>
               </div>
               <div class="setting-row" data-setting-row data-search="アカウント username user ID API 取得 接続">
                 <div class="setting-label">投稿アカウント<small>自分のユーザー名をInstagram APIから取得し、コメント指示の判定にも使います。</small></div>
@@ -282,7 +283,7 @@
       <section class="ai-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-test-dialog-title" aria-describedby="ai-test-dialog-summary">
         <header class="ai-dialog-header">
           <div><span class="ai-dialog-badge" id="ai-test-dialog-badge">AI CONNECTION</span><h2 id="ai-test-dialog-title">接続結果</h2></div>
-          <button class="ai-dialog-close" type="button" data-ai-dialog-close aria-label="閉じる">×</button>
+          <button class="ai-dialog-close" type="button" data-ai-dialog-close aria-label="AI接続結果を閉じる">× <span>閉じる</span></button>
         </header>
         <div class="ai-dialog-body">
           <p class="ai-dialog-summary" id="ai-test-dialog-summary"></p>

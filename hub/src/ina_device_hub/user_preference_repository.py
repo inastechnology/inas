@@ -10,6 +10,10 @@ SUPPORTED_TIMEZONES = {"Asia/Tokyo", "UTC"}
 SUPPORTED_DATE_FORMATS = {"yyyy-MM-dd", "yyyy/MM/dd", "MM/dd/yyyy"}
 SUPPORTED_CULTIVATION_EXPERIENCE_LEVELS = {"beginner", "standard", "professional"}
 DEFAULT_CULTIVATION_EXPERIENCE_LEVEL = "standard"
+SUPPORTED_FONT_SIZES = {"standard", "large", "extra_large"}
+DEFAULT_FONT_SIZE = "standard"
+SUPPORTED_CONTRAST_MODES = {"standard", "high"}
+DEFAULT_CONTRAST_MODE = "standard"
 
 
 class UserPreferenceValidationError(ValueError):
@@ -137,7 +141,11 @@ def _default_preferences(user_email: str):
         "locale": "ja",
         "timezone": "Asia/Tokyo",
         "date_format": "yyyy-MM-dd",
-        "preferences": {"cultivation_experience": DEFAULT_CULTIVATION_EXPERIENCE_LEVEL},
+        "preferences": {
+            "cultivation_experience": DEFAULT_CULTIVATION_EXPERIENCE_LEVEL,
+            "font_size": DEFAULT_FONT_SIZE,
+            "contrast": DEFAULT_CONTRAST_MODE,
+        },
         "version": 0,
         "created_at": "",
         "updated_at": "",
@@ -157,7 +165,18 @@ def _normalize_preferences(user_email: str, value: dict):
     cultivation_experience = str(preferences.get("cultivation_experience") or DEFAULT_CULTIVATION_EXPERIENCE_LEVEL)
     if cultivation_experience not in SUPPORTED_CULTIVATION_EXPERIENCE_LEVELS:
         raise UserPreferenceValidationError("unsupported cultivation experience level")
-    preferences = {**preferences, "cultivation_experience": cultivation_experience}
+    font_size = str(preferences.get("font_size") or DEFAULT_FONT_SIZE)
+    if font_size not in SUPPORTED_FONT_SIZES:
+        raise UserPreferenceValidationError("unsupported font size")
+    contrast = str(preferences.get("contrast") or DEFAULT_CONTRAST_MODE)
+    if contrast not in SUPPORTED_CONTRAST_MODES:
+        raise UserPreferenceValidationError("unsupported contrast mode")
+    preferences = {
+        **preferences,
+        "cultivation_experience": cultivation_experience,
+        "font_size": font_size,
+        "contrast": contrast,
+    }
     serialized = json.dumps(preferences, ensure_ascii=False)
     if len(serialized.encode("utf-8")) > 16 * 1024:
         raise UserPreferenceValidationError("preferences are too large")
@@ -180,7 +199,15 @@ def _row_to_preferences(row):
     cultivation_experience = str(preferences.get("cultivation_experience") or DEFAULT_CULTIVATION_EXPERIENCE_LEVEL)
     if cultivation_experience not in SUPPORTED_CULTIVATION_EXPERIENCE_LEVELS:
         cultivation_experience = DEFAULT_CULTIVATION_EXPERIENCE_LEVEL
+    font_size = str(preferences.get("font_size") or DEFAULT_FONT_SIZE)
+    if font_size not in SUPPORTED_FONT_SIZES:
+        font_size = DEFAULT_FONT_SIZE
+    contrast = str(preferences.get("contrast") or DEFAULT_CONTRAST_MODE)
+    if contrast not in SUPPORTED_CONTRAST_MODES:
+        contrast = DEFAULT_CONTRAST_MODE
     preferences["cultivation_experience"] = cultivation_experience
+    preferences["font_size"] = font_size
+    preferences["contrast"] = contrast
     return {
         "user_email": row[0],
         # Kept in the schema for compatibility; Hub UI content is authored in Japanese.

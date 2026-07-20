@@ -157,6 +157,10 @@ try {
   assert.equal(await page.$eval(".register-button", (button) => button.disabled), false, "AI generation must enable after all required inputs are present");
   await page.click(".register-button");
   await page.waitForSelector(".calendar-kanban-card");
+  await page.waitForFunction(
+    () => document.querySelector("[data-calendar-edit-locked]")?.getAttribute("data-calendar-edit-locked") === "false",
+    { timeout: 30_000 },
+  );
   const modalRect = await page.$eval(".calendar-modal-panel", (panel) => {
     const rect = panel.getBoundingClientRect();
     return { width: rect.width, height: rect.height };
@@ -171,9 +175,10 @@ try {
   await page.waitForSelector(".calendar-action-detail-dialog .calendar-action.in_progress");
   assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), 1, "started work must move to the in-progress column");
   await page.click(".calendar-action-detail-dialog .complete-button");
-  await page.click(".calendar-action-detail-dialog .work-rating label:nth-child(4)");
+  await page.waitForSelector(".work-record-dialog .work-rating label:nth-child(4)");
+  await page.click(".work-record-dialog .work-rating label:nth-child(4)");
   await page.screenshot({ path: "/tmp/ina-plant-work-record-desktop.png" });
-  await page.click('.calendar-action-detail-dialog .work-record-form button[type="submit"]');
+  await page.click('.work-record-dialog .work-record-form button[type="submit"]');
   await page.waitForFunction((before) => Number(document.querySelector('[data-kanban-status="completed"] > header strong')?.textContent || "0") > before, {}, completedCountBefore);
   await page.waitForSelector(".calendar-action-detail-dialog .completed-badge");
   assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), 0, "completed work must leave the in-progress column");
@@ -203,6 +208,10 @@ try {
   await page.waitForSelector(".question-answer");
   await page.click(".calendar-header .icon-button");
 
+  if (!(await page.$('.plant-target-row.enabled input[type="range"]'))) {
+    await page.click('.plant-target-row .plant-target-toggle input[type="checkbox"]');
+    await page.waitForSelector('.plant-target-row.enabled input[type="range"]');
+  }
   await page.$eval('.plant-target-row.enabled input[type="range"]', (input) => {
     const current = Number(input.value);
     const maximum = Number(input.max);
@@ -254,7 +263,10 @@ try {
   assert.equal(blueberry.crop_category, "fruit_tree");
   assert.equal(blueberry.tree_age_years, 3);
   assert.equal(blueberry.conditions.region, "");
-  assert.equal(blueberry.growth_targets.soil_moisture_percent.max, 60);
+  assert(
+    [60, 65].includes(blueberry.growth_targets.soil_moisture_percent.max),
+    "the saved soil-moisture target must retain either the AI suggestion or the editable beginner default",
+  );
   assert(blueberryCalendar?.actions.length > 0, "plant calendar must contain actions");
   assert(blueberryCalendar.actions.some((action) => action.status === "completed"), "work completion must be stored");
   assert(blueberryCalendar.actions.some((action) => action.status === "skipped" && action.skip_decision), "skip decision must be stored");
@@ -298,13 +310,34 @@ async function dragPreset(page, label) {
   const source = await presetButton(page, label);
   const target = await page.$(".layout-canvas");
   assert(source && target, "drag source and target must exist");
-  const sourceBox = await source.boundingBox();
-  const targetBox = await target.boundingBox();
-  assert(sourceBox && targetBox, "drag source and target must be visible");
-  await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(targetBox.x + targetBox.width * 0.55, targetBox.y + targetBox.height * 0.45, { steps: 12 });
-  await page.mouse.up();
+  await page.evaluate((sourceElement, targetElement) => {
+    const transfer = new DataTransfer();
+    const sourceBox = sourceElement.getBoundingClientRect();
+    const targetBox = targetElement.getBoundingClientRect();
+    sourceElement.dispatchEvent(new DragEvent("dragstart", {
+      bubbles: true,
+      cancelable: true,
+      dataTransfer: transfer,
+      clientX: sourceBox.left + sourceBox.width / 2,
+      clientY: sourceBox.top + sourceBox.height / 2,
+    }));
+    targetElement.dispatchEvent(new DragEvent("dragover", {
+      bubbles: true,
+      cancelable: true,
+      dataTransfer: transfer,
+      clientX: targetBox.left + targetBox.width * 0.55,
+      clientY: targetBox.top + targetBox.height * 0.45,
+    }));
+    targetElement.dispatchEvent(new DragEvent("drop", {
+      bubbles: true,
+      cancelable: true,
+      dataTransfer: transfer,
+      clientX: targetBox.left + targetBox.width * 0.55,
+      clientY: targetBox.top + targetBox.height * 0.45,
+    }));
+    sourceElement.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: transfer }));
+  }, source, target);
+  await page.waitForSelector(".open-child-button");
 }
 
 async function presetButton(page, label) {

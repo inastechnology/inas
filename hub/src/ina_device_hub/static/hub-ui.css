@@ -64,3 +64,283 @@ body.hub-legacy { width: min(1100px, calc(100% - 32px)); margin: 0 auto; padding
 .hub-legacy form, .hub-legacy > ul, .hub-legacy > div, .hub-legacy > p { padding: 14px; border: 1px solid var(--hub-line); border-radius: 8px; background: #fff; }
 .hub-legacy input, .hub-legacy textarea, .hub-legacy select { width: 100%; max-width: 620px; min-height: 38px; padding: 7px 9px; border: 1px solid #b9c5bc; border-radius: 6px; }
 @media (max-width: 720px) { .hub-guide-banner { grid-template-columns: 1fr; } .hub-guide-image { max-height: 180px; border-top: 1px solid rgba(118, 151, 129, 0.25); border-left: 0; } }
+
+/* User-selected legibility. Keep standard unchanged; large modes establish a readable minimum without using CSS zoom. */
+body.a11y-font-large {
+  --a11y-body-font-size: 18px;
+  --a11y-small-font-size: 15px;
+  --a11y-body-line-height: 1.65;
+}
+body.a11y-font-extra-large {
+  --a11y-body-font-size: 20px;
+  --a11y-small-font-size: 17px;
+  --a11y-body-line-height: 1.7;
+}
+body.a11y-font-large,
+body.a11y-font-extra-large {
+  font-size: var(--a11y-body-font-size);
+  line-height: var(--a11y-body-line-height);
+}
+body.a11y-font-large :where(div, p, li, dt, dd, label, button, input, select, textarea, summary, table, a, strong, output, span:not([aria-hidden="true"])),
+body.a11y-font-extra-large :where(div, p, li, dt, dd, label, button, input, select, textarea, summary, table, a, strong, output, span:not([aria-hidden="true"])) {
+  font-size: max(1em, var(--a11y-body-font-size)) !important;
+  line-height: var(--a11y-body-line-height);
+}
+body.a11y-font-large :where(small, .inline-help, .disabled-reason, .source-note, .eyebrow, .status, .setting-label small, .field-card-meta, .device-meta),
+body.a11y-font-extra-large :where(small, .inline-help, .disabled-reason, .source-note, .eyebrow, .status, .setting-label small, .field-card-meta, .device-meta) {
+  font-size: var(--a11y-small-font-size) !important;
+  line-height: 1.6;
+}
+body.a11y-font-large h1,
+body.a11y-font-extra-large h1 { font-size: max(1.8em, 30px) !important; line-height: 1.3; }
+body.a11y-font-large h2,
+body.a11y-font-extra-large h2 { font-size: max(1.4em, 24px) !important; line-height: 1.35; }
+body.a11y-font-large h3,
+body.a11y-font-extra-large h3 { font-size: max(1.15em, 20px) !important; line-height: 1.4; }
+body.a11y-font-large :where(input, select, textarea, button),
+body.a11y-font-extra-large :where(input, select, textarea, button) {
+  min-width: 0;
+  max-width: 100%;
+}
+body.a11y-font-large .font-size-option.standard strong,
+body.a11y-font-extra-large .font-size-option.standard strong { font-size: 14px !important; }
+body.a11y-font-large .font-size-option.large strong,
+body.a11y-font-extra-large .font-size-option.large strong { font-size: 18px !important; }
+body.a11y-font-large .font-size-option.extra-large strong,
+body.a11y-font-extra-large .font-size-option.extra-large strong { font-size: 21px !important; }
+body.hub-device-maintenance.a11y-font-large .tab-list,
+body.hub-device-maintenance.a11y-font-extra-large .tab-list {
+  position: static;
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
+body.hub-field-layout.a11y-font-large .editor-header,
+body.hub-field-layout.a11y-font-extra-large .editor-header {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding-block: 12px;
+}
+body.hub-field-layout.a11y-font-large .breadcrumbs,
+body.hub-field-layout.a11y-font-extra-large .breadcrumbs {
+  grid-column: 1;
+  grid-row: auto;
+  width: 100%;
+  padding-inline: 0;
+}
+body.hub-field-layout.a11y-font-large .editor-actions,
+body.hub-field-layout.a11y-font-extra-large .editor-actions {
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 10px;
+}
+body.hub-field-layout.a11y-font-large .editor-identity h1,
+body.hub-field-layout.a11y-font-extra-large .editor-identity h1 {
+  max-width: none;
+  white-space: normal;
+}
+@media (max-width: 520px) {
+  body.a11y-font-large .calendar-kanban-toolbar .calendar-action-date,
+  body.a11y-font-extra-large .calendar-kanban-toolbar .calendar-action-date {
+    grid-template-columns: 20px minmax(0, 1fr) 38px;
+    align-items: center;
+  }
+  body.a11y-font-large .calendar-kanban-toolbar .calendar-action-date > span,
+  body.a11y-font-extra-large .calendar-kanban-toolbar .calendar-action-date > span {
+    grid-column: 2 / -1;
+    white-space: normal;
+  }
+  body.a11y-font-large .calendar-kanban-toolbar .calendar-action-date > input,
+  body.a11y-font-extra-large .calendar-kanban-toolbar .calendar-action-date > input {
+    grid-column: 1 / 3;
+    width: 100%;
+  }
+  body.a11y-font-large .calendar-kanban-toolbar .calendar-action-date > button,
+  body.a11y-font-extra-large .calendar-kanban-toolbar .calendar-action-date > button {
+    grid-column: 3;
+  }
+}
+
+/* Semantic status markers supplement color for every display mode. */
+.hub-shell :where(.badge, .status, .test-result, .save-state, .completed-badge, .in-progress-badge, .skipped-badge, .form-error, .error-banner)::before {
+  width: auto;
+  height: auto;
+  flex: 0 0 auto;
+  border-radius: 0;
+  background: none;
+}
+.hub-shell .badge.good::before,
+.hub-shell .badge.ok::before,
+.hub-shell .status:not(.missing)::before,
+.hub-shell .test-result.ok::before,
+.hub-shell .save-state.success::before,
+.hub-shell .completed-badge::before { content: "✓"; font-weight: 1000; }
+.hub-shell .badge.warn::before,
+.hub-shell .badge.blocked::before,
+.hub-shell .notice.warn::before,
+.hub-shell .notice.warning::before,
+.hub-shell .in-progress-badge::before { content: "△"; font-weight: 1000; }
+.hub-shell .badge.danger::before,
+.hub-shell .status.missing::before,
+.hub-shell .test-result.error::before,
+.hub-shell .save-state.error::before,
+.hub-shell .form-error::before,
+.hub-shell .error-banner::before { content: "!"; font-weight: 1000; }
+.hub-shell .skipped-badge::before { content: "—"; font-weight: 1000; }
+
+/* High-contrast mode is intended for sunlight and low-vision use, so clarity takes precedence over soft decoration. */
+body.a11y-contrast-high {
+  --hub-ink: #07110b;
+  --hub-muted: #26382e;
+  --hub-line: #59685f;
+  --hub-surface: #ffffff;
+  --hub-canvas: #ffffff;
+  --hub-green: #00583c;
+  --hub-green-deep: #003f2c;
+  --hub-green-soft: #e5f3eb;
+  color: #07110b;
+  background: #fff;
+}
+body.a11y-contrast-high :where(p, li, dt, dd, label, small, summary, .muted, .meta, .inline-help, .disabled-reason, .source-note) {
+  color: #17271e !important;
+}
+body.a11y-contrast-high :where(a) {
+  color: #004d38 !important;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+body.a11y-contrast-high :where(button, input, select, textarea) {
+  border-width: 2px !important;
+  border-color: #44534a !important;
+  color: #07110b !important;
+  background-color: #fff !important;
+}
+body.a11y-contrast-high :where(button.primary, .primary-button, .save-button, button[aria-selected="true"], .tab-button[aria-selected="true"]) {
+  border-color: #003f2c !important;
+  color: #fff !important;
+  background: #004f37 !important;
+  text-decoration: none;
+}
+body.a11y-contrast-high :where(.panel, .settings-section, .setting-row, .field-card, .device-tile, .calendar-action, .calendar-kanban-card, .metric-card, .readiness-card, .environment-item, .record-card) {
+  border-color: #69776e !important;
+}
+body.a11y-contrast-high :where(.badge, .status, .completed-badge, .in-progress-badge, .skipped-badge) {
+  gap: 5px;
+  border: 2px solid currentColor !important;
+  color: #07110b !important;
+  background: #fff !important;
+}
+body.a11y-contrast-high :where(.badge.warn, .badge.blocked, .notice.warn, .notice.warning, .in-progress-badge) {
+  color: #613900 !important;
+  border-color: #8b5700 !important;
+  background: #fff7df !important;
+}
+body.a11y-contrast-high :where(.badge.danger, .status.missing, .test-result.error, .save-state.error, .form-error, .error-banner) {
+  color: #7d1813 !important;
+}
+body.a11y-contrast-high :focus-visible {
+  outline: 4px solid #005fcc !important;
+  outline-offset: 3px !important;
+}
+body.a11y-contrast-high :disabled,
+body.a11y-contrast-high [aria-disabled="true"] {
+  color: #4a5650 !important;
+  background: #e5e8e6 !important;
+  opacity: 1 !important;
+}
+
+/* Accessible targets: primary controls remain operable with reduced dexterity, gloves, or touch. */
+.hub-shell :where(button, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), select) {
+  min-height: 48px !important;
+}
+.hub-shell :where(
+  button.icon-button,
+  button.action-icon-button,
+  button.ai-dialog-close,
+  button[data-close-output-dialog],
+  button[data-close-calibration-guide],
+  button[data-close-env-calibration],
+  button[data-remove-schedule],
+  .icon-link,
+  .chart-settings-link,
+  [role="button"]
+) {
+  min-width: 48px !important;
+  min-height: 48px !important;
+}
+.hub-shell :where(.tab-button, .calendar-button, .primary-button, .device-pagination a, .location-actions a, .route-edit-prompt) {
+  min-height: 48px !important;
+  align-items: center;
+}
+.hub-shell :where(button, .icon-link, .chart-settings-link, [role="button"]) {
+  touch-action: manipulation;
+}
+.hub-shell .icon-link.labeled-icon-link {
+  width: auto;
+  min-width: 48px;
+  padding: 8px 12px;
+  gap: 7px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.hub-shell details.advanced-info > summary,
+.hub-shell details.model-advanced > summary,
+.hub-shell details.fertilizer-advanced-fields > summary {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding-block: 9px;
+  cursor: pointer;
+  font-weight: 800;
+}
+.hub-shell details.advanced-info > summary > span {
+  display: grid;
+  gap: 2px;
+}
+.hub-shell details.advanced-info > summary small {
+  color: var(--hub-muted);
+  font-weight: 600;
+}
+.hub-shell .identity-details {
+  max-width: 620px;
+  margin-top: 8px;
+}
+.hub-shell .identity-details .detail-body {
+  padding: 10px 12px;
+  border-left: 3px solid var(--hub-line);
+}
+.hub-shell .communication-history > summary {
+  padding-inline: 14px;
+}
+
+.hub-shell .stateful-feedback {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  color: #42554b;
+  font-weight: 750;
+}
+.hub-shell .stateful-feedback.ok::before {
+  content: "✓";
+  margin-right: .4rem;
+}
+.hub-shell .stateful-feedback.error {
+  color: #9a342e;
+}
+.hub-shell .stateful-feedback.error::before {
+  content: "!";
+  margin-right: .4rem;
+}
+.hub-shell .stateful-undo {
+  border-color: #718178;
+  color: #34483e;
+  background: #fff;
+}
+
+@media (max-width: 600px) {
+  .hub-shell .stateful-feedback,
+  .hub-shell .stateful-undo {
+    width: 100%;
+  }
+}

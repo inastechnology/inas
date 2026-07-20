@@ -367,10 +367,10 @@ export function PlantCalendarDrawer({
       <aside className={`calendar-drawer ${presentation === "page" ? "calendar-page-panel" : "calendar-modal-panel"}${generationLockActive ? " calendar-edit-locked" : ""}`} data-calendar-edit-locked={generationLockActive ? "true" : "false"} role={presentation === "modal" ? "dialog" : undefined} aria-modal={presentation === "modal" ? "true" : undefined} aria-label="栽培カレンダー">
         <header className="calendar-header">
           <div className="calendar-header-identity">
-            {presentation === "page" && <a className="icon-link" href={fieldDetailUrl} title={`${fieldName || "圃場"}へ戻る`}><ArrowLeft size={19} /></a>}
-            <div><span>{fieldName || "栽培支援"}</span><h2>{presentation === "page" ? "年間栽培カレンダー" : "生成した栽培カレンダー"}</h2></div>
+            {presentation === "page" && <a className="icon-link labeled-icon-button" href={fieldDetailUrl} aria-label={`${fieldName || "圃場"}へ戻る`} title={`${fieldName || "圃場"}へ戻る`}><ArrowLeft size={19} /><span>圃場へ戻る</span></a>}
+            <div><span>{fieldName || "栽培支援"}</span>{presentation === "page" ? <h1>年間栽培カレンダー</h1> : <h2>生成した栽培カレンダー</h2>}</div>
           </div>
-          {presentation === "modal" && <button type="button" className="icon-button" onClick={onClose} title="閉じる"><X size={19} /></button>}
+          {presentation === "modal" && <button type="button" className="icon-button labeled-icon-button" onClick={onClose} aria-label="栽培カレンダーを閉じる" title="閉じる"><X size={19} /><span>閉じる</span></button>}
         </header>
 
         {(busy || activeOperation) && <div className="calendar-operation-indicator"><InlineLoading label={operationMessage} /></div>}
@@ -544,8 +544,8 @@ export function PlantCalendarDrawer({
                 </div>
               </div>
               <div className="calendar-kanban-toolbar">
-                <label className="calendar-action-date"><CalendarDays size={16} /><span>この日に行う作業</span><input type="date" value={workDate} onChange={(event) => setWorkDate(event.target.value)} aria-label="作業期間に含まれる日" />{workDate && <button type="button" onClick={() => setWorkDate("")} title="日付フィルタを解除"><X size={14} /></button>}</label>
-                <label className="calendar-action-search"><Search size={16} /><input type="search" value={actionQuery} onChange={(event) => setActionQuery(event.target.value)} placeholder="作物、場所、作業名、資材をあいまい検索" aria-label="管理作業を検索" />{actionQuery && <button type="button" onClick={() => setActionQuery("")} title="作業検索をクリア"><X size={14} /></button>}</label>
+                <label className="calendar-action-date"><CalendarDays size={16} /><span>この日に行う作業</span><input type="date" value={workDate} onChange={(event) => setWorkDate(event.target.value)} aria-label="作業期間に含まれる日" />{workDate && <button type="button" onClick={() => setWorkDate("")} aria-label="日付フィルタを解除" title="日付フィルタを解除"><X size={14} /></button>}</label>
+                <label className="calendar-action-search"><Search size={16} /><input type="search" value={actionQuery} onChange={(event) => setActionQuery(event.target.value)} placeholder="作物、場所、作業名、資材をあいまい検索" aria-label="管理作業を検索" />{actionQuery && <button type="button" onClick={() => setActionQuery("")} aria-label="作業検索をクリア" title="作業検索をクリア"><X size={14} /></button>}</label>
                 <div className="calendar-work-scope filterable-field">
                   <span className="field-label">表示する作物</span>
                   <SearchableSelect
@@ -639,7 +639,7 @@ export function PlantCalendarDrawer({
                       <span>{activeRegenerationProposal ? `AI変更案 ${activeRegenerationProposalIndex + 1} / ${pendingRegenerationProposals.length}` : "AI変更案の確認結果"}</span>
                       <h2 id="regeneration-review-dialog-title">{activeRegenerationProposal?.title ?? `${pendingRegenerationProposals.length}件の確認が完了しました`}</h2>
                     </div>
-                    <button type="button" className="icon-button" onClick={() => setRegenerationReviewOpen(false)} title="変更案一覧へ戻る"><X size={19} /></button>
+                    <button type="button" className="icon-button labeled-icon-button" onClick={() => setRegenerationReviewOpen(false)} aria-label="変更案一覧へ戻る" title="変更案一覧へ戻る"><X size={19} /><span>一覧へ戻る</span></button>
                   </header>
                   <div className="calendar-action-detail-body regeneration-review-dialog-body">
                     {activeRegenerationProposal ? (
@@ -724,7 +724,7 @@ export function PlantCalendarDrawer({
             {addingAction && (
               <div className="calendar-action-detail-backdrop calendar-action-create-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setAddingAction(false); }}>
                 <section className="calendar-action-detail-dialog calendar-action-create-dialog" role="dialog" aria-modal="true" aria-labelledby="new-calendar-action-title">
-                  <header><div><span>圃場の予定へ追加</span><h2 id="new-calendar-action-title">作業を追加</h2></div><button type="button" className="icon-button" onClick={() => setAddingAction(false)} title="閉じる"><X size={19} /></button></header>
+                  <header><div><span>圃場の予定へ追加</span><h2 id="new-calendar-action-title">作業を追加</h2></div><button type="button" className="icon-button labeled-icon-button" onClick={() => setAddingAction(false)} aria-label="作業追加を閉じる" title="閉じる"><X size={19} /><span>閉じる</span></button></header>
                   <div className="calendar-action-detail-body">
                     <div className="new-action-crop-selector filterable-field">
                       <span className="field-label">対象の作物</span>
@@ -741,7 +741,7 @@ export function PlantCalendarDrawer({
                 <section className="calendar-action-detail-dialog" role="dialog" aria-modal="true" aria-labelledby={`calendar-action-detail-title-${selectedAction.id}`}>
                   <header>
                     <div><span>管理作業の詳細</span><h2 id={`calendar-action-detail-title-${selectedAction.id}`}>{selectedAction.title}</h2></div>
-                    <button type="button" className="icon-button" onClick={closeAction} title="閉じる"><X size={19} /></button>
+                    <button type="button" className="icon-button labeled-icon-button" onClick={closeAction} aria-label="作業詳細を閉じる" title="閉じる"><X size={19} /><span>閉じる</span></button>
                   </header>
                   <div className="calendar-action-detail-body">
                     <CalendarActionCard

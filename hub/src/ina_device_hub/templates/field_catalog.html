@@ -144,7 +144,7 @@
       .modal-form { margin: 0; }
       .modal-header { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 15px 18px; border-bottom: 1px solid #d6ddd7; background: #fff; z-index: 1; }
       .modal-header h2 { margin: 0; color: #24362d; font-size: 18px; }
-      .close-button { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid #c6d0c8; border-radius: 5px; color: #53635a; background: #fff; font-size: 20px; }
+      .close-button { display: inline-flex; align-items: center; justify-content: center; width: auto; min-width: 48px; min-height: 48px; gap: 6px; padding: 7px 10px; border: 1px solid #c6d0c8; border-radius: 5px; color: #53635a; background: #fff; font-size: 14px; font-weight: 800; white-space: nowrap; }
       .modal-body { display: grid; gap: 12px; padding: 16px 18px 18px; }
       .modal-body label { display: grid; gap: 5px; color: #56655c; font-size: 11px; font-weight: 800; }
       .required { color: #9a3d35; }
@@ -173,7 +173,7 @@
     </style>
     <link rel="stylesheet" href="/static/hub-ui.css">
   </head>
-  <body class="hub-shell hub-field-catalog">
+  <body class="hub-shell hub-field-catalog {{ accessibility_body_class }}">
     <header class="page-header">
       <div class="header-inner">
         <div>
@@ -247,7 +247,7 @@
       <form method="post" action="/fields" class="modal-form" data-stateful-form data-pristine-message="圃場情報を入力してください。" data-invalid-message="圃場名、都道府県、市区町村、設置環境は必須です。">
         <div class="modal-header">
           <h2 id="field-create-title">圃場を追加</h2>
-          <button id="close-field-create" class="close-button" type="button" aria-label="閉じる">x</button>
+          <button id="close-field-create" class="close-button" type="button" aria-label="圃場追加を閉じる">× <span>閉じる</span></button>
         </div>
         <div class="modal-body">
           <label>圃場名 <span class="required">必須</span><input name="name" required autofocus placeholder="例: 伊那東圃場"></label>

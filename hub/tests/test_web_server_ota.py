@@ -426,10 +426,10 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('data-tab-target="tab-config"', html)
         self.assertIn('data-tab-target="tab-firmware"', html)
         self.assertIn('data-tab-target="tab-diagnostics"', html)
-        self.assertIn(">計測・稼働</button>", html)
+        self.assertIn(">現在値・履歴</button>", html)
         self.assertIn(">動作設定</button>", html)
-        self.assertIn(">ファームウェア</button>", html)
-        self.assertIn(">保守・診断</button>", html)
+        self.assertIn(">機器を更新</button>", html)
+        self.assertIn(">困ったとき</button>", html)
         self.assertIn("設置場所・関連先", html)
         self.assertNotIn("<h2>設置ビュー</h2>", html)
         self.assertIn("現在の潅水判断", html)
@@ -451,8 +451,8 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("系統1", html)
         self.assertIn("土壌水分", html)
         self.assertIn("42%", html)
-        self.assertIn("次回起床", html)
-        self.assertIn("起動・通信履歴", html)
+        self.assertIn("次回の通信予定", html)
+        self.assertIn("詳しい通信履歴", html)
         self.assertIn("動作設定", html)
         self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings"', html)
         self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings#watering-rules" aria-label="土壌水分しきい値の設定を変更"', html)
@@ -467,7 +467,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('id="save-push-runtime-config"', html)
         self.assertIn('id="firmware-target-form"', html)
         self.assertIn(
-            '<select id="target-firmware-version" aria-label="更新するファームウェアバージョン" data-searchable-select',
+            '<select id="target-firmware-version" aria-label="更新する機器ソフトウェアのバージョン" data-searchable-select',
             html,
         )
         self.assertIn("/static/searchable-select.css", html)

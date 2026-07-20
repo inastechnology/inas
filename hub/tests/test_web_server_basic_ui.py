@@ -201,7 +201,7 @@ class FakeUserPreferenceRepository:
                     "locale": "ja",
                     "timezone": "Asia/Tokyo",
                     "date_format": "yyyy-MM-dd",
-                    "preferences": {"cultivation_experience": "standard"},
+                    "preferences": {"cultivation_experience": "standard", "font_size": "standard", "contrast": "standard"},
                     "version": 0,
                     "created_at": "",
                     "updated_at": "",
@@ -221,6 +221,8 @@ class FakeUserPreferenceRepository:
             "preferences": {
                 **deepcopy(value.get("preferences") or {}),
                 "cultivation_experience": (value.get("preferences") or {}).get("cultivation_experience", "standard"),
+                "font_size": (value.get("preferences") or {}).get("font_size", "standard"),
+                "contrast": (value.get("preferences") or {}).get("contrast", "standard"),
             },
             "version": expected_version + 1,
             "updated_at": "2026-07-15 12:00:00",
@@ -319,6 +321,15 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertNotIn('name="locale"', html)
         self.assertNotIn("表示言語", html)
         self.assertIn('name="cultivation_experience"', html)
+        self.assertIn('name="font_size"', html)
+        self.assertIn('value="standard"', html)
+        self.assertIn('value="large"', html)
+        self.assertIn('value="extra_large"', html)
+        self.assertIn("本文18px目安", html)
+        self.assertIn("a11y-font-standard", html)
+        self.assertIn('name="contrast"', html)
+        self.assertIn("くっきり", html)
+        self.assertIn("a11y-contrast-standard", html)
         self.assertIn("初心者 - 手順を詳しく", html)
         self.assertIn('id="advice-help-open"', html)
         self.assertIn('id="advice-help-dialog"', html)
@@ -340,7 +351,7 @@ class WebServerBasicUITest(unittest.TestCase):
                 "locale": "en",
                 "timezone": "UTC",
                 "date_format": "MM/dd/yyyy",
-                "preferences": {"cultivation_experience": "beginner"},
+                "preferences": {"cultivation_experience": "beginner", "font_size": "extra_large", "contrast": "high"},
             },
         )
 
@@ -348,7 +359,28 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(saved.get_json()["preferences"]["version"], 1)
         self.assertEqual(saved.get_json()["preferences"]["locale"], "ja")
         self.assertEqual(saved.get_json()["preferences"]["preferences"]["cultivation_experience"], "beginner")
+        self.assertEqual(saved.get_json()["preferences"]["preferences"]["font_size"], "extra_large")
+        self.assertEqual(saved.get_json()["preferences"]["preferences"]["contrast"], "high")
         self.assertNotIn("Set-Cookie", saved.headers)
+
+    def test_saved_font_size_class_is_applied_to_server_and_react_pages(self):
+        self.fake_user_preference_repository.records["local-user@ina.local"] = {
+            "user_email": "local-user@ina.local",
+            "locale": "ja",
+            "timezone": "Asia/Tokyo",
+            "date_format": "yyyy-MM-dd",
+            "preferences": {"cultivation_experience": "standard", "font_size": "extra_large", "contrast": "high"},
+            "version": 1,
+            "created_at": "",
+            "updated_at": "2026-07-20 00:00:00",
+        }
+
+        for path in ("/preferences", "/fields", "/settings", "/demo/mqtt-devices", "/cameras/new"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("a11y-font-extra-large", response.get_data(as_text=True))
+                self.assertIn("a11y-contrast-high", response.get_data(as_text=True))
 
     def test_personal_preferences_return_latest_value_on_concurrent_edit(self):
         headers = {"Cf-Access-Authenticated-User-Email": "worker@example.com"}
@@ -399,13 +431,13 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('name="text_analyze_temperature_mode"', html)
         self.assertIn('name="text_analyze_temperature"', html)
         self.assertIn('name="text_analyze_reasoning_effort"', html)
-        self.assertIn("モデル特性を調整（上級者向け）", html)
+        self.assertIn("接続先とモデル特性を調整（上級者向け）", html)
         self.assertIn('id="ai-test-dialog"', html)
         self.assertIn("次に行うこと", html)
         self.assertIn('name="plant_calendar_prompt_template"', html)
         self.assertIn('name="plant_calendar_web_knowledge_enabled"', html)
         self.assertIn('name="plant_calendar_web_knowledge_cache_days"', html)
-        self.assertIn("公的な栽培根拠を検索", html)
+        self.assertIn("栽培情報を自動で調べる", html)
         self.assertIn("プロンプトフォーマットを編集", html)
         self.assertIn("{default_instructions}", html)
         self.assertIn('type="password" name="text_analyze_api_key" value=""', html)

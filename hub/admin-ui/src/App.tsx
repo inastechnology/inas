@@ -644,7 +644,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     <div className={`installation-app ${error ? "has-error" : ""}`}>
       <header className="editor-header">
         <div className="editor-identity">
-          <a className="icon-link" href={fieldDetailUrl} title="圃場詳細へ戻る"><ArrowLeft size={19} /></a>
+          <a className="icon-link labeled-icon-button" href={fieldDetailUrl} aria-label="圃場詳細へ戻る" title="圃場詳細へ戻る"><ArrowLeft size={19} /><span>圃場へ戻る</span></a>
           <div>
             <span className="eyebrow">設置ビュー</span>
             <h1>{fieldName}</h1>
@@ -667,12 +667,12 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
             {plantBundle.suggestions.length > 0 && <strong>{plantBundle.suggestions.length}</strong>}
           </a>
           <span className={`save-state ${dirty ? "dirty" : ""}`}>{saving ? "保存中" : dirty ? "未保存" : `保存済み r${layout.revision}`}</span>
-          <button type="button" className="icon-button" onClick={undo} disabled={!past.length} title={past.length ? "元に戻す" : "元に戻せる変更はありません"}><Undo2 size={18} /></button>
-          <button type="button" className="icon-button" onClick={redo} disabled={!future.length} title={future.length ? "やり直す" : "やり直せる変更はありません"}><Redo2 size={18} /></button>
+          <button type="button" className="icon-button labeled-icon-button" onClick={undo} disabled={!past.length} aria-label="直前の変更を元に戻す" title={past.length ? "元に戻す" : "元に戻せる変更はありません"}><Undo2 size={18} /><span>元に戻す</span></button>
+          <button type="button" className="icon-button labeled-icon-button" onClick={redo} disabled={!future.length} aria-label="取り消した変更をやり直す" title={future.length ? "やり直す" : "やり直せる変更はありません"}><Redo2 size={18} /><span>やり直す</span></button>
           <div className="zoom-control">
-            <button type="button" onClick={() => setZoom((value) => clamp(value / 1.15, 0.2, 2.5))} title="縮小"><Minus size={16} /></button>
+            <button type="button" onClick={() => setZoom((value) => clamp(value / 1.15, 0.2, 2.5))} aria-label="設置図を縮小" title="縮小"><Minus size={16} /></button>
             <span>{Math.round(zoom * 100)}%</span>
-            <button type="button" onClick={() => setZoom((value) => clamp(value * 1.15, 0.2, 2.5))} title="拡大"><Plus size={16} /></button>
+            <button type="button" onClick={() => setZoom((value) => clamp(value * 1.15, 0.2, 2.5))} aria-label="設置図を拡大" title="拡大"><Plus size={16} /></button>
           </div>
           <button type="button" className="save-button" onClick={() => void persist()} disabled={!dirty || saving} aria-busy={saving} title={saving ? "保存処理中です" : !dirty ? "未保存の変更はありません" : "設置ビューを保存"}>{!saving && <Save size={17} />}{saving ? "保存しています" : "保存"}</button>
         </div>
@@ -691,7 +691,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
             <span>配置パレット</span>
             <strong>{activeSpace.placements.length}</strong>
           </div>
-          <label className="palette-search"><Search size={16} /><input type="search" value={paletteQuery} onChange={(event) => setPaletteQuery(event.target.value)} placeholder="配置物を検索" aria-label="配置物を検索" />{paletteQuery && <button type="button" onClick={() => setPaletteQuery("")} title="検索をクリア"><X size={14} /></button>}</label>
+          <label className="palette-search"><Search size={16} /><input type="search" value={paletteQuery} onChange={(event) => setPaletteQuery(event.target.value)} placeholder="配置物を検索" aria-label="配置物を検索" />{paletteQuery && <button type="button" onClick={() => setPaletteQuery("")} aria-label="配置物の検索をクリア" title="検索をクリア"><X size={14} /></button>}</label>
           {(["空間", "培地", "設備"] as const).map((group) => filteredPresets.some((preset) => preset.group === group) && (
             <section className="preset-group" key={group}>
               <h2>{group}</h2>
@@ -821,7 +821,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
                 <span className="eyebrow">同時編集を検出</span>
                 <h2 id="layout-conflict-title">設置ビューが別の画面で更新されました</h2>
               </div>
-              <button type="button" className="icon-button" onClick={() => resolveLayoutConflict("server")} title="最新版を読み込んで閉じる"><X size={18} /></button>
+              <button type="button" className="icon-button labeled-icon-button" onClick={() => resolveLayoutConflict("server")} aria-label="最新版を読み込んで閉じる" title="最新版を読み込んで閉じる"><X size={18} /><span>閉じる</span></button>
             </header>
             <div className="layout-conflict-summary">
               <dl>
@@ -1195,7 +1195,7 @@ function CollectionSearch({ value, onChange, placeholder, label }: { value: stri
     <label className="collection-search">
       <Search size={14} />
       <input type="search" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label={label} />
-      {value && <button type="button" onClick={() => onChange("")} title={`${label}をクリア`}><X size={13} /></button>}
+      {value && <button type="button" onClick={() => onChange("")} aria-label={`${label}をクリア`} title={`${label}をクリア`}><X size={13} /></button>}
     </label>
   );
 }

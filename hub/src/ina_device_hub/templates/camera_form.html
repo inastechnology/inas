@@ -39,7 +39,7 @@
       @media (max-width: 640px) { .camera-grid { grid-template-columns: 1fr; } .camera-field.full { grid-column: auto; } .camera-header { display: block; } .camera-actions > * { flex: 1; } }
     </style>
   </head>
-  <body>
+  <body class="hub-shell {{ accessibility_body_class }}">
     <main class="camera-shell">
       <p class="breadcrumbs"><a href="/fields">圃場一覧</a> / <a href="/mqtt-devices">機器保守</a> / {{ "カメラを編集" if form_mode == "edit" else "カメラを登録" }}</p>
       <header class="camera-header">

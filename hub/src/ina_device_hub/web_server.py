@@ -111,8 +111,12 @@ from ina_device_hub.user_context import (
     current_user_from_request,
 )
 from ina_device_hub.user_preference_repository import (
+    DEFAULT_CONTRAST_MODE,
     DEFAULT_CULTIVATION_EXPERIENCE_LEVEL,
+    DEFAULT_FONT_SIZE,
+    SUPPORTED_CONTRAST_MODES,
     SUPPORTED_CULTIVATION_EXPERIENCE_LEVELS,
+    SUPPORTED_FONT_SIZES,
     UserPreferenceConflictError,
     UserPreferenceValidationError,
     effective_preferences,
@@ -484,7 +488,7 @@ def get_device_info(device_id):
     template = """
     <html>
       <head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/hub-ui.css"></head>
-      <body class="hub-shell hub-legacy">
+      <body class="hub-shell hub-legacy {{ accessibility_body_class }}">
         <p><a href="/fields">圃場一覧</a> / <a href="/mqtt-devices">機器保守</a></p>
         <h1>旧センサー詳細</h1>
         <h2>{{ device_id }}</h2>
@@ -576,7 +580,7 @@ def edit_device_info(device_id):
     template = """
     <html>
       <head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/hub-ui.css"></head>
-      <body class="hub-shell hub-legacy">
+      <body class="hub-shell hub-legacy {{ accessibility_body_class }}">
         <h1>旧センサー情報を編集</h1>
         <form method="post">
           <label for="name">Name</label>
@@ -634,7 +638,7 @@ def get_location_list():
     template = """
     <html>
       <head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/hub-ui.css"></head>
-      <body class="hub-shell hub-legacy">
+      <body class="hub-shell hub-legacy {{ accessibility_body_class }}">
         <h1>旧ロケーション一覧</h1>
         <ul>
           {% for location_id, info in locations.items() %}
@@ -674,7 +678,7 @@ def add_location():
     template = """
     <html>
       <head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/hub-ui.css"></head>
-      <body class="hub-shell hub-legacy">
+      <body class="hub-shell hub-legacy {{ accessibility_body_class }}">
         <h1>旧ロケーションを追加</h1>
         <form method="post" enctype="multipart/form-data">
           <label for="location_name">Location Name</label>
@@ -783,7 +787,7 @@ def preview_camera(device_id):
             .video-container img { width: 100%; max-width: 800px; height: auto; }
         </style>
     </head>
-    <body class="hub-shell hub-legacy">
+    <body class="hub-shell hub-legacy {{ accessibility_body_class }}">
         <h1>カメラライブ / {{ device_id }}</h1>
         <div class="video-container">
             <img src="/local/api/camera/{{ device_id }}/video_feed" alt="Camera Stream">
@@ -832,7 +836,7 @@ def camera_images(device_id):
           a { color: #1f6feb; text-decoration: none; }
         </style>
       </head>
-      <body class="hub-shell hub-legacy">
+      <body class="hub-shell hub-legacy {{ accessibility_body_class }}">
         <header>
           <h1>Camera Images</h1>
           <div>{{ camera_name }} / {{ device_id }}</div>
@@ -1262,6 +1266,10 @@ def _build_device_layout_context(device_id, record=None):
                     "潅水対象" if preset == "watering_device" else "計測対象" if preset == "sensor" else "監視対象" if preset == "camera" else "関連対象"
                 )
                 resource_type = binding.get("resource_type") or "device"
+                placement_path = _without_trailing_internal_id(
+                    _layout_placement_path(field, layout, space.get("id"), placement),
+                    device_id,
+                )
                 field_assignments.append(
                     {
                         "field_id": field_id,
@@ -1271,9 +1279,12 @@ def _build_device_layout_context(device_id, record=None):
                         "space_id": space.get("id") or "",
                         "space_name": space.get("name") or "圃場全体",
                         "placement_id": placement.get("id") or "",
-                        "placement_name": placement.get("name") or placement.get("id") or "配置物",
+                        "placement_name": _without_trailing_internal_id(
+                            placement.get("name") or placement.get("id") or "配置物",
+                            device_id,
+                        ),
                         "placement_kind": LAYOUT_PLACEMENT_LABELS.get(preset, preset or "配置物"),
-                        "path": _layout_placement_path(field, layout, space.get("id"), placement),
+                        "path": placement_path,
                         "href": _layout_placement_url(field_id, space.get("id"), placement.get("id")),
                         "resource_name": _layout_resource_name(record, resource_type, binding.get("resource_id") or ""),
                         "relation_label": relation_label,
@@ -1343,6 +1354,12 @@ def _layout_placement_path(field, layout, space_id, placement):
     return " / ".join(path_parts)
 
 
+def _without_trailing_internal_id(value, identifier):
+    text = str(value or "")
+    suffix = f" / {identifier}"
+    return text[: -len(suffix)] if identifier and text.endswith(suffix) else text
+
+
 def _layout_placement_url(field_id, space_id, placement_id):
     query = urlencode({"space": space_id or "", "placement": placement_id or ""})
     return f"/fields/{quote(str(field_id), safe='')}/layout?{query}"
@@ -1383,7 +1400,7 @@ def _build_device_operational_metrics(record, payload, config, now, watering):
                 "label": "現在の潅水状態",
                 "value": watering["label"],
                 "class": watering["class"],
-                "hint": "最後のstatusから判断",
+                "hint": "最後に受信した状態から判断",
                 "history_anchor": "watering-trend-chart",
             },
         ]
@@ -3142,16 +3159,20 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           }
           .device-chart-heading h2 { margin: 0; }
           .chart-settings-link {
-            display: inline-grid;
-            place-items: center;
-            width: 36px;
-            height: 36px;
-            flex: 0 0 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-width: 48px;
+            min-height: 48px;
+            flex: 0 0 auto;
+            padding: 7px 10px;
             border: 1px solid var(--line);
             border-radius: 6px;
             background: #fff;
             color: var(--text);
-            font-size: 19px;
+            font-size: 14px;
+            font-weight: 800;
             text-decoration: none;
           }
           .chart-settings-link:hover, .chart-settings-link:focus-visible { border-color: var(--blue); color: var(--blue); }
@@ -3254,7 +3275,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         </style>
         <link rel="stylesheet" href="/static/hub-ui.css">
       </head>
-      <body class="hub-shell hub-device-maintenance">
+      <body class="hub-shell hub-device-maintenance {{ accessibility_body_class }}">
         <div class="page">
           <div id="global-progress" class="progress-banner" role="status" aria-live="polite">
             <span class="progress-dot" aria-hidden="true"></span>
@@ -3265,7 +3286,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             <div>
               <p class="muted">{% if is_detail_page %}<a href="{{ list_path }}">機器一覧</a> / {{ page_selected.title }}{% else %}<a href="/fields">圃場一覧</a> / 機器保守{% endif %}</p>
               <h1>{{ page_selected.title if is_detail_page else '機器保守' }}</h1>
-              <p class="lead">{{ '現在値、出力先、設定、ファームウェアを確認します。' if is_detail_page else '圃場で使う機器を、設置場所と現在状態から探します。' }}</p>
+              <p class="lead">{{ '現在値、出力先、動作設定、機器更新を確認します。' if is_detail_page else '圃場で使う機器を、設置場所と現在状態から探します。' }}</p>
             </div>
             <nav class="nav" aria-label="ページ移動">
               <a href="/fields">圃場一覧</a>
@@ -3319,7 +3340,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           {% if not is_detail_page %}
           <section class="panel">
-            <div class="device-catalog-head"><div><h2>機器一覧</h2><p class="lead">MQTT機器とネットワークカメラを確認できます。検索はサーバ側で実行します。</p></div>{% if not demo_mode %}<a class="camera-add-link" href="/cameras/new">＋ カメラを登録</a>{% endif %}</div>
+            <div class="device-catalog-head"><div><h2>機器一覧</h2><p class="lead">登録した機器とネットワークカメラを確認できます。名前や設置場所で検索できます。</p></div>{% if not demo_mode %}<a class="camera-add-link" href="/cameras/new">＋ カメラを登録</a>{% endif %}</div>
             <form class="device-list-search" id="device-list-search-form" method="get" action="{{ list_path }}">
               <input id="device-list-search" name="q" type="search" value="{{ device_query }}" placeholder="機器名、ID、種別、設置場所を検索" aria-label="機器を検索" autocomplete="off">
               <button type="submit">検索</button>
@@ -3333,7 +3354,6 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 <div>
                   <div class="device-title">{{ device.name }}</div>
                   <div class="device-sub">{{ device.kind_label }} / {{ device.location }}</div>
-                  <div class="device-sub">{{ device.id }}</div>
                 </div>
                 <div>
                   <span class="badge {{ device.state_class }}">{{ device.state_label }}</span>
@@ -3351,7 +3371,6 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <div>
                     <div class="device-title">{{ camera.name }}</div>
                     <div class="device-sub">ネットワークカメラ / {{ camera.camera_type }}</div>
-                    <div class="device-sub">{{ camera.id }}</div>
                   </div>
                   <div><span class="badge good">登録済み</span></div>
                   <div class="tile-metrics">
@@ -3378,8 +3397,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             <div class="device-identity"><div class="detail-header">
               <div>
                 <h2>{{ selected.title }}</h2>
-                <p class="lead">{{ selected.kind_label }} / {% if selected.location_href %}<a href="{{ selected.location_href }}" target="_blank" rel="noopener" aria-label="{{ selected.location }}を新しいタブで開く">{{ selected.location }} ↗</a>{% else %}{{ selected.location }}{% endif %} / {{ selected.id }}</p>
+                <p class="lead">{{ selected.kind_label }} / {% if selected.location_href %}<a href="{{ selected.location_href }}" target="_blank" rel="noopener" aria-label="{{ selected.location }}を新しいタブで開く">{{ selected.location }} ↗</a>{% else %}{{ selected.location }}{% endif %}</p>
                 {% if selected.memo %}<p>{{ selected.memo }}</p>{% endif %}
+                <details class="advanced-info identity-details"><summary>機器番号を確認（上級者向け）</summary><div class="detail-body"><code>{{ selected.id }}</code><p class="muted">問い合わせや機器交換のときに使用する識別番号です。</p></div></details>
               </div>
               <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span>
             </div><img src="/static/ui-illustrations/device-family.png" alt="農業用センサーと制御機器のイラスト"></div>
@@ -3399,10 +3419,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           <div class="detail-tabs">
             <div class="tab-list" role="tablist" aria-label="機器詳細メニュー">
               <button type="button" class="tab-button" data-tab-key="overview" data-tab-target="tab-overview" role="tab" aria-controls="tab-overview" aria-selected="true" tabindex="0">概要</button>
-              <button type="button" class="tab-button" data-tab-key="monitoring" data-tab-target="tab-monitoring" role="tab" aria-controls="tab-monitoring" aria-selected="false" tabindex="-1">計測・稼働</button>
+              <button type="button" class="tab-button" data-tab-key="monitoring" data-tab-target="tab-monitoring" role="tab" aria-controls="tab-monitoring" aria-selected="false" tabindex="-1">現在値・履歴</button>
               <button type="button" class="tab-button" data-tab-key="settings" data-tab-target="tab-config" role="tab" aria-controls="tab-config" aria-selected="false" tabindex="-1">動作設定</button>
-              <button type="button" class="tab-button" data-tab-key="firmware" data-tab-target="tab-firmware" role="tab" aria-controls="tab-firmware" aria-selected="false" tabindex="-1">ファームウェア</button>
-              <button type="button" class="tab-button" data-tab-key="diagnostics" data-tab-target="tab-diagnostics" role="tab" aria-controls="tab-diagnostics" aria-selected="false" tabindex="-1">保守・診断</button>
+              <button type="button" class="tab-button" data-tab-key="firmware" data-tab-target="tab-firmware" role="tab" aria-controls="tab-firmware" aria-selected="false" tabindex="-1">機器を更新</button>
+              <button type="button" class="tab-button" data-tab-key="diagnostics" data-tab-target="tab-diagnostics" role="tab" aria-controls="tab-diagnostics" aria-selected="false" tabindex="-1">困ったとき</button>
             </div>
 
             <section id="tab-overview" class="tab-panel" role="tabpanel">
@@ -3459,7 +3479,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 {% endif %}
 
                 <section class="panel">
-                  <h2>通信・ファームウェア</h2>
+                  <h2>機器の通信・更新</h2>
                   <div class="compact-grid">
                     <div class="mini"><span>最終通信</span><strong>{{ selected.last_seen_age }}</strong></div>
                     <div class="mini"><span>次回起動</span><strong>{{ selected.next_wake }}</strong></div>
@@ -3558,7 +3578,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   {% if selected.output_settings.unsupported_count %}<p class="notice warn output-warning">保存済み設定に、この機種では編集できない接続が {{ selected.output_settings.unsupported_count }} 件あります。既存値は維持されます。</p>{% endif %}
                 </div>
                 <dialog id="output-settings-dialog" class="config-dialog builder-dialog" aria-labelledby="output-settings-title">
-                  <div class="dialog-head"><div><h3 id="output-settings-title">水やりルートを組み立てる</h3><p class="lead">接続口をONにすると線がつながります。絵を選んで、設備までのルートを完成させましょう。</p></div><button type="button" data-close-output-dialog aria-label="閉じる">×</button></div>
+                  <div class="dialog-head"><div><h3 id="output-settings-title">水やりルートを組み立てる</h3><p class="lead">接続口をONにすると線がつながります。絵を選んで、設備までのルートを完成させましょう。</p></div><button type="button" data-close-output-dialog aria-label="水やりルート設定を閉じる">× <span>閉じる</span></button></div>
                   <div class="dialog-body"><div class="builder-intro"><span class="builder-intro-icon" aria-hidden="true">3</span><span><strong>作り方は3ステップ</strong><br><small>接続口を使う → 設備の種類を選ぶ → 圃場の設備を選ぶ</small></span></div><div id="mosfet-switch-editor" class="mosfet-switch-editor"></div>{% if selected.output_settings.layout_href %}<p class="muted">候補に設備がない場合は、<a href="{{ selected.output_settings.layout_href }}" target="_blank" rel="noopener" data-preserve-current-work aria-label="圃場の設置ビューを新しいタブで開く">圃場の設置ビュー ↗</a>で、この機器の対象を設定してください。組み立て中の内容はこの画面に残ります。</p>{% endif %}<p class="muted">「組み立てを反映」後、設定画面下部の「機器へ送る」を押すと実機へ反映されます。</p></div>
                   <div class="dialog-actions"><button type="button" data-cancel-output-dialog>キャンセル</button><button type="button" class="primary" data-apply-output-dialog>組み立てを反映</button></div>
                 </dialog>
@@ -3602,7 +3622,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 <select id="soil-calibration-mode" hidden aria-label="次に記録する基準"><option value="normal">通常</option><option value="capture_dry">乾いた状態を記録</option><option value="capture_wet">湿った状態を記録</option><option value="reset">基準をリセット</option></select>
                 <details class="config-details"><summary>上級者設定</summary><div class="detail-body"><p class="sensor-maintenance-intro">通常は変更する必要がありません。メーカー資料を確認できる方だけ使用してください。</p><div class="config-toolbar"><label class="switch-row" for="soil-calibration-calibrated"><input id="soil-calibration-calibrated" type="checkbox">記録した基準を使用する</label><label class="switch-row" for="soil-calibration-auto-mode"><input id="soil-calibration-auto-mode" type="checkbox">基準の候補を自動で探す</label><label class="switch-row" for="soil-calibration-apply-auto"><input id="soil-calibration-apply-auto" type="checkbox">候補を自動で反映する</label><label class="switch-row" for="soil-calibration-drift-check"><input id="soil-calibration-drift-check" type="checkbox">基準のずれを検知する</label><div class="config-field"><label for="soil-calibration-dry-raw">乾燥時の計測値</label><input id="soil-calibration-dry-raw" type="number" min="1" max="4095" step="1"></div><div class="config-field"><label for="soil-calibration-wet-raw">湿潤時の計測値</label><input id="soil-calibration-wet-raw" type="number" min="0" max="4094" step="1"></div><div class="config-field"><label for="soil-calibration-min-delta-raw">必要な計測差</label><input id="soil-calibration-min-delta-raw" type="number" min="10" max="2000" step="1"></div><div class="config-field"><label for="soil-calibration-drift-tolerance-raw">ずれの許容値</label><input id="soil-calibration-drift-tolerance-raw" type="number" min="10" max="2000" step="1"></div><div class="config-field"><label for="soil-calibration-sample-count">平均する回数</label><input id="soil-calibration-sample-count" type="number" min="1" max="100" step="1"></div><div class="config-field"><label for="soil-calibration-sample-interval-ms">計測間隔（ミリ秒）</label><input id="soil-calibration-sample-interval-ms" type="number" min="0" max="1000" step="1"></div></div></div></details>
                 <dialog id="soil-calibration-guide" class="config-dialog" aria-labelledby="soil-calibration-guide-title">
-                  <div class="dialog-head"><div><h3 id="soil-calibration-guide-title">土壌水分計の基準合わせ</h3><p class="lead">乾燥と湿潤を同時には記録せず、1段階ずつ機器へ反映します。</p></div><button type="button" data-close-calibration-guide aria-label="閉じる">×</button></div>
+                  <div class="dialog-head"><div><h3 id="soil-calibration-guide-title">土壌水分計の基準合わせ</h3><p class="lead">乾燥と湿潤を同時には記録せず、1段階ずつ機器へ反映します。</p></div><button type="button" data-close-calibration-guide aria-label="土壌水分計の基準合わせを閉じる">× <span>閉じる</span></button></div>
                   <div class="dialog-body"><div class="guide-steps"><div class="guide-step"><strong>センサーを乾いた状態にする</strong><span>水分を拭き取り、値が落ち着くまで待ちます。普段使う用土の乾燥状態で行うと、表示が栽培環境に合いやすくなります。</span></div><div class="guide-step"><strong>乾いた基準を記録して機器へ送る</strong><span>下のボタンを選び、設定画面下部の「保存して機器へ反映」を押します。次回通信で設定受信済みになるまで待ちます。</span><div class="actions"><button type="button" data-calibration-mode="capture_dry">乾いた基準を記録する</button></div></div><div class="guide-step"><strong>用土を十分に湿らせる</strong><span>たっぷり潅水し、余分な水が抜けた後、いつもと同じ深さへセンサーを挿します。水中へ直接入れないでください。</span></div><div class="guide-step"><strong>湿った基準を記録して機器へ送る</strong><span>下のボタンを選び、もう一度「保存して機器へ反映」を押します。</span><div class="actions"><button type="button" data-calibration-mode="capture_wet">湿った基準を記録する</button></div></div></div><p class="notice warn">基準をやり直す場合だけリセットしてください。リセット後は乾燥・湿潤の両方を記録し直します。</p></div>
                   <div class="dialog-actions"><button type="button" data-calibration-mode="reset">基準をリセット</button><button type="button" class="primary" data-close-calibration-guide>閉じる</button></div>
                 </dialog>
@@ -3650,7 +3670,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 </div>
 
                 <dialog id="env-calibration-dialog" class="config-dialog sensor-calibration-dialog" aria-labelledby="env-calibration-dialog-heading">
-                  <div class="dialog-head"><div><h3 id="env-calibration-dialog-heading">センサーの表示を合わせる</h3><p class="lead">手元の基準と同じ値になるよう、つまみを動かします。</p></div><button type="button" data-close-env-calibration aria-label="閉じる">×</button></div>
+                  <div class="dialog-head"><div><h3 id="env-calibration-dialog-heading">センサーの表示を合わせる</h3><p class="lead">手元の基準と同じ値になるよう、つまみを動かします。</p></div><button type="button" data-close-env-calibration aria-label="センサーの表示合わせを閉じる">× <span>閉じる</span></button></div>
                   <section id="env-calibration-workbench" class="sensor-tuning-bench" aria-live="polite">
                     <div class="sensor-bench-head"><span class="sensor-bench-dial" aria-hidden="true"><span id="env-calibration-dial-value">0</span></span><span><small>表示の調整</small><strong id="env-calibration-title">光の表示を合わせる</strong><span id="env-calibration-help">信頼できる基準計の値へダイヤルを合わせます</span></span></div>
                     <select id="env-calibration-mode" hidden aria-label="校正操作"><option value="normal">通常</option><option value="capture_reference">基準値を記録</option><option value="reset">未校正に戻す</option></select>
@@ -3715,7 +3735,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             <section class="panel">
               <div class="device-chart-heading">
                 <h2>{{ selected.title }} / {{ chart.title }}</h2>
-                <a class="chart-settings-link" href="{{ device_link_prefix }}{{ selected.id }}?tab=settings" title="{{ selected.title }}の動作設定" aria-label="{{ selected.title }}の動作設定">&#9881;</a>
+                <a class="chart-settings-link" href="{{ device_link_prefix }}{{ selected.id }}?tab=settings" title="{{ selected.title }}の動作設定" aria-label="{{ selected.title }}の動作設定">&#9881; <span>設定</span></a>
               </div>
               <div class="chart-card" data-chart-id="{{ chart.dom_id }}" data-chart-kind="{{ chart.kind }}" data-empty-message="{{ chart.empty_message }}">
                 <div class="range-controls" aria-label="{{ chart.title }}の表示期間">
@@ -3758,41 +3778,43 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           </details>
           {% endif %}
 
-          <section class="panel">
-              <h2>起動・通信履歴</h2>
+          <details class="panel advanced-info communication-history">
+              <summary><span><strong>詳しい通信履歴</strong><small>上級者向け・通常の運用では確認不要です</small></span></summary>
+              <div class="detail-body">
               {% if selected.wake_history %}
               <div class="list">
                 {% for item in selected.wake_history %}
                 <div class="list-row">
                   <div class="list-time">{{ item.time }}</div>
                   <div class="list-main">
-                    <span>seq: {{ item.seq }}</span>
-                    <span>次回起床: {{ item.next_wake }}</span>
-                    <span>設定受信: {{ item.config_received }}</span>
-                    <span>時刻同期: {{ item.time_synced }}</span>
-                    <span>RSSI: {{ item.rssi }}</span>
+                    <span>通信番号: {{ item.seq }}</span>
+                    <span>次回の通信予定: {{ item.next_wake }}</span>
+                    <span>設定を受信: {{ item.config_received }}</span>
+                    <span>時計を同期: {{ item.time_synced }}</span>
+                    <span>電波強度: {{ item.rssi }}</span>
                   </div>
                 </div>
                 {% endfor %}
               </div>
               {% else %}
-              <div class="empty">起動・通信履歴はまだありません。</div>
+              <div class="empty">詳しい通信履歴はまだありません。</div>
               {% endif %}
-          </section>
+              </div>
+          </details>
             </section>
 
             <section id="tab-firmware" class="tab-panel" role="tabpanel" hidden>
           <section id="ota-target" class="panel">
-            <div class="field-head"><div><h2>ファームウェア</h2><p class="lead">現在のバージョン確認、新しいファイルの登録、更新予約をここで完了できます。</p></div><span class="badge {{ selected.ota_class }}">{{ selected.ota_state }}</span></div>
+            <div class="field-head"><div><h2>機器ソフトウェアの更新</h2><p class="lead">現在のバージョン確認、新しいファイルの登録、更新予約をここで完了できます。</p></div><span class="badge {{ selected.ota_class }}">{{ selected.ota_state }}</span></div>
             <div class="firmware-workbench">
               <div class="firmware-current">
                 <span class="muted">現在のバージョン</span><div class="version">{{ selected.firmware }}</div>
                 <div><span class="muted">更新予約</span><strong>{{ selected.target_firmware }}</strong></div>
                 {% if selected.ota_error %}<div class="notice error">{{ selected.ota_error }}</div>{% endif %}
-                <img src="/static/ui-illustrations/firmware-care.png" alt="機器のファームウェアを安全に更新するイラスト" loading="lazy">
+                <img src="/static/ui-illustrations/firmware-care.png" alt="機器ソフトウェアを安全に更新するイラスト" loading="lazy">
               </div>
               <form id="firmware-upload-form" class="firmware-upload-card" enctype="multipart/form-data" data-stateful-form data-pristine-message="firmware.binを選択してください。">
-                <div><h3>新しいファームウェアを登録</h3><p class="lead">ファイルを置くと、対応機種とバージョンを自動で読み取ります。</p></div>
+                <div><h3>新しい更新ファイルを登録</h3><p class="lead">ファイルを置くと、対応機種とバージョンを自動で読み取ります。</p></div>
                 <label class="firmware-dropzone" id="firmware-dropzone" for="firmware-file"><strong>firmware.bin をここへドロップ</strong><span>またはクリックして選択</span><input id="firmware-file" name="firmware" type="file" accept=".bin,application/octet-stream" required></label>
                 <div id="firmware-manifest-summary" class="empty">まだファイルが選択されていません。</div>
                 <div class="firmware-meta"><div><span>対応機種</span><strong id="firmware-device-kind-display">-</strong></div><div><span>バージョン</span><strong id="firmware-version-display">-</strong></div><div><span>ビルド</span><strong id="firmware-build-id-display">-</strong></div></div>
@@ -3803,13 +3825,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </form>
             </div>
             <form id="firmware-target-form" data-stateful-form data-pristine-message="更新予約は変更されていません。"{% if selected_device.state == 'retired' %} data-state-blocked="true" data-blocked-message="廃止済みの更新予約は変更できません。"{% endif %}>
-              <label for="target-firmware-version">この機器に適用するバージョン</label><select id="target-firmware-version" aria-label="更新するファームウェアバージョン" data-searchable-select data-search-placeholder="バージョン、ビルドを検索" data-empty-message="一致する候補はありません。"><option value="">更新予約なし</option>{% for artifact in firmware_target_options %}<option value="{{ artifact.version }}" {% if selected_device.target_firmware_version == artifact.version %}selected{% endif %}>{{ artifact.label }}</option>{% endfor %}</select>
+              <label for="target-firmware-version">この機器に適用するバージョン</label><select id="target-firmware-version" aria-label="更新する機器ソフトウェアのバージョン" data-searchable-select data-search-placeholder="バージョン、ビルドを検索" data-empty-message="一致する候補はありません。"><option value="">更新予約なし</option>{% for artifact in firmware_target_options %}<option value="{{ artifact.version }}" {% if selected_device.target_firmware_version == artifact.version %}selected{% endif %}>{{ artifact.label }}</option>{% endfor %}</select>
               <div class="actions"><span class="muted" data-stateful-reason></span><button type="submit" class="primary" data-stateful-submit>このバージョンへ更新予約</button><button type="button" id="clear-firmware-target"{% if not selected_device.target_firmware_version or selected_device.state == 'retired' %} disabled title="{{ '廃止済みの機器は変更できません' if selected_device.state == 'retired' else '解除する更新予約はありません' }}"{% endif %}>予約を解除</button></div>
             </form>
           </section>
 
           <section class="panel">
-            <h2>F/W更新履歴</h2>
+            <h2>機器ソフトウェアの更新履歴</h2>
             {% if selected.ota_history %}
             <div class="list">
               {% for item in selected.ota_history %}
@@ -3825,7 +3847,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           </section>
 
           <section id="firmware-maintenance" class="panel">
-            <h2>登録済みファームウェア</h2>
+            <h2>登録済み更新ファイル</h2>
             <details>
               <summary>配信ファイルの詳細を表示</summary>
               <div class="detail-body">
@@ -3842,7 +3864,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                       <td>{{ artifact.rollout_state }}</td>
                       <td>{{ artifact.size }}</td>
                       <td>{{ artifact.sha256 }}</td>
-                      <td><a href="{{ artifact.url }}" target="_blank" rel="noopener" aria-label="ファームウェア成果物を新しいタブで開く">{{ artifact.url }} ↗</a></td>
+                      <td><a href="{{ artifact.url }}" target="_blank" rel="noopener" aria-label="更新ファイルを新しいタブで開く">{{ artifact.url }} ↗</a></td>
                       <td>{{ artifact.updated_at }}</td>
                     </tr>
                     {% endfor %}
@@ -4687,7 +4709,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               '<input data-schedule-interval-days type="hidden" value="1">',
               '<input data-schedule-start-date type="hidden">',
               '<select data-schedule-weekdays hidden multiple></select>',
-              '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－</button>',
+              '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－ <span>削除</span></button>',
             ] : [
               '<div><label>時刻</label><input data-schedule-time type="time" required></div>',
               '<div><label>灌水時間（秒）</label><input data-schedule-duration type="number" min="1" max="3600" step="1" required></div>',
@@ -4696,7 +4718,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               '<div data-frequency-panel="interval"><label>間隔</label><input data-schedule-interval-days type="number" min="1" max="31" step="1"></div>',
               '<div data-frequency-panel="interval"><label>開始日</label><input data-schedule-start-date type="date"></div>',
               '<div data-frequency-panel="weekdays"><label>曜日</label><select data-schedule-weekdays multiple size="4"><option value="0">日</option><option value="1">月</option><option value="2">火</option><option value="3">水</option><option value="4">木</option><option value="5">金</option><option value="6">土</option></select></div>',
-              '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－</button>',
+              '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－ <span>削除</span></button>',
             ]).join("");
             const frequency = scheduleFrequency(schedule || {});
             row.querySelector("[data-schedule-time]").value = scheduleToTime(schedule || {});
@@ -5465,6 +5487,27 @@ def current_user_preferences_api():
 
 def _current_user_preferences(user_email):
     return effective_preferences(user_preference_repository(), user_email)
+
+
+def _accessibility_body_class(preferences):
+    values = preferences.get("preferences") if isinstance(preferences, dict) else {}
+    font_size = str((values or {}).get("font_size") or DEFAULT_FONT_SIZE)
+    if font_size not in SUPPORTED_FONT_SIZES:
+        font_size = DEFAULT_FONT_SIZE
+    contrast = str((values or {}).get("contrast") or DEFAULT_CONTRAST_MODE)
+    if contrast not in SUPPORTED_CONTRAST_MODES:
+        contrast = DEFAULT_CONTRAST_MODE
+    return f"a11y-font-{font_size.replace('_', '-')} a11y-contrast-{contrast}"
+
+
+@app.context_processor
+def inject_accessibility_preferences():
+    try:
+        user = current_user_from_request(request)
+        preferences = _current_user_preferences(user.email)
+    except AccessAuthenticationError:
+        preferences = {"preferences": {"font_size": DEFAULT_FONT_SIZE, "contrast": DEFAULT_CONTRAST_MODE}}
+    return {"accessibility_body_class": _accessibility_body_class(preferences)}
 
 
 def _current_plant_advice_profile():
@@ -8294,6 +8337,7 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
                 values[key] = telemetry.get(key)
         return {
             "device_id": device_id,
+            "device_name": (record or {}).get("name") or device_id,
             "scope_label": (placement or {}).get("scope_label"),
             "target_placement_ids": (placement or {}).get("target_placement_ids") or [],
             "crop_name": (placement or {}).get("crop_name"),
@@ -8306,6 +8350,7 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
         return None
     return {
         "device_id": device_id,
+        "device_name": (record or {}).get("name") or device_id,
         "scope_label": (placement or {}).get("scope_label"),
         "target_placement_ids": (placement or {}).get("target_placement_ids") or [],
         "crop_name": (placement or {}).get("crop_name"),
@@ -8327,7 +8372,7 @@ def _field_status_event(device_id: str, status_entry: dict):
     if payload.get("last_soil_moisture") is not None:
         parts.append(f"土壌水分 {payload.get('last_soil_moisture')}%")
     if not parts:
-        parts.append("status受信")
+        parts.append("状態を受信")
     return {"device_id": device_id, "received_at": status_entry.get("received_at"), "summary": " / ".join(parts), "payload": payload}
 
 

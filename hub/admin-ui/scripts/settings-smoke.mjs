@@ -53,6 +53,20 @@ page.on("console", (message) => {
   if (message.type() === "error") browserErrors.push(message.text());
 });
 
+async function assertMinimumControlTargets(rootSelector, label) {
+  const undersized = await page.$$eval(
+    `${rootSelector} button, ${rootSelector} input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), ${rootSelector} select`,
+    (controls) => controls
+      .filter((control) => control.getClientRects().length > 0 && control.getBoundingClientRect().width > 8 && control.getBoundingClientRect().height > 8)
+      .map((control) => {
+        const rect = control.getBoundingClientRect();
+        return { tag: control.tagName, id: control.id, name: control.getAttribute("name"), text: control.textContent?.trim(), width: rect.width, height: rect.height };
+      })
+      .filter((control) => control.height < 47.5),
+  );
+  assert.deepEqual(undersized, [], `${label} controls must provide a 48px-high target`);
+}
+
 try {
   await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
   await page.goto(`${baseUrl}/fields`, { waitUntil: "networkidle0" });
@@ -65,7 +79,40 @@ try {
   assert(await page.$('select[name="cultivation_experience"]'));
   assert.equal(await page.$$eval('select[name="cultivation_experience"] option', (options) => options.length), 3);
   assert.match(await page.$eval('select[name="cultivation_experience"]', (select) => select.textContent || ""), /初心者.*標準.*プロ/s);
+  assert.equal(await page.$$eval('input[name="font_size"]', (inputs) => inputs.length), 3);
+  assert.equal(await page.$$eval('input[name="contrast"]', (inputs) => inputs.length), 2);
+  assert.equal(await page.$$eval('input[name="font_size"]:checked', (inputs) => inputs.length), 1);
+  assert.equal(await page.$$eval('input[name="contrast"]:checked', (inputs) => inputs.length), 1);
   assert.equal(await page.$eval('#preference-form button[type="submit"]', (button) => button.disabled), true, "unchanged personal settings must not be saved");
+  const originalExperience = await page.$eval('select[name="cultivation_experience"]', (select) => select.value);
+  await page.select('select[name="cultivation_experience"]', originalExperience === "beginner" ? "standard" : "beginner");
+  assert.equal(await page.$eval('#preference-form [data-stateful-undo]', (button) => button.hidden), false, "a changed form must offer a visible undo action");
+  assert.equal(await page.$eval('#preference-form [data-stateful-undo]', (button) => button.getBoundingClientRect().height >= 48), true);
+  await page.click('#preference-form [data-stateful-undo]');
+  assert.equal(await page.$eval('select[name="cultivation_experience"]', (select) => select.value), originalExperience);
+  assert.match(await page.$eval('#preference-form [data-stateful-feedback]', (status) => status.textContent || ""), /変更前の内容に戻しました/);
+  assert.equal(await page.$eval('#preference-form button[type="submit"]', (button) => button.disabled), true);
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, "undo feedback must not overflow on mobile");
+  await page.screenshot({ path: "/tmp/ina-settings-undo-mobile.png", fullPage: true });
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  await page.click(".font-size-option.large");
+  assert.equal(await page.$eval("body", (body) => body.classList.contains("a11y-font-large")), true);
+  assert.equal(await page.$eval("body", (body) => getComputedStyle(body).fontSize), "18px");
+  await page.screenshot({ path: "/tmp/ina-font-size-large.png", fullPage: true });
+  await page.click(".font-size-option.extra-large");
+  assert.equal(await page.$eval("body", (body) => body.classList.contains("a11y-font-extra-large")), true);
+  assert.equal(await page.$eval("body", (body) => getComputedStyle(body).fontSize), "20px");
+  await page.click(".contrast-option.high");
+  assert.equal(await page.$eval("body", (body) => body.classList.contains("a11y-contrast-high")), true);
+  assert.equal(await page.$eval('select[name="timezone"]', (select) => getComputedStyle(select).borderTopWidth), "2px");
+  await assertMinimumControlTargets("#preference-form", "personal settings");
+  await page.screenshot({ path: "/tmp/ina-contrast-high-extra-large.png", fullPage: true });
+  await page.setViewport({ width: 640, height: 860, deviceScaleFactor: 1 });
+  const zoomEquivalentBounds = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+  assert(zoomEquivalentBounds.scrollWidth <= zoomEquivalentBounds.clientWidth, "extra-large text at a 200% desktop-width equivalent must not overflow horizontally");
+  await page.screenshot({ path: "/tmp/ina-font-size-extra-large-200-percent.png", fullPage: true });
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
   await page.type("#preference-search", "日付");
   await page.waitForFunction(() => document.querySelectorAll('.setting-row:not([hidden])').length === 1);
   await page.screenshot({ path: "/tmp/ina-personal-settings-filter.png", fullPage: true });
@@ -99,17 +146,23 @@ try {
   await page.waitForFunction(() => document.querySelector("#save-state")?.textContent?.includes("保存しました"));
 
   await page.goto(`${baseUrl}/fields`, { waitUntil: "networkidle0" });
+  assert.equal(await page.$eval("body", (body) => body.classList.contains("a11y-font-extra-large")), true, "saved font size must apply to field pages");
+  assert.equal(await page.$eval("body", (body) => body.classList.contains("a11y-contrast-high")), true, "saved contrast must apply to field pages");
   await Promise.all([page.waitForNavigation({ waitUntil: "networkidle0" }), page.click('a[href="/settings"]')]);
   assert.equal(await page.$eval("h1", (heading) => heading.textContent?.trim()), "アプリ設定");
+  assert.equal(await page.$eval("body", (body) => body.classList.contains("a11y-font-extra-large")), true, "saved font size must apply to app settings");
+  assert.equal(await page.$eval("body", (body) => body.classList.contains("a11y-contrast-high")), true, "saved contrast must apply to app settings");
   assert(await page.$("#settings-search"));
   assert.equal(await page.$('select[name="default_language"]'), null);
   assert(await page.$('input[name="text_analyze_model"]'));
+  assert.equal(await page.$eval('input[name="text_analyze_base_url"]', (input) => input.closest("details")?.open), false, "AI connection URL must start in advanced settings");
   assert(await page.$('select[name="text_analyze_temperature_mode"]'));
   assert(await page.$('input[name="text_analyze_temperature"]'));
   assert(await page.$('select[name="text_analyze_reasoning_effort"]'));
   assert(await page.$("#ai-test-dialog"));
   assert(await page.$('input[type="password"][name="text_analyze_api_key"]'));
   assert(await page.$('input[type="password"][name="image_analyze_api_key"]'));
+  assert.match(await page.$eval(".status", (status) => getComputedStyle(status, "::before").content), /✓|!/);
   assert(await page.$('textarea[name="plant_calendar_prompt_template"]'));
   assert.match(
     await page.$eval('textarea[name="plant_calendar_prompt_template"]', (textarea) => textarea.value),
@@ -118,6 +171,8 @@ try {
   assert.equal(await page.$eval('input[name="text_analyze_api_key"]', (input) => input.value), "");
   assert.equal(await page.$eval('input[name="image_analyze_api_key"]', (input) => input.value), "");
   assert(await page.$('input[name="post_schedule_start"]'));
+  assert.equal(await page.$eval('input[name="plant_calendar_web_knowledge_cache_days"]', (input) => input.closest("details")?.open), false, "search cache tuning must start in advanced settings");
+  await assertMinimumControlTargets(".settings-content", "app settings");
   assert(await page.$('select[name="camera_id"]'));
   assert(await page.$('select[name="camera_id"] + .static-searchable-select'), "camera selector must use the shared searchable dropdown");
   assert.equal(await page.$eval('select[name="camera_id"] + .static-searchable-select input[type="search"]', (input) => input.offsetParent === null), true, "camera search must stay hidden inside the closed dropdown");
@@ -129,6 +184,7 @@ try {
 
   const textProvider = '[data-ai-provider="text"]';
   await page.click(`${textProvider} .model-advanced summary`);
+  assert.equal(await page.$eval(`${textProvider} input[name="text_analyze_base_url"]`, (input) => input.closest("details")?.open), true, "advanced AI settings must reveal the connection URL");
   await page.select(`${textProvider} select[name="text_analyze_temperature_mode"]`, "custom");
   await page.$eval(`${textProvider} input[name="text_analyze_temperature"]`, (input) => {
     input.value = "0.2";
@@ -150,6 +206,8 @@ try {
   await page.click(`${textProvider} [data-test-ai]`);
   await page.waitForFunction(() => document.querySelector("#ai-test-dialog")?.hidden === false);
   consumeExpectedHttpError(browserErrors, "422", "AI diagnostic");
+  assert.match(await page.$eval("#ai-test-dialog .ai-dialog-close", (button) => button.textContent || ""), /閉じる/);
+  assert.equal(await page.$eval("#ai-test-dialog .ai-dialog-close", (button) => button.getBoundingClientRect().height >= 48), true);
   assert.match(await page.$eval("#ai-test-dialog-title", (element) => element.textContent || ""), /対応していません/);
   assert.match(await page.$eval("#ai-test-dialog-suggestions", (element) => element.textContent || ""), /自動調整/);
   await page.screenshot({ path: "/tmp/ina-ai-model-error.png", fullPage: true });
@@ -195,7 +253,7 @@ try {
   assert.equal(browserErrors.length, 0, browserErrors.join("\n"));
 
   process.stdout.write(
-    JSON.stringify({ screenshots: ["/tmp/ina-personal-settings-filter.png", "/tmp/ina-personal-settings-conflict.png", "/tmp/ina-ai-model-advanced.png", "/tmp/ina-ai-model-success.png", "/tmp/ina-ai-model-error.png", "/tmp/ina-app-settings.png", "/tmp/ina-app-settings-filter.png", "/tmp/ina-app-settings-mobile.png"] }, null, 2) + "\n",
+    JSON.stringify({ screenshots: ["/tmp/ina-settings-undo-mobile.png", "/tmp/ina-font-size-large.png", "/tmp/ina-contrast-high-extra-large.png", "/tmp/ina-font-size-extra-large-200-percent.png", "/tmp/ina-personal-settings-filter.png", "/tmp/ina-personal-settings-conflict.png", "/tmp/ina-ai-model-advanced.png", "/tmp/ina-ai-model-success.png", "/tmp/ina-ai-model-error.png", "/tmp/ina-app-settings.png", "/tmp/ina-app-settings-filter.png", "/tmp/ina-app-settings-mobile.png"] }, null, 2) + "\n",
   );
 } finally {
   await browser.close();

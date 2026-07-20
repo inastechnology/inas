@@ -31,6 +31,7 @@ try {
 
   await page.click("#open-field-create");
   await page.waitForFunction(() => document.querySelector("#field-create-dialog")?.open === true);
+  assert.match(await page.$eval("#close-field-create", (button) => button.textContent || ""), /閉じる/);
   await page.type('#field-create-dialog input[name="name"]', fieldName);
   await chooseStaticSearchableOption(page, '#field-create-dialog select[name="prefecture"]', "長野県", "長野");
   await page.type('#field-create-dialog input[name="municipality"]', "伊那市");

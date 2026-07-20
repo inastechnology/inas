@@ -264,7 +264,7 @@ export function CalendarActionCard({
             <div><small>{actionType.label}</small><h3>{action.title}</h3></div>
             {(capabilities.edit || capabilities.delete) && <div className="action-row-tools">
               {capabilities.edit && <button type="button" className="action-edit-button" onClick={() => setEditing(true)} disabled={busy} title={busyReason || "予定、説明、人数を編集"}><Edit3 size={16} />作業内容を編集</button>}
-              {capabilities.delete && <button type="button" className="action-icon-button danger" onClick={() => { if (window.confirm(`「${action.title}」を削除しますか？\nこの操作は元に戻せません。`)) void onDelete(plantingId, action.id); }} disabled={busy} title={busyReason || "作業を削除"}><Trash2 size={16} /></button>}
+              {capabilities.delete && <button type="button" className="action-icon-button danger" onClick={() => { if (window.confirm(`「${action.title}」を削除しますか？\nこの操作は元に戻せません。`)) void onDelete(plantingId, action.id); }} disabled={busy} aria-label={`${action.title}を削除`} title={busyReason || "作業を削除"}><Trash2 size={16} /><span>削除</span></button>}
             </div>}
           </div>
           <div className="action-workload" aria-label="作業量の目安">
@@ -945,7 +945,7 @@ function RichActionContentField({ html, onHtmlChange, images, onImagesChange }: 
         }}
       />
       <label className="image-input rich-action-image-input" onMouseDown={rememberSelection}><span><ImagePlus size={15} />カーソル位置へ写真を追加</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => addImages(Array.from(event.target.files ?? []))} /></label>
-      {images.length > 0 && <ul className="pending-image-list">{images.map((image, index) => <li key={`${image.name}-${index}`}><span>{index + 1}</span><strong>{image.name}</strong><button type="button" onClick={() => removeImage(index)} title={`${image.name}を外す`}><Trash2 size={14} /></button></li>)}</ul>}
+      {images.length > 0 && <ul className="pending-image-list">{images.map((image, index) => <li key={`${image.name}-${index}`}><span>{index + 1}</span><strong>{image.name}</strong><button type="button" onClick={() => removeImage(index)} aria-label={`${image.name}を外す`} title={`${image.name}を外す`}><Trash2 size={14} /><span>外す</span></button></li>)}</ul>}
     </fieldset>
   );
 }

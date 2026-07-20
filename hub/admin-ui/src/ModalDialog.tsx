@@ -27,9 +27,11 @@ export function ModalDialog({
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    document.body.classList.add("hub-edit-modal-open");
     window.requestAnimationFrame(() => dialogRef.current?.focus());
     return () => {
       document.body.style.overflow = previousOverflow;
+      document.body.classList.remove("hub-edit-modal-open");
       returnFocusRef.current?.focus();
     };
   }, []);
@@ -73,7 +75,7 @@ export function ModalDialog({
       >
         <header>
           <div>{eyebrow && <span>{eyebrow}</span>}<h2 id={titleId}>{title}</h2></div>
-          <button type="button" className="icon-button" onClick={onClose} title="閉じる"><X size={18} /></button>
+          <button type="button" className="icon-button labeled-icon-button" onClick={onClose} aria-label={`${title}を閉じる`} title="閉じる"><X size={18} /><span>閉じる</span></button>
         </header>
         <div className="hub-edit-modal-body">{children}</div>
       </section>

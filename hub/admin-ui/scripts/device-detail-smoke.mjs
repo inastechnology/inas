@@ -29,6 +29,20 @@ async function assertSelectedTab(key) {
   );
 }
 
+async function assertMinimumControlTargets(rootSelector, label) {
+  const undersized = await page.$$eval(
+    `${rootSelector} button, ${rootSelector} input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), ${rootSelector} select`,
+    (controls) => controls
+      .filter((control) => control.getClientRects().length > 0 && control.getBoundingClientRect().width > 8 && control.getBoundingClientRect().height > 8)
+      .map((control) => {
+        const rect = control.getBoundingClientRect();
+        return { tag: control.tagName, id: control.id, name: control.getAttribute("name"), text: control.textContent?.trim(), width: rect.width, height: rect.height };
+      })
+      .filter((control) => control.height < 47.5),
+  );
+  assert.deepEqual(undersized, [], `${label} controls must provide a 48px-high target`);
+}
+
 try {
   await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   await page.goto(`${baseUrl}/mqtt-devices`, { waitUntil: "networkidle0" });
@@ -53,6 +67,9 @@ try {
   assert.match(wateringDecisionText, /次の潅水/);
   assert.match(wateringDecisionText, /土壌水分しきい値/);
   assert.match(wateringDecisionText, /現在の土壌水分/);
+  assert.doesNotMatch(await page.$eval(".detail-header .lead", (lead) => lead.innerText || ""), /INADS-DEMO-WTR-001/, "the normal heading must not expose an internal device identifier");
+  assert.equal(await page.$eval(".identity-details", (details) => details.open), false, "device identifiers must start inside advanced information");
+  assert.match(await page.$eval(".identity-details > summary", (summary) => summary.textContent || ""), /機器番号.*上級者向け/);
   assert.equal(await page.$$eval("h2", (headings) => headings.filter((heading) => heading.textContent?.trim() === "設置ビュー").length), 0);
   assert.equal(await page.$$eval('a[href="/mqtt-devices"]', (links) => links.length), 1, "detail must expose one catalog return path");
   assert(await page.$(".location-path a"), "the irrigation device must link to its field placement");
@@ -72,6 +89,9 @@ try {
   await page.click('.tab-button[data-tab-key="overview"]');
   await assertSelectedTab("overview");
   assert.equal(await page.$eval("#tab-overview", (panel) => panel.hidden), false);
+  const ordinaryOverview = await page.$eval("#tab-overview", (panel) => panel.innerText || "");
+  assert.match(ordinaryOverview, /機器の通信・更新/);
+  assert.doesNotMatch(ordinaryOverview, /通信・ファームウェア|最後のstatus/, "the ordinary overview must use everyday language");
   assert.equal(await page.$$(".readiness-card").then((items) => items.length), 4, "overview must make operational readiness scannable");
   assert.equal(
     await page.$eval('.metric-action[aria-label="次の潅水の設定を変更"]', (link) => link.getAttribute("href")),
@@ -81,12 +101,20 @@ try {
   await page.click('.tab-button[data-tab-key="monitoring"]');
   await assertSelectedTab("monitoring");
   await waitForCharts(2);
+  assert.equal(await page.$eval(".communication-history", (details) => details.open), false, "technical communication history must start collapsed");
+  assert.doesNotMatch(await page.$eval("#tab-monitoring", (panel) => panel.innerText || ""), /通信番号|電波強度/, "collapsed monitoring must not show communication jargon");
   assert.equal(await page.$$eval(".chart-settings-link", (links) => links.length), 2);
+  assert.match(await page.$eval(".chart-settings-link", (link) => link.textContent || ""), /設定/);
+  assert.equal(await page.$eval(".chart-settings-link", (link) => link.getBoundingClientRect().width >= 48 && link.getBoundingClientRect().height >= 48), true);
   assert.equal(
     await page.$eval(".chart-settings-link", (link) => link.getAttribute("href")),
     "/mqtt-devices/INADS-DEMO-WTR-001?tab=settings",
   );
   await page.screenshot({ path: "/tmp/ina-device-wtr-monitoring.png", fullPage: true });
+  await page.click(".communication-history > summary");
+  assert.match(await page.$eval(".communication-history", (details) => details.innerText || ""), /通信番号.*次回の通信予定.*電波強度/s);
+  await page.screenshot({ path: "/tmp/ina-device-advanced-communication.png", fullPage: false });
+  await page.click(".communication-history > summary");
 
   await Promise.all([
     page.waitForNavigation({ waitUntil: "networkidle0" }),
@@ -96,6 +124,12 @@ try {
   assert.equal(await page.$eval("#tab-config", (panel) => panel.hidden), false);
   assert(await page.$("#metadata-form"));
   assert.equal(await page.$eval('#metadata-form button[type="submit"]', (button) => button.disabled), true, "unchanged metadata must not be saved again");
+  const originalDeviceName = await page.$eval('#metadata-form input[name="name"]', (input) => input.value);
+  await page.type('#metadata-form input[name="name"]', " 仮変更");
+  assert.equal(await page.$eval('#metadata-form [data-stateful-undo]', (button) => button.hidden), false);
+  await page.click('#metadata-form [data-stateful-undo]');
+  assert.equal(await page.$eval('#metadata-form input[name="name"]', (input) => input.value), originalDeviceName);
+  assert.match(await page.$eval('#metadata-form [data-stateful-feedback]', (status) => status.textContent || ""), /変更前の内容に戻しました/);
   assert.equal(await page.$eval('#runtime-config-form button[type="submit"]', (button) => button.disabled), true, "unchanged runtime config must not be saved again");
   assert.equal(await page.$eval("#save-push-runtime-config", (button) => button.disabled), true, "unchanged runtime config must not be sent");
   assert(await page.$("#output-connection-map"), "watering settings must visualize the current equipment connections");
@@ -112,6 +146,7 @@ try {
   assert.equal(await page.$$("#output-settings-dialog [data-equipment-type]").then((items) => items.length), 8, "each port must offer illustrated equipment choices");
   const outputDialogText = await page.$eval("#output-settings-dialog", (dialog) => dialog.innerText || "");
   assert.match(outputDialogText, /水やりルートを組み立てる/);
+  assert.match(await page.$eval("#output-settings-dialog [data-close-output-dialog]", (button) => button.textContent || ""), /閉じる/);
   assert.match(outputDialogText, /ポンプ|バルブ|点滴チューブ|スプリンクラー/);
   assert.doesNotMatch(outputDialogText, /内部ID|接続端子|系統番号|MOSFET|mask/);
   const layoutReference = "#output-settings-dialog [data-preserve-current-work]";
@@ -158,6 +193,7 @@ try {
   assert.match(storedRouteDraft.mosfet_switches[0].notes, /デモ用/, "legacy notes must survive visual editing in Hub storage");
   assert.match(storedRouteDraft.mosfet_switches[0].notes, /equipment_type=sprinkler/, "the selected picture must fit the existing Hub notes schema");
   assert.equal("equipment_type" in storedRouteDraft.mosfet_switches[0], false, "the stored Hub schema must not gain a new field");
+  await assertMinimumControlTargets("#tab-config", "device settings");
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
   await new Promise((resolve) => setTimeout(resolve, 250));
   const wateringSettingsOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -284,6 +320,7 @@ try {
     mobileOverflow: overflow,
     screenshots: [
       "/tmp/ina-device-wtr-monitoring.png",
+      "/tmp/ina-device-advanced-communication.png",
       "/tmp/ina-device-list.png",
       "/tmp/ina-device-wtr-overview.png",
     "/tmp/ina-device-wtr-settings.png",

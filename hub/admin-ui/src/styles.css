@@ -33,6 +33,7 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
 .hub-edit-modal-dialog > header span { display: block; color: #718078; font-size: 9px; font-weight: 800; }
 .hub-edit-modal-dialog > header h2 { margin: 2px 0 0; color: #273a30; font-size: 17px; letter-spacing: 0; }
 .hub-edit-modal-body { min-height: 0; overflow-y: auto; padding: 14px; overscroll-behavior: contain; }
+body.hub-edit-modal-open .calendar-action-detail-dialog > header > .icon-button { visibility: hidden; }
 @keyframes hub-modal-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes hub-modal-dialog-in { from { transform: translateY(14px) scale(.985); } to { transform: translateY(0) scale(1); } }
 @media (prefers-reduced-motion: reduce) { .hub-edit-modal-backdrop, .hub-edit-modal-dialog { animation: none; } }
@@ -125,6 +126,17 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
   text-decoration: none;
 }
 
+.icon-button.labeled-icon-button,
+.icon-link.labeled-icon-button {
+  width: auto;
+  min-width: 48px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  gap: 7px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .icon-link:hover,
 .icon-button:hover:not(:disabled) { border-color: #739386; background: #f1f6f3; }
 
@@ -142,8 +154,8 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .save-state { min-width: 72px; color: #607068; font-size: 12px; text-align: right; }
 .save-state.dirty { color: #a04e25; font-weight: 700; }
 
-.zoom-control { display: grid; grid-template-columns: 30px 54px 30px; align-items: center; height: 36px; overflow: hidden; border: 1px solid #ced6d0; border-radius: 6px; background: #fff; }
-.zoom-control button { display: grid; place-items: center; width: 30px; height: 34px; padding: 0; border: 0; color: #43554b; background: transparent; }
+.zoom-control { display: grid; grid-template-columns: 48px 54px 48px; align-items: center; min-height: 48px; overflow: hidden; border: 1px solid #ced6d0; border-radius: 6px; background: #fff; }
+.zoom-control button { display: grid; place-items: center; width: 48px; min-height: 48px; padding: 0; border: 0; color: #43554b; background: transparent; }
 .zoom-control button:hover { background: #edf2ee; }
 .zoom-control span { color: #526159; font-size: 12px; text-align: center; }
 
@@ -382,7 +394,7 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .calendar-header { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; min-height: 68px; padding: 10px 16px; border-bottom: 1px solid #cdd5ce; background: #fff; z-index: 2; }
 .calendar-header-identity { display: flex; align-items: center; gap: 10px; }
 .calendar-header span { display: block; color: #6b796f; font-size: 10px; font-weight: 800; }
-.calendar-header h2 { margin: 2px 0 0; color: #22352b; font-size: 19px; letter-spacing: 0; }
+.calendar-header :is(h1, h2) { margin: 2px 0 0; color: #22352b; font-size: 19px; letter-spacing: 0; }
 .calendar-operation-indicator { position: sticky; top: 68px; z-index: 5; display: flex; justify-content: center; padding: 7px 12px; border-bottom: 1px solid #bcd2c5; background: rgb(238 247 241 / 96%); box-shadow: 0 4px 12px rgb(35 70 50 / 8%); backdrop-filter: blur(8px); }
 .calendar-empty { display: grid; place-items: center; align-content: center; gap: 10px; min-height: 360px; padding: 28px; color: #617068; text-align: center; }
 .calendar-empty p { max-width: 360px; margin: 0; font-size: 13px; line-height: 1.65; }
@@ -682,9 +694,9 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .action-heading { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
 .action-heading small { color: #718177; font-size: 10px; font-weight: 900; letter-spacing: .08em; }
 .action-heading h3 { margin: 3px 0 0; color: #26392e; font-family: ui-serif, "Yu Mincho", "Hiragino Mincho ProN", serif; font-size: clamp(18px, 2.5vw, 25px); line-height: 1.35; overflow-wrap: anywhere; }
-.action-icon-button { display: inline-grid; place-items: center; width: 32px; height: 32px; flex: 0 0 32px; padding: 0; border: 1px solid #ccd5ce; border-radius: 5px; color: #53665b; background: #fff; }
+.action-icon-button { display: inline-flex; place-items: center; align-items: center; justify-content: center; width: auto; min-width: 48px; min-height: 48px; flex: 0 0 auto; gap: 6px; padding: 6px 10px; border: 1px solid #ccd5ce; border-radius: 5px; color: #53665b; background: #fff; font-weight: 800; }
 .action-icon-button:hover { background: #edf3ef; }
-.action-row-tools { display:flex; gap:4px; }
+.action-row-tools { display:flex; flex-wrap:wrap; gap:12px; }
 .action-icon-button.danger { color:#983d36; }
 .action-workload { display: flex; flex-wrap: wrap; gap: 7px; }
 .action-workload > span { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid #ded5c3; border-radius: 999px; color: #665d4d; background: rgb(255 255 255 / 74%); font-size: 11px; font-weight: 800; }
@@ -885,10 +897,10 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .rich-action-image-input { position: relative; display: inline-flex !important; justify-self: start; min-height: 36px; align-items: center; padding: 7px 11px; overflow: hidden; border: 1px solid #789986; border-radius: 7px; color: #315f4b !important; background: #edf5f0; cursor: pointer; }
 .rich-action-image-input input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; opacity: 0; cursor: pointer; }
 .pending-image-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
-.pending-image-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) 30px; align-items: center; gap: 7px; padding: 6px 7px; border: 1px solid #d5ddd7; border-radius: 6px; background: #fff; color: #53655b; font-size: 9px; }
+.pending-image-list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 7px; padding: 6px 7px; border: 1px solid #d5ddd7; border-radius: 6px; background: #fff; color: #53655b; font-size: 9px; }
 .pending-image-list li > span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: #fff; background: #4d7b65; font-weight: 900; }
 .pending-image-list li > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pending-image-list li > button { display: grid; width: 28px; height: 28px; place-items: center; padding: 0; border: 1px solid #dfc9c5; border-radius: 5px; color: #95443d; background: #fff8f6; }
+.pending-image-list li > button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: auto; min-width: 48px; min-height: 48px; padding: 6px 9px; border: 1px solid #dfc9c5; border-radius: 5px; color: #95443d; background: #fff8f6; font-weight: 800; }
 .rich-action-preview { display: grid; gap: 5px; padding-top: 7px; border-top: 1px solid #d4ddd6; }
 .rich-action-preview > span { color: #627269; font-size: 8px; font-weight: 900; }
 .rich-action-rendered { color: #354b3f; font-family: ui-serif, "Yu Mincho", "Hiragino Mincho ProN", serif; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
@@ -1017,12 +1029,13 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
   .fertilizer-catalog-grid { grid-template-columns: 1fr; }
   .fertilizer-catalog-intro { grid-template-columns: auto minmax(0, 1fr); }
   .fertilizer-catalog-intro button { grid-column: 1 / -1; justify-content: center; }
-  .editor-header { min-height: 58px; }
+  .editor-header { grid-template-columns: minmax(0, 1fr); min-height: 58px; }
   .editor-identity .eyebrow { display: none; }
   .editor-identity h1 { max-width: 150px; font-size: 15px; }
-  .editor-actions { gap: 4px; }
-  .editor-actions .icon-button { display: none; }
-  .calendar-button { width: 36px; padding: 0; justify-content: center; }
+  .editor-actions { grid-column: 1; grid-row: auto; flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
+  .editor-actions .icon-button { display: inline-flex; }
+  .calendar-button { width: auto; padding: 7px 10px; justify-content: center; }
+  .calendar-button span { display: inline; }
   .calendar-button strong { position: absolute; margin: -29px -28px 0 0; }
   .save-button { padding: 7px 9px; }
   .canvas-toolbar > span { display: none; }

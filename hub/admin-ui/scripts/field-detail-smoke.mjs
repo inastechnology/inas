@@ -45,6 +45,20 @@ async function selectCalendarWorkspace(targetPage, label) {
   }, label);
 }
 
+async function assertMinimumControlTargets(targetPage, rootSelector, label) {
+  const undersized = await targetPage.$$eval(
+    `${rootSelector} button, ${rootSelector} input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), ${rootSelector} select`,
+    (controls) => controls
+      .filter((control) => control.getClientRects().length > 0 && control.getBoundingClientRect().width > 8 && control.getBoundingClientRect().height > 8)
+      .map((control) => {
+        const rect = control.getBoundingClientRect();
+        return { tag: control.tagName, id: control.id, name: control.getAttribute("name"), text: control.textContent?.trim(), width: rect.width, height: rect.height };
+      })
+      .filter((control) => control.height < 47.5),
+  );
+  assert.deepEqual(undersized, [], `${label} controls must provide a 48px-high target`);
+}
+
 try {
   await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
 
@@ -88,6 +102,13 @@ try {
   await targetPage.waitForSelector(`.plant-target-row.focused[data-target-metric="${targetMetric}"]`);
   assert(await targetPage.$(".inspector-panel .active-planting"), "the metric link must select the target planting");
   await targetPage.screenshot({ path: "/tmp/ina-environment-target-direct.png", fullPage: true });
+  await targetPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert((await targetPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 1, "installation view must not overflow on mobile");
+  assert.match(await targetPage.$eval(".calendar-button", (button) => button.textContent || ""), /栽培カレンダー/, "mobile installation view must keep the calendar action named");
+  assert.equal(await targetPage.$$eval(".editor-actions .labeled-icon-button", (buttons) => buttons.filter((button) => getComputedStyle(button).display !== "none").length), 2, "mobile installation view must keep undo and redo visible by name");
+  await assertMinimumControlTargets(targetPage, "body", "mobile installation view");
+  await targetPage.screenshot({ path: "/tmp/ina-environment-target-direct-mobile.png", fullPage: true });
   await targetPage.close();
   const placementDetailHref = await page.$eval("#field-installation-tree .tree-row.kind-cultivation", (link) => link.href);
   const placementDetailUrl = new URL(placementDetailHref);
@@ -104,6 +125,7 @@ try {
   await placementPage.close();
   assert.match(await page.$eval("#field-action-candidates", (panel) => panel.textContent || ""), /作業TODO/);
   assert.match(await page.$eval("#field-action-candidates", (panel) => panel.textContent || ""), /(そろそろ|今やる|期限超過)/);
+  await assertMinimumControlTargets(page, "body", "field detail");
   await page.screenshot({ path: "/tmp/ina-field-todo-desktop.png", fullPage: true });
   const calendarHref = await page.$eval(".calendar-task", (link) => link.href);
   assert.equal(await page.$eval(".calendar-task", (link) => link.getAttribute("target")), "_blank");
@@ -326,6 +348,8 @@ try {
     await calendarPage.waitForSelector(".action-edit-dialog .rich-action-content");
     await new Promise((resolve) => setTimeout(resolve, 250));
     assert.match(await calendarPage.$eval(".action-edit-dialog > header", (header) => header.textContent || ""), /実績入力とは別に編集/);
+    assert.match(await calendarPage.$eval(".action-edit-dialog > header .icon-button", (button) => button.textContent || ""), /閉じる/);
+    assert.equal(await calendarPage.$eval(".calendar-action-detail-dialog > header > .icon-button", (button) => getComputedStyle(button).visibility), "hidden", "the background detail close action must not overlap a nested editor");
     assert(await calendarPage.$('.action-edit-dialog .rich-action-editor[contenteditable="true"]'), "detailed notes must use a visual rich text editor");
     assert.equal(await calendarPage.$(".action-edit-dialog .rich-action-content textarea"), null, "users must not edit raw HTML tags");
     assert.equal(await calendarPage.$$(".action-edit-dialog .rich-action-toolbar button").then((items) => items.length), 8, "the visual editor must expose its formatting tools");
@@ -348,6 +372,7 @@ try {
     await richImageInput.uploadFile("../src/ina_device_hub/static/plant-actions/pest-control.webp");
     await calendarPage.waitForSelector(".action-edit-dialog .rich-action-editor .pending-editor-image");
     assert.equal((await calendarPage.$eval(".action-edit-dialog .rich-action-editor", (editor) => editor.textContent || "")).includes("{{image:"), false, "image markers must be presented visually instead of as HTML text");
+    await assertMinimumControlTargets(calendarPage, ".action-edit-dialog", "action editor");
     await calendarPage.evaluate(() => window.getSelection()?.removeAllRanges());
     await calendarPage.screenshot({ path: "/tmp/ina-calendar-edit-action-modal.png", fullPage: true });
     await calendarPage.click(".action-edit-dialog > header .icon-button");
@@ -402,6 +427,7 @@ try {
     await calendarPage.waitForSelector(".work-record-dialog .work-detail-fields");
     await new Promise((resolve) => setTimeout(resolve, 250));
     assert.equal(await calendarPage.$eval(".work-record-dialog", (dialog) => dialog.getAttribute("aria-modal")), "true", "work records must open as a modal");
+    assert.equal(await calendarPage.$eval(".calendar-action-detail-dialog > header > .icon-button", (button) => getComputedStyle(button).visibility), "hidden", "the background detail close action must not overlap work recording");
     const workMethodSelect = ".work-record-dialog .work-detail-fields .searchable-select";
     assert.equal(await calendarPage.$(`${workMethodSelect} input[type="search"]`), null, "work method search must be inside the closed dropdown");
     await calendarPage.click(`${workMethodSelect} .searchable-select-control`);
@@ -415,6 +441,7 @@ try {
     assert.match(await calendarPage.$eval(".work-record-dialog .work-detail-fields", (fields) => fields.textContent || ""), /実際の使用量・希釈・処理時間/);
     assert.match(await calendarPage.$eval(".work-record-dialog .work-detail-fields", (fields) => fields.textContent || ""), /次回の確認目安.*AIの提案値/);
     assert(Number(await calendarPage.$eval('.work-record-dialog .follow-up-default-field input', (input) => input.value)) > 0, "AI work must provide a default follow-up day");
+    await assertMinimumControlTargets(calendarPage, ".work-record-dialog", "work record");
     await calendarPage.screenshot({ path: "/tmp/ina-work-record-desktop.png", fullPage: true });
     await calendarPage.click('.work-record-dialog > header .icon-button');
     await calendarPage.waitForFunction(() => !document.querySelector(".work-record-dialog"));
@@ -639,6 +666,7 @@ try {
       "/tmp/ina-agentic-watering-readiness-mobile.png",
       "/tmp/ina-agentic-human-readiness.png",
       "/tmp/ina-environment-target-direct.png",
+      "/tmp/ina-environment-target-direct-mobile.png",
       "/tmp/ina-care-profile-desktop.png",
       "/tmp/ina-calendar-regeneration-modes.png",
       "/tmp/ina-fertilizer-catalog-desktop.png",

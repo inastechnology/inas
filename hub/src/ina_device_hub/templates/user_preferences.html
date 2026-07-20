@@ -37,6 +37,25 @@
       .setting-label small { display: block; margin-top: 4px; color: #758078; font-size: 10px; font-weight: 500; line-height: 1.45; }
       .help-button { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid #9fb3a7; border-radius: 50%; color: #24654f; background: #f5faf7; font-size: 12px; font-weight: 900; cursor: pointer; }
       .help-button:hover, .help-button:focus-visible { border-color: #24654f; outline: 2px solid #b8d8ca; outline-offset: 1px; background: #e9f4ee; }
+      .font-size-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+      .font-size-option { position: relative; display: grid; min-width: 0; min-height: 64px; place-items: center; padding: 8px 5px; border: 2px solid #c4cec7; border-radius: 7px; color: #33473c; background: #fff; cursor: pointer; text-align: center; }
+      .font-size-option input { position: absolute; width: 1px; height: 1px; min-height: 1px; opacity: 0; pointer-events: none; }
+      .font-size-option:has(input:checked) { border-color: #176b50; color: #174f3d; background: #e9f4ee; box-shadow: 0 0 0 2px rgba(23, 107, 80, .12); }
+      .font-size-option:has(input:focus-visible) { outline: 3px solid rgba(31, 107, 82, .24); outline-offset: 2px; }
+      .font-size-option strong { display: block; line-height: 1.2; }
+      .font-size-option small { display: block; margin-top: 5px; color: #64736b; font-size: 10px; }
+      .font-size-option.standard strong { font-size: 14px; }
+      .font-size-option.large strong { font-size: 18px; }
+      .font-size-option.extra-large strong { font-size: 21px; }
+      .contrast-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+      .contrast-option { position: relative; display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 64px; padding: 8px; border: 2px solid #c4cec7; border-radius: 7px; color: #33473c; background: #fff; cursor: pointer; }
+      .contrast-option input { position: absolute; width: 1px; height: 1px; min-height: 1px; opacity: 0; pointer-events: none; }
+      .contrast-option:has(input:checked) { border-color: #176b50; background: #e9f4ee; box-shadow: 0 0 0 2px rgba(23, 107, 80, .12); }
+      .contrast-option:has(input:focus-visible) { outline: 3px solid rgba(31, 107, 82, .24); outline-offset: 2px; }
+      .contrast-sample { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid #a9b7ae; border-radius: 5px; color: #536159; background: #f5f7f5; font-size: 16px; font-weight: 900; }
+      .contrast-option.high .contrast-sample { border: 3px solid #111; color: #000; background: #fff; }
+      .contrast-option strong, .contrast-option small { display: block; }
+      .contrast-option small { margin-top: 3px; color: #64736b; font-size: 10px; }
       .section-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 18px; background: #f7f9f7; }
       .save-state { min-height: 18px; color: #627068; font-size: 11px; }
       .save-state.error { color: #a33d35; font-weight: 800; }
@@ -76,12 +95,15 @@
         main { grid-template-columns: 1fr; }
         .setting-row { grid-template-columns: 1fr; gap: 8px; }
         .comparison { grid-template-columns: 1fr; }
+        .font-size-options { grid-template-columns: 1fr; }
+        .font-size-option { min-height: 54px; }
+        .contrast-options { grid-template-columns: 1fr; }
         .section-actions { align-items: stretch; flex-direction: column; }
       }
     </style>
     <link rel="stylesheet" href="/static/hub-ui.css">
   </head>
-  <body class="hub-shell hub-preferences">
+  <body class="hub-shell hub-preferences {{ accessibility_body_class }}">
     <header class="page-header">
       <div class="header-inner">
         <div><a class="brand" href="/">INA Device Hub</a><h1>個人設定</h1></div>
@@ -90,16 +112,18 @@
     </header>
     <main>
       <aside class="sidebar">
-        <label class="search">設定を検索<input id="preference-search" type="search" autocomplete="off" placeholder="時刻、日付、栽培レベル..."></label>
+        <label class="search">設定を検索<input id="preference-search" type="search" autocomplete="off" placeholder="文字、時刻、栽培レベル..."></label>
         <div class="account"><span>ログイン中</span><strong>{{ user.email }}</strong><small>権限</small><span class="role">{{ '管理者' if user.role == 'admin' else '作業者' }}</span></div>
       </aside>
       <div class="content" id="preference-content">
-        <section class="hub-guide-banner" aria-label="個人設定の案内"><div class="hub-guide-copy"><span class="eyebrow">MY EXPERIENCE</span><h2>見やすさと説明の詳しさを、自分に合わせる</h2><p>日時表示とAI栽培アドバイスの説明量だけを調整します。機器や圃場の設定には影響しません。</p></div><img class="hub-guide-image" src="/static/ui-illustrations/field-operations.png" alt="圃場をタブレットで確認するイラスト"></section>
-        <form class="settings-section" id="preference-form" data-stateful-form data-pristine-message="個人設定は変更されていません。" data-search="日時 timezone タイムゾーン 日付 date format 栽培 アドバイス 初心者 標準 プロ">
+        <section class="hub-guide-banner" aria-label="個人設定の案内"><div class="hub-guide-copy"><span class="eyebrow">MY EXPERIENCE</span><h2>見やすさと説明の詳しさを、自分に合わせる</h2><p>文字の大きさ、日時表示、AI栽培アドバイスの説明量を調整します。機器や圃場の設定値には影響しません。</p></div><img class="hub-guide-image" src="/static/ui-illustrations/field-operations.png" alt="圃場をタブレットで確認するイラスト"></section>
+        <form class="settings-section" id="preference-form" data-stateful-form data-pristine-message="個人設定は変更されていません。" data-search="文字 大きさ font size 日時 timezone タイムゾーン 日付 date format 栽培 アドバイス 初心者 標準 プロ">
           <div class="section-heading"><h2>表示と栽培アドバイス</h2><p>この設定はログイン中のユーザーだけに適用され、別の端末でも引き継がれます。</p></div>
           <div class="setting-list">
             <label class="setting-row" data-search="timezone タイムゾーン 時刻"><span class="setting-label">タイムゾーン<small>カレンダーと記録時刻の表示基準です。</small></span><select name="timezone"><option value="Asia/Tokyo"{% if preferences.timezone == 'Asia/Tokyo' %} selected{% endif %}>Asia/Tokyo</option><option value="UTC"{% if preferences.timezone == 'UTC' %} selected{% endif %}>UTC</option></select></label>
             <label class="setting-row" data-search="date format 日付 表示形式"><span class="setting-label">日付形式</span><select name="date_format"><option value="yyyy-MM-dd"{% if preferences.date_format == 'yyyy-MM-dd' %} selected{% endif %}>2026-07-15</option><option value="yyyy/MM/dd"{% if preferences.date_format == 'yyyy/MM/dd' %} selected{% endif %}>2026/07/15</option><option value="MM/dd/yyyy"{% if preferences.date_format == 'MM/dd/yyyy' %} selected{% endif %}>07/15/2026</option></select></label>
+            <div class="setting-row" data-search="文字 大きさ フォント font size 見やすさ"><div class="setting-label" id="font-size-label">文字の大きさ<small>選ぶとこの画面で大きさを確認できます。保存後はHubの全画面に反映されます。</small></div><div class="font-size-options" role="radiogroup" aria-labelledby="font-size-label"><label class="font-size-option standard"><input type="radio" name="font_size" value="standard"{% if preferences.preferences.get('font_size', 'standard') == 'standard' %} checked{% endif %}><span><strong>標準</strong><small>これまでと同じ</small></span></label><label class="font-size-option large"><input type="radio" name="font_size" value="large"{% if preferences.preferences.get('font_size') == 'large' %} checked{% endif %}><span><strong>大</strong><small>本文18px目安</small></span></label><label class="font-size-option extra-large"><input type="radio" name="font_size" value="extra_large"{% if preferences.preferences.get('font_size') == 'extra_large' %} checked{% endif %}><span><strong>特大</strong><small>本文20px目安</small></span></label></div></div>
+            <div class="setting-row" data-search="コントラスト contrast 色 見やすさ 屋外 日なた"><div class="setting-label" id="contrast-label">画面の見分けやすさ<small>日なたや、薄い文字が読みにくい場合は「くっきり」を選んでください。</small></div><div class="contrast-options" role="radiogroup" aria-labelledby="contrast-label"><label class="contrast-option standard"><input type="radio" name="contrast" value="standard"{% if preferences.preferences.get('contrast', 'standard') == 'standard' %} checked{% endif %}><span class="contrast-sample" aria-hidden="true">Aa</span><span><strong>標準</strong><small>やわらかい色</small></span></label><label class="contrast-option high"><input type="radio" name="contrast" value="high"{% if preferences.preferences.get('contrast') == 'high' %} checked{% endif %}><span class="contrast-sample" aria-hidden="true">Aa</span><span><strong>くっきり</strong><small>濃い文字と境界線</small></span></label></div></div>
             <div class="setting-row" data-search="栽培 アドバイス 習熟度 初心者 標準 プロ beginner professional 追肥 例"><div class="setting-label"><span class="setting-label-heading" id="cultivation-experience-label">栽培アドバイスの詳しさ<button class="help-button" id="advice-help-open" type="button" aria-label="栽培アドバイスの詳しさの例を見る" aria-haspopup="dialog">?</button></span><small>AIが作る作業手順の説明量と専門性を調整します。農業上の判断基準や安全条件はどの設定でも省略しません。</small></div><select id="cultivation-experience" name="cultivation_experience" aria-labelledby="cultivation-experience-label"><option value="beginner"{% if preferences.preferences.get('cultivation_experience') == 'beginner' %} selected{% endif %}>初心者 - 手順を詳しく</option><option value="standard"{% if preferences.preferences.get('cultivation_experience', 'standard') == 'standard' %} selected{% endif %}>標準 - 必要情報を簡潔に</option><option value="professional"{% if preferences.preferences.get('cultivation_experience') == 'professional' %} selected{% endif %}>プロ - 判断・数値・根拠を優先</option></select></div>
           </div>
           <div class="section-actions"><span id="save-state" class="save-state" role="status" data-stateful-reason></span><button class="primary" type="submit" data-stateful-submit>個人設定を保存</button></div>
@@ -142,17 +166,43 @@
         version,
         timezone: form.elements.timezone.value,
         date_format: form.elements.date_format.value,
-        preferences: { ...storedPreferences, cultivation_experience: form.elements.cultivation_experience.value },
+        preferences: {
+          ...storedPreferences,
+          cultivation_experience: form.elements.cultivation_experience.value,
+          font_size: form.elements.font_size.value,
+          contrast: form.elements.contrast.value,
+        },
       });
+      const fontSizeLabel = (value) => ({ standard: "標準", large: "大", extra_large: "特大" }[value] || "標準");
+      const contrastLabel = (value) => ({ standard: "標準", high: "くっきり" }[value] || "標準");
+      const setFontSizePreview = (value) => {
+        document.body.classList.remove("a11y-font-standard", "a11y-font-large", "a11y-font-extra-large");
+        const normalized = ["standard", "large", "extra_large"].includes(value) ? value : "standard";
+        document.body.classList.add(`a11y-font-${normalized.replace("_", "-")}`);
+      };
+      const setContrastPreview = (value) => {
+        document.body.classList.remove("a11y-contrast-standard", "a11y-contrast-high");
+        document.body.classList.add(`a11y-contrast-${value === "high" ? "high" : "standard"}`);
+      };
       const applyValue = (value) => {
         version = Number(value.version || 0);
         form.elements.timezone.value = value.timezone;
         form.elements.date_format.value = value.date_format;
         storedPreferences = value.preferences || {};
         form.elements.cultivation_experience.value = storedPreferences.cultivation_experience || "standard";
+        const fontSize = storedPreferences.font_size || "standard";
+        const fontSizeInput = form.querySelector(`input[name="font_size"][value="${CSS.escape(fontSize)}"]`);
+        if (fontSizeInput) fontSizeInput.checked = true;
+        setFontSizePreview(fontSize);
+        const contrast = storedPreferences.contrast || "standard";
+        const contrastInput = form.querySelector(`input[name="contrast"][value="${CSS.escape(contrast)}"]`);
+        if (contrastInput) contrastInput.checked = true;
+        setContrastPreview(contrast);
       };
       const experienceLabel = (value) => ({ beginner: "初心者", standard: "標準", professional: "プロ" }[value] || "標準");
-      const comparisonMarkup = (value) => `<dt>タイムゾーン</dt><dd>${value.timezone}</dd><dt>日付</dt><dd>${value.date_format}</dd><dt>栽培アドバイス</dt><dd>${experienceLabel(value.preferences?.cultivation_experience)}</dd>`;
+      const comparisonMarkup = (value) => `<dt>文字の大きさ</dt><dd>${fontSizeLabel(value.preferences?.font_size)}</dd><dt>見分けやすさ</dt><dd>${contrastLabel(value.preferences?.contrast)}</dd><dt>タイムゾーン</dt><dd>${value.timezone}</dd><dt>日付</dt><dd>${value.date_format}</dd><dt>栽培アドバイス</dt><dd>${experienceLabel(value.preferences?.cultivation_experience)}</dd>`;
+      form.querySelectorAll('input[name="font_size"]').forEach((input) => input.addEventListener("change", () => setFontSizePreview(input.value)));
+      form.querySelectorAll('input[name="contrast"]').forEach((input) => input.addEventListener("change", () => setContrastPreview(input.value)));
       document.getElementById("advice-help-open").addEventListener("click", () => adviceHelpDialog.showModal());
       document.getElementById("advice-help-close").addEventListener("click", () => adviceHelpDialog.close());
       adviceHelpDialog.addEventListener("click", (event) => { if (event.target === adviceHelpDialog) adviceHelpDialog.close(); });

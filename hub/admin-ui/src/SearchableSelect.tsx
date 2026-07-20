@@ -131,7 +131,7 @@ export function SearchableSelect({
               aria-label={`${ariaLabel}の候補を検索`}
               autoComplete="off"
             />
-            {activeQuery && <button type="button" onClick={() => changeQuery("")} title="検索をクリア"><X size={13} /></button>}
+            {activeQuery && <button type="button" onClick={() => changeQuery("")} aria-label={`${ariaLabel}の検索をクリア`} title="検索をクリア"><X size={13} /></button>}
           </label>
           {(loading || statusText) && <p className="searchable-select-status" role={loading ? undefined : "status"}>{loading ? <InlineLoading label="候補を検索しています" /> : statusText}</p>}
           <div className="searchable-select-options" id={listboxId} role="listbox" aria-label={`${ariaLabel}の候補`}>
