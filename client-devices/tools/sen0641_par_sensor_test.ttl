@@ -1,0 +1,121 @@
+; DFRobot SEN0641 PAR sensor test macro for Tera Term
+; Factory defaults: Modbus RTU address 1, 4800 baud, 8N1
+;
+; Wiring:
+;   Brown  -> DC 5-30 V positive
+;   Black  -> power GND
+;   Yellow -> RS485 A
+;   Blue   -> RS485 B
+;
+; Stop the macro from the Tera Term Macro dialog when finished.
+
+inputbox 'USB-RS485 adapter COM port number (example: 5 for COM5)' 'SEN0641 PAR sensor'
+str2int com_port inputstr
+if com_port <= 0 then
+  messagebox 'Invalid COM port number.' 'SEN0641 PAR sensor'
+  end
+endif
+
+sprintf2 connect_options '/C=%d /BAUD=4800 /CDATABIT=8 /CPARITY=none /CSTOPBIT=1 /CFLOWCTRL=none' com_port
+connect connect_options
+if result <> 2 then
+  messagebox 'Could not open the COM port. Close other applications using it and try again.' 'SEN0641 PAR sensor'
+  end
+endif
+
+settitle 'SEN0641 PAR sensor monitor'
+setecho 0
+timeout = 1
+mtimeout = 0
+
+; Hex output mode lets waitregex safely parse binary frames containing NUL bytes.
+setdebug 2
+clearscreen 0
+dispstr 'SEN0641 monitoring started (address 1, 4800 8N1).'#13#10
+dispstr 'Request: 01 03 00 00 00 01 84 0A'#13#10#13#10
+
+:poll
+flushrecv
+
+; Read one register starting at 0x0000. CRC is sent low byte first.
+send $01 $03 $00 $00 $00 $01 $84 $0A
+
+; Expected response: 01 03 02 DATA_H DATA_L CRC_L CRC_H
+waitregex '01 03 02 ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F])'
+if result = 0 then
+  gettime time_text '%Y-%m-%d %H:%M:%S'
+  sprintf2 display_text '%s  No response (check power, COM port, 4800 8N1, and swap A/B if needed).' time_text
+  statusbox display_text 'SEN0641 PAR sensor'
+  dispstr #13#10 display_text #13#10
+  pause 1
+  goto poll
+endif
+
+hex_text = groupmatchstr1
+call hex_to_int
+data_hi = hex_value
+hex_text = groupmatchstr2
+call hex_to_int
+data_lo = hex_value
+hex_text = groupmatchstr3
+call hex_to_int
+received_crc_lo = hex_value
+hex_text = groupmatchstr4
+call hex_to_int
+received_crc_hi = hex_value
+
+; Modbus CRC16 over address, function, byte count, and the two data bytes.
+crc_value = $FFFF
+crc_byte = $01
+call crc16_update
+crc_byte = $03
+call crc16_update
+crc_byte = $02
+call crc16_update
+crc_byte = data_hi
+call crc16_update
+crc_byte = data_lo
+call crc16_update
+
+calculated_crc_lo = crc_value & $FF
+calculated_crc_hi = (crc_value >> 8) & $FF
+par_value = data_hi * 256 + data_lo
+gettime time_text '%Y-%m-%d %H:%M:%S'
+
+if received_crc_lo <> calculated_crc_lo || received_crc_hi <> calculated_crc_hi then
+  sprintf2 display_text '%s  CRC error; discarded value %d' time_text par_value
+else
+  sprintf2 display_text '%s  PAR = %d umol/m2/s' time_text par_value
+endif
+
+statusbox display_text 'SEN0641 PAR sensor'
+dispstr #13#10 display_text #13#10
+pause 1
+goto poll
+
+; Convert the two hexadecimal characters in hex_text to hex_value.
+:hex_to_int
+hex_value = 0
+for hex_index 1 2
+  strcopy hex_text hex_index 1 hex_digit
+  strscan '0123456789ABCDEF' hex_digit
+  if result = 0 then
+    hex_value = 0
+    return
+  endif
+  hex_value = hex_value * 16 + result - 1
+next
+return
+
+; Update global crc_value with global crc_byte.
+:crc16_update
+crc_value = crc_value ^ crc_byte
+for crc_bit 1 8
+  if (crc_value & 1) <> 0 then
+    crc_value = (crc_value >> 1) ^ $A001
+  else
+    crc_value = crc_value >> 1
+  endif
+next
+crc_value = crc_value & $FFFF
+return
