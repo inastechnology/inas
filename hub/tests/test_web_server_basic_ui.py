@@ -1549,6 +1549,15 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertFalse(rejected_question.get_json()["saved"])
         self.assertEqual(len(self.fake_ai_content_service.question_contexts), ai_calls_before_rejection)
         self.assertEqual(self.client.get(f"/local/api/plantings/{planting['id']}/questions").get_json()["total"], 1)
+        for index in range(1, 7):
+            self.plant_management_repository.record_question(planting["id"], f"第{index}回の葉を確認", f"第{index}回の回答")
+        latest_questions = self.client.get(f"/local/api/plantings/{planting['id']}/questions?page=1&page_size=5").get_json()
+        older_questions = self.client.get(f"/local/api/plantings/{planting['id']}/questions?page=2&page_size=5").get_json()
+        self.assertEqual(latest_questions["total"], 7)
+        self.assertEqual(len(latest_questions["items"]), 5)
+        self.assertTrue(latest_questions["has_next"])
+        self.assertEqual(len(older_questions["items"]), 2)
+        self.assertFalse(older_questions["has_next"])
 
         regenerated = self.client.post(
             f"/local/api/plantings/{planting['id']}/calendar/regenerate",

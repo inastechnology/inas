@@ -35,6 +35,7 @@ const KANBAN_COLUMNS: Array<{ id: KanbanColumn; label: string; description: stri
 
 const TIMING_SORT_ORDER: Record<ActionTimingState, number> = { overdue: 0, due: 1, upcoming: 2 };
 const PRIORITY_SORT_ORDER: Record<PlantCalendarAction["priority"], number> = { required: 0, should: 1, recommended: 2, optional: 3 };
+const QUESTION_HISTORY_PAGE_SIZE = 5;
 
 
 export interface PlantCalendarDrawerProps {
@@ -101,8 +102,11 @@ export function PlantCalendarDrawer({
   const calendarMutationBusy = busy || generationLockActive;
   const [question, setQuestion] = useState("");
   const [questionHistory, setQuestionHistory] = useState<PlantQuestionRecord[]>([]);
+  const [questionHistoryTotal, setQuestionHistoryTotal] = useState(0);
+  const [questionHistoryPage, setQuestionHistoryPage] = useState(1);
   const [questionSearch, setQuestionSearch] = useState("");
   const [questionHistoryLoading, setQuestionHistoryLoading] = useState(false);
+  const [questionHistoryLoadingMore, setQuestionHistoryLoadingMore] = useState(false);
   const [questionError, setQuestionError] = useState("");
   const [activeOperation, setActiveOperation] = useState<CalendarOperation | null>(null);
   const [generationOpen, setGenerationOpen] = useState(false);
@@ -125,7 +129,12 @@ export function PlantCalendarDrawer({
   const [dragOverColumn, setDragOverColumn] = useState<KanbanColumn | null>(null);
   const [dropMessage, setDropMessage] = useState("");
   const consumedInitialActionId = useRef("");
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const chatHistoryRef = useRef<HTMLDivElement | null>(null);
+  const questionHistoryPointerScrollRef = useRef(false);
+  const questionHistoryTouchYRef = useRef<number | null>(null);
+  const questionHistoryLoadingMoreRef = useRef(false);
+  const questionHistoryLoadMoreControllerRef = useRef<AbortController | null>(null);
+  const questionHistoryQueryRef = useRef("");
   const pendingRegenerationProposals = (generationTask?.proposals ?? []).filter((proposal) => proposal.decision === "pending");
   const pendingRegenerationProposalKey = pendingRegenerationProposals.map((proposal) => proposal.id).join("|");
   const approvedRegenerationCount = pendingRegenerationProposals.filter((proposal) => regenerationDecisions[proposal.id] === "approved").length;
@@ -170,22 +179,49 @@ export function PlantCalendarDrawer({
   useEffect(() => {
     if (!planting) return undefined;
     const controller = new AbortController();
-    setQuestion("");
+    const query = questionSearch.trim();
+    const delay = query ? 250 : 0;
     setQuestionHistory([]);
-    setQuestionSearch("");
+    setQuestionHistoryTotal(0);
+    setQuestionHistoryPage(1);
     setQuestionHistoryLoading(true);
+    setQuestionHistoryLoadingMore(false);
+    questionHistoryLoadingMoreRef.current = false;
+    questionHistoryLoadMoreControllerRef.current?.abort();
+    questionHistoryLoadMoreControllerRef.current = null;
     setQuestionError("");
-    void onListQuestions(planting.id, { pageSize: 100, signal: controller.signal })
-      .then((result) => setQuestionHistory(result.items))
-      .catch((caught) => {
-        if (!controller.signal.aborted) setQuestionError(errorMessage(caught));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setQuestionHistoryLoading(false);
-      });
-    return () => controller.abort();
+    const timer = window.setTimeout(() => {
+      void onListQuestions(planting.id, { query, page: 1, pageSize: QUESTION_HISTORY_PAGE_SIZE, signal: controller.signal })
+        .then((result) => {
+          questionHistoryQueryRef.current = query;
+          setQuestionHistory(result.items);
+          setQuestionHistoryTotal(result.total);
+          window.requestAnimationFrame(() => {
+            const history = chatHistoryRef.current;
+            if (history) history.scrollTop = history.scrollHeight;
+          });
+        })
+        .catch((caught) => {
+          if (!controller.signal.aborted) setQuestionError(errorMessage(caught));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setQuestionHistoryLoading(false);
+        });
+    }, delay);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+      questionHistoryLoadMoreControllerRef.current?.abort();
+      questionHistoryLoadMoreControllerRef.current = null;
+      questionHistoryLoadingMoreRef.current = false;
+    };
     // The listing callback is an API adapter and does not alter the selected resource.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planting?.id, questionSearch]);
+
+  useEffect(() => {
+    setQuestion("");
+    setQuestionSearch("");
   }, [planting?.id]);
 
   useEffect(() => {
@@ -245,14 +281,7 @@ export function PlantCalendarDrawer({
     });
   }, [actionQuery, scopedActionEntries, workDate]);
   const filteredActions = useMemo(() => filteredActionEntries.map((entry) => entry.action), [filteredActionEntries]);
-  const filteredQuestionHistory = useMemo(() => {
-    const terms = normalizeActionSearch(questionSearch).split(/\s+/).filter(Boolean);
-    if (terms.length === 0) return questionHistory;
-    return questionHistory.filter((record) => {
-      const searchable = normalizeActionSearch(`${record.question} ${record.answer}`);
-      return terms.every((term) => searchable.includes(term));
-    });
-  }, [questionHistory, questionSearch]);
+  const questionHistoryHasMore = questionHistory.length < questionHistoryTotal;
   const suggestions = useMemo(
     () => bundle.suggestions.filter((suggestion) => suggestion.planting_id === planting?.id),
     [bundle.suggestions, planting?.id],
@@ -377,6 +406,54 @@ export function PlantCalendarDrawer({
     }
   };
 
+  const loadOlderQuestions = async () => {
+    if (
+      !planting
+      || questionHistoryLoading
+      || questionHistoryLoadingMoreRef.current
+      || !questionHistoryHasMore
+      || questionHistoryQueryRef.current !== questionSearch.trim()
+    ) return;
+    questionHistoryPointerScrollRef.current = false;
+    questionHistoryTouchYRef.current = null;
+    const history = chatHistoryRef.current;
+    const previousHeight = history?.scrollHeight ?? 0;
+    const previousTop = history?.scrollTop ?? 0;
+    const nextPage = questionHistoryPage + 1;
+    const controller = new AbortController();
+    questionHistoryLoadMoreControllerRef.current = controller;
+    questionHistoryLoadingMoreRef.current = true;
+    setQuestionHistoryLoadingMore(true);
+    setQuestionError("");
+    try {
+      const result = await onListQuestions(planting.id, {
+        query: questionSearch.trim(),
+        page: nextPage,
+        pageSize: QUESTION_HISTORY_PAGE_SIZE,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      setQuestionHistory((current) => {
+        const existingIds = new Set(current.map((item) => item.id));
+        return [...current, ...result.items.filter((item) => !existingIds.has(item.id))];
+      });
+      setQuestionHistoryPage(nextPage);
+      setQuestionHistoryTotal(result.total);
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        const currentHistory = chatHistoryRef.current;
+        if (currentHistory) currentHistory.scrollTop = previousTop + currentHistory.scrollHeight - previousHeight;
+      }));
+    } catch (caught) {
+      if (!controller.signal.aborted) setQuestionError(errorMessage(caught));
+    } finally {
+      if (questionHistoryLoadMoreControllerRef.current === controller) {
+        questionHistoryLoadMoreControllerRef.current = null;
+        questionHistoryLoadingMoreRef.current = false;
+        setQuestionHistoryLoadingMore(false);
+      }
+    }
+  };
+
   const ask = async (event: FormEvent) => {
     event.preventDefault();
     if (!planting || !question.trim()) return;
@@ -385,9 +462,13 @@ export function PlantCalendarDrawer({
     try {
       const record = await onAskQuestion(planting.id, question.trim());
       setQuestionHistory((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+      setQuestionHistoryTotal((current) => current + 1);
       setQuestion("");
       setQuestionSearch("");
-      window.requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+      window.requestAnimationFrame(() => {
+        const history = chatHistoryRef.current;
+        if (history) history.scrollTo({ top: history.scrollHeight, behavior: "smooth" });
+      });
     } catch (caught) {
       setQuestionError(errorMessage(caught));
     } finally {
@@ -682,18 +763,51 @@ export function PlantCalendarDrawer({
                 <span className="plant-chat-scope">栽培専用</span>
               </header>
               <label className="plant-chat-search"><Search size={15} /><input type="search" value={questionSearch} onChange={(event) => setQuestionSearch(event.target.value)} placeholder="過去の質問と回答を検索" aria-label="過去の栽培相談を検索" />{questionSearch && <button type="button" onClick={() => setQuestionSearch("")} aria-label="相談履歴の検索をクリア"><X size={14} /></button>}</label>
-              <div className="plant-chat-history" aria-live="polite">
+              <div
+                className="plant-chat-history"
+                ref={chatHistoryRef}
+                aria-live="polite"
+                aria-busy={questionHistoryLoading || questionHistoryLoadingMore}
+                data-question-page={questionHistoryPage}
+                onScroll={(event) => {
+                  if (questionHistoryPointerScrollRef.current && event.currentTarget.scrollTop <= 32) {
+                    questionHistoryPointerScrollRef.current = false;
+                    void loadOlderQuestions();
+                  }
+                }}
+                onWheel={(event) => {
+                  if (event.deltaY < 0 && event.currentTarget.scrollTop <= 32) void loadOlderQuestions();
+                }}
+                onTouchStart={(event) => { questionHistoryTouchYRef.current = event.touches[0]?.clientY ?? null; }}
+                onTouchMove={(event) => {
+                  const currentY = event.touches[0]?.clientY ?? null;
+                  if (currentY !== null && questionHistoryTouchYRef.current !== null && currentY > questionHistoryTouchYRef.current && event.currentTarget.scrollTop <= 32) {
+                    void loadOlderQuestions();
+                  }
+                  questionHistoryTouchYRef.current = currentY;
+                }}
+                onTouchEnd={() => { questionHistoryTouchYRef.current = null; }}
+                onPointerDown={(event) => { questionHistoryPointerScrollRef.current = event.pointerType === "mouse"; }}
+                onPointerUp={() => { questionHistoryPointerScrollRef.current = false; }}
+                onPointerCancel={() => { questionHistoryPointerScrollRef.current = false; }}
+                onKeyDown={(event) => {
+                  if (["ArrowUp", "PageUp", "Home"].includes(event.key) && event.currentTarget.scrollTop <= 32) void loadOlderQuestions();
+                }}
+              >
                 {questionHistoryLoading && <InlineLoading label="相談履歴を読み込んでいます" />}
-                {!questionHistoryLoading && filteredQuestionHistory.length === 0 && (
+                {!questionHistoryLoading && questionHistoryLoadingMore && <div className="plant-chat-history-progress"><InlineLoading label="過去の相談を読み込んでいます" /></div>}
+                {!questionHistoryLoading && questionHistoryHasMore && !questionHistoryLoadingMore && questionHistory.length > 0 && (
+                  <button className="plant-chat-load-older" type="button" onClick={() => void loadOlderQuestions()}>上へスクロールすると過去の相談を読み込みます</button>
+                )}
+                {!questionHistoryLoading && questionHistory.length === 0 && (
                   <div className="plant-chat-empty"><MessageCircle size={27} /><strong>{questionSearch ? "一致する相談はありません" : "栽培の疑問をすぐ相談できます"}</strong><p>{questionSearch ? "別の言葉で検索してください。" : "計画、作業、施肥、病害虫など、この作物に関する質問を入力してください。"}</p></div>
                 )}
-                {[...filteredQuestionHistory].reverse().map((record) => (
+                {[...questionHistory].reverse().map((record) => (
                   <article className="plant-chat-turn" key={record.id}>
                     <div className="plant-chat-message user"><span>あなた</span><p>{record.question}</p><time dateTime={record.created_at}>{formatChatTime(record.created_at)}</time></div>
                     <div className="plant-chat-message assistant"><span>栽培アシスタント</span><p>{record.answer}</p></div>
                   </article>
                 ))}
-                <div ref={chatEndRef} />
               </div>
               <form className="plant-chat-compose" onSubmit={(event) => void ask(event)}>
                 <label htmlFor="plant-chat-question">栽培について質問する</label>

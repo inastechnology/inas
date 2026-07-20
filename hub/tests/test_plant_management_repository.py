@@ -149,6 +149,22 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         self.assertEqual(searched["total"], 1)
         self.assertEqual(searched["items"][0]["id"], older["id"])
 
+    def test_question_history_is_paginated_five_at_a_time(self):
+        planting = self._create_blueberry()
+        recorded = [
+            self.repository.record_question(planting["id"], f"第{index}回の葉を確認", f"第{index}回の回答")
+            for index in range(1, 8)
+        ]
+
+        latest = self.repository.list_questions(planting["id"], page=1, page_size=5)
+        older = self.repository.list_questions(planting["id"], page=2, page_size=5)
+
+        self.assertEqual(latest["total"], 7)
+        self.assertEqual([item["id"] for item in latest["items"]], [item["id"] for item in reversed(recorded[-5:])])
+        self.assertTrue(latest["has_next"])
+        self.assertEqual([item["id"] for item in older["items"]], [recorded[1]["id"], recorded[0]["id"]])
+        self.assertFalse(older["has_next"])
+
     def test_fertilizer_history_is_scoped_to_substrate_and_survives_planting(self):
         planting = self._create_blueberry()
         application = self.repository.create_fertilizer_application(

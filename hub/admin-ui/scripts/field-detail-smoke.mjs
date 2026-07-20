@@ -173,6 +173,38 @@ try {
   await calendarPage.screenshot({ path: "/tmp/ina-agentic-human-readiness.png", fullPage: false });
   await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
   assert.equal(await calendarPage.$$(".installation-app").then((items) => items.length), 0, "calendar page must not mount the installation editor");
+  const desktopCalendarLayout = await calendarPage.evaluate(() => {
+    const panel = document.querySelector(".calendar-page-panel");
+    const workspace = document.querySelector(".calendar-workspace-layout");
+    const question = document.querySelector(".plant-question");
+    if (!(panel instanceof HTMLElement) || !(workspace instanceof HTMLElement) || !(question instanceof HTMLElement)) throw new Error("calendar layout was not found");
+    return {
+      panelWidth: panel.getBoundingClientRect().width,
+      viewportWidth: window.innerWidth,
+      workspaceColumns: getComputedStyle(workspace).gridTemplateColumns.split(" ").length,
+      questionWidth: question.getBoundingClientRect().width,
+    };
+  });
+  assert(Math.abs(desktopCalendarLayout.panelWidth - desktopCalendarLayout.viewportWidth) <= 1, "calendar page must use the full desktop viewport width");
+  assert.equal(desktopCalendarLayout.workspaceColumns, 2, "desktop calendar must keep the crop question beside the plan");
+  assert(desktopCalendarLayout.questionWidth >= 360, "desktop crop question must receive a readable responsive width");
+  await calendarPage.screenshot({ path: "/tmp/ina-calendar-fluid-desktop.png", fullPage: false });
+  await calendarPage.setViewport({ width: 1024, height: 960, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const compactCalendarLayout = await calendarPage.evaluate(() => {
+    const workspace = document.querySelector(".calendar-workspace-layout");
+    if (!(workspace instanceof HTMLElement)) throw new Error("calendar workspace was not found");
+    return {
+      columns: getComputedStyle(workspace).gridTemplateColumns.split(" ").length,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+  assert.equal(compactCalendarLayout.columns, 1, "compact calendar must move the crop question below the plan");
+  assert(compactCalendarLayout.overflow <= 1, "compact calendar must not overflow horizontally");
+  await calendarPage.$eval(".plant-question", (panel) => panel.scrollIntoView({ block: "start" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-calendar-fluid-compact.png", fullPage: false });
+  await calendarPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await calendarPage.evaluate(() => { const shell = document.querySelector(".calendar-page-shell"); if (shell instanceof HTMLElement) shell.scrollTop = 0; });
   assert.match(await calendarPage.$eval(".calendar-workspace-tabs button.active", (button) => button.textContent || ""), /圃場の作業/);
   assert.match(await calendarPage.$eval(".calendar-work-scope", (scope) => scope.textContent || ""), /圃場のすべての作物/, "the work board must offer all crops in the field");
   assert.equal(await calendarPage.$$(".calendar-section-heading small").then((items) => items.filter((item) => /^r\d+/.test(item.textContent || "")).length), 0, "internal calendar revisions must stay hidden");
@@ -679,6 +711,8 @@ try {
       "/tmp/ina-agentic-watering-readiness.png",
       "/tmp/ina-agentic-watering-readiness-mobile.png",
       "/tmp/ina-agentic-human-readiness.png",
+      "/tmp/ina-calendar-fluid-desktop.png",
+      "/tmp/ina-calendar-fluid-compact.png",
       "/tmp/ina-environment-target-direct.png",
       "/tmp/ina-environment-target-direct-mobile.png",
       "/tmp/ina-care-profile-desktop.png",

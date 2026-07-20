@@ -210,8 +210,9 @@ try {
   assert.match(await page.$eval(".plant-chat-turn", (turn) => turn.textContent || ""), /追肥の前に何を確認.*栽培アシスタント/s);
   const chatCount = await page.$$(".plant-chat-turn").then((items) => items.length);
   await page.type(".plant-chat-search input", "追肥 確認");
-  assert.equal(await page.$$(".plant-chat-turn").then((items) => items.length), 1, "chat history must support fuzzy multi-term search");
+  await page.waitForFunction(() => document.querySelectorAll(".plant-chat-turn").length === 1);
   await page.click(".plant-chat-search button");
+  await page.waitForFunction((expected) => document.querySelectorAll(".plant-chat-turn").length === expected, {}, chatCount);
   await page.type(".plant-question textarea", "おすすめの映画を教えて");
   await page.click('.plant-question button[type="submit"]');
   await page.waitForSelector(".plant-question .form-error");
@@ -290,6 +291,82 @@ try {
   assert(blueberryCalendar.actions.some((action) => action.status === "completed"), "work completion must be stored");
   assert(blueberryCalendar.actions.some((action) => action.status === "skipped" && action.skip_decision), "skip decision must be stored");
   assert(plantBundle.work_logs.some((log) => log.planting_id === blueberry.id), "work log must be stored");
+
+  const questionRecords = Array.from({ length: 12 }, (_, index) => {
+    const sequence = 12 - index;
+    return {
+      id: `pagination-question-${sequence}`,
+      planting_id: blueberry.id,
+      question: `第${sequence}回 葉の観察では何を確認しますか？`,
+      answer: `第${sequence}回の観察結果を記録し、前回との差を確認します。\n葉色と葉先の変化、水分状態を見比べます。\n新芽の伸びと病害虫の兆候も写真に残します。\n変化があれば次の作業判断へ反映します。`,
+      created_at: new Date(Date.UTC(2026, 6, sequence, 1)).toISOString(),
+    };
+  });
+  const questionRequests = [];
+  const historyPage = await browser.newPage();
+  historyPage.on("pageerror", (error) => browserErrors.push(error.message));
+  historyPage.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+  await historyPage.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  await historyPage.setCacheEnabled(false);
+  await historyPage.setRequestInterception(true);
+  historyPage.on("request", async (request) => {
+    try {
+      const url = new URL(request.url());
+      if (request.method() !== "GET" || url.pathname !== `/local/api/plantings/${blueberry.id}/questions`) {
+        await request.continue();
+        return;
+      }
+      const pageNumber = Number(url.searchParams.get("page") || "1");
+      const pageSize = Number(url.searchParams.get("page_size") || "5");
+      const query = (url.searchParams.get("q") || "").trim();
+      questionRequests.push({ page: pageNumber, pageSize, query });
+      const terms = query.toLocaleLowerCase("ja").split(/\s+/).filter(Boolean);
+      const matching = questionRecords.filter((record) => {
+        const searchable = `${record.question} ${record.answer}`.toLocaleLowerCase("ja");
+        return terms.every((term) => searchable.includes(term));
+      });
+      const start = (pageNumber - 1) * pageSize;
+      const items = matching.slice(start, start + pageSize);
+      const pageCount = Math.max(1, Math.ceil(matching.length / pageSize));
+      await request.respond({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items,
+          total: matching.length,
+          page: pageNumber,
+          page_size: pageSize,
+          page_count: pageCount,
+          has_previous: pageNumber > 1,
+          has_next: pageNumber < pageCount,
+        }),
+      });
+    } catch (error) {
+      browserErrors.push(String(error));
+      await request.abort("failed");
+    }
+  });
+  await historyPage.goto(`${baseUrl}/fields/${fieldId}/calendar?planting=${blueberry.id}`, { waitUntil: "networkidle0" });
+  await historyPage.waitForFunction(() => document.querySelectorAll(".plant-chat-turn").length === 5);
+  assert.deepEqual(questionRequests[0], { page: 1, pageSize: 5, query: "" }, "chat history must initially request only the latest five records");
+  await historyPage.$eval(".plant-chat-history", (history) => history.scrollTo({ top: 0, behavior: "instant" }));
+  await historyPage.waitForFunction(() => (document.querySelector(".plant-chat-history")?.scrollTop ?? 100) <= 32);
+  await historyPage.$eval(".plant-chat-history", (history) => history.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -120 })));
+  await historyPage.waitForFunction(() => document.querySelectorAll(".plant-chat-turn").length === 10 && document.querySelector(".plant-chat-history")?.getAttribute("data-question-page") === "2");
+  assert((await historyPage.$eval(".plant-chat-history", (history) => history.scrollTop)) > 0, "loading older chat records must preserve the visible scroll position");
+  await historyPage.$eval(".plant-chat-history", (history) => history.scrollTo({ top: 0, behavior: "instant" }));
+  await historyPage.waitForFunction(() => (document.querySelector(".plant-chat-history")?.scrollTop ?? 100) <= 32);
+  await historyPage.$eval(".plant-chat-history", (history) => history.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -120 })));
+  await historyPage.waitForFunction(() => document.querySelectorAll(".plant-chat-turn").length === 12 && document.querySelector(".plant-chat-history")?.getAttribute("data-question-page") === "3");
+  assert.deepEqual(questionRequests.slice(0, 3).map(({ page, pageSize }) => ({ page, pageSize })), [{ page: 1, pageSize: 5 }, { page: 2, pageSize: 5 }, { page: 3, pageSize: 5 }]);
+  await replaceValue(historyPage, ".plant-chat-search input", "第1回 葉");
+  await historyPage.waitForFunction(() => document.querySelectorAll(".plant-chat-turn").length === 1);
+  assert.deepEqual(questionRequests.at(-1), { page: 1, pageSize: 5, query: "第1回 葉" }, "chat search must stay server-side and use the same five-record page size");
+  await historyPage.screenshot({ path: "/tmp/ina-cultivation-chat-pagination.png", fullPage: false });
+  await historyPage.click(".plant-chat-search button");
+  await historyPage.waitForFunction(() => document.querySelectorAll(".plant-chat-turn").length === 5);
+  await historyPage.close();
+
   assert.equal(browserErrors.length, 0, browserErrors.join("\n"));
 
   process.stdout.write(
@@ -304,7 +381,7 @@ try {
         calendarActions: blueberryCalendar.actions.length,
         workLogs: plantBundle.work_logs.filter((log) => log.planting_id === blueberry.id).length,
         desktopZoom,
-        screenshots: ["/tmp/ina-layout-north-settings.png", "/tmp/ina-layout-device-candidates.png", "/tmp/ina-layout-device-binding.png", "/tmp/ina-layout-concurrent-merge.png", "/tmp/ina-layout-desktop.png", "/tmp/ina-layout-mobile.png", "/tmp/ina-plant-calendar-desktop.png", "/tmp/ina-plant-work-record-desktop.png", "/tmp/ina-plant-skip-decision-desktop.png"],
+        screenshots: ["/tmp/ina-layout-north-settings.png", "/tmp/ina-layout-device-candidates.png", "/tmp/ina-layout-device-binding.png", "/tmp/ina-layout-concurrent-merge.png", "/tmp/ina-layout-desktop.png", "/tmp/ina-layout-mobile.png", "/tmp/ina-plant-calendar-desktop.png", "/tmp/ina-plant-work-record-desktop.png", "/tmp/ina-plant-skip-decision-desktop.png", "/tmp/ina-cultivation-chat-pagination.png"],
       },
       null,
       2,
