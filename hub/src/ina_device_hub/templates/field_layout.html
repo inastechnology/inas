@@ -15,7 +15,11 @@
       data-field-name="{{ field.name }}"
       data-field-detail-url="/fields/{{ field.id }}"
     >
-      <p class="layout-loading">設置ビューを読み込んでいます...</p>
+      <div class="layout-loading inas-loading-state" role="status" aria-live="polite" aria-busy="true">
+        <span class="inas-activity large" aria-hidden="true"><span class="inas-activity-field"></span><span class="inas-activity-sprout"></span></span>
+        <span class="inas-loading-copy"><strong>設置ビューを読み込んでいます</strong><span>設備と栽培エリアの接続状態を整えています</span></span>
+        <span class="inas-loading-signal" aria-hidden="true"><i></i><i></i><i></i></span>
+      </div>
     </div>
     <noscript>設置ビューを使用するには JavaScript を有効にしてください。</noscript>
     <script type="module" src="/static/admin-layout/installation-layout.js"></script>

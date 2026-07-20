@@ -113,6 +113,7 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
   const [requiredPeople, setRequiredPeople] = useState(1);
   const [estimatedMinutes, setEstimatedMinutes] = useState(30);
   const [localError, setLocalError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const blockingReasons = [
     ...(!title.trim() ? ["作業名を入力してください"] : []),
     ...(!start || !end ? ["開始日と終了日を選択してください"] : []),
@@ -125,6 +126,7 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setLocalError("");
+    setSubmitting(true);
     try {
       await onSave({
         title,
@@ -142,6 +144,8 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
       });
     } catch (caught) {
       setLocalError(errorMessage(caught));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -170,7 +174,7 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
       {localError && <p className="form-error" role="alert">作業を追加できませんでした: {localError}</p>}
       <div className="form-actions">
         <button type="button" onClick={onCancel}>キャンセル</button>
-        <button type="submit" disabled={blockingReasons.length > 0} aria-describedby={blockingReasons.length > 0 ? "new-calendar-action-blocked" : undefined} title={disabledActionTitle(blockingReasons)}><Plus size={15} />追加</button>
+        <button type="submit" disabled={blockingReasons.length > 0 || submitting} aria-busy={submitting} aria-describedby={blockingReasons.length > 0 ? "new-calendar-action-blocked" : undefined} title={disabledActionTitle(blockingReasons)}>{!submitting && <Plus size={15} />}{submitting ? "追加しています" : "追加"}</button>
       </div>
     </form>
   );
@@ -623,6 +627,7 @@ function SkipDecisionForm({ plantingId, action, busy, onCancel, onSkip }: SkipDe
   const [images, setImages] = useState<File[]>([]);
   const [useAsGuidance, setUseAsGuidance] = useState(true);
   const [localError, setLocalError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const blockingReasons = [
     ...(!decidedOn ? ["確認日を選択してください"] : []),
     ...(!observedFacts.trim() ? ["確認した状態や測定値を入力してください"] : []),
@@ -633,6 +638,7 @@ function SkipDecisionForm({ plantingId, action, busy, onCancel, onSkip }: SkipDe
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setLocalError("");
+    setSubmitting(true);
     try {
       await onSkip(plantingId, action.id, {
         decided_on: decidedOn,
@@ -645,6 +651,8 @@ function SkipDecisionForm({ plantingId, action, busy, onCancel, onSkip }: SkipDe
       });
     } catch (caught) {
       setLocalError(errorMessage(caught));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -664,7 +672,7 @@ function SkipDecisionForm({ plantingId, action, busy, onCancel, onSkip }: SkipDe
       {localError && <p className="form-error">{localError}</p>}
       <div className="form-actions">
         <button type="button" onClick={onCancel}>キャンセル</button>
-        <button type="submit" disabled={blockingReasons.length > 0} aria-describedby={blockingReasons.length > 0 ? `skip-decision-blocked-${action.id}` : undefined} title={disabledActionTitle(blockingReasons)}><Ban size={15} />見送りとして記録</button>
+        <button type="submit" disabled={blockingReasons.length > 0 || submitting} aria-busy={submitting} aria-describedby={blockingReasons.length > 0 ? `skip-decision-blocked-${action.id}` : undefined} title={disabledActionTitle(blockingReasons)}>{!submitting && <Ban size={15} />}{submitting ? "見送りを記録しています" : "見送りとして記録"}</button>
       </div>
     </form>
   );
@@ -684,6 +692,7 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
   const [rating, setRating] = useState<number | null>(null);
   const [images, setImages] = useState<File[]>([]);
   const [localError, setLocalError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const workPlan = action.work_plan ?? { targets: [], start_conditions: [], skip_conditions: [], checkpoints: [], method_options: [], completion_criteria: [] };
   const workMethods = [...workPlan.method_options, ...COMMON_WORK_METHODS]
     .filter((method, index, methods) => methods.findIndex((candidate) => candidate.id === method.id) === index);
@@ -714,6 +723,7 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
       setLocalError("評価を選択してください。");
       return;
     }
+    setSubmitting(true);
     try {
       const workDetails: PlantActionWorkDetails = {
         execution: {
@@ -734,6 +744,8 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
       await onComplete(plantingId, action.id, { performed_on: performedOn, note, rating, images, work_details: workDetails });
     } catch (caught) {
       setLocalError(errorMessage(caught));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -809,7 +821,7 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
       {localError && <p className="form-error">{localError}</p>}
       <div>
         <button type="button" onClick={onCancel}>戻る</button>
-        <button type="submit" disabled={blockingReasons.length > 0} aria-describedby={blockingReasons.length > 0 ? `work-record-blocked-${action.id}` : undefined} title={disabledActionTitle(blockingReasons)}><Check size={15} />この日付で記録</button>
+        <button type="submit" disabled={blockingReasons.length > 0 || submitting} aria-busy={submitting} aria-describedby={blockingReasons.length > 0 ? `work-record-blocked-${action.id}` : undefined} title={disabledActionTitle(blockingReasons)}>{!submitting && <Check size={15} />}{submitting ? "作業実績を保存しています" : "この日付で記録"}</button>
       </div>
     </form>
   );
@@ -1072,6 +1084,7 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
   const [estimatedMinutes, setEstimatedMinutes] = useState(action.estimated_minutes);
   const [useAsGuidance, setUseAsGuidance] = useState(true);
   const [localError, setLocalError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const blockingReasons = [
     ...(!title.trim() ? ["作業名を入力してください"] : []),
     ...(!windowStart || !windowEnd ? ["開始日と終了日を選択してください"] : []),
@@ -1084,6 +1097,7 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
   const save = async (event: FormEvent) => {
     event.preventDefault();
     setLocalError("");
+    setSubmitting(true);
     try {
       await onSave({
         title,
@@ -1102,6 +1116,8 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
       });
     } catch (caught) {
       setLocalError(errorMessage(caught));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1134,7 +1150,7 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
       {localError && <p className="form-error">{localError}</p>}
       <div className="form-actions">
         <button type="button" onClick={onCancel}>キャンセル</button>
-        <button type="submit" disabled={blockingReasons.length > 0} aria-describedby={blockingReasons.length > 0 ? `action-edit-blocked-${action.id}` : undefined} title={disabledActionTitle(blockingReasons)}><Save size={15} />変更を保存</button>
+        <button type="submit" disabled={blockingReasons.length > 0 || submitting} aria-busy={submitting} aria-describedby={blockingReasons.length > 0 ? `action-edit-blocked-${action.id}` : undefined} title={disabledActionTitle(blockingReasons)}>{!submitting && <Save size={15} />}{submitting ? "変更を保存しています" : "変更を保存"}</button>
       </div>
     </form>
   );

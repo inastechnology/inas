@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 
+import { InlineLoading } from "./LoadingState";
 import { matchesSearch } from "./search";
 
 export interface SearchableSelectOption {
@@ -132,7 +133,7 @@ export function SearchableSelect({
             />
             {activeQuery && <button type="button" onClick={() => changeQuery("")} title="検索をクリア"><X size={13} /></button>}
           </label>
-          {(loading || statusText) && <p className="searchable-select-status" role="status">{loading ? "検索しています..." : statusText}</p>}
+          {(loading || statusText) && <p className="searchable-select-status" role={loading ? undefined : "status"}>{loading ? <InlineLoading label="候補を検索しています" /> : statusText}</p>}
           <div className="searchable-select-options" id={listboxId} role="listbox" aria-label={`${ariaLabel}の候補`}>
             {!loading && groups.map(([group, groupOptions]) => (
               <div className="searchable-select-group" key={group || "default"} role="group" aria-label={group || undefined}>

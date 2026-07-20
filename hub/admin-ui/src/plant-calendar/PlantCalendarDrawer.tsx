@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeft, Beaker, CalendarDays, Check, ChevronRight, Leaf, ListTodo, LoaderCircle, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
+import { ArrowLeft, Beaker, CalendarDays, Check, ChevronRight, Leaf, ListTodo, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
 import { errorMessage, formatDate, todayString } from "../formatters";
+import { ActivityIndicator, InlineLoading } from "../LoadingState";
 import { ModalDialog } from "../ModalDialog";
 import { SearchableSelect } from "../SearchableSelect";
 import type {
@@ -24,6 +25,7 @@ import { FALLBACK_ACTION_TYPES } from "./constants";
 type KanbanColumn = "planned" | "in_progress" | "completed";
 type ActionTimingState = PlantBundle["suggestions"][number]["timing_state"];
 type RegenerationDecision = "approved" | "rejected";
+type CalendarOperation = "regenerate" | "review-decisions" | "question";
 
 const KANBAN_COLUMNS: Array<{ id: KanbanColumn; label: string; description: string }> = [
   { id: "planned", label: "未完了", description: "着手を待っている作業" },
@@ -98,6 +100,7 @@ export function PlantCalendarDrawer({
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [questionError, setQuestionError] = useState("");
+  const [activeOperation, setActiveOperation] = useState<CalendarOperation | null>(null);
   const [generationOpen, setGenerationOpen] = useState(false);
   const [generationStart, setGenerationStart] = useState(todayString());
   const [generationNotes, setGenerationNotes] = useState("");
@@ -139,6 +142,13 @@ export function PlantCalendarDrawer({
     ...(!question.trim() ? ["質問を入力してください"] : []),
     ...(busy ? ["現在のAI処理が完了するまでお待ちください"] : []),
   ];
+  const operationMessage = activeOperation === "regenerate"
+    ? "AIが変更案を組み立てています"
+    : activeOperation === "review-decisions"
+      ? "確認結果を栽培カレンダーへ反映しています"
+      : activeOperation === "question"
+        ? "栽培データをもとに回答を考えています"
+        : "変更を安全に反映しています";
 
   useEffect(() => {
     if (planting && planting.id !== selectedPlantingId) onPlantingChange(planting.id);
@@ -283,11 +293,14 @@ export function PlantCalendarDrawer({
     event.preventDefault();
     if (!planting) return;
     setGenerationError("");
+    setActiveOperation("regenerate");
     try {
       await onRegenerate(planting.id, generationStart, generationNotes, calendar ? generationMode : "automatic");
       setGenerationOpen(false);
     } catch (caught) {
       setGenerationError(errorMessage(caught));
+    } finally {
+      setActiveOperation(null);
     }
   };
 
@@ -315,6 +328,7 @@ export function PlantCalendarDrawer({
     if (!planting || !generationTask) return;
     if (!pendingRegenerationProposals.length || undecidedRegenerationCount > 0) return;
     setGenerationError("");
+    setActiveOperation("review-decisions");
     try {
       await onDecideRegeneration(
         planting.id,
@@ -329,6 +343,8 @@ export function PlantCalendarDrawer({
       setActiveRegenerationProposalId(null);
     } catch (caught) {
       setGenerationError(errorMessage(caught));
+    } finally {
+      setActiveOperation(null);
     }
   };
 
@@ -336,11 +352,14 @@ export function PlantCalendarDrawer({
     event.preventDefault();
     if (!planting || !question.trim()) return;
     setQuestionError("");
+    setActiveOperation("question");
     try {
       const record = await onAskQuestion(planting.id, question.trim());
       setAnswer(record.answer);
     } catch (caught) {
       setQuestionError(errorMessage(caught));
+    } finally {
+      setActiveOperation(null);
     }
   };
 
@@ -353,6 +372,8 @@ export function PlantCalendarDrawer({
           </div>
           {presentation === "modal" && <button type="button" className="icon-button" onClick={onClose} title="閉じる"><X size={19} /></button>}
         </header>
+
+        {(busy || activeOperation) && <div className="calendar-operation-indicator"><InlineLoading label={operationMessage} /></div>}
 
         {activePlantings.length === 0 ? (
           <CalendarEmptyState />
@@ -413,15 +434,15 @@ export function PlantCalendarDrawer({
             <section className="calendar-generation" aria-label="計画の生成設定">
               <div className="calendar-section-heading">
                 <div><Sparkles size={17} /><strong>AI栽培計画を作り直す</strong></div>
-                <button type="button" disabled={generationActive || generationReviewPending} onClick={() => setGenerationOpen(true)}>
-                  {generationActive ? <LoaderCircle className="spin" size={15} /> : <RefreshCw size={15} />}
+                <button type="button" disabled={generationActive || generationReviewPending} aria-busy={generationActive} onClick={() => setGenerationOpen(true)}>
+                  {!generationActive && <RefreshCw size={15} />}
                   {generationActive ? "AI計画を作成中..." : generationReviewPending ? "変更案を確認中" : calendar ? "作り直す条件を確認" : "作成条件を確認"}
                 </button>
               </div>
               {!generationOpen && !generationActive && <p className="calendar-regeneration-intro">施肥履歴や現在の栽培条件を反映して、これからの予定を作り直す場合に使います。普段の作業追加には使用しません。</p>}
               {generationActive && (
                 <div className="generation-status active" role="status" aria-live="polite">
-                  <LoaderCircle className="spin" size={18} />
+                  <ActivityIndicator size="small" />
                   <div><strong>{generationTask.status === "queued" ? "AI計画の作成を待っています" : "AI計画を作成しています"}</strong><p>この画面を離れても処理は続きます。閲覧や検索はできますが、計画の整合性を守るため作業編集は完了まで停止します。</p></div>
                 </div>
               )}
@@ -508,7 +529,7 @@ export function PlantCalendarDrawer({
                   {generationError && <p className="form-error">{generationError}</p>}
                   <div className="form-actions">
                     <button type="button" onClick={() => setGenerationOpen(false)}>キャンセル</button>
-                    <button type="submit" disabled={regenerationBlockingReasons.length > 0} aria-describedby={regenerationBlockingReasons.length > 0 ? "calendar-regeneration-blocked" : undefined} title={disabledActionTitle(regenerationBlockingReasons)}><Sparkles size={15} />{calendar && generationMode === "review" ? "変更案を作成" : `これからの12か月計画を${calendar ? "作り直す" : "作成"}`}</button>
+                    <button type="submit" disabled={regenerationBlockingReasons.length > 0 || activeOperation === "regenerate"} aria-busy={activeOperation === "regenerate"} aria-describedby={regenerationBlockingReasons.length > 0 ? "calendar-regeneration-blocked" : undefined} title={disabledActionTitle(regenerationBlockingReasons)}>{activeOperation !== "regenerate" && <Sparkles size={15} />}{activeOperation === "regenerate" ? "変更案を作成しています" : calendar && generationMode === "review" ? "変更案を作成" : `これからの12か月計画を${calendar ? "作り直す" : "作成"}`}</button>
                   </div>
                 </form>
               </ModalDialog>
@@ -602,7 +623,7 @@ export function PlantCalendarDrawer({
               <div className="calendar-section-heading"><div><MessageCircle size={17} /><strong>この作物について質問</strong></div></div>
               <form onSubmit={(event) => void ask(event)}>
                 <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="追肥は今必要ですか？ 葉の斑点は何を確認すべきですか？" />
-                <button type="submit" disabled={questionBlockingReasons.length > 0} aria-describedby={questionBlockingReasons.length > 0 ? "plant-question-blocked" : undefined} title={disabledActionTitle(questionBlockingReasons)}><MessageCircle size={16} />質問する</button>
+                <button type="submit" disabled={questionBlockingReasons.length > 0 || activeOperation === "question"} aria-busy={activeOperation === "question"} aria-describedby={questionBlockingReasons.length > 0 ? "plant-question-blocked" : undefined} title={disabledActionTitle(questionBlockingReasons)}>{activeOperation !== "question" && <MessageCircle size={16} />}{activeOperation === "question" ? "回答を考えています" : "質問する"}</button>
               </form>
               <DisabledActionReason id="plant-question-blocked" reasons={questionBlockingReasons} prefix="質問するには" />
               {questionError && <p className="form-error">{questionError}</p>}
@@ -688,9 +709,9 @@ export function PlantCalendarDrawer({
                         {generationError && <p className="form-error">{generationError}<small>選択内容は保持されています。そのまま再試行できます。</small></p>}
                         <div className="regeneration-review-complete-actions">
                           <button type="button" onClick={() => setRegenerationReviewOpen(false)} disabled={busy}>変更案一覧へ戻る</button>
-                          <button type="button" className="primary" onClick={() => void applyRegenerationDecisions()} disabled={busy || undecidedRegenerationCount > 0}>
-                            {busy ? <LoaderCircle className="spin" size={17} /> : <Check size={17} />}
-                            {busy ? "まとめて反映中..." : "選択した内容を一括反映"}
+                          <button type="button" className="primary" onClick={() => void applyRegenerationDecisions()} disabled={busy || activeOperation === "review-decisions" || undecidedRegenerationCount > 0} aria-busy={activeOperation === "review-decisions"}>
+                            {activeOperation !== "review-decisions" && <Check size={17} />}
+                            {activeOperation === "review-decisions" ? "まとめて反映中..." : "選択した内容を一括反映"}
                           </button>
                         </div>
                       </div>
@@ -912,6 +933,7 @@ function FertilizerEffectPanel({
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [draft, setDraft] = useState<FertilizerDraft>(() => newFertilizerDraft(materials));
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const estimate = useMemo(() => summarizeFertilizerApplications(applications), [applications]);
   const selectedMaterial = materials.find((material) => material.id === draft.materialId);
   const change = <Key extends keyof FertilizerDraft>(key: Key, value: FertilizerDraft[Key]) => (
@@ -957,6 +979,7 @@ function FertilizerEffectPanel({
       setError("製品表示や分析表から、N・P₂O₅・K₂O・MgO（苦土）のいずれかを入力してください。");
       return;
     }
+    setSubmitting(true);
     try {
       await onAdd(plantingId, {
         material_id: draft.materialId,
@@ -975,6 +998,8 @@ function FertilizerEffectPanel({
       setEditing(false);
     } catch (caught) {
       setError(errorMessage(caught));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1054,7 +1079,7 @@ function FertilizerEffectPanel({
           <label>成分・肥効率の根拠<input maxLength={500} value={draft.analysisSource} onChange={(event) => change("analysisSource", event.target.value)} placeholder="製品ラベル、分析表、地域施肥基準など" /></label>
           <label>メモ<textarea maxLength={1000} value={draft.notes} onChange={(event) => change("notes", event.target.value)} placeholder="全面施用、畝内混和、施用範囲など" /></label>
           {error && <p className="form-error" role="alert">{error}</p>}
-          <div className="form-actions"><button type="button" onClick={() => { setEditing(false); setError(""); }}>キャンセル</button><button type="submit" disabled={busy}>履歴と肥効を保存</button></div>
+          <div className="form-actions"><button type="button" onClick={() => { setEditing(false); setError(""); }}>キャンセル</button><button type="submit" disabled={busy || submitting} aria-busy={submitting}>{submitting ? "履歴を保存しています" : "履歴と肥効を保存"}</button></div>
           </form>
         </ModalDialog>
       )}
@@ -1122,6 +1147,7 @@ function FertilizerCatalogDialog({
 }) {
   const [draft, setDraft] = useState<FertilizerCatalogDraft | null>(null);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const customMaterials = materials.filter((material) => material.scope === "user");
   const change = <Key extends keyof FertilizerCatalogDraft>(key: Key, value: FertilizerCatalogDraft[Key]) => (
     setDraft((current) => current ? { ...current, [key]: value } : current)
@@ -1135,6 +1161,7 @@ function FertilizerCatalogDialog({
       setError("袋の表示を見て、N・P₂O₅・K₂O・MgO（苦土）のいずれかを入力してください。");
       return;
     }
+    setSubmitting(true);
     try {
       await onSave(draft.id, {
         label: draft.label,
@@ -1151,6 +1178,8 @@ function FertilizerCatalogDialog({
       setDraft(null);
     } catch (caught) {
       setError(errorMessage(caught));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1193,7 +1222,7 @@ function FertilizerCatalogDialog({
             <label>参考URL<input type="url" maxLength={1000} value={draft.sourceUrl} onChange={(event) => change("sourceUrl", event.target.value)} /></label>
           </div></details>
           {error && <p className="form-error" role="alert">{error}</p>}
-          <div className="form-actions"><button type="button" onClick={() => { setDraft(null); setError(""); }}>一覧へ戻る</button><button type="submit" disabled={busy}>{draft.id ? "変更を保存" : "カタログへ追加"}</button></div>
+          <div className="form-actions"><button type="button" onClick={() => { setDraft(null); setError(""); }}>一覧へ戻る</button><button type="submit" disabled={busy || submitting} aria-busy={submitting}>{submitting ? "保存しています" : draft.id ? "変更を保存" : "カタログへ追加"}</button></div>
         </form>
       )}
     </ModalDialog>

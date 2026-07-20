@@ -40,6 +40,10 @@
       if (busy) reasons.push(busyMessage);
       const stateBlocked = submit.dataset.stateBlocked === "true";
       submit.disabled = stateBlocked || reasons.length > 0;
+      if (busy) submit.setAttribute("aria-busy", "true");
+      else submit.removeAttribute("aria-busy");
+      if (busy) form.setAttribute("aria-busy", "true");
+      else form.removeAttribute("aria-busy");
       if (!stateBlocked) submit.title = reasons.length ? `実行できません: ${reasons.join(" ")}` : "";
       submit.setAttribute("aria-disabled", submit.disabled ? "true" : "false");
       dependentActions.forEach((button) => {
@@ -58,6 +62,13 @@
 
     form.addEventListener("input", update);
     form.addEventListener("change", update);
+    form.addEventListener("submit", (event) => {
+      queueMicrotask(() => {
+        if (event.defaultPrevented || !form.checkValidity() || submit.dataset.stateBlocked === "true") return;
+        busy = true;
+        update();
+      });
+    });
     form.addEventListener("stateful-form-reset", () => {
       baseline = formSnapshot(form);
       busy = false;

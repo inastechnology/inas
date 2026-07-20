@@ -18,6 +18,7 @@ import {
   updateFertilizerMaterial,
 } from "../api";
 import { errorMessage } from "../formatters";
+import { LoadingState } from "../LoadingState";
 import type { PlantActionMutationPayload, PlantBundle } from "../types";
 import { PlantCalendarDrawer } from "./PlantCalendarDrawer";
 
@@ -108,7 +109,7 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
     void refresh(plantingId).catch((caught) => setError(errorMessage(caught))).finally(() => setBusy(false));
   };
 
-  if (loading) return <div className="layout-state">年間カレンダーを読み込んでいます...</div>;
+  if (loading) return <LoadingState label="年間カレンダーを読み込んでいます" detail="栽培計画と作業記録を時系列に並べています" />;
   if (error && bundle.plantings.length === 0) {
     return (
       <div className="layout-state layout-state-error">

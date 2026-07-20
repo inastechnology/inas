@@ -50,26 +50,17 @@
         border-radius: 4px;
         font: inherit;
       }
-      .loader {
-        border: 6px solid #f3f3f3;
-        border-top: 6px solid #3498db;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
+      .image-loader {
         position: absolute;
         top: 50%;
         left: 50%;
-        transform: translate(-50%, -50%);
         display: none;
-      }
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
+        padding: 10px 13px;
+        border: 1px solid #c6d8cd;
+        border-radius: 8px;
+        background: rgba(249, 252, 250, .96);
+        box-shadow: 0 8px 24px rgba(30, 65, 46, .14);
+        transform: translate(-50%, -50%);
       }
     </style>
     <link rel="stylesheet" href="/static/hub-ui.css">
@@ -89,7 +80,7 @@
     </select>
 
     <div class="image-container">
-      <div class="loader" id="loader"></div>
+      <div class="image-loader inas-inline-loading" id="loader" role="status" aria-live="polite" aria-busy="true"><span class="inas-activity small" aria-hidden="true"><span class="inas-activity-field"></span><span class="inas-activity-sprout"></span></span><span>画像を読み込んでいます</span></div>
       <img id="displayedImage" src="" alt="Sensor Image" />
       <div class="timestamp" id="imageTimestamp"></div>
     </div>
@@ -109,7 +100,7 @@
 
         console.log("imagePath:", imagePath); // コンソールで確認
 
-        loader.style.display = "block";
+        loader.style.display = "inline-flex";
         displayedImage.style.display = "none";
         timestamp.textContent = "";
 

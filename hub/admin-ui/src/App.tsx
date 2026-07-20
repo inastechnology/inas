@@ -11,7 +11,6 @@ import {
   Droplets,
   ExternalLink,
   Leaf,
-  LoaderCircle,
   Minus,
   Plus,
   Redo2,
@@ -51,6 +50,7 @@ import { DisabledActionReason, disabledActionTitle } from "./DisabledActionReaso
 import { errorMessage, formatDate, todayString } from "./formatters";
 import { InstallationCanvas } from "./InstallationCanvas";
 import { mergeLayouts } from "./layoutMerge";
+import { ActivityIndicator, LoadingState } from "./LoadingState";
 import { PlantCalendarDrawer } from "./plant-calendar/PlantCalendarDrawer";
 import { PRESET_BY_ID, PRESETS, SPACE_TYPE_LABELS } from "./presets";
 import { matchesSearch } from "./search";
@@ -629,7 +629,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
   });
 
   if (loading) {
-    return <div className="layout-state">設置ビューを読み込んでいます...</div>;
+    return <LoadingState label="設置ビューを読み込んでいます" detail="設備と栽培エリアの接続状態を整えています" />;
   }
   if (!layout || !activeSpace) {
     return (
@@ -674,7 +674,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
             <span>{Math.round(zoom * 100)}%</span>
             <button type="button" onClick={() => setZoom((value) => clamp(value * 1.15, 0.2, 2.5))} title="拡大"><Plus size={16} /></button>
           </div>
-          <button type="button" className="save-button" onClick={() => void persist()} disabled={!dirty || saving} title={saving ? "保存処理中です" : !dirty ? "未保存の変更はありません" : "設置ビューを保存"}><Save size={17} />保存</button>
+          <button type="button" className="save-button" onClick={() => void persist()} disabled={!dirty || saving} aria-busy={saving} title={saving ? "保存処理中です" : !dirty ? "未保存の変更はありません" : "設置ビューを保存"}>{!saving && <Save size={17} />}{saving ? "保存しています" : "保存"}</button>
         </div>
       </header>
 
@@ -1165,8 +1165,8 @@ function PlacementInspector({
             <PlantTargetEditor planting={planting} busy={plantBusy || generationActive} focusMetric={targetMetric} onSave={onUpdatePlanting} />
             {generationTask?.status === "failed" && <p className="generation-status failed" role="alert">AI計画の作成に失敗しました。カレンダー画面から再実行できます。{generationTask.error && ` (${generationTask.error})`}</p>}
             <div className="planting-links">
-              <a href={calendarUrl} target="_blank" rel="noopener" aria-label="カレンダーを新しいタブで開く" className={generationActive ? "generation-active" : undefined}>
-                {generationActive ? <LoaderCircle className="spin" size={16} /> : <CalendarDays size={16} />}
+              <a href={calendarUrl} target="_blank" rel="noopener" aria-label="カレンダーを新しいタブで開く" aria-busy={generationActive} className={generationActive ? "generation-active" : undefined}>
+                {generationActive ? <ActivityIndicator size="small" /> : <CalendarDays size={16} />}
                 {generationActive ? "AI計画を作成中..." : "カレンダーを開く"}
               </a>
               <a href={`${fieldDetailUrl}?planting=${encodeURIComponent(planting.id)}#cultivation`} target="_blank" rel="noopener" title="栽培タブを新しいタブで開いて定植情報を編集"><ExternalLink size={16} />作物情報を編集</a>
@@ -1223,6 +1223,7 @@ function PlantTargetEditor({
 }) {
   const [targets, setTargets] = useState<EditableGrowthTargets>(() => structuredClone(planting.growth_targets ?? {}));
   const [saved, setSaved] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const dirty = JSON.stringify(targets) !== JSON.stringify(planting.growth_targets ?? {});
   const blockingReasons = [
     ...(!dirty ? ["目標レンジは変更されていません"] : []),
@@ -1252,8 +1253,13 @@ function PlantTargetEditor({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    await onSave(planting.id, { growth_targets: targets });
-    setSaved(true);
+    setSubmitting(true);
+    try {
+      await onSave(planting.id, { growth_targets: targets });
+      setSaved(true);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -1306,7 +1312,7 @@ function PlantTargetEditor({
         );
       })}
       <DisabledActionReason id={`plant-target-blocked-${planting.id}`} reasons={blockingReasons} prefix="目標を保存するには" />
-      <button type="submit" disabled={blockingReasons.length > 0} aria-describedby={blockingReasons.length > 0 ? `plant-target-blocked-${planting.id}` : undefined} title={disabledActionTitle(blockingReasons)}><Save size={14} />目標を保存</button>
+      <button type="submit" disabled={blockingReasons.length > 0 || submitting} aria-busy={submitting} aria-describedby={blockingReasons.length > 0 ? `plant-target-blocked-${planting.id}` : undefined} title={disabledActionTitle(blockingReasons)}>{!submitting && <Save size={14} />}{submitting ? "目標を保存しています" : "目標を保存"}</button>
     </form>
   );
 }
@@ -1329,6 +1335,7 @@ function PlantRegistrationForm({
   const cultivationMethods = cultivationMethodsFor(placementPreset);
   const [draft, setDraft] = useState(() => loadPlantingDraft(draftKey, cultivationMethods[0]?.value ?? ""));
   const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const blockingReasons = plantingRegistrationBlockingReasons(draft, layoutDirty, busy);
   const blockingReasonId = `planting-blocked-${draftKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
@@ -1343,6 +1350,7 @@ function PlantRegistrationForm({
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setFormError("");
+    setSubmitting(true);
     try {
       await onSubmit({
         crop_name: draft.cropName,
@@ -1363,6 +1371,8 @@ function PlantRegistrationForm({
       localStorage.removeItem(draftKey);
     } catch (caught) {
       setFormError(errorMessage(caught));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -1403,11 +1413,12 @@ function PlantRegistrationForm({
         <button
           type="submit"
           className="register-button"
-          disabled={blockingReasons.length > 0}
+          disabled={blockingReasons.length > 0 || submitting}
+          aria-busy={submitting}
           aria-describedby={blockingReasons.length > 0 ? blockingReasonId : undefined}
           title={disabledActionTitle(blockingReasons)}
         >
-          <Sparkles size={16} />{busy ? "目標と計画を生成中..." : "定植を登録してAI計画を生成"}
+          {!submitting && <Sparkles size={16} />}{submitting ? "目標と計画を生成しています" : "定植を登録してAI計画を生成"}
         </button>
       </form>
     </section>

@@ -173,6 +173,7 @@
 
       testButton.addEventListener("click", async () => {
         testButton.disabled = true;
+        testButton.setAttribute("aria-busy", "true");
         setResult("HubからRTSP映像を確認しています…", true);
         try {
           const body = payload();
@@ -183,12 +184,14 @@
           setResult(error.message, false);
         } finally {
           testButton.disabled = false;
+          testButton.removeAttribute("aria-busy");
         }
       });
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         saveButton.disabled = true;
+        saveButton.setAttribute("aria-busy", "true");
         try {
           const url = formMode === "edit" ? "/local/api/cameras/" + encodeURIComponent(existingCamera.id) : "/local/api/cameras";
           await requestJson(url, { method: formMode === "edit" ? "PATCH" : "POST", body: JSON.stringify(payload()) });
@@ -196,6 +199,7 @@
         } catch (error) {
           setResult(error.message, false);
           saveButton.disabled = false;
+          saveButton.removeAttribute("aria-busy");
         }
       });
     </script>

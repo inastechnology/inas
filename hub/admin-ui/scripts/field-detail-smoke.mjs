@@ -47,6 +47,33 @@ async function selectCalendarWorkspace(targetPage, label) {
 
 try {
   await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+
+  const loadingPage = await browser.newPage();
+  await loadingPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await loadingPage.setRequestInterception(true);
+  let releaseLoadingRequest;
+  const loadingRequestReleased = new Promise((resolve) => { releaseLoadingRequest = resolve; });
+  let confirmLoadingRequest;
+  const loadingRequestIntercepted = new Promise((resolve) => { confirmLoadingRequest = resolve; });
+  loadingPage.on("request", async (request) => {
+    if (request.method() === "GET" && request.url().includes(`/local/api/fields/${fieldId}/plantings`)) {
+      confirmLoadingRequest();
+      await loadingRequestReleased;
+    }
+    await request.continue();
+  });
+  await loadingPage.goto(`${baseUrl}/fields/${fieldId}/calendar`, { waitUntil: "domcontentloaded" });
+  await loadingRequestIntercepted;
+  await loadingPage.waitForSelector(".inas-loading-state .inas-activity.large");
+  assert.equal(await loadingPage.$eval(".inas-loading-state", (state) => state.getAttribute("aria-busy")), "true");
+  assert.notEqual(await loadingPage.$eval(".inas-activity.large", (indicator) => getComputedStyle(indicator, "::before").animationName), "none", "the loading indicator must animate when motion is allowed");
+  await loadingPage.screenshot({ path: "/tmp/ina-calendar-loading-motion.png", fullPage: false });
+  await loadingPage.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+  assert.equal(await loadingPage.$eval(".inas-activity.large", (indicator) => getComputedStyle(indicator, "::before").animationName), "none", "the loading indicator must stop for reduced motion");
+  releaseLoadingRequest();
+  await loadingPage.waitForSelector(".inas-loading-state", { hidden: true });
+  await loadingPage.close();
+
   await page.goto(`${baseUrl}/fields/${fieldId}`, { waitUntil: "networkidle0" });
   assert.equal(await page.$$eval("[data-field-tab]", (tabs) => tabs.length), 5);
   assert.equal(await page.$eval("#field-installation-tree", (details) => details.hasAttribute("open")), false);
@@ -438,6 +465,8 @@ try {
   let reviewDecisionRequests = 0;
   let submittedReviewDecisions = [];
   let interceptedReviewBundle = null;
+  let releaseReviewDecision;
+  const reviewDecisionReleased = new Promise((resolve) => { releaseReviewDecision = resolve; });
   const reviewPage = await browser.newPage();
   await reviewPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   await reviewPage.setRequestInterception(true);
@@ -454,6 +483,7 @@ try {
           ...proposal,
           decision: submittedReviewDecisions.find((decision) => decision.proposal_id === proposal.id)?.decision || proposal.decision,
         }));
+        await reviewDecisionReleased;
         await request.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ bundle: nextBundle }) });
         return;
       }
@@ -539,6 +569,17 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 150));
   await reviewPage.screenshot({ path: "/tmp/ina-calendar-regeneration-guided-review-complete.png", fullPage: false });
   await reviewPage.click(".regeneration-review-complete-actions button.primary");
+  await reviewPage.waitForSelector('.regeneration-review-complete-actions button.primary[aria-busy="true"]');
+  assert.match(
+    await reviewPage.$eval('.regeneration-review-complete-actions button.primary', (button) => getComputedStyle(button, "::before").animationName),
+    /inas-activity-orbit/,
+    "the pending API action must show the shared button animation",
+  );
+  assert(await reviewPage.$(".calendar-operation-indicator"), "calendar operations must expose a persistent busy status");
+  assert.equal(await reviewPage.$eval('.plant-question button[type="submit"]', (button) => button.getAttribute("aria-busy")), "false", "unrelated actions must not appear busy");
+  assert.equal(await reviewPage.$eval('.plant-question button[type="submit"]', (button) => button.textContent?.trim()), "質問する", "unrelated action labels must remain unchanged");
+  await reviewPage.screenshot({ path: "/tmp/ina-calendar-busy-button.png", fullPage: false });
+  releaseReviewDecision();
   await reviewPage.waitForFunction(() => !document.querySelector(".calendar-regeneration-review"));
   assert.equal(reviewDecisionRequests, 1, "all proposal decisions must use one API request");
   assert.equal(submittedReviewDecisions.length, 2, "the batch request must include every pending proposal");

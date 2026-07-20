@@ -383,7 +383,7 @@
         if (!button) return;
         const result = section.querySelector(".test-result");
         button.addEventListener("click", async () => {
-          button.disabled = true; result.className = "test-result"; result.textContent = "接続確認中...";
+          button.disabled = true; button.setAttribute("aria-busy", "true"); result.className = "test-result"; result.textContent = "接続確認中...";
           try {
             const response = await fetch("/local/api/settings/ai/test", {
               method:"POST",
@@ -440,14 +440,14 @@
               suggestions:["Hubのネットワーク接続を確認します。","画面を再読み込みして再試行します。"],
               technical:{error:String(error)},
             });
-          } finally { button.disabled = false; }
+          } finally { button.disabled = false; button.removeAttribute("aria-busy"); }
         });
       });
 
       const instagramProfileButton = document.getElementById("refresh-instagram-profile");
       instagramProfileButton?.addEventListener("click", async () => {
         const result = document.getElementById("instagram-profile-result");
-        instagramProfileButton.disabled = true; result.className = "test-result"; result.textContent = "取得中...";
+        instagramProfileButton.disabled = true; instagramProfileButton.setAttribute("aria-busy", "true"); result.className = "test-result"; result.textContent = "取得中...";
         try {
           const response = await fetch("/local/api/settings/instagram/profile", {method:"POST",headers:{"Accept":"application/json"}});
           const body = await response.json().catch(() => ({}));
@@ -457,7 +457,7 @@
           result.className = "test-result ok"; result.textContent = "アカウント情報を更新しました";
         } catch (error) {
           result.className = "test-result error"; result.textContent = error instanceof Error ? error.message : "取得できませんでした";
-        } finally { instagramProfileButton.disabled = false; }
+        } finally { instagramProfileButton.disabled = false; instagramProfileButton.removeAttribute("aria-busy"); }
       });
     </script>
   </body>
