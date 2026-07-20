@@ -26,6 +26,7 @@ import {
 import {
   ApiError,
   askPlantQuestion,
+  listPlantQuestions,
   addPlantAction,
   completePlantAction,
   createFertilizerApplication,
@@ -791,6 +792,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
           onCompleteAction={recordPlantAction}
           onSkipAction={skipPlantCalendarAction}
           onAskQuestion={answerPlantQuestion}
+          onListQuestions={(plantingId, options) => listPlantQuestions(plantingId, options)}
           onRegenerate={regenerateCalendar}
           onDecideRegeneration={async (plantingId, taskId, decisions) => {
             setPlantBusy(true);

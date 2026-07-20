@@ -12,6 +12,7 @@ import {
   deleteFertilizerMaterial,
   deletePlantAction,
   loadPlantBundle,
+  listPlantQuestions,
   regeneratePlantCalendar,
   skipPlantAction,
   updatePlantAction,
@@ -142,6 +143,7 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
           await skipPlantAction(plantingId, actionId, payload);
         })}
         onAskQuestion={(plantingId, question) => execute(() => askPlantQuestion(plantingId, question), false)}
+        onListQuestions={(plantingId, options) => listPlantQuestions(plantingId, options)}
         onRegenerate={regenerate}
         onDecideRegeneration={(plantingId, taskId, decisions) => execute(async () => {
           const result = await decidePlantCalendarRegenerationProposals(plantingId, taskId, decisions);

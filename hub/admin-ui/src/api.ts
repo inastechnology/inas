@@ -246,3 +246,12 @@ export function askPlantQuestion(plantingId: string, question: string): Promise<
     body: JSON.stringify({ question }),
   });
 }
+
+export function listPlantQuestions(
+  plantingId: string,
+  { query = "", page = 1, pageSize = 100, signal }: { query?: string; page?: number; pageSize?: number; signal?: AbortSignal } = {},
+): Promise<SearchPage<PlantQuestionRecord>> {
+  const parameters = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (query.trim()) parameters.set("q", query.trim());
+  return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/questions?${parameters}`, { signal });
+}

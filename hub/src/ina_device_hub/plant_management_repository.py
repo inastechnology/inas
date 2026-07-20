@@ -792,6 +792,16 @@ class PlantManagementRepository:
         self.save()
         return copy.deepcopy(record)
 
+    def list_questions(self, planting_id: str, *, query: str = "", page=1, page_size=50):
+        self._planting(planting_id)
+        terms = search_terms(query)
+        questions = [
+            copy.deepcopy(item)
+            for item in reversed(self.data.get("questions", []))
+            if item.get("planting_id") == planting_id and matches_search(terms, [item.get("question"), item.get("answer")])
+        ]
+        return paginate(questions, page=page, page_size=page_size)
+
     @serialized_repository_write("repository_path")
     def create_fertilizer_material(self, value: dict):
         if not isinstance(value, dict):

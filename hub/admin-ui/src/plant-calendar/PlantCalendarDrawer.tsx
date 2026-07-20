@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeft, Beaker, CalendarDays, Check, ChevronRight, Leaf, ListTodo, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
+import { ArrowLeft, Beaker, BookOpen, CalendarDays, Check, ChevronRight, Leaf, ListTodo, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Send, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
 import { errorMessage, formatDate, todayString } from "../formatters";
@@ -51,6 +51,7 @@ export interface PlantCalendarDrawerProps {
   onCompleteAction: (plantingId: string, actionId: string, payload: PlantActionCompletionPayload) => Promise<void>;
   onSkipAction: (plantingId: string, actionId: string, payload: PlantActionSkipPayload) => Promise<void>;
   onAskQuestion: (plantingId: string, question: string) => Promise<PlantQuestionRecord>;
+  onListQuestions: (plantingId: string, options?: { query?: string; page?: number; pageSize?: number; signal?: AbortSignal }) => Promise<{ items: PlantQuestionRecord[]; total: number }>;
   onRegenerate: (plantingId: string, startDate: string, planningNotes: string, mode: "automatic" | "review") => Promise<void>;
   onDecideRegeneration: (
     plantingId: string,
@@ -79,6 +80,7 @@ export function PlantCalendarDrawer({
   onCompleteAction,
   onSkipAction,
   onAskQuestion,
+  onListQuestions,
   onRegenerate,
   onDecideRegeneration,
   onAddAction,
@@ -98,7 +100,9 @@ export function PlantCalendarDrawer({
   const generationLockActive = generationLockTasks.length > 0;
   const calendarMutationBusy = busy || generationLockActive;
   const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
+  const [questionHistory, setQuestionHistory] = useState<PlantQuestionRecord[]>([]);
+  const [questionSearch, setQuestionSearch] = useState("");
+  const [questionHistoryLoading, setQuestionHistoryLoading] = useState(false);
   const [questionError, setQuestionError] = useState("");
   const [activeOperation, setActiveOperation] = useState<CalendarOperation | null>(null);
   const [generationOpen, setGenerationOpen] = useState(false);
@@ -121,6 +125,7 @@ export function PlantCalendarDrawer({
   const [dragOverColumn, setDragOverColumn] = useState<KanbanColumn | null>(null);
   const [dropMessage, setDropMessage] = useState("");
   const consumedInitialActionId = useRef("");
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
   const pendingRegenerationProposals = (generationTask?.proposals ?? []).filter((proposal) => proposal.decision === "pending");
   const pendingRegenerationProposalKey = pendingRegenerationProposals.map((proposal) => proposal.id).join("|");
   const approvedRegenerationCount = pendingRegenerationProposals.filter((proposal) => regenerationDecisions[proposal.id] === "approved").length;
@@ -155,13 +160,33 @@ export function PlantCalendarDrawer({
   }, [planting, selectedPlantingId, onPlantingChange]);
 
   useEffect(() => {
-    setAnswer("");
     setQuestionError("");
     setGenerationOpen(false);
     const planning = calendarPlanningContext(calendar);
     setGenerationStart(typeof planning.start_date === "string" ? planning.start_date : todayString());
     setGenerationNotes(typeof planning.notes === "string" ? planning.notes : "");
   }, [planting?.id, calendar?.updated_at]);
+
+  useEffect(() => {
+    if (!planting) return undefined;
+    const controller = new AbortController();
+    setQuestion("");
+    setQuestionHistory([]);
+    setQuestionSearch("");
+    setQuestionHistoryLoading(true);
+    setQuestionError("");
+    void onListQuestions(planting.id, { pageSize: 100, signal: controller.signal })
+      .then((result) => setQuestionHistory(result.items))
+      .catch((caught) => {
+        if (!controller.signal.aborted) setQuestionError(errorMessage(caught));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setQuestionHistoryLoading(false);
+      });
+    return () => controller.abort();
+    // The listing callback is an API adapter and does not alter the selected resource.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planting?.id]);
 
   useEffect(() => {
     setSelectedActionId(null);
@@ -188,10 +213,6 @@ export function PlantCalendarDrawer({
     setDropMessage("AI栽培計画の作成中は、圃場の作業編集を一時停止しています。");
   }, [generationLockActive]);
 
-  const actions = useMemo(
-    () => [...(calendar?.actions ?? [])].sort((left, right) => left.window_start.localeCompare(right.window_start)),
-    [calendar?.actions],
-  );
   const actionEntries = useMemo(() => activePlantings.flatMap((item) => (
     (bundle.calendars[item.id]?.actions ?? []).map((action) => ({ action, planting: item }))
   )), [activePlantings, bundle.calendars]);
@@ -224,6 +245,14 @@ export function PlantCalendarDrawer({
     });
   }, [actionQuery, scopedActionEntries, workDate]);
   const filteredActions = useMemo(() => filteredActionEntries.map((entry) => entry.action), [filteredActionEntries]);
+  const filteredQuestionHistory = useMemo(() => {
+    const terms = normalizeActionSearch(questionSearch).split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return questionHistory;
+    return questionHistory.filter((record) => {
+      const searchable = normalizeActionSearch(`${record.question} ${record.answer}`);
+      return terms.every((term) => searchable.includes(term));
+    });
+  }, [questionHistory, questionSearch]);
   const suggestions = useMemo(
     () => bundle.suggestions.filter((suggestion) => suggestion.planting_id === planting?.id),
     [bundle.suggestions, planting?.id],
@@ -355,12 +384,22 @@ export function PlantCalendarDrawer({
     setActiveOperation("question");
     try {
       const record = await onAskQuestion(planting.id, question.trim());
-      setAnswer(record.answer);
+      setQuestionHistory((current) => [record, ...current.filter((item) => item.id !== record.id)]);
+      setQuestion("");
+      setQuestionSearch("");
+      window.requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
     } catch (caught) {
       setQuestionError(errorMessage(caught));
     } finally {
       setActiveOperation(null);
     }
+  };
+
+  const openGenerationFromKanban = () => {
+    const lockedPlantingId = generationLockTasks[0]?.planting_id;
+    if (lockedPlantingId && lockedPlantingId !== planting?.id) onPlantingChange(lockedPlantingId);
+    setWorkspace("crop");
+    window.setTimeout(() => document.getElementById("calendar-generation-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
   };
 
   const panel = (
@@ -391,6 +430,8 @@ export function PlantCalendarDrawer({
               </div>
             )}
 
+            <div className="calendar-workspace-layout">
+            <main className="calendar-workspace-main">
             {workspace === "crop" && <>
             <section className="calendar-plant-selector">
               <div className="filterable-field">
@@ -415,23 +456,10 @@ export function PlantCalendarDrawer({
               </div>
             </section>
 
-            <SuggestionSummary suggestions={suggestions} />
-            <FertilizerEffectPanel
-              plantingId={planting.id}
-              placementName={planting.placement_name}
-              applications={fertilizerApplications}
-              materials={bundle.fertilizer_materials}
-              busy={calendarMutationBusy}
-              locked={generationLockActive}
-              onAdd={onAddFertilizer}
-              onDelete={onDeleteFertilizer}
-              onSaveMaterial={onSaveFertilizerMaterial}
-              onDeleteMaterial={onDeleteFertilizerMaterial}
-            />
             {calendar && <CareProfileSummary calendar={calendar} />}
-            {calendar && <AnnualCalendarGantt actions={actions} onActionSelect={openActionFromGantt} />}
+            <SuggestionSummary suggestions={suggestions} />
 
-            <section className="calendar-generation" aria-label="計画の生成設定">
+            <section className="calendar-generation" id="calendar-generation-section" aria-label="計画の生成設定">
               <div className="calendar-section-heading">
                 <div><Sparkles size={17} /><strong>AI栽培計画を作り直す</strong></div>
                 <button type="button" disabled={generationActive || generationReviewPending} aria-busy={generationActive} onClick={() => setGenerationOpen(true)}>
@@ -534,6 +562,23 @@ export function PlantCalendarDrawer({
                 </form>
               </ModalDialog>
             )}
+            <FertilizerEffectPanel
+              plantingId={planting.id}
+              placementName={planting.placement_name}
+              applications={fertilizerApplications}
+              materials={bundle.fertilizer_materials}
+              busy={calendarMutationBusy}
+              locked={generationLockActive}
+              onAdd={onAddFertilizer}
+              onDelete={onDeleteFertilizer}
+              onSaveMaterial={onSaveFertilizerMaterial}
+              onDeleteMaterial={onDeleteFertilizerMaterial}
+            />
+            </>}
+
+            {workspace === "work" && <>
+              <SuggestionSummary suggestions={bundle.suggestions} />
+              {actionEntries.length > 0 && <div className="calendar-outlook"><AnnualCalendarGantt actions={scopedActionEntries.map((entry) => entry.action)} onActionSelect={openActionFromGantt} /></div>}
             </>}
 
             {workspace === "work" && actionEntries.length > 0 && <section className="calendar-action-list" aria-label="管理作業">
@@ -565,6 +610,7 @@ export function PlantCalendarDrawer({
               {(actionQuery || workDate || workScopePlantingId !== "all") && <p className="calendar-filter-summary">条件に合う作業だけを表示しています。作業期間が指定日を含む場合に表示されます。</p>}
               <p className="kanban-dnd-help">{generationLockActive ? "AI計画の作成中は閲覧のみです。完了するとカードの移動と編集が自動で再開します。" : "カードを列へドラッグして状態を変更できます。完了列への移動では実績入力が開きます。"}</p>
               <p className="kanban-drop-status" role="status" aria-live="polite">{dropMessage}</p>
+              <div className="calendar-kanban-stage">
               <div className="calendar-kanban-scroll">
                 <div className="calendar-kanban" aria-label="管理作業カンバン">
                   {KANBAN_COLUMNS.map((column) => {
@@ -617,19 +663,48 @@ export function PlantCalendarDrawer({
                   })}
                 </div>
               </div>
+              {generationLockActive && (
+                <div className="calendar-kanban-lock-overlay" role="status" aria-live="polite">
+                  <span><LockKeyhole size={26} /></span>
+                  <strong>AIが栽培計画を整理しています</strong>
+                  <p>作業の重複や消失を防ぐため、完了までカンバンの編集を停止しています。</p>
+                  <button type="button" aria-busy="true" onClick={openGenerationFromKanban}>AI栽培計画を完了してください</button>
+                </div>
+              )}
+              </div>
             </section>}
 
-            {workspace === "crop" && <section className="plant-question">
-              <div className="calendar-section-heading"><div><MessageCircle size={17} /><strong>この作物について質問</strong></div></div>
-              <form onSubmit={(event) => void ask(event)}>
-                <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="追肥は今必要ですか？ 葉の斑点は何を確認すべきですか？" />
-                <button type="submit" disabled={questionBlockingReasons.length > 0 || activeOperation === "question"} aria-busy={activeOperation === "question"} aria-describedby={questionBlockingReasons.length > 0 ? "plant-question-blocked" : undefined} title={disabledActionTitle(questionBlockingReasons)}>{activeOperation !== "question" && <MessageCircle size={16} />}{activeOperation === "question" ? "回答を考えています" : "質問する"}</button>
+            </main>
+
+            <aside className="plant-question" aria-label={`${planting.crop_name}の栽培相談`}>
+              <header>
+                <div><span className="plant-chat-avatar"><Sprout size={20} /></span><div><strong>この作物について質問</strong><small>{planting.crop_name}の計画と記録を参照</small></div></div>
+                <span className="plant-chat-scope">栽培専用</span>
+              </header>
+              <label className="plant-chat-search"><Search size={15} /><input type="search" value={questionSearch} onChange={(event) => setQuestionSearch(event.target.value)} placeholder="過去の質問と回答を検索" aria-label="過去の栽培相談を検索" />{questionSearch && <button type="button" onClick={() => setQuestionSearch("")} aria-label="相談履歴の検索をクリア"><X size={14} /></button>}</label>
+              <div className="plant-chat-history" aria-live="polite">
+                {questionHistoryLoading && <InlineLoading label="相談履歴を読み込んでいます" />}
+                {!questionHistoryLoading && filteredQuestionHistory.length === 0 && (
+                  <div className="plant-chat-empty"><MessageCircle size={27} /><strong>{questionSearch ? "一致する相談はありません" : "栽培の疑問をすぐ相談できます"}</strong><p>{questionSearch ? "別の言葉で検索してください。" : "計画、作業、施肥、病害虫など、この作物に関する質問を入力してください。"}</p></div>
+                )}
+                {[...filteredQuestionHistory].reverse().map((record) => (
+                  <article className="plant-chat-turn" key={record.id}>
+                    <div className="plant-chat-message user"><span>あなた</span><p>{record.question}</p><time dateTime={record.created_at}>{formatChatTime(record.created_at)}</time></div>
+                    <div className="plant-chat-message assistant"><span>栽培アシスタント</span><p>{record.answer}</p></div>
+                  </article>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+              <form className="plant-chat-compose" onSubmit={(event) => void ask(event)}>
+                <label htmlFor="plant-chat-question">栽培について質問する</label>
+                <textarea id="plant-chat-question" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="例：追肥は今必要ですか？" rows={3} />
+                <button type="submit" disabled={questionBlockingReasons.length > 0 || activeOperation === "question"} aria-busy={activeOperation === "question"} aria-describedby={questionBlockingReasons.length > 0 ? "plant-question-blocked" : undefined} title={disabledActionTitle(questionBlockingReasons)}>{activeOperation !== "question" && <Send size={16} />}{activeOperation === "question" ? "回答を考えています" : "質問を送る"}</button>
               </form>
               <DisabledActionReason id="plant-question-blocked" reasons={questionBlockingReasons} prefix="質問するには" />
-              {questionError && <p className="form-error">{questionError}</p>}
-              {answer && <div className="question-answer"><strong>回答</strong><p>{answer}</p></div>}
-              <p className="safety-note">農薬を使う場合は、対象作物への登録、ラベル、希釈倍率、収穫前日数と地域の指針を必ず確認してください。</p>
-            </section>}
+              {questionError && <p className="form-error" role="alert">{questionError}</p>}
+              <p className="safety-note">登録作物と農作業以外の質問は回答・保存しません。農薬は対象作物の登録、ラベル、地域指針を必ず確認してください。</p>
+            </aside>
+            </div>
 
             {regenerationReviewOpen && generationTask && (
               <div className="calendar-action-detail-backdrop regeneration-review-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setRegenerationReviewOpen(false); }}>
@@ -934,6 +1009,7 @@ function FertilizerEffectPanel({
   const [draft, setDraft] = useState<FertilizerDraft>(() => newFertilizerDraft(materials));
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deletingApplicationId, setDeletingApplicationId] = useState("");
   const estimate = useMemo(() => summarizeFertilizerApplications(applications), [applications]);
   const selectedMaterial = materials.find((material) => material.id === draft.materialId);
   const change = <Key extends keyof FertilizerDraft>(key: Key, value: FertilizerDraft[Key]) => (
@@ -1003,6 +1079,16 @@ function FertilizerEffectPanel({
     }
   };
 
+  const deleteApplication = async (application: FertilizerApplication) => {
+    if (!window.confirm(`${application.material_name}の施肥履歴を削除しますか？`)) return;
+    setDeletingApplicationId(application.id);
+    try {
+      await onDelete(plantingId, application.id);
+    } finally {
+      setDeletingApplicationId("");
+    }
+  };
+
   return (
     <section className="fertilizer-effect-panel" aria-label="培地の施肥履歴と肥効見込み">
       <div className="calendar-section-heading">
@@ -1030,10 +1116,11 @@ function FertilizerEffectPanel({
                   <div className="fertilizer-effect-window"><span style={{ width: `${effect.progressPercent}%` }} /><small>{formatDate(effect.start)}〜{formatDate(effect.end)} / 年間肥効率 {application.annual_available_percent}%</small></div>
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={busy || Boolean(deletingApplicationId)}
+                    aria-busy={deletingApplicationId === application.id}
                     title="この施肥履歴を削除"
-                    onClick={() => { if (window.confirm(`${application.material_name}の施肥履歴を削除しますか？`)) void onDelete(plantingId, application.id); }}
-                  ><Trash2 size={14} />削除</button>
+                    onClick={() => void deleteApplication(application)}
+                  ><Trash2 size={14} />{deletingApplicationId === application.id ? "削除しています" : "削除"}</button>
                 </article>
               );
             })}
@@ -1148,6 +1235,7 @@ function FertilizerCatalogDialog({
   const [draft, setDraft] = useState<FertilizerCatalogDraft | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deletingMaterialId, setDeletingMaterialId] = useState("");
   const customMaterials = materials.filter((material) => material.scope === "user");
   const change = <Key extends keyof FertilizerCatalogDraft>(key: Key, value: FertilizerCatalogDraft[Key]) => (
     setDraft((current) => current ? { ...current, [key]: value } : current)
@@ -1183,6 +1271,16 @@ function FertilizerCatalogDialog({
     }
   };
 
+  const deleteMaterial = async (material: FertilizerMaterial) => {
+    if (!window.confirm(`${material.label}をカタログから削除しますか？\n過去の施肥履歴は残ります。`)) return;
+    setDeletingMaterialId(material.id);
+    try {
+      await onDelete(material.id);
+    } finally {
+      setDeletingMaterialId("");
+    }
+  };
+
   return (
     <ModalDialog title="肥料カタログ" eyebrow="よく使う肥料を選びやすくする" onClose={onClose} className="fertilizer-catalog-dialog" size="wide">
       <div className="fertilizer-catalog-intro">
@@ -1195,7 +1293,7 @@ function FertilizerCatalogDialog({
           <section><h3>一般的な肥料</h3><div className="fertilizer-catalog-grid">{materials.filter((material) => material.scope === "builtin").map((material) => <FertilizerMaterialCard key={material.id} material={material} />)}</div></section>
           <section><h3>登録した肥料 <span>{customMaterials.length}件</span></h3>{customMaterials.length === 0 ? <p className="fertilizer-empty">製品袋の成分を登録すると、施肥記録で何度でも使えます。</p> : <div className="fertilizer-catalog-grid">{customMaterials.map((material) => (
             <FertilizerMaterialCard key={material.id} material={material} actions={
-              <><button type="button" onClick={() => setDraft(fertilizerCatalogDraft(material))}>編集</button><button type="button" className="danger" disabled={busy} onClick={() => { if (window.confirm(`${material.label}をカタログから削除しますか？\n過去の施肥履歴は残ります。`)) void onDelete(material.id); }}>削除</button></>
+              <><button type="button" disabled={Boolean(deletingMaterialId)} onClick={() => setDraft(fertilizerCatalogDraft(material))}>編集</button><button type="button" className="danger" disabled={busy || Boolean(deletingMaterialId)} aria-busy={deletingMaterialId === material.id} onClick={() => void deleteMaterial(material)}>{deletingMaterialId === material.id ? "削除しています" : "削除"}</button></>
             } />
           ))}</div>}</section>
         </div>
@@ -1297,11 +1395,17 @@ function formatNutrientKg(value: number) {
 function CareProfileSummary({ calendar }: { calendar: PlantCalendar }) {
   const profile = calendar.care_profile;
   const rules = calendar.task_rules ?? [];
+  const [open, setOpen] = useState(false);
   if (!profile && rules.length === 0) return null;
 
   return (
-    <details className="care-profile-summary">
-      <summary><span><Leaf size={17} /><strong>栽培基準</strong></span><small>{rules.length}規則</small></summary>
+    <section className="care-profile-summary">
+      <button type="button" className="care-profile-trigger" onClick={() => setOpen(true)} aria-haspopup="dialog">
+        <span className="care-profile-trigger-icon"><BookOpen size={20} /></span>
+        <span><strong>栽培基準を見る</strong><small>Web資料をAIが実用的な管理基準に整理</small></span>
+        <em>{rules.length}規則</em><ChevronRight size={18} />
+      </button>
+      {open && <ModalDialog title="栽培基準" eyebrow="根拠資料と現在の栽培条件から整理" onClose={() => setOpen(false)} className="care-profile-dialog" size="wide">
       <div className="care-profile-body">
         {profile?.summary && <p>{profile.summary}</p>}
         <dl>
@@ -1335,8 +1439,15 @@ function CareProfileSummary({ calendar }: { calendar: PlantCalendar }) {
         )}
         {profile?.assumptions?.length > 0 && <p className="care-assumptions">前提: {profile.assumptions.join(" / ")}</p>}
       </div>
-    </details>
+      </ModalDialog>}
+    </section>
   );
+}
+
+function formatChatTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(parsed);
 }
 
 function formatInterval(interval?: { min: number | null; preferred: number | null; max: number | null }) {

@@ -125,6 +125,30 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         self.assertEqual(calendar["actions"][0]["required_people"], 1)
         self.assertEqual(calendar["actions"][0]["estimated_minutes"], 30)
 
+    def test_question_history_is_scoped_searchable_and_newest_first(self):
+        first = self._create_blueberry()
+        second = self.repository.create_planting(
+            "field-1",
+            {
+                "space_id": "space-root",
+                "placement_id": "pot-b",
+                "placement_name": "鉢B",
+                "crop_name": "イチゴ",
+                "planted_on": "2026-07-15",
+                "plant_count": 3,
+            },
+        )
+        older = self.repository.record_question(first["id"], "追肥はいつ？", "葉色と前回施肥日を確認します")
+        newer = self.repository.record_question(first["id"], "収穫の目安は？", "果実の色を確認します")
+        self.repository.record_question(second["id"], "水やりは？", "培地を確認します")
+
+        history = self.repository.list_questions(first["id"])
+        searched = self.repository.list_questions(first["id"], query="葉色 施肥")
+
+        self.assertEqual([item["id"] for item in history["items"]], [newer["id"], older["id"]])
+        self.assertEqual(searched["total"], 1)
+        self.assertEqual(searched["items"][0]["id"], older["id"])
+
     def test_fertilizer_history_is_scoped_to_substrate_and_survives_planting(self):
         planting = self._create_blueberry()
         application = self.repository.create_fertilizer_application(

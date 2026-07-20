@@ -53,6 +53,7 @@ class FakeAIContentService:
         self.connection_overrides = None
         self.calendar_contexts = []
         self.follow_up_contexts = []
+        self.question_contexts = []
 
     def reload_settings(self):
         return None
@@ -119,6 +120,7 @@ class FakeAIContentService:
         }
 
     def answer_plant_question(self, context, question):
+        self.question_contexts.append({"context": deepcopy(context), "question": question})
         return f"{context['planting']['crop_name']}について回答: {question}"
 
 
@@ -691,6 +693,8 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn("小さな家庭菜園からプロの圃場まで", html)
         self.assertIn("AI栽培計画", html)
         self.assertIn("オープンソース", html)
+        self.assertIn("Webの栽培資料を、すぐ使える基準に", html)
+        self.assertIn("出典つきの栽培基準", html)
         self.assertIn("公開情報をもとに、自分でつくる", html)
         self.assertIn("組み立て済みから、安心して始める", html)
         self.assertIn("提供準備中", html)
@@ -1532,6 +1536,19 @@ class WebServerBasicUITest(unittest.TestCase):
         )
         self.assertEqual(question.status_code, 201)
         self.assertIn("ブルーベリーについて回答", question.get_json()["answer"])
+        question_history = self.client.get(f"/local/api/plantings/{planting['id']}/questions?q=追肥")
+        self.assertEqual(question_history.status_code, 200)
+        self.assertEqual(question_history.get_json()["total"], 1)
+        ai_calls_before_rejection = len(self.fake_ai_content_service.question_contexts)
+        rejected_question = self.client.post(
+            f"/local/api/plantings/{planting['id']}/questions",
+            json={"question": "おすすめの映画を教えて"},
+        )
+        self.assertEqual(rejected_question.status_code, 422)
+        self.assertEqual(rejected_question.get_json()["code"], "question_out_of_scope")
+        self.assertFalse(rejected_question.get_json()["saved"])
+        self.assertEqual(len(self.fake_ai_content_service.question_contexts), ai_calls_before_rejection)
+        self.assertEqual(self.client.get(f"/local/api/plantings/{planting['id']}/questions").get_json()["total"], 1)
 
         regenerated = self.client.post(
             f"/local/api/plantings/{planting['id']}/calendar/regenerate",

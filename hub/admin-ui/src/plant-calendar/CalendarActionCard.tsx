@@ -236,6 +236,7 @@ export function CalendarActionCard({
   const [editing, setEditing] = useState(false);
   const [recording, setRecording] = useState(false);
   const [skipping, setSkipping] = useState(false);
+  const [pendingDirectAction, setPendingDirectAction] = useState<"delete" | "start" | "return" | null>(null);
   const capabilities = ACTION_CAPABILITIES[action.status];
   const busyReason = locked ? "AI栽培計画の作成が完了すると編集できます" : busy ? "現在の処理が完了するまでお待ちください" : "";
 
@@ -249,6 +250,16 @@ export function CalendarActionCard({
     setRecording(false);
     setSkipping(false);
   }, [locked]);
+
+  const runDirectAction = async (operation: "delete" | "start" | "return") => {
+    setPendingDirectAction(operation);
+    try {
+      if (operation === "delete") await onDelete(plantingId, action.id);
+      else await onEdit(plantingId, action.id, { status: operation === "start" ? "in_progress" : "planned", use_as_guidance: false });
+    } finally {
+      setPendingDirectAction(null);
+    }
+  };
 
   return (
     <article
@@ -264,7 +275,7 @@ export function CalendarActionCard({
             <div><small>{actionType.label}</small><h3>{action.title}</h3></div>
             {(capabilities.edit || capabilities.delete) && <div className="action-row-tools">
               {capabilities.edit && <button type="button" className="action-edit-button" onClick={() => setEditing(true)} disabled={busy} title={busyReason || "予定、説明、人数を編集"}><Edit3 size={16} />作業内容を編集</button>}
-              {capabilities.delete && <button type="button" className="action-icon-button danger" onClick={() => { if (window.confirm(`「${action.title}」を削除しますか？\nこの操作は元に戻せません。`)) void onDelete(plantingId, action.id); }} disabled={busy} aria-label={`${action.title}を削除`} title={busyReason || "作業を削除"}><Trash2 size={16} /><span>削除</span></button>}
+              {capabilities.delete && <button type="button" className="action-icon-button danger" onClick={() => { if (window.confirm(`「${action.title}」を削除しますか？\nこの操作は元に戻せません。`)) void runDirectAction("delete"); }} disabled={busy || pendingDirectAction !== null} aria-busy={pendingDirectAction === "delete"} aria-label={`${action.title}を削除`} title={busyReason || "作業を削除"}>{pendingDirectAction !== "delete" && <Trash2 size={16} />}<span>{pendingDirectAction === "delete" ? "削除しています" : "削除"}</span></button>}
             </div>}
           </div>
           <div className="action-workload" aria-label="作業量の目安">
@@ -300,8 +311,8 @@ export function CalendarActionCard({
             <span>{actionStateGuidance(action.status).description}</span>
           </div>
           <div className="action-state-controls">
-            {capabilities.start && <button type="button" className="start-button" onClick={() => void onEdit(plantingId, action.id, { status: "in_progress", use_as_guidance: false })} disabled={busy} title={busyReason || "この作業を作業中へ移動"}><CirclePlay size={16} />作業を開始</button>}
-            {capabilities.returnToPlanned && <button type="button" onClick={() => void onEdit(plantingId, action.id, { status: "planned", use_as_guidance: false })} disabled={busy} title={busyReason || "この作業を未完了へ戻す"}><RotateCcw size={16} />未完了に戻す</button>}
+            {capabilities.start && <button type="button" className="start-button" onClick={() => void runDirectAction("start")} disabled={busy || pendingDirectAction !== null} aria-busy={pendingDirectAction === "start"} title={busyReason || "この作業を作業中へ移動"}>{pendingDirectAction !== "start" && <CirclePlay size={16} />}{pendingDirectAction === "start" ? "開始しています" : "作業を開始"}</button>}
+            {capabilities.returnToPlanned && <button type="button" onClick={() => void runDirectAction("return")} disabled={busy || pendingDirectAction !== null} aria-busy={pendingDirectAction === "return"} title={busyReason || "この作業を未完了へ戻す"}>{pendingDirectAction !== "return" && <RotateCcw size={16} />}{pendingDirectAction === "return" ? "戻しています" : "未完了に戻す"}</button>}
             {capabilities.record && <button type="button" className="complete-button" onClick={() => setRecording(true)} disabled={busy} title={busyReason || "実施内容を記録して完了にする"}><Check size={16} />実績を記録して完了</button>}
             {capabilities.skip && <button type="button" className="skip-button" onClick={() => setSkipping(true)} disabled={busy} title={busyReason || "確認結果を記録して、この作業を見送る"}><Ban size={16} />確認して見送る</button>}
           </div>

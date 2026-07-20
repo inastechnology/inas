@@ -148,6 +148,9 @@ button { font: inherit; }
 .feature-index { display: block; color: var(--green); font: 800 10px ui-monospace, monospace; letter-spacing: .14em; }
 .feature h3 { margin: 14px 0 22px; font-family: "Yu Mincho", serif; font-size: clamp(31px, 3.6vw, 49px); font-weight: 600; line-height: 1.28; letter-spacing: -.04em; }
 .feature p { color: var(--ink-soft); font-size: 14px; }
+.knowledge-callout { display: grid; gap: 4px; margin-top: 18px; padding: 13px 14px; border-left: 3px solid var(--green); border-radius: 0 10px 10px 0; background: var(--green-pale); }
+.knowledge-callout strong { color: var(--green-dark); font-size: 12px; }
+.knowledge-callout span { color: var(--ink-soft); font-size: 10px; line-height: 1.6; }
 .feature ul { margin: 24px 0 0; padding: 20px 0 0; border-top: 1px solid var(--line); list-style: none; }
 .feature li { position: relative; padding: 4px 0 4px 18px; font-size: 12px; font-weight: 700; }
 .feature li::before { content: ""; position: absolute; left: 0; top: 13px; width: 7px; height: 1px; background: var(--green); }
@@ -289,18 +292,21 @@ footer { display: flex; align-items: center; gap: 28px; width: min(1180px, calc(
   .flow-grid p { font-size: 6.8pt; }
 
   .print-sheet-product { padding: 0 7mm; }
-  .product-tour { padding: 12mm 0 0; }
-  .product-tour > .section-heading { grid-template-columns: 1fr .65fr; margin-bottom: 6mm; }
+  .product-tour { padding: 5mm 0 0; }
+  .product-tour > .section-heading { grid-template-columns: 1fr .65fr; margin-bottom: 4mm; }
   .section-heading h2 { font-size: 24pt; }
   .section-heading > p { font-size: 7pt; }
-  .feature, .feature-calendar { grid-template-columns: 1.4fr .6fr; gap: 8mm; margin-top: 8mm; break-inside: avoid; }
-  .feature:first-of-type { margin-top: 5mm; }
+  .feature, .feature-calendar { grid-template-columns: 1.4fr .6fr; gap: 6mm; margin-top: 4mm; break-inside: avoid; }
+  .feature:first-of-type { margin-top: 3mm; }
   .feature-calendar { grid-template-columns: .6fr 1.4fr; }
   .browser-frame { border-radius: 3mm; box-shadow: none; }
   .browser-bar { height: 6mm; }
   .browser-frame img { aspect-ratio: 1.7; }
-  .feature h3 { margin: 2mm 0 3mm; font-size: 18pt; }
+  .feature h3 { margin: 1mm 0 2mm; font-size: 17pt; }
   .feature p { margin: 0; font-size: 7pt; }
+  .knowledge-callout { gap: 1mm; margin-top: 2.5mm; padding: 2.5mm 3mm; }
+  .knowledge-callout strong { font-size: 7pt; }
+  .knowledge-callout span { font-size: 5.8pt; }
   .feature ul { margin-top: 3mm; padding-top: 2mm; }
   .feature li { padding-block: .5mm; font-size: 6.6pt; }
 

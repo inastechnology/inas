@@ -97,6 +97,7 @@ from ina_device_hub.plant_management_repository import (
     PlantManagementValidationError,
     plant_management_repository,
 )
+from ina_device_hub.plant_question_policy import validate_plant_question
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
 from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
@@ -6787,18 +6788,34 @@ def complete_plant_calendar_action_api(planting_id, action_id):  # noqa: PLR0911
     return jsonify({**work_log, "follow_up": {**follow_up, "actions": appended_actions}}), 201
 
 
-@app.route("/local/api/plantings/<planting_id>/questions", methods=["POST"])
+@app.route("/local/api/plantings/<planting_id>/questions", methods=["GET", "POST"])
 def ask_plant_question_api(planting_id):
+    repository = plant_management_repository()
+    planting = repository.get_planting(planting_id)
+    if planting is None:
+        return jsonify({"error": "planting not found"}), 404
+    if request.method == "GET":
+        try:
+            return jsonify(
+                repository.list_questions(
+                    planting_id,
+                    query=request.args.get("q", ""),
+                    page=request.args.get("page", 1),
+                    page_size=request.args.get("page_size", 50),
+                )
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
     request_body = request.get_json(silent=True)
     if not isinstance(request_body, dict):
         return jsonify({"error": "request body must be a JSON object"}), 400
     question = str(request_body.get("question") or "").strip()
     if not question:
         return jsonify({"error": "question is required"}), 400
-    repository = plant_management_repository()
-    planting = repository.get_planting(planting_id)
-    if planting is None:
-        return jsonify({"error": "planting not found"}), 404
+    allowed, code, message = validate_plant_question(question, planting)
+    if not allowed:
+        return jsonify({"error": message, "code": code, "saved": False}), 422
     calendar = repository.get_calendar(planting_id)
     field = field_repository().get(planting["field_id"])
     context = {
@@ -6807,6 +6824,7 @@ def ask_plant_question_api(planting_id):
         "calendar": calendar or {},
         "suggestions": repository.list_suggestions(planting["field_id"]),
         "fertilizer_history": repository.fertilizer_effect_context(planting_id),
+        "recent_questions": repository.list_questions(planting_id, page_size=12)["items"],
     }
     answer = ai_content_service().answer_plant_question(context, question)
     try:

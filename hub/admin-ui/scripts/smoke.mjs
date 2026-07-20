@@ -169,11 +169,12 @@ try {
   await page.screenshot({ path: "/tmp/ina-plant-calendar-desktop.png" });
 
   const completedCountBefore = Number(await page.$eval('[data-kanban-status="completed"] > header strong', (count) => count.textContent || "0"));
+  const inProgressCountBefore = await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length);
   await page.click('[data-kanban-status="planned"] .calendar-kanban-card');
   await page.waitForSelector(".calendar-action-detail-dialog .calendar-action.planned");
   await page.click(".calendar-action-detail-dialog .action-state-controls > button:first-child");
   await page.waitForSelector(".calendar-action-detail-dialog .calendar-action.in_progress");
-  assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), 1, "started work must move to the in-progress column");
+  assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), inProgressCountBefore + 1, "started work must move to the in-progress column");
   await page.click(".calendar-action-detail-dialog .complete-button");
   await page.waitForSelector(".work-record-dialog .work-rating label:nth-child(4)");
   await page.click(".work-record-dialog .work-rating label:nth-child(4)");
@@ -181,7 +182,7 @@ try {
   await page.click('.work-record-dialog .work-record-form button[type="submit"]');
   await page.waitForFunction((before) => Number(document.querySelector('[data-kanban-status="completed"] > header strong')?.textContent || "0") > before, {}, completedCountBefore);
   await page.waitForSelector(".calendar-action-detail-dialog .completed-badge");
-  assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), 0, "completed work must leave the in-progress column");
+  assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), inProgressCountBefore, "completed work must leave the in-progress column");
   await page.click(".calendar-action-detail-dialog > header .icon-button");
 
   const skippedCountBefore = Number(await page.$eval('[data-kanban-status="completed"] > header strong', (count) => count.textContent || "0"));
@@ -205,7 +206,25 @@ try {
   });
   await page.type(".plant-question textarea", "追肥の前に何を確認すればよいですか？");
   await page.click('.plant-question button[type="submit"]');
-  await page.waitForSelector(".question-answer");
+  await page.waitForSelector(".plant-chat-turn");
+  assert.match(await page.$eval(".plant-chat-turn", (turn) => turn.textContent || ""), /追肥の前に何を確認.*栽培アシスタント/s);
+  const chatCount = await page.$$(".plant-chat-turn").then((items) => items.length);
+  await page.type(".plant-chat-search input", "追肥 確認");
+  assert.equal(await page.$$(".plant-chat-turn").then((items) => items.length), 1, "chat history must support fuzzy multi-term search");
+  await page.click(".plant-chat-search button");
+  await page.type(".plant-question textarea", "おすすめの映画を教えて");
+  await page.click('.plant-question button[type="submit"]');
+  await page.waitForSelector(".plant-question .form-error");
+  assert.match(await page.$eval(".plant-question .form-error", (error) => error.textContent || ""), /登録した作物と農作業の相談専用/);
+  assert.equal(await page.$$(".plant-chat-turn").then((items) => items.length), chatCount, "out-of-scope questions must not be added to history");
+  const expectedRejectionLog = browserErrors.findIndex((message) => message.includes("422"));
+  if (expectedRejectionLog >= 0) browserErrors.splice(expectedRejectionLog, 1);
+  await page.screenshot({ path: "/tmp/ina-cultivation-chat-desktop.png", fullPage: false });
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await page.$eval(".plant-question", (panel) => panel.scrollIntoView({ block: "start" }));
+  assert((await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 1, "cultivation chat must not overflow on mobile");
+  await page.screenshot({ path: "/tmp/ina-cultivation-chat-mobile.png", fullPage: false });
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
   await page.click(".calendar-header .icon-button");
 
   if (!(await page.$('.plant-target-row.enabled input[type="range"]'))) {
