@@ -1,0 +1,210 @@
+{
+  "extension_api_version": 1,
+  "extensions": {
+    "jp.inas.development.operation-check": {
+      "compatibility": {
+        "hub_extension_api": 1
+      },
+      "description": "Hub Extensionの概要カード、追加タブ、現在値の参照が正しく動くことを確認するための開発用プラグインです。",
+      "id": "jp.inas.development.operation-check",
+      "name": "Extension 動作確認プラグイン",
+      "schema_version": 1,
+      "source": "extensions/operation-check",
+      "ui": {
+        "device_detail": {
+          "device_kinds": [
+            "WTR"
+          ],
+          "overview_cards": [
+            {
+              "description": "このカードが表示されていれば、WTR向けの概要拡張をHubが安全に読み込めています。",
+              "id": "extension-ready",
+              "title": "プラグインが動作しています",
+              "tone": "sun",
+              "type": "callout"
+            }
+          ],
+          "tabs": [
+            {
+              "blocks": [
+                {
+                  "items": [
+                    {
+                      "description": "Hubが許可された項目だけで構成されているか確認します。",
+                      "title": "定義を検証"
+                    },
+                    {
+                      "description": "WTRの機器詳細だけに概要カードとタブを追加します。",
+                      "title": "対応機器へ追加"
+                    },
+                    {
+                      "description": "機器データをHub側で安全に読み取り、文字として表示します。",
+                      "title": "現在値を表示"
+                    }
+                  ],
+                  "title": "読み込み確認",
+                  "type": "process_flow"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "機器の表示名",
+                      "value": {
+                        "path": "name",
+                        "source": "device"
+                      }
+                    },
+                    {
+                      "label": "現在の土壌水分",
+                      "value": {
+                        "path": "last_soil_moisture",
+                        "source": "status",
+                        "unit": "%"
+                      }
+                    },
+                    {
+                      "label": "水やり状態",
+                      "value": {
+                        "path": "watering_started",
+                        "source": "status"
+                      }
+                    },
+                    {
+                      "label": "水やり開始の目安",
+                      "value": {
+                        "path": "moisture_threshold",
+                        "source": "config",
+                        "unit": "%"
+                      }
+                    }
+                  ],
+                  "title": "Hubから受け取った値",
+                  "type": "metric_grid"
+                },
+                {
+                  "description": "このプラグインは表示確認だけを行います。機器の設定変更や水やり操作は実行しません。",
+                  "title": "動作確認用です",
+                  "tone": "neutral",
+                  "type": "callout"
+                }
+              ],
+              "description": "宣言ファイルから追加された画面と、Hubが解決した現在値を確認します。",
+              "id": "operation-check",
+              "label": "拡張確認",
+              "title": "Extensionの動作確認"
+            }
+          ]
+        }
+      },
+      "version": "1.0.0"
+    },
+    "jp.inas.device.fgt-operation-guide": {
+      "compatibility": {
+        "hub_extension_api": 1
+      },
+      "description": "FGTの液肥づくり工程と、現在の配合設定を機器詳細に追加します。",
+      "id": "jp.inas.device.fgt-operation-guide",
+      "name": "FGT 液肥づくりガイド",
+      "schema_version": 1,
+      "source": "extensions/fgt-operation-guide",
+      "ui": {
+        "device_detail": {
+          "device_kinds": [
+            "FGT"
+          ],
+          "overview_cards": [
+            {
+              "description": "水を先に入れ、A液とB液を別々に量り、十分に混ぜてから植物へ送ります。",
+              "id": "mixing-cycle",
+              "title": "液肥づくりの流れ",
+              "tone": "leaf",
+              "type": "callout"
+            }
+          ],
+          "tabs": [
+            {
+              "blocks": [
+                {
+                  "items": [
+                    {
+                      "description": "タンクへ最初の水を入れます。",
+                      "title": "水を入れる"
+                    },
+                    {
+                      "description": "タンクを混ぜながらA液を加えます。",
+                      "title": "A液を量る"
+                    },
+                    {
+                      "description": "A液と同時に入れず、続けてB液を加えます。",
+                      "title": "B液を量る"
+                    },
+                    {
+                      "description": "残りの水を入れ、濃度を均一にします。",
+                      "title": "仕上げに混ぜる"
+                    },
+                    {
+                      "description": "完成した液肥を潅水系統へ送ります。",
+                      "title": "植物へ送る"
+                    }
+                  ],
+                  "title": "5つの工程",
+                  "type": "process_flow"
+                },
+                {
+                  "items": [
+                    {
+                      "label": "作る液肥",
+                      "value": {
+                        "path": "fgt.recipe.total_water_ml",
+                        "source": "config",
+                        "unit": "mL"
+                      }
+                    },
+                    {
+                      "label": "最初の水",
+                      "value": {
+                        "path": "fgt.recipe.initial_water_ml",
+                        "source": "config",
+                        "unit": "mL"
+                      }
+                    },
+                    {
+                      "label": "A液",
+                      "value": {
+                        "path": "fgt.recipe.nutrient_a_ml",
+                        "source": "config",
+                        "unit": "mL"
+                      }
+                    },
+                    {
+                      "label": "B液",
+                      "value": {
+                        "path": "fgt.recipe.nutrient_b_ml",
+                        "source": "config",
+                        "unit": "mL"
+                      }
+                    }
+                  ],
+                  "title": "現在の1回分",
+                  "type": "metric_grid"
+                },
+                {
+                  "description": "A液とB液は原液のまま同時に入れません。運転後は洗浄用の水を流し、タンクと配管に濃い液肥を残さないようにします。",
+                  "title": "混ぜ残しを防ぐために",
+                  "tone": "water",
+                  "type": "callout"
+                }
+              ],
+              "description": "この機器が行う工程と、現在設定されている1回分の配合をまとめて確認できます。",
+              "id": "fertigation-flow",
+              "label": "液肥の流れ",
+              "title": "今日の液肥づくり"
+            }
+          ]
+        }
+      },
+      "version": "1.0.0"
+    }
+  },
+  "schema_version": 1
+}

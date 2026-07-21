@@ -55,6 +55,17 @@ from ina_device_hub.device_output_capabilities import (
     supported_output_ids,
 )
 from ina_device_hub.device_removal_service import DeviceRemovalConflictError, device_removal_service
+from ina_device_hub.discord_notification_service import (
+    cloudflare_public_base_url,
+    reload_discord_notification_settings,
+)
+from ina_device_hub.extension_installation_service import (
+    MAX_PACKAGE_BYTES,
+    ExtensionInstallError,
+    ExtensionReviewError,
+    extension_installation_service,
+)
+from ina_device_hub.extension_registry import build_device_detail_extensions
 from ina_device_hub.field_calendar_view import build_calendar_todo_items as _build_calendar_todo_items
 from ina_device_hub.field_layout_repository import (
     FieldLayoutConflictError,
@@ -131,7 +142,13 @@ MQTT_ADMIN_STATUS_HISTORY_LIMIT = 2000
 SAFE_HTTP_METHODS = {"GET", "HEAD", "OPTIONS"}
 PUBLIC_HEALTH_PATHS = {"/healthz", "/readyz"}
 PUBLIC_DEVICE_PATH_PREFIXES = ("/firmware/",)
-ADMIN_PATH_PREFIXES = ("/local/api/settings/", "/local/api/firmware-artifacts", "/local/api/cameras", "/cameras")
+ADMIN_PATH_PREFIXES = (
+    "/local/api/settings/",
+    "/local/api/extensions/",
+    "/local/api/firmware-artifacts",
+    "/local/api/cameras",
+    "/cameras",
+)
 ADMIN_MUTATION_PATH_PREFIXES = ("/local/api/mqtt-devices/", "/local/api/device-configs/", "/devices/", "/locations/")
 _web_initialized = False
 _readiness_checks = {}
@@ -182,8 +199,8 @@ def authenticate_hub_request():
 @app.after_request
 def apply_security_headers(response):
     if (
-        request.path == "/settings"
-        or request.path.startswith(("/local/api/settings/", "/local/api/cameras", "/cameras"))
+        request.path.startswith("/settings")
+        or request.path.startswith(("/local/api/settings/", "/local/api/extensions/", "/local/api/cameras", "/cameras"))
         or "/growth-monitoring" in request.path
         or "/camera-growth-assessments" in request.path
     ):
@@ -1122,6 +1139,7 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "supports_irrigation": device_kind in {"WTR", "WRS"},
         "supports_fertigation": device_kind == "FGT",
         "definition": definition,
+        "ui_extensions": build_device_detail_extensions(device_kind, device=record, status=payload, config=config),
         "runtime_config_payload": project_runtime_config(device_kind, config),
         "state_label": _device_state_label(record.get("state")),
         "state_class": _device_state_class(record.get("state")),
@@ -2830,6 +2848,53 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             display: grid;
             gap: 18px;
           }
+          .extension-tab-button::after {
+            content: "追加";
+            display: inline-flex;
+            margin-left: 7px;
+            border: 1px solid currentColor;
+            border-radius: 999px;
+            padding: 1px 5px;
+            font-size: 10px;
+            font-weight: 800;
+            line-height: 1.2;
+            opacity: .78;
+          }
+          .extension-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+          .extension-overview-card {
+            border: 1px solid #bed6c6;
+            border-left: 5px solid #2f7d57;
+            border-radius: 8px;
+            padding: 16px;
+            background: linear-gradient(135deg, #f4faf6, #fff);
+          }
+          .extension-overview-card.water { border-color: #b8d5e6; border-left-color: #2477a8; background: linear-gradient(135deg, #eff8fc, #fff); }
+          .extension-overview-card.sun { border-color: #ead5a2; border-left-color: #b87818; background: linear-gradient(135deg, #fff9e8, #fff); }
+          .extension-overview-card.neutral { border-color: var(--line); border-left-color: #64748b; background: #fff; }
+          .extension-overview-card h3 { margin: 0 0 6px; font-size: 18px; }
+          .extension-overview-card p { margin: 0; color: #34463a; line-height: 1.75; }
+          .extension-shell { overflow: hidden; border-top: 5px solid #2f7d57; }
+          .extension-heading { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
+          .extension-heading h2 { margin-bottom: 5px; font-size: 25px; }
+          .extension-origin { flex: 0 0 auto; border-radius: 999px; background: #edf6f0; color: #245d43; padding: 6px 10px; font-size: 12px; font-weight: 800; }
+          .extension-blocks { display: grid; gap: 16px; }
+          .extension-block { border: 1px solid var(--line); border-radius: 8px; padding: 16px; background: #fff; }
+          .extension-block > h3 { margin: 0 0 12px; font-size: 18px; }
+          .extension-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+          .extension-metric { display: grid; gap: 4px; min-height: 96px; align-content: center; border-radius: 8px; background: #f3f8f4; padding: 13px; }
+          .extension-metric span { color: #52655a; font-size: 13px; font-weight: 700; }
+          .extension-metric strong { color: #173c2a; font-size: 24px; }
+          .extension-process { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; counter-reset: extension-step; }
+          .extension-process-step { position: relative; min-height: 150px; border: 1px solid #c8d9cd; border-radius: 8px; background: #f7fbf8; padding: 42px 12px 12px; counter-increment: extension-step; }
+          .extension-process-step::before { content: counter(extension-step); position: absolute; top: 10px; left: 12px; display: grid; place-items: center; width: 25px; height: 25px; border-radius: 999px; background: #2f7d57; color: #fff; font-size: 13px; font-weight: 900; }
+          .extension-process-step:not(:last-child)::after { content: "›"; position: absolute; z-index: 1; top: 56px; right: -9px; color: #2f7d57; font-size: 26px; font-weight: 900; }
+          .extension-process-step strong { display: block; margin-bottom: 6px; color: #173c2a; }
+          .extension-process-step p { margin: 0; color: #4d5f54; font-size: 13px; line-height: 1.65; }
+          .extension-callout { border-left: 5px solid #2f7d57; background: #f3f9f5; }
+          .extension-callout.water { border-left-color: #2477a8; background: #eff8fc; }
+          .extension-callout.sun { border-left-color: #b87818; background: #fff9e8; }
+          .extension-callout.neutral { border-left-color: #64748b; background: #f8fafc; }
+          .extension-callout p { margin: 0; line-height: 1.75; }
           .priority-panel { border-top: 4px solid #166534; }
           .priority-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 10px; }
           .priority-heading h3 { margin: 0; font-size: 16px; }
@@ -3239,6 +3304,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .firmware-workbench { grid-template-columns: 1fr; }
             .firmware-meta { grid-template-columns: 1fr; }
             .readiness-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .extension-process { grid-template-columns: 1fr; }
+            .extension-process-step { min-height: auto; padding-left: 52px; padding-top: 13px; }
+            .extension-process-step::before { top: 13px; }
+            .extension-process-step:not(:last-child)::after { content: "↓"; top: auto; right: auto; bottom: -18px; left: 18px; }
             .output-routing, .switch-flow-board { grid-template-columns: 1fr; }
             .setup-journey { grid-template-columns: 1fr; }
             .sensor-rack { grid-template-columns: 1fr; }
@@ -3251,6 +3320,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .device-identity img { width: 100%; max-height: 180px; }
           }
           @media (max-width: 560px) {
+            .extension-heading { display: grid; }
+            .extension-origin { justify-self: start; }
+            .extension-metrics { grid-template-columns: 1fr 1fr; }
             .output-edit-row { grid-template-columns: 1fr; }
             .builder-port-card { grid-template-columns: auto minmax(0, 1fr) auto; justify-items: start; min-height: auto; text-align: left; }
             .builder-port-symbol { width: 43px; height: 43px; border-radius: 13px; }
@@ -3341,7 +3413,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           {% if not is_detail_page %}
           <section class="panel">
-            <div class="device-catalog-head"><div><h2>機器一覧</h2><p class="lead">登録した機器とネットワークカメラを確認できます。名前や設置場所で検索できます。</p></div>{% if not demo_mode %}<a class="camera-add-link" href="/cameras/new">＋ カメラを登録</a>{% endif %}</div>
+            <div class="device-catalog-head"><div class="context-help-row"><h2>機器一覧</h2><details class="context-help left"><summary aria-label="機器一覧の使い方を開く" title="機器一覧の使い方">?</summary><div class="context-help-panel" role="note"><strong>機器一覧の使い方</strong><p>登録した機器とネットワークカメラを確認できます。名前や設置場所で検索できます。</p></div></details></div>{% if not demo_mode %}<a class="camera-add-link" href="/cameras/new">＋ カメラを登録</a>{% endif %}</div>
             <form class="device-list-search" id="device-list-search-form" method="get" action="{{ list_path }}">
               <input id="device-list-search" name="q" type="search" value="{{ device_query }}" placeholder="機器名、ID、種別、設置場所を検索" aria-label="機器を検索" autocomplete="off">
               <button type="submit">検索</button>
@@ -3424,6 +3496,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <button type="button" class="tab-button" data-tab-key="settings" data-tab-target="tab-config" role="tab" aria-controls="tab-config" aria-selected="false" tabindex="-1">動作設定</button>
               <button type="button" class="tab-button" data-tab-key="firmware" data-tab-target="tab-firmware" role="tab" aria-controls="tab-firmware" aria-selected="false" tabindex="-1">機器を更新</button>
               <button type="button" class="tab-button" data-tab-key="diagnostics" data-tab-target="tab-diagnostics" role="tab" aria-controls="tab-diagnostics" aria-selected="false" tabindex="-1">困ったとき</button>
+              {% for extension in selected.ui_extensions %}{% for extension_tab in extension.tabs %}<button type="button" class="tab-button extension-tab-button" data-tab-key="{{ extension_tab.key }}" data-tab-target="{{ extension_tab.dom_id }}" role="tab" aria-controls="{{ extension_tab.dom_id }}" aria-selected="false" tabindex="-1">{{ extension_tab.label }}</button>{% endfor %}{% endfor %}
             </div>
 
             <section id="tab-overview" class="tab-panel" role="tabpanel">
@@ -3456,9 +3529,18 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </section>
 
               <section class="panel" aria-label="動作確認">
-                <div class="field-head"><div><h2>動作確認</h2><p class="lead">通信、設定、時刻、出力先を順番に確認します。橙色の項目だけ対応すれば運用を始められます。</p></div><a href="{{ device_link_prefix }}{{ selected.id }}?tab=settings">設定を確認</a></div>
+                <div class="field-head"><div class="context-help-row"><h2>動作確認</h2><details class="context-help left"><summary aria-label="動作確認の見方を開く" title="動作確認の見方">?</summary><div class="context-help-panel" role="note"><strong>動作確認の見方</strong><p>通信、設定、時刻、出力先を順番に確認します。橙色の項目だけ対応すれば運用を始められます。</p></div></details></div><a href="{{ device_link_prefix }}{{ selected.id }}?tab=settings">設定を確認</a></div>
                 <div class="readiness-grid">{% for check in selected.readiness_checks %}<div class="readiness-card {{ check.class }}"><span>{{ check.label }}</span><strong>{{ check.value }}</strong><small>{{ check.hint }}</small></div>{% endfor %}</div>
               </section>
+
+              {% for extension in selected.ui_extensions %}{% if extension.overview_cards %}
+              <section class="panel" aria-label="{{ extension.name }}による追加情報">
+                <div class="field-head"><div><h2>この機器の追加ガイド</h2><p class="lead">{{ extension.name }} が提供する補助情報です。</p></div><span class="extension-origin">Extension {{ extension.version }}</span></div>
+                <div class="extension-overview-grid">
+                  {% for card in extension.overview_cards %}<article class="extension-overview-card {{ card.tone or 'leaf' }}"><h3>{{ card.title }}</h3><p>{{ card.description }}</p></article>{% endfor %}
+                </div>
+              </section>
+              {% endif %}{% endfor %}
 
               <div class="section-grid">
                 {% if selected.supports_irrigation or selected.supports_fertigation %}
@@ -3493,8 +3575,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
             <section id="tab-config" class="tab-panel" role="tabpanel" hidden>
           <section class="panel">
-            <h2>この機器の呼び名</h2>
-            <p class="lead">圃場で見分けやすい名前と、覚えておきたいことだけを整えます。</p>
+            <div class="context-help-row"><h2>この機器の呼び名</h2><details class="context-help left"><summary aria-label="表示情報の説明を開く" title="表示情報について">?</summary><div class="context-help-panel" role="note"><strong>表示情報について</strong><p>圃場で見分けやすい名前と、覚えておきたいことだけを整えます。</p></div></details></div>
             <form id="metadata-form" data-stateful-form data-pristine-message="機器情報は変更されていません。"{% if selected_device.state == 'retired' %} data-state-blocked="true" data-blocked-message="廃止済みの機器情報は変更できません。"{% endif %}>
               <div class="form-grid">
                 <div><label for="metadata-name">表示名</label><input id="metadata-name" name="name" type="text" value="{{ selected_device.name or '' }}"></div>
@@ -3534,7 +3615,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
               {% if selected.supports_fertigation %}
               <section id="fertigation-recipe" class="setup-stage">
-                <div class="setup-stage-head"><div><h3>液肥づくりの流れ</h3><p class="lead">この機器では5つの役割があらかじめ決まっています。配線番号を選ぶ必要はありません。</p></div><span class="badge good">用途固定</span></div>
+                <div class="setup-stage-head"><div class="context-help-row"><h3>液肥づくりの流れ</h3><details class="context-help left"><summary aria-label="液肥設備の役割の説明を開く" title="液肥設備の役割">?</summary><div class="context-help-panel" role="note"><strong>液肥設備の役割</strong><p>この機器では5つの役割があらかじめ決まっています。配線番号を選ぶ必要はありません。</p></div></details></div><span class="badge good">用途固定</span></div>
                 <div class="switch-flow-board fertigation-flow" aria-label="液肥づくりの固定工程">
                   <div class="controller-node">原水</div>
                   <div class="switch-output-list">{% for output in selected.output_settings.outputs %}<div class="switch-output enabled"><span class="switch-output-dot"></span><span class="switch-output-icon" aria-hidden="true">{{ ['🚰','🅰️','🅱️','🌀','🌱'][loop.index0] }}</span><div><strong>{{ output.name }}</strong><small>{{ output.role_label }}</small></div><span class="terminal">工程 {{ output.number }}</span></div>{% endfor %}</div>
@@ -3545,13 +3626,12 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   {% else %}<div class="config-field"><label>{{ field.label }}</label><div class="threshold-control"><input type="number" data-definition-path="{{ field.path }}" data-definition-type="number" min="{{ field.min }}" max="{{ field.max }}" step="1"><span>{{ field.unit }}</span></div></div>{% endif %}
                   {% endfor %}
                 </div>
-                <p class="notice">最初に一部の水を入れ、A液とB液を別々に加えながら攪拌し、残りの水で混ぜます。潅水後は洗浄用の水でタンクと配管をすすぎます。</p>
+                <details class="context-help left"><summary aria-label="液肥づくりの手順補足を開く" title="液肥づくりの手順補足">?</summary><div class="context-help-panel" role="note"><strong>液肥づくりの手順補足</strong><p>最初に一部の水を入れ、A液とB液を別々に加えながら攪拌し、残りの水で混ぜます。潅水後は洗浄用の水でタンクと配管をすすぎます。</p></div></details>
               </section>
               {% endif %}
 
               <section id="watering-rules" class="setup-stage watering-rule-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
-                <h3>水やりの判断</h3>
-                <p class="lead">土の乾き具合を見て、水やりを始める目安を決めます。</p>
+                <div class="context-help-row"><h3>水やりの判断</h3><details class="context-help left"><summary aria-label="水やり判断の説明を開く" title="水やりの判断とは">?</summary><div class="context-help-panel" role="note"><strong>水やりの判断とは</strong><p>土の乾き具合を見て、水やりを始める目安を決めます。</p></div></details></div>
               <div class="config-toolbar">
                 <div class="config-field">
                   <label for="moisture-threshold">灌水しきい値</label>
@@ -3569,7 +3649,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <details><summary>通信・開発者向け設定</summary><div class="detail-body"><p class="lead">通常は変更不要です。時刻同期、保守確認間隔、デバッグ送信を調整します。</p><div class="config-toolbar"><div class="config-field"><label for="timezone-offset">機器の時刻基準</label><select id="timezone-offset"><option value="32400">日本時間（UTC+09:00）</option><option value="0">UTC</option></select></div><div class="config-field"><label for="ntp-server">時刻同期サーバー（NTP）</label><input id="ntp-server" type="text" autocomplete="off"></div><label class="switch-row" for="debug-log-on-wake"><input id="debug-log-on-wake" type="checkbox">次回起動時に診断ログを送る</label><div class="config-field"><label for="ota-check-interval">更新確認の間隔</label><select id="ota-check-interval"><option value="3600">1時間</option><option value="10800">3時間</option><option value="21600">6時間</option><option value="43200">12時間</option><option value="86400">24時間</option></select></div></div></div></details>
 
               <section id="output-connections" class="setup-stage connection-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
-                <div class="setup-stage-head"><div><h3>設備をつなぐ</h3><p class="lead">制御ボックスから水を送る設備まで、今のつながりを確認できます。接続図を選ぶとルートを変更できます。</p></div></div>
+                <div class="setup-stage-head"><div class="context-help-row"><h3>設備をつなぐ</h3><details class="context-help left"><summary aria-label="設備のつながりの説明を開く" title="設備のつながり">?</summary><div class="context-help-panel" role="note"><strong>設備のつながり</strong><p>制御ボックスから水を送る設備まで、今のつながりを確認できます。接続図を選ぶとルートを変更できます。</p></div></details></div></div>
                 <div id="open-output-settings" class="output-routing output-routing-trigger" role="button" tabindex="0" aria-haspopup="dialog" aria-controls="output-settings-dialog" aria-label="現在の水やりルートを変更">
                   <img src="/static/ui-illustrations/controller-flow.png" alt="制御機器から潅水設備やセンサーへつながるイラスト" loading="lazy">
                   <div class="output-overview">
@@ -3630,7 +3710,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </section>
 
               <div class="setup-stage environment-stage"{% if selected.device_kind not in ["WRS", "ENV", "PAR"] %} hidden{% endif %}>
-                <div class="setup-stage-head"><div><h3>つないだセンサー</h3><p class="lead">実際につないでいる機材だけをONにします。ONにした機材の調整メニューだけが開きます。</p></div></div>
+                <div class="setup-stage-head"><div class="context-help-row"><h3>つないだセンサー</h3><details class="context-help left"><summary aria-label="センサー選択の説明を開く" title="センサー選択について">?</summary><div class="context-help-panel" role="note"><strong>センサー選択について</strong><p>実際につないでいる機材だけをONにします。ONにした機材の調整メニューだけが開きます。</p></div></details></div></div>
                 <div class="sensor-rack">
                   <article class="sensor-device-card" data-env-sensor-card="par"{% if selected.device_kind not in ["WRS", "ENV", "PAR"] %} hidden{% endif %}>
                     <div class="sensor-device-head">
@@ -3806,7 +3886,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
             <section id="tab-firmware" class="tab-panel" role="tabpanel" hidden>
           <section id="ota-target" class="panel">
-            <div class="field-head"><div><h2>機器ソフトウェアの更新</h2><p class="lead">現在のバージョン確認、新しいファイルの登録、更新予約をここで完了できます。</p></div><span class="badge {{ selected.ota_class }}">{{ selected.ota_state }}</span></div>
+            <div class="field-head"><div class="context-help-row"><h2>機器ソフトウェアの更新</h2><details class="context-help left"><summary aria-label="機器ソフトウェア更新の説明を開く" title="ここでできること">?</summary><div class="context-help-panel" role="note"><strong>ここでできること</strong><p>現在のバージョン確認、新しいファイルの登録、更新予約をこの画面で完了できます。</p></div></details></div><span class="badge {{ selected.ota_class }}">{{ selected.ota_state }}</span></div>
             <div class="firmware-workbench">
               <div class="firmware-current">
                 <span class="muted">現在のバージョン</span><div class="version">{{ selected.firmware }}</div>
@@ -3878,8 +3958,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
             <section id="tab-diagnostics" class="tab-panel" role="tabpanel" hidden>
           <section class="panel">
-            <h2>保守・診断</h2>
-            <p class="lead">利用停止や開発者向けデータは、必要なときだけ開いてください。</p>
+            <div class="context-help-row"><h2>保守・診断</h2><details class="context-help left"><summary aria-label="保守と診断の説明を開く" title="保守と診断について">?</summary><div class="context-help-panel" role="note"><strong>保守と診断について</strong><p>利用停止や開発者向けデータは、必要なときだけ開いてください。</p></div></details></div>
             <details>
               <summary>機器の利用状態を変更</summary>
               <div class="detail-body">
@@ -3933,10 +4012,33 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             </details>
           </section>
             </section>
+
+            {% for extension in selected.ui_extensions %}{% for extension_tab in extension.tabs %}
+            <section id="{{ extension_tab.dom_id }}" class="tab-panel" role="tabpanel" hidden>
+              <section class="panel extension-shell" aria-label="{{ extension_tab.title }}">
+                <div class="extension-heading">
+                  <div><h2>{{ extension_tab.title }}</h2><p class="lead">{{ extension_tab.description }}</p></div>
+                  <span class="extension-origin">{{ extension.name }} / {{ extension.version }}</span>
+                </div>
+                <div class="extension-blocks">
+                  {% for block in extension_tab.blocks %}
+                    {% if block.type == 'process_flow' %}
+                    <section class="extension-block"><h3>{{ block.title }}</h3><div class="extension-process">{% for item in block['items'] %}<article class="extension-process-step"><strong>{{ item.title }}</strong><p>{{ item.description }}</p></article>{% endfor %}</div></section>
+                    {% elif block.type == 'metric_grid' %}
+                    <section class="extension-block"><h3>{{ block.title }}</h3><div class="extension-metrics">{% for item in block['items'] %}<div class="extension-metric"><span>{{ item.label }}</span><strong>{{ item.display_value }}</strong></div>{% endfor %}</div></section>
+                    {% elif block.type == 'callout' %}
+                    <section class="extension-block extension-callout {{ block.tone or 'leaf' }}"><h3>{{ block.title }}</h3><p>{{ block.description }}</p></section>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </section>
+            </section>
+            {% endfor %}{% endfor %}
           </div>
           {% endif %}
         </div>
 
+        <script src="/static/context-help.js"></script>
         <script src="/static/stateful-actions.js"></script>
         <script src="/static/select-filter.js"></script>
         <script>
@@ -5622,6 +5724,7 @@ def hub_settings_page():
     if user.role != "admin":
         return render_template("settings_forbidden.html", user=user), 403
     current_ai = dict(setting().get("ai") or {})
+    current_discord = dict(setting().get("discord") or {})
     current_instagram = dict(setting().get("instagram") or {})
     if request.method == "POST":
         section = request.form.get("settings_section", "ai")
@@ -5662,6 +5765,32 @@ def hub_settings_page():
                     setting().set_secret("ai", secret_key, submitted_secret.strip())
             ai_content_service().reload_settings()
             reload_instagram_post_task_settings()
+        elif section == "notifications":
+            if request.form.get("disable_all") == "1":
+                updated_discord = {**current_discord, "enabled": False}
+            else:
+                try:
+                    reminder_days = max(
+                        0,
+                        min(30, int(request.form.get("plant_task_reminder_days_before", "7"))),
+                    )
+                except ValueError:
+                    return "plant_task_reminder_days_before must be between 0 and 30", 400
+                updated_discord = {
+                    "enabled": request.form.get("enabled") == "on",
+                    "notify_plant_tasks": request.form.get("notify_plant_tasks") == "on",
+                    "plant_task_notify_new": request.form.get("plant_task_notify_new") == "on",
+                    "plant_task_reminder_days_before": reminder_days,
+                    "plant_task_notify_on_start_day": request.form.get("plant_task_notify_on_start_day") == "on",
+                    "plant_task_notify_during_window": request.form.get("plant_task_notify_during_window") == "on",
+                    "notify_new_device": request.form.get("notify_new_device") == "on",
+                    "notify_device_offline": request.form.get("notify_device_offline") == "on",
+                    "notify_watering_missing": request.form.get("notify_watering_missing") == "on",
+                    "notify_soil_calibration_suggested": request.form.get("notify_soil_calibration_suggested") == "on",
+                    "notify_mqtt_activity": request.form.get("notify_mqtt_activity") == "on",
+                }
+            setting().set("discord", updated_discord)
+            reload_discord_notification_settings()
         elif section == "instagram":
             post_schedule_start = request.form.get("post_schedule_start", "09:01").strip()
             try:
@@ -5712,6 +5841,27 @@ def hub_settings_page():
         "account_profile_updated_at": current_instagram.get("account_profile_updated_at", ""),
         "credentials_configured": bool(current_instagram.get("user_id") and current_instagram.get("access_token")),
     }
+    public_notification_url = cloudflare_public_base_url()
+    try:
+        current_reminder_days = int(current_discord.get("plant_task_reminder_days_before", 7))
+    except (TypeError, ValueError):
+        current_reminder_days = 7
+    visible_discord = {
+        "enabled": bool(current_discord.get("enabled", True)),
+        "notify_plant_tasks": bool(current_discord.get("notify_plant_tasks", True)),
+        "plant_task_notify_new": bool(current_discord.get("plant_task_notify_new", True)),
+        "plant_task_reminder_days_before": max(0, min(30, current_reminder_days)),
+        "plant_task_notify_on_start_day": bool(current_discord.get("plant_task_notify_on_start_day", True)),
+        "plant_task_notify_during_window": bool(current_discord.get("plant_task_notify_during_window", True)),
+        "notify_new_device": bool(current_discord.get("notify_new_device", True)),
+        "notify_device_offline": bool(current_discord.get("notify_device_offline", True)),
+        "notify_watering_missing": bool(current_discord.get("notify_watering_missing", True)),
+        "notify_soil_calibration_suggested": bool(current_discord.get("notify_soil_calibration_suggested", True)),
+        "notify_mqtt_activity": bool(current_discord.get("notify_mqtt_activity", False)),
+        "webhook_configured": bool(current_discord.get("webhook_url")),
+        "public_base_url": public_notification_url,
+        "public_url_configured": bool(public_notification_url),
+    }
     infrastructure = (
         {"label": "Turso", "configured": bool((setting().get("turso") or {}).get("database_url") and (setting().get("turso") or {}).get("auth_token"))},
         {
@@ -5726,11 +5876,12 @@ def hub_settings_page():
         render_template(
             "hub_settings.html",
             ai=visible_ai,
+            discord=visible_discord,
             plant_calendar_prompt_max_length=PLANT_CALENDAR_PROMPT_MAX_LENGTH,
             instagram=visible_instagram,
             instagram_camera_options=_instagram_camera_options(current_instagram.get("camera_id", "")),
             infrastructure=infrastructure,
-            active_section=request.args.get("section") if request.args.get("section") in {"ai", "instagram", "system"} else "ai",
+            active_section=request.args.get("section") if request.args.get("section") in {"ai", "notifications", "instagram", "system"} else "ai",
             saved=request.args.get("saved") == "1",
             user=user,
         )
@@ -5742,6 +5893,78 @@ def hub_settings_page():
 @app.route("/settings/ai", methods=["GET", "POST"])
 def legacy_hub_ai_settings_page():
     return redirect("/settings?section=ai")
+
+
+@app.get("/settings/extensions")
+def hub_extensions_page():
+    user = current_user_from_request(request)
+    if user.role != "admin":
+        return render_template("settings_forbidden.html", user=user), 403
+    current_ai = dict(setting().get("ai") or {})
+    base_url = str(current_ai.get("text_analyze_base_url") or "").strip()
+    ai_review = {
+        "configured": bool(current_ai.get("enabled") and current_ai.get("text_analyze_model") and setting().secret_configured("ai", "text_analyze_api_key")),
+        "model": str(current_ai.get("text_analyze_model") or "未設定"),
+        "destination": urlsplit(base_url).netloc or "未設定",
+    }
+    service = extension_installation_service()
+    response = app.make_response(
+        render_template(
+            "hub_extensions.html",
+            bundled_extensions=service.bundled_extensions(),
+            installed_extensions=service.installed_extensions(),
+            ai_review=ai_review,
+            user=user,
+        )
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.post("/local/api/extensions/reviews")
+def review_extension_upload_api():
+    user = current_user_from_request(request)
+    if user.role != "admin":
+        return jsonify({"error": "admin role is required"}), 403
+    uploaded = request.files.get("extension")
+    if uploaded is None or not uploaded.filename:
+        return jsonify({"error": "追加機能ファイルを選択してください。"}), 400
+    payload = uploaded.stream.read(MAX_PACKAGE_BYTES + 1)
+    try:
+        review = extension_installation_service().review_upload(uploaded.filename, payload, reviewed_by=user.email)
+    except ExtensionReviewError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"review": review})
+
+
+@app.post("/local/api/extensions/reviews/<review_id>/ai-audit")
+def audit_extension_review_api(review_id):
+    user = current_user_from_request(request)
+    if user.role != "admin":
+        return jsonify({"error": "admin role is required"}), 403
+    request_body = request.get_json(silent=True)
+    confirmed = isinstance(request_body, dict) and request_body.get("confirmed") is True
+    try:
+        review = extension_installation_service().audit_review(
+            review_id,
+            consent_confirmed=confirmed,
+            approved_by=user.email,
+        )
+    except ExtensionReviewError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"review": review})
+
+
+@app.post("/local/api/extensions/reviews/<review_id>/install")
+def install_extension_review_api(review_id):
+    user = current_user_from_request(request)
+    if user.role != "admin":
+        return jsonify({"error": "admin role is required"}), 403
+    try:
+        result = extension_installation_service().install_review(review_id, installed_by=user.email)
+    except (ExtensionReviewError, ExtensionInstallError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
 
 
 @app.route("/local/api/settings/ai/test", methods=["POST"])

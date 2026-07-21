@@ -12,7 +12,7 @@ from ina_device_hub.json_repository_io import repository_file_lock
 
 BACKUP_FORMAT_VERSION = 1
 STATE_FILE_PATTERNS = ("*.json", ".*.json", "*.jsonl", ".*.jsonl")
-STATE_DIRECTORIES = ("firmware",)
+STATE_DIRECTORIES = ("firmware", "extensions")
 
 
 class StateBackupError(ValueError):
@@ -113,7 +113,7 @@ def _state_files(work_path: Path, backup_path: Path) -> list[Path]:
         directory = work_path / directory_name
         if not directory.is_dir() or directory.is_symlink():
             continue
-        selected.update(path for path in directory.rglob("*") if path.is_file() and not path.is_symlink())
+        selected.update(path for path in directory.rglob("*") if path.is_file() and not path.is_symlink() and not path.name.endswith(".lock"))
     return sorted(path for path in selected if backup_path not in path.parents)
 
 

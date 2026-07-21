@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
+import { HelpDisclosure } from "../HelpDisclosure";
 import { errorMessage, formatDate, formatDateRange, todayString } from "../formatters";
 import { ModalDialog } from "../ModalDialog";
 import { SearchableSelect } from "../SearchableSelect";
@@ -813,7 +814,7 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
         {selectedMethodType && methodUsesAmountOrRate(selectedMethodType, action.action_type) && (
           <label>実際の使用量・希釈・処理時間（任意）<input value={amountOrRate} onChange={(event) => setAmountOrRate(event.target.value)} placeholder={selectedWorkMethod?.amount_or_rate || "例: 500倍、1鉢2L、10分"} /></label>
         )}
-        <label className="follow-up-default-field"><span>次回の確認目安 <small>AIの提案値・変更できます</small></span><input type="number" min="1" max="365" step="1" value={followUpDays} onChange={(event) => setFollowUpDays(event.target.value)} /><em>実施日から何日後に状態を見直すかの目安です。迷う場合はこのまま記録できます。</em></label>
+        <div className="follow-up-default-field context-help-row"><label><span>次回の確認目安 <small>AIの提案値</small></span><input type="number" min="1" max="365" step="1" value={followUpDays} onChange={(event) => setFollowUpDays(event.target.value)} /></label><HelpDisclosure title="次回の確認目安とは"><p>実施日から何日後に状態を見直すかの目安です。変更できますが、迷う場合はAIの提案値のまま記録できます。</p></HelpDisclosure></div>
       </fieldset>
       <label>メモ<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="使用量、状態など（任意）" /></label>
       <fieldset className="work-rating">
@@ -919,7 +920,7 @@ function RichActionContentField({ html, onHtmlChange, images, onImagesChange }: 
   return (
     <fieldset className="rich-action-content">
       <legend>写真つき作業メモ</legend>
-      <p>文章を選んで、見出しや色を付けられます。写真は選択または貼り付けるだけで本文へ追加されます。</p>
+      <HelpDisclosure title="写真つき作業メモの使い方" align="left"><p>文章を選んで見出しや色を付けられます。写真は選択または貼り付けると本文へ追加されます。</p></HelpDisclosure>
       <div className="rich-action-toolbar" role="toolbar" aria-label="文章の書式">
         <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand("bold")} title="太字にする"><strong>B</strong><span>太字</span></button>
         <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => runCommand("formatBlock", "H3")} title="見出しにする"><strong>見</strong><span>見出し</span></button>
@@ -993,7 +994,7 @@ function ImagePasteInput({ label, images, onChange }: { label: string; images: F
   return (
     <div className="image-paste-input" tabIndex={0} onPaste={(event) => { const files = Array.from(event.clipboardData.files); if (files.length) { event.preventDefault(); append(files); } }}>
       <label className="image-input"><span><ImagePlus size={15} />{label}</span><input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => append(Array.from(event.target.files ?? []))} /></label>
-      <small>最大5枚。枠を選択してクリップボードから画像を貼り付けることもできます。</small>
+      <HelpDisclosure title="画像の追加方法" align="left"><p>最大5枚まで追加できます。この枠を選択して、クリップボードの画像を貼り付けることもできます。</p></HelpDisclosure>
       {images.length > 0 && <span className="image-paste-count">{images.length}枚を追加</span>}
     </div>
   );

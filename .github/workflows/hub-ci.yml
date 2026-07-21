@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - "hub/**"
+      - "extensions/**"
       - ".github/workflows/hub-ci.yml"
   push:
     branches: [main]
     paths:
       - "hub/**"
+      - "extensions/**"
       - ".github/workflows/hub-ci.yml"
 
 permissions:
@@ -30,6 +32,7 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      - run: uv run python scripts/build_extension_registry.py --check
       - run: PYTHON_DOTENV_DISABLED=1 uv run python -m unittest discover -s tests
       - run: uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file /tmp/ina-hub-requirements.txt
       - run: uvx pip-audit -r /tmp/ina-hub-requirements.txt --disable-pip

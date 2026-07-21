@@ -3,7 +3,6 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-
 _REGISTRY_PATH = Path(__file__).with_name("device_definitions") / "generated" / "registry.json"
 _FALLBACK = {
     "schema_version": 1,

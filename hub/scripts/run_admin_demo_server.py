@@ -581,6 +581,10 @@ def _prepare_env():
     os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
     os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
     os.environ.setdefault("FIRMWARE_BASE_URL", "http://demo-hub.local:39151")
+    os.environ["CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME"] = os.environ.get(
+        "HUB_DEMO_PUBLIC_HOSTNAME",
+        "hub-demo.inas-technologies.com",
+    )
     os.environ["AI_ENABLED"] = "false"
     os.environ["AI_IMAGE_ANALYZE_API_KEY"] = os.environ.get("HUB_DEMO_AI_IMAGE_ANALYZE_API_KEY", "")
     os.environ["AI_TEXT_ANALYZE_API_KEY"] = os.environ.get("HUB_DEMO_AI_TEXT_ANALYZE_API_KEY", "")
@@ -657,6 +661,18 @@ def main():
             }
             for switch_id, name, terminal, channel_mask, controlled_load in device["switches"]
         ]
+        if device["kind"] == "FGT":
+            config["fgt"] = {
+                "enabled": True,
+                "recipe": {
+                    "total_water_ml": 5000,
+                    "initial_water_ml": 1250,
+                    "nutrient_a_ml": 10,
+                    "nutrient_b_ml": 10,
+                    "final_mix_sec": 180,
+                    "rinse_water_ml": 500,
+                },
+            }
         config_service.update_config(device_id, config)
         config_service.update_metadata(device_id, {"name": device["name"], "location": device["location"]})
         config_service.repository.record_status(

@@ -20,9 +20,10 @@ from ina_device_hub.plant_task_notification_task import PlantTaskNotificationTas
 class _PlantRepository:
     def __init__(self, inventory):
         self.inventory = inventory
+        self.calls = []
 
     def list_notification_actions(self, today=None, lead_days=7):
-        del today, lead_days
+        self.calls.append({"today": today, "lead_days": lead_days})
         return list(self.inventory)
 
 
@@ -41,7 +42,7 @@ class _NotificationService:
         return self.succeeds
 
 
-def _item(action_id, timing_state, start="2026-07-18"):
+def _item(action_id, timing_state=None, start="2026-07-18", end="2026-07-25"):
     return {
         "field_id": "field-1",
         "planting_id": "plant-1",
@@ -53,7 +54,7 @@ def _item(action_id, timing_state, start="2026-07-18"):
             "id": action_id,
             "title": f"作業 {action_id}",
             "window_start": start,
-            "window_end": "2026-07-25",
+            "window_end": end,
             "priority": "recommended",
         },
     }
@@ -64,11 +65,18 @@ class PlantTaskNotificationTaskTest(unittest.TestCase):
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.plants = _PlantRepository([_item("existing", "due")])
         self.notifications = _NotificationService()
+        self.preferences = {
+            "plant_task_notify_new": True,
+            "plant_task_reminder_days_before": 7,
+            "plant_task_notify_on_start_day": True,
+            "plant_task_notify_during_window": True,
+        }
         self.task = PlantTaskNotificationTask(
             plant_repository=self.plants,
             field_repo=_FieldRepository(),
             notification_service=self.notifications,
             state_path=os.path.join(self.tmp_dir.name, "state.json"),
+            settings_provider=lambda: self.preferences,
         )
 
     def tearDown(self):
@@ -81,6 +89,7 @@ class PlantTaskNotificationTaskTest(unittest.TestCase):
         first = self.notifications.digests[-1]
         self.assertEqual([item["action"]["id"] for item in first["due"]], ["existing"])
         self.assertFalse(first["due"][0]["is_new"])
+        self.assertEqual(first["reminder"]["days_before"], 7)
         self.assertFalse(self.task.run_once(datetime(2026, 7, 18, 5, tzinfo=jst)))
 
         self.plants.inventory.append(_item("winter", None, start="2026-11-01"))
@@ -93,6 +102,35 @@ class PlantTaskNotificationTaskTest(unittest.TestCase):
         third = self.notifications.digests[-1]
         self.assertEqual([item["action"]["id"] for item in third["due"]], ["existing"])
         self.assertEqual(third["new"], [])
+
+    def test_advance_reminder_is_sent_once_on_the_exact_configured_day(self):
+        jst = ZoneInfo("Asia/Tokyo")
+        self.plants.inventory = [_item("future", start="2026-07-25", end="2026-07-30")]
+
+        self.assertTrue(self.task.run_once(datetime(2026, 7, 18, 4, tzinfo=jst)))
+        self.assertEqual([item["action"]["id"] for item in self.notifications.digests[-1]["upcoming"]], ["future"])
+        digest_count = len(self.notifications.digests)
+
+        self.assertFalse(self.task.run_once(datetime(2026, 7, 19, 4, tzinfo=jst)))
+        self.assertEqual(len(self.notifications.digests), digest_count)
+        self.assertEqual(self.plants.calls[-1]["lead_days"], 7)
+
+    def test_start_day_and_during_window_can_be_controlled_separately(self):
+        jst = ZoneInfo("Asia/Tokyo")
+        self.preferences["plant_task_notify_on_start_day"] = False
+        self.preferences["plant_task_notify_during_window"] = True
+
+        self.assertFalse(self.task.run_once(datetime(2026, 7, 18, 4, tzinfo=jst)))
+        self.assertTrue(self.task.run_once(datetime(2026, 7, 19, 4, tzinfo=jst)))
+        self.assertEqual([item["action"]["id"] for item in self.notifications.digests[-1]["due"]], ["existing"])
+
+    def test_zero_days_disables_only_the_advance_reminder(self):
+        jst = ZoneInfo("Asia/Tokyo")
+        self.preferences["plant_task_reminder_days_before"] = 0
+        self.plants.inventory = [_item("future", start="2026-07-25", end="2026-07-30")]
+
+        self.assertFalse(self.task.run_once(datetime(2026, 7, 18, 4, tzinfo=jst)))
+        self.assertEqual(self.plants.calls[-1]["lead_days"], 0)
 
     def test_failed_delivery_keeps_new_action_pending(self):
         jst = ZoneInfo("Asia/Tokyo")

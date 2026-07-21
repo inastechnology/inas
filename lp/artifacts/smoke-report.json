@@ -1,0 +1,15 @@
+{
+  "receivedLead": {
+    "role": "farmer",
+    "scale": "100_1000m2",
+    "pain": "watering",
+    "campaign": "farmer_validation"
+  },
+  "screenshots": [
+    "inas-demand-lp-desktop-hero.png",
+    "inas-demand-lp-desktop.png",
+    "inas-demand-lp-mobile-hero.png",
+    "inas-demand-lp-mobile.png",
+    "inas-demand-lp-mobile-form.png"
+  ]
+}

@@ -6,7 +6,6 @@ import json
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DEVICE_ROOT = ROOT / "client-devices"
 OUTPUT = ROOT / "hub/src/ina_device_hub/device_definitions/generated/registry.json"

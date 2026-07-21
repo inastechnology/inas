@@ -18,6 +18,9 @@ class StateBackupTest(unittest.TestCase):
             work_dir.mkdir()
             state_path = work_dir / ".fields.json"
             state_path.write_text(json.dumps({"field-1": {"name": "圃場A"}}))
+            extension_path = work_dir / "extensions" / "installed" / "com.example.guide" / "1.0.0" / "extension.json"
+            extension_path.parent.mkdir(parents=True)
+            extension_path.write_text(json.dumps({"id": "com.example.guide"}))
 
             archive = create_state_backup(
                 work_dir,
@@ -25,10 +28,13 @@ class StateBackupTest(unittest.TestCase):
                 now=datetime(2026, 7, 16, tzinfo=UTC),
             )
             state_path.write_text("{}")
+            extension_path.unlink()
             restored = restore_state_backup(archive, work_dir)
 
             self.assertIn(state_path, restored)
             self.assertEqual(json.loads(state_path.read_text())["field-1"]["name"], "圃場A")
+            self.assertIn(extension_path, restored)
+            self.assertEqual(json.loads(extension_path.read_text())["id"], "com.example.guide")
             self.assertEqual(stat.S_IMODE(archive.stat().st_mode), 0o600)
 
     def test_restore_rejects_archive_without_manifest(self):

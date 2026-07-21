@@ -151,10 +151,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
 
     def test_question_history_is_paginated_five_at_a_time(self):
         planting = self._create_blueberry()
-        recorded = [
-            self.repository.record_question(planting["id"], f"第{index}回の葉を確認", f"第{index}回の回答")
-            for index in range(1, 8)
-        ]
+        recorded = [self.repository.record_question(planting["id"], f"第{index}回の葉を確認", f"第{index}回の回答") for index in range(1, 8)]
 
         latest = self.repository.list_questions(planting["id"], page=1, page_size=5)
         older = self.repository.list_questions(planting["id"], page=2, page_size=5)

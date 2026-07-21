@@ -21,9 +21,12 @@ os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 from ina_device_hub import discord_notification_service  # noqa: E402
 from ina_device_hub.discord_notification_service import (  # noqa: E402
     DISCORD_CONTENT_LIMIT,
+    cloudflare_public_base_url,
     format_health_alert,
+    format_health_alert_notification,
     format_mqtt_activity,
     format_new_device,
+    format_new_device_notification,
     format_plant_task_digest,
 )
 
@@ -31,22 +34,127 @@ from ina_device_hub.discord_notification_service import (  # noqa: E402
 class DiscordNotificationServiceTest(unittest.TestCase):
     def test_plant_task_digest_uses_visual_embed_groups(self):
         item = {
+            "field_id": "field-1",
+            "planting_id": "plant-1",
             "field_name": "西条圃場1",
             "crop_name": "ライチ",
             "cultivar": "ジャカパット",
             "placement_name": "植木鉢1",
             "is_new": True,
-            "action": {"title": "防寒対策", "window_start": "2026-11-01", "window_end": "2026-11-08"},
+            "action": {
+                "id": "action-1",
+                "title": "防寒対策",
+                "action_type": "winter_care",
+                "reason": "最低気温が下がる前に鉢を保護します。",
+                "window_start": "2026-11-01",
+                "window_end": "2026-11-08",
+            },
         }
 
-        payload = format_plant_task_digest({"date": "2026-10-25", "due": [], "upcoming": [item], "new": []})
+        payload = format_plant_task_digest(
+            {
+                "date": "2026-10-25",
+                "due": [],
+                "upcoming": [item],
+                "new": [],
+                "reminder": {"days_before": 7},
+            },
+            base_url="https://hub.example.com",
+        )
 
         self.assertEqual(payload["username"], "INA Device Hub")
-        embed = payload["embeds"][0]
-        self.assertEqual(embed["title"], "🌿 今日の栽培作業")
-        self.assertIn("⏳ 7日以内に開始（1件）", embed["fields"][0]["name"])
-        self.assertIn("西条圃場1｜ライチ（ジャカパット）", embed["fields"][0]["value"])
-        self.assertIn("🆕", embed["fields"][0]["value"])
+        self.assertEqual(payload["allowed_mentions"], {"parse": []})
+        summary, card = payload["embeds"]
+        self.assertEqual(summary["title"], "🌿 今日の栽培作業")
+        self.assertIn("⏳ 事前に確認する作業 1件", summary["description"])
+        self.assertIn("開始7日前の1回", summary["footer"]["text"])
+        self.assertIn("🧣 防寒対策", card["title"])
+        self.assertIn("🆕", card["title"])
+        self.assertIn("西条圃場1｜ライチ（ジャカパット）", card["description"])
+        self.assertEqual(
+            card["url"],
+            "https://hub.example.com/fields/field-1/calendar?planting=plant-1&action=action-1",
+        )
+        self.assertNotIn("localhost", str(payload))
+
+    def test_cloudflare_public_base_url_only_accepts_https_hostnames(self):
+        self.assertEqual(
+            cloudflare_public_base_url(
+                {
+                    "CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME": "hub.inas-technologies.com",
+                    "CLOUDFLARE_TUNNEL_HOSTNAME": "fallback.example.com",
+                }
+            ),
+            "https://hub.inas-technologies.com",
+        )
+        self.assertEqual(
+            cloudflare_public_base_url({"CLOUDFLARE_TUNNEL_HOSTNAME": "https://tunnel.example.com/"}),
+            "https://tunnel.example.com",
+        )
+        for value in ("http://hub.example.com", "localhost", "hub.local", "192.168.1.2", "https://example.com/path"):
+            with self.subTest(value=value):
+                self.assertEqual(cloudflare_public_base_url({"CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME": value}), "")
+
+    def test_plant_task_digest_caps_cards_and_embed_characters(self):
+        items = []
+        for index in range(20):
+            items.append(
+                {
+                    "field_id": "field-1",
+                    "planting_id": "plant-1",
+                    "field_name": "西条圃場1",
+                    "crop_name": "ライチ",
+                    "placement_name": "植木鉢1",
+                    "action": {
+                        "id": f"action-{index}",
+                        "title": f"観察作業 {index}",
+                        "reason": "樹勢と葉色の変化を確認します。" * 20,
+                        "window_start": "2026-07-21",
+                        "window_end": "2026-07-28",
+                    },
+                }
+            )
+
+        payload = format_plant_task_digest(
+            {"date": "2026-07-21", "due": items, "upcoming": [], "new": []},
+            base_url="https://hub.example.com",
+        )
+        embeds = payload["embeds"]
+        character_count = sum(
+            len(str(embed.get("title") or "")) + len(str(embed.get("description") or "")) + len(str((embed.get("footer") or {}).get("text") or ""))
+            for embed in embeds
+        )
+
+        self.assertLessEqual(len(embeds), 7)
+        self.assertLessEqual(character_count, 6000)
+        self.assertIn("年間栽培カレンダー", embeds[0]["description"])
+
+    def test_new_device_card_links_to_device_overview(self):
+        payload = format_new_device_notification(
+            "device / 1",
+            {"name": "苗床の水やり", "device_kind": "WTR", "firmware_version": "1.2.3"},
+            "status",
+            base_url="https://hub.example.com",
+        )
+
+        card = payload["embeds"][0]
+        self.assertEqual(card["title"], "🆕 新しい機器が見つかりました")
+        self.assertEqual(card["url"], "https://hub.example.com/mqtt-devices/device%20%2F%201?tab=overview")
+        self.assertIn("機器を確認して登録する", card["description"])
+
+    def test_health_alert_card_opens_the_relevant_screen(self):
+        payload = format_health_alert_notification(
+            "device_offline",
+            "device-1",
+            {"name": "ハウス北側", "location": "第1圃場"},
+            {"last_seen_at": "2026-07-21 03:40 JST"},
+            base_url="https://hub.example.com",
+        )
+
+        card = payload["embeds"][0]
+        self.assertEqual(card["url"], "https://hub.example.com/mqtt-devices/device-1?tab=diagnostics")
+        self.assertIn("電源、通信環境", card["description"])
+        self.assertNotIn("topic:", str(payload))
 
     def test_singleton_accessor_reuses_one_service(self):
         previous = discord_notification_service.__dict__["__instance"]

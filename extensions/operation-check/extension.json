@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "id": "jp.inas.development.operation-check",
+  "name": "Extension 動作確認プラグイン",
+  "version": "1.0.0",
+  "description": "Hub Extensionの概要カード、追加タブ、現在値の参照が正しく動くことを確認するための開発用プラグインです。",
+  "compatibility": {
+    "hub_extension_api": 1
+  },
+  "ui": {
+    "device_detail": {
+      "device_kinds": [
+        "WTR"
+      ],
+      "overview_cards": [
+        {
+          "id": "extension-ready",
+          "type": "callout",
+          "title": "プラグインが動作しています",
+          "description": "このカードが表示されていれば、WTR向けの概要拡張をHubが安全に読み込めています。",
+          "tone": "sun"
+        }
+      ],
+      "tabs": [
+        {
+          "id": "operation-check",
+          "label": "拡張確認",
+          "title": "Extensionの動作確認",
+          "description": "宣言ファイルから追加された画面と、Hubが解決した現在値を確認します。",
+          "blocks": [
+            {
+              "type": "process_flow",
+              "title": "読み込み確認",
+              "items": [
+                {
+                  "title": "定義を検証",
+                  "description": "Hubが許可された項目だけで構成されているか確認します。"
+                },
+                {
+                  "title": "対応機器へ追加",
+                  "description": "WTRの機器詳細だけに概要カードとタブを追加します。"
+                },
+                {
+                  "title": "現在値を表示",
+                  "description": "機器データをHub側で安全に読み取り、文字として表示します。"
+                }
+              ]
+            },
+            {
+              "type": "metric_grid",
+              "title": "Hubから受け取った値",
+              "items": [
+                {
+                  "label": "機器の表示名",
+                  "value": {
+                    "source": "device",
+                    "path": "name"
+                  }
+                },
+                {
+                  "label": "現在の土壌水分",
+                  "value": {
+                    "source": "status",
+                    "path": "last_soil_moisture",
+                    "unit": "%"
+                  }
+                },
+                {
+                  "label": "水やり状態",
+                  "value": {
+                    "source": "status",
+                    "path": "watering_started"
+                  }
+                },
+                {
+                  "label": "水やり開始の目安",
+                  "value": {
+                    "source": "config",
+                    "path": "moisture_threshold",
+                    "unit": "%"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "callout",
+              "title": "動作確認用です",
+              "description": "このプラグインは表示確認だけを行います。機器の設定変更や水やり操作は実行しません。",
+              "tone": "neutral"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

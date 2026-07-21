@@ -40,6 +40,7 @@
       .setting-row { display:grid; grid-template-columns:minmax(160px,220px) minmax(0,1fr); gap:24px; padding:16px 0; border-top:1px solid #edf0ed; }
       .setting-row:first-child { border-top:0; padding-top:0; }
       .setting-label { font-size:13px; font-weight:800; }
+      .setting-label.with-help { display:flex; align-items:center; justify-content:space-between; gap:8px; }
       .setting-label small { display:block; margin-top:4px; color:var(--muted); font-size:11px; font-weight:500; line-height:1.5; }
       .setting-control { display:grid; gap:8px; min-width:0; }
       .toggle { display:flex; align-items:center; gap:9px; min-height:40px; font-size:13px; font-weight:750; }
@@ -59,6 +60,7 @@
       .section-actions { display:flex; align-items:center; justify-content:flex-end; gap:12px; padding-top:16px; }
       button { min-height:38px; padding:7px 13px; border:1px solid var(--green); border-radius:5px; color:var(--green); background:#fff; font-weight:800; }
       button.primary { color:#fff; background:var(--green); }
+      button.danger { border-color:#a33e38; color:#fff; background:#a33e38; }
       button:disabled { border-color:#b9c3bc; color:#87928b; background:#f1f3f1; cursor:not-allowed; }
       .test-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
       .test-result { min-height:18px; color:var(--muted); font-size:12px; }
@@ -67,6 +69,39 @@
       .disabled-reason { margin:0; font-size:11px; }
       .model-hint { display:flex; align-items:start; gap:8px; margin:2px 0 0; padding:9px 11px; border-left:3px solid #7aa998; color:#43564d; background:#f2f7f4; font-size:11px; line-height:1.55; }
       .model-hint::before { content:"AI"; flex:none; padding:2px 4px; border-radius:3px; color:#fff; background:#4e806e; font-size:9px; font-weight:900; }
+      .notification-status { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+      .notification-status-card { display:grid; gap:5px; padding:13px; border:1px solid #d7e0da; border-radius:8px; background:#f8faf8; }
+      .notification-status-card strong { font-size:13px; }
+      .notification-status-card small { color:var(--muted); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+      .notification-preview { display:grid; gap:7px; padding:14px; border-left:5px solid #2e7d32; border-radius:7px; background:#edf7f0; }
+      .notification-preview strong { color:#1f5f45; font-size:15px; }
+      .notification-preview p { margin:0; color:#40564a; font-size:12px; line-height:1.6; }
+      .notification-preview-mark { display:inline-grid; place-items:center; min-width:30px; min-height:24px; margin-right:5px; padding:2px 6px; border-radius:999px; color:#fff; background:#2e7d32; font-size:11px; font-weight:900; vertical-align:middle; }
+      .notification-preview-mark.advance { background:#a96612; }
+      .notification-group { display:grid; gap:8px; padding:12px; border:1px solid #dce4de; border-radius:7px; }
+      .notification-switch { position:relative; display:flex; align-items:center; gap:11px; min-height:48px; cursor:pointer; font-size:13px; font-weight:800; line-height:1.45; }
+      .notification-switch input { position:absolute; width:1px; height:1px; margin:0; opacity:0; pointer-events:none; }
+      .notification-switch-control { position:relative; flex:0 0 64px; width:64px; height:34px; border:2px solid #596760; border-radius:999px; background:#68736d; transition:background-color .16s ease,border-color .16s ease; }
+      .notification-switch-control::before { content:"OFF"; position:absolute; top:50%; right:7px; transform:translateY(-50%); color:#fff; font-size:9px; font-weight:950; letter-spacing:.04em; }
+      .notification-switch-control::after { content:""; position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.28); transition:transform .16s ease; }
+      .notification-switch input:checked + .notification-switch-control { border-color:#176b52; background:#176b52; }
+      .notification-switch input:checked + .notification-switch-control::before { content:"ON"; right:auto; left:8px; }
+      .notification-switch input:checked + .notification-switch-control::after { transform:translateX(30px); }
+      .notification-switch input:focus-visible + .notification-switch-control { outline:3px solid rgba(23,107,82,.28); outline-offset:3px; }
+      .notification-switch:hover .notification-switch-control { box-shadow:0 0 0 3px rgba(23,107,82,.12); }
+      .notification-switch-label { min-width:0; }
+      .notification-inline { display:grid; grid-template-columns:minmax(140px,220px) auto; align-items:center; gap:10px; }
+      .notification-inline input { max-width:140px; }
+      .notification-warning { margin:0; padding:10px 12px; border-left:4px solid #b7791f; color:#69450e; background:#fff8e8; font-size:12px; line-height:1.55; }
+      .notification-advanced { border:1px solid #d7e0da; border-radius:7px; background:#fafcfb; }
+      .notification-advanced summary { padding:11px 13px; color:#315f4c; cursor:pointer; font-size:12px; font-weight:850; }
+      .notification-advanced-body { padding:0 13px 13px; }
+      dialog.confirm-dialog { width:min(480px,calc(100% - 32px)); padding:0; border:0; border-radius:12px; color:var(--ink); box-shadow:0 20px 60px rgba(18,35,27,.28); }
+      dialog.confirm-dialog::backdrop { background:rgba(21,34,28,.58); }
+      .confirm-dialog-body { display:grid; gap:10px; padding:22px; }
+      .confirm-dialog-body h2 { margin:0; font-size:21px; }
+      .confirm-dialog-body p { margin:0; color:var(--muted); line-height:1.65; }
+      .confirm-dialog-actions { display:flex; justify-content:flex-end; gap:10px; padding:14px 22px; border-top:1px solid var(--line); background:#f7f9f7; }
       .model-advanced { margin-top:2px; border:1px solid #d7e0da; border-radius:6px; background:#fafcfb; }
       .model-advanced summary { padding:11px 13px; color:#315f4c; cursor:pointer; font-size:12px; font-weight:850; }
       .model-advanced[open] summary { border-bottom:1px solid #e1e7e2; }
@@ -97,6 +132,7 @@
       .environment-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
       .environment-item { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:42px; padding:9px 11px; border:1px solid #d8dfda; border-radius:5px; font-size:12px; font-weight:750; }
       .command { padding:8px 10px; border:1px solid #d4dad5; border-radius:4px; color:#3d4d44; background:#f5f7f5; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; overflow-wrap:anywhere; }
+      .setting-link { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:9px 14px; border:1px solid var(--green); border-radius:5px; color:#fff; background:var(--green); font-size:13px; font-weight:850; text-decoration:none; }
       .select-filter { display:grid; gap:5px; color:#59685f; font-size:11px; font-weight:800; }
       .select-filter-empty { margin:0; color:var(--muted); font-size:11px; }
       .empty-search { padding:40px 22px; color:var(--muted); text-align:center; }
@@ -105,7 +141,7 @@
         .header-inner { align-items:start; }
         .settings-shell { grid-template-columns:1fr; gap:12px; padding-top:12px; }
         .settings-sidebar { position:static; }
-        .settings-nav { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        .settings-nav { grid-template-columns:repeat(2,minmax(0,1fr)); }
         .settings-nav a { border-left:0; border-bottom:3px solid transparent; text-align:center; }
         .settings-nav a:hover,.settings-nav a.active { border-left:0; border-bottom-color:var(--green); }
         .source-note { display:none; }
@@ -117,6 +153,10 @@
         .test-row { align-items:stretch; flex-direction:column; }
         .ai-dialog-backdrop { place-items:end center; padding:0; }
         .ai-dialog { width:100%; max-height:88vh; border-radius:14px 14px 0 0; }
+        .notification-status { grid-template-columns:1fr; }
+        .notification-inline { grid-template-columns:1fr; }
+        #notifications .section-actions { display:grid; grid-template-columns:1fr; }
+        #notifications .section-actions > * { width:100%; }
       }
     </style>
     <link rel="stylesheet" href="/static/hub-ui.css">
@@ -130,9 +170,10 @@
     </header>
     <main class="settings-shell">
       <aside class="settings-sidebar">
-        <label class="settings-search">設定を検索<input id="settings-search" type="search" autocomplete="off" placeholder="AI、モデル、Turso..." aria-controls="settings-content"></label>
+        <label class="settings-search">設定を検索<input id="settings-search" type="search" autocomplete="off" placeholder="AI、通知、Turso..." aria-controls="settings-content"></label>
         <nav class="settings-nav" aria-label="設定カテゴリ">
           <a href="#ai" data-settings-nav="ai">AI</a>
+          <a href="#notifications" data-settings-nav="notifications">通知</a>
           <a href="#instagram" data-settings-nav="instagram">Instagram</a>
           <a href="#system" data-settings-nav="system">システム</a>
         </nav>
@@ -152,7 +193,7 @@
               </div>
               {% for channel,title,description in [('text','テキスト・栽培計画','栽培カレンダー、目標レンジ、質問回答'),('image','画像解析','植物画像と定点観察の解析')] %}
               <div class="setting-row" data-setting-row data-ai-provider="{{ channel }}" data-search="{{ title }} {{ description }} OpenAI Base URL model モデル API キー 接続">
-                <div class="setting-label">{{ title }}<small>{{ description }}に使用します。</small></div>
+                <div class="setting-label with-help"><span>{{ title }}</span><details class="context-help"><summary aria-label="{{ title }}の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>{{ title }}</strong><p>{{ description }}に使用します。APIキーは保存後に画面へ再表示されません。</p></div></details></div>
                 <div class="setting-control">
                   <div class="provider-fields">
                     <label class="wide">利用するAIモデル<input name="{{ channel }}_analyze_model" value="{{ ai[channel + '_analyze_model'] }}" list="{{ channel }}-model-candidates" placeholder="利用するモデル名" data-model-input><datalist id="{{ channel }}-model-candidates"><option value="gpt-5.6-luna"><option value="gpt-5.6-terra"><option value="gpt-5.6-sol"><option value="gpt-5.4"></datalist></label>
@@ -162,10 +203,9 @@
                         <span class="status{% if not ai[channel + '_key_configured'] %} missing{% endif %}">{% if ai[channel + '_key_configured'] %}設定済み{% else %}未設定{% endif %}</span>
                         {% if ai[channel + '_key_configured'] %}<label class="toggle"><input type="checkbox" name="clear_{{ channel }}_analyze_api_key">登録済みキーを削除</label>{% endif %}
                       </div>
-                      <span class="inline-help">保存済みの値は画面・APIへ返しません。空欄のまま保存すると現在のキーを維持します。</span>
                     </div>
                   </div>
-                  <p class="model-hint" data-model-hint>モデルによって、出力の揺らぎや考える深さに対応していない場合があります。通常は自動調整のままで利用できます。</p>
+                  <div class="context-help-row"><span class="status-line">モデル特性は自動調整</span><details class="context-help compact"><summary aria-label="AIモデル特性の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>モデル特性の自動調整</strong><p data-model-hint>モデルによって、出力の揺らぎや考える深さに対応していない場合があります。通常は自動調整のままで利用できます。</p></div></details></div>
                   <details class="model-advanced">
                     <summary>接続先とモデル特性を調整（上級者向け）</summary>
                     <div class="model-advanced-body">
@@ -206,26 +246,76 @@
               </div>
               {% endfor %}
               <div class="setting-row" data-setting-row data-search="栽培情報 栽培根拠 Web検索 公的資料 農林水産省 農研機構 キャッシュ">
-                <div class="setting-label">栽培情報を自動で調べる<small>AI栽培計画の作成前に、公的な資料を検索して要点をまとめます。</small></div>
+                <div class="setting-label with-help"><span>栽培情報を自動で調べる</span><details class="context-help"><summary aria-label="栽培情報の自動検索について説明を開く">?</summary><div class="context-help-panel" role="note"><strong>栽培情報の自動検索</strong><p>AI栽培計画の作成前に、農林水産省、農研機構、自治体などの公的資料を優先して検索し、要点と出典を計画へ残します。</p></div></details></div>
                 <div class="setting-control">
                   <label class="toggle"><input type="checkbox" name="plant_calendar_web_knowledge_enabled"{% if ai.plant_calendar_web_knowledge_enabled %} checked{% endif %}>計画作成時に公的資料を検索する</label>
-                  <span class="inline-help">農林水産省、農研機構、自治体などの資料を優先し、出典を栽培計画に残します。</span>
                   <details class="model-advanced"><summary>検索の詳しい設定（上級者向け）</summary><div class="model-advanced-body"><label>同じ情報を再利用する日数<input type="number" name="plant_calendar_web_knowledge_cache_days" min="1" max="365" step="1" value="{{ ai.plant_calendar_web_knowledge_cache_days or 30 }}"></label><span class="inline-help">公式OpenAI APIのWeb検索を利用できる場合だけ実行します。検索機能の利用料が発生する場合があります。</span></div></details>
                 </div>
               </div>
               <div class="setting-row" data-setting-row data-search="上級者 栽培計画 prompt プロンプト template テンプレート JSON">
-                <div class="setting-label">AI栽培計画プロンプト<small>上級者向け。既定の安全・日付・出力検証は変更せず、モデルへ渡す入力の構成と追加指示を調整します。</small></div>
+                <div class="setting-label with-help"><span>AI栽培計画プロンプト</span><details class="context-help"><summary aria-label="AI栽培計画プロンプトの説明を開く">?</summary><div class="context-help-panel" role="note"><strong>上級者向け設定</strong><p>既定の安全・日付・出力検証は変更せず、モデルへ渡す入力の構成と追加指示を調整します。必須の差し込み項目は編集欄を開いた後に確認できます。</p></div></details></div>
                 <div class="setting-control">
                   <details>
                     <summary>プロンプトフォーマットを編集</summary>
                     <label for="plant-calendar-prompt-template">AI栽培計画の入力フォーマット</label>
                     <textarea id="plant-calendar-prompt-template" name="plant_calendar_prompt_template" maxlength="{{ plant_calendar_prompt_max_length }}" spellcheck="false" aria-describedby="plant-calendar-prompt-help">{{ ai.plant_calendar_prompt_template }}</textarea>
+                    <span class="inline-help" id="plant-calendar-prompt-help"><code>{default_instructions}</code>、<code>{context_json}</code>、<code>{guidance_json}</code> は必須です。<code>{experience_instruction}</code> は任意です。空欄は既定フォーマットへ戻します。管理者の追加指示より、サーバ固定の安全条件と日付検証が優先されます。</span>
                   </details>
-                  <span class="inline-help" id="plant-calendar-prompt-help"><code>{default_instructions}</code>、<code>{context_json}</code>、<code>{guidance_json}</code> は必須です。<code>{experience_instruction}</code> は任意です。空欄は既定フォーマットへ戻します。管理者の追加指示より、サーバ固定の安全条件と日付検証が優先されます。</span>
                 </div>
               </div>
             </div>
             <div class="section-actions"><p class="disabled-reason" data-stateful-reason></p><button class="primary" type="submit" data-stateful-submit>AI設定を保存</button></div>
+          </form>
+        </section>
+
+        <section class="settings-section" id="notifications" data-settings-section="notifications" data-search="Discord 通知 リマインド 作業 機器 水やり オフライン">
+          <div class="section-heading"><div><h2>通知</h2><p>必要な確認だけを、Discordで読みやすく1通にまとめます。</p></div></div>
+          <form method="post" action="/settings" id="notification-settings-form" data-stateful-form data-pristine-message="通知設定は変更されていません。">
+            <input type="hidden" name="settings_section" value="notifications">
+            <input type="hidden" name="disable_all" value="0" id="disable-all-notifications-value">
+            <div class="setting-list">
+              <div class="setting-row" data-setting-row data-search="Discord Webhook Cloudflare URL 接続 リンク">
+                <div class="setting-label with-help"><span>通知の準備</span><details class="context-help"><summary aria-label="Discord通知の接続について説明を開く">?</summary><div class="context-help-panel" role="note"><strong>通知の接続</strong><p>秘密のWebhook URLは画面へ表示しません。通知内のリンクにはCloudflareの公開URLだけを使い、ローカルIPへ自動で切り替えません。</p></div></details></div>
+                <div class="setting-control">
+                  <div class="notification-status">
+                    <div class="notification-status-card"><strong>Discordへの送信</strong><span class="status{% if not discord.webhook_configured %} missing{% endif %}">{% if discord.webhook_configured %}設定済み{% else %}未設定{% endif %}</span><small>WebhookはHubの初期設定で登録します。</small></div>
+                    <div class="notification-status-card"><strong>通知から開くURL</strong><span class="status{% if not discord.public_url_configured %} missing{% endif %}">{% if discord.public_url_configured %}Cloudflare URL{% else %}未設定{% endif %}</span><small>{% if discord.public_base_url %}{{ discord.public_base_url }}{% else %}ローカルIPへは自動で切り替えません。{% endif %}</small></div>
+                  </div>
+                  {% if not discord.public_url_configured %}<p class="notification-warning">通知は送れますが、確認画面へのリンクは付きません。<code>CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME</code> をHubの初期設定で登録してください。</p>{% endif %}
+                </div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="全通知 有効 無効 停止">
+                <div class="setting-label with-help"><span>すべてのDiscord通知</span><details class="context-help"><summary aria-label="全通知スイッチの説明を開く">?</summary><div class="context-help-panel" role="note"><strong>一時停止しても設定は残ります</strong><p>OFFにすると、下の種類別設定を残したままDiscordへの送信だけを止めます。</p></div></details></div>
+                <div class="setting-control"><label class="notification-switch"><input type="checkbox" role="switch" name="enabled" data-notification-master{% if discord.enabled %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">Discord通知を受け取る</span></label></div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="今日 栽培作業 日次 4時 カード リマインド">
+                <div class="setting-label with-help"><span>今日の栽培作業</span><details class="context-help"><summary aria-label="栽培作業通知の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>栽培作業の通知</strong><p>毎朝4:00に、必要な作業だけを1通のカードへまとめます。通知から対象作業の詳細・記録画面を直接開けます。</p></div></details></div>
+                <div class="setting-control">
+                  <div class="notification-preview" aria-label="Discord通知の表示例"><strong><span class="notification-preview-mark" aria-hidden="true">作業</span>今日の栽培作業</strong><p><span class="notification-preview-mark" aria-hidden="true">今日</span>今日確認する作業　2件<br><span class="notification-preview-mark advance" aria-hidden="true">事前</span>事前に確認する作業　1件<br>カードを押すと、その作業の詳細・記録画面が開きます。</p></div>
+                  <label class="notification-switch"><input type="checkbox" role="switch" name="notify_plant_tasks" data-notification-option{% if discord.notify_plant_tasks %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">栽培作業の日次通知を受け取る</span></label>
+                  <div class="notification-group" data-plant-task-notification-options>
+                    <label class="notification-switch"><input type="checkbox" role="switch" name="plant_task_notify_new" data-notification-option{% if discord.plant_task_notify_new %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">新しい作業が計画へ追加されたら知らせる</span></label>
+                    <div class="context-help-row"><label class="notification-inline">作業開始の何日前に知らせる<input type="number" name="plant_task_reminder_days_before" min="0" max="30" step="1" inputmode="numeric" value="{{ discord.plant_task_reminder_days_before }}" data-notification-option></label><details class="context-help compact"><summary aria-label="事前通知日数の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>事前通知のタイミング</strong><p>0日で事前通知なし。指定した日の1回だけ通知するため、毎日は繰り返しません。</p></div></details></div>
+                    <label class="notification-switch"><input type="checkbox" role="switch" name="plant_task_notify_on_start_day" data-notification-option{% if discord.plant_task_notify_on_start_day %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">作業期間の初日に知らせる</span></label>
+                    <label class="notification-switch"><input type="checkbox" role="switch" name="plant_task_notify_during_window" data-notification-option{% if discord.plant_task_notify_during_window %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">作業期間中は、未完了の作業を毎朝知らせる</span></label>
+                  </div>
+                </div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="重要 機器 新規 オフライン 水やり 校正">
+                <div class="setting-label with-help"><span>機器の確認</span><details class="context-help"><summary aria-label="機器通知の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>機器の確認通知</strong><p>確認が必要な機器と理由をカードで知らせ、通知から該当する概要・設定・診断画面を直接開けます。</p></div></details></div>
+                <div class="setting-control notification-group">
+                  <label class="notification-switch"><input type="checkbox" role="switch" name="notify_new_device" data-notification-option{% if discord.notify_new_device %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">新しい機器を見つけた</span></label>
+                  <label class="notification-switch"><input type="checkbox" role="switch" name="notify_device_offline" data-notification-option{% if discord.notify_device_offline %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">機器が長時間つながらない</span></label>
+                  <label class="notification-switch"><input type="checkbox" role="switch" name="notify_watering_missing" data-notification-option{% if discord.notify_watering_missing %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">水やりを長期間確認できない</span></label>
+                  <label class="notification-switch"><input type="checkbox" role="switch" name="notify_soil_calibration_suggested" data-notification-option{% if discord.notify_soil_calibration_suggested %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">土の水分表示に調整候補がある</span></label>
+                </div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="上級者 MQTT ログ activity 大量">
+                <div class="setting-label with-help"><span>詳しい通信通知</span><details class="context-help"><summary aria-label="通信通知の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>問題調査用の通知</strong><p>通常運用では不要です。通信の問題を調べるときだけ、上級者向け設定を開いて使用します。</p></div></details></div>
+                <div class="setting-control"><details class="notification-advanced"><summary>上級者向け通知を開く</summary><div class="notification-advanced-body"><label class="notification-switch"><input type="checkbox" role="switch" name="notify_mqtt_activity" data-notification-option{% if discord.notify_mqtt_activity %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">MQTT通信ログをDiscordへ送る</span></label><p class="notification-warning">通知数が非常に多くなるため、問題調査中だけ有効にしてください。初期値はOFFです。</p></div></details></div>
+              </div>
+            </div>
+            <div class="section-actions"><button type="button" id="open-disable-all-notifications">全通知を無効にする</button><p class="disabled-reason" data-stateful-reason></p><button class="primary" type="submit" data-stateful-submit>通知設定を保存</button></div>
           </form>
         </section>
 
@@ -235,22 +325,22 @@
             <input type="hidden" name="settings_section" value="instagram">
             <div class="setting-list">
               <div class="setting-row" data-setting-row data-search="投稿 開始 時刻 schedule 日次">
-                <div class="setting-label" id="post-schedule-start-label">投稿処理開始時刻<small>Instagramの自動投稿処理を開始する時刻です。他の日次処理には使用しません。</small></div>
+                <div class="setting-label with-help"><span id="post-schedule-start-label">投稿処理開始時刻</span><details class="context-help"><summary aria-label="投稿処理開始時刻の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>Instagram専用の時刻</strong><p>Instagramの自動投稿処理を開始する時刻です。他の日次処理には使用しません。</p></div></details></div>
                 <div class="setting-control"><input type="time" name="post_schedule_start" value="{{ instagram.post_schedule_start or '09:01' }}" required aria-labelledby="post-schedule-start-label"></div>
               </div>
               <div class="setting-row" data-setting-row data-search="カメラ device camera タイムラプス 選択">
-                <div class="setting-label">投稿元カメラ<small>登録済みのカメラデバイスから選択します。</small></div>
+                <div class="setting-label with-help"><span>投稿元カメラ</span><details class="context-help"><summary aria-label="投稿元カメラの説明を開く">?</summary><div class="context-help-panel" role="note"><strong>投稿に使うカメラ</strong><p>登録済みのカメラから、Instagramへ投稿する画像の撮影元を選びます。</p></div></details></div>
                 <div class="setting-control">
                   <select id="instagram-camera-select" name="camera_id" aria-label="投稿元カメラ" data-searchable-select data-search-placeholder="カメラ名、IDを検索" data-empty-message="一致するカメラはありません。"><option value="">選択してください</option>{% for camera in instagram_camera_options %}<option value="{{ camera.id }}"{% if instagram.camera_id == camera.id %} selected{% endif %}>{{ camera.name }} / {{ camera.id }}</option>{% endfor %}</select>
                   {% if not instagram_camera_options %}<p class="disabled-reason">利用できるカメラデバイスがありません。<a href="/cameras/new">カメラを登録</a>してください。</p>{% endif %}
                 </div>
               </div>
               <div class="setting-row" data-setting-row data-search="植物 位置 配置 解析 prompt プロンプト">
-                <div class="setting-label" id="plant-position-prompt-label">植物位置の補足<small>画像内の作物の位置や、誤認を避けるための前提を投稿文生成へ渡します。</small></div>
+                <div class="setting-label with-help"><span id="plant-position-prompt-label">植物位置の補足</span><details class="context-help"><summary aria-label="植物位置の補足について説明を開く">?</summary><div class="context-help-panel" role="note"><strong>画像解析の補助</strong><p>画像内の作物の位置や、誤認を避けるための前提を投稿文生成へ渡します。</p></div></details></div>
                 <div class="setting-control"><textarea name="plant_position_prompt" maxlength="4000" placeholder="例: 画面中央はライチ。左端の鉢は解析対象外。" aria-labelledby="plant-position-prompt-label">{{ instagram.plant_position_prompt }}</textarea></div>
               </div>
               <div class="setting-row" data-setting-row data-search="アカウント username user ID API 取得 接続">
-                <div class="setting-label">投稿アカウント<small>自分のユーザー名をInstagram APIから取得し、コメント指示の判定にも使います。</small></div>
+                <div class="setting-label with-help"><span>投稿アカウント</span><details class="context-help"><summary aria-label="投稿アカウントの説明を開く">?</summary><div class="context-help-panel" role="note"><strong>Instagramアカウント</strong><p>自分のユーザー名をInstagram APIから取得し、コメント指示の判定にも使います。</p></div></details></div>
                 <div class="setting-control">
                   <div class="account-value" id="instagram-account-name">{% if instagram.account_username %}@{{ instagram.account_username }}{% else %}未取得{% endif %}</div>
                   <div class="inline-help" id="instagram-account-meta">{% if instagram.account_profile_updated_at %}最終取得: {{ instagram.account_profile_updated_at }}{% endif %}</div>
@@ -267,18 +357,26 @@
           <div class="section-heading"><div><h2>システム</h2><p>起動・接続設定の登録状態を確認します。</p></div></div>
           <div class="setting-list">
             <div class="setting-row" data-setting-row data-search="env 環境 Turso R2 S3 MQTT APIキー 接続 設定状態">
-              <div class="setting-label">接続設定<small>値そのものは画面へ表示しません。</small></div>
+              <div class="setting-label with-help"><span>接続設定</span><details class="context-help"><summary aria-label="接続設定の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>秘密情報を保護します</strong><p>この画面では登録状態だけを確認できます。接続先や秘密値そのものは表示しません。</p></div></details></div>
               <div class="setting-control"><div class="environment-grid">{% for item in infrastructure %}<div class="environment-item"><span>{{ item.label }}</span><span class="status{% if not item.configured %} missing{% endif %}">{% if item.configured %}設定済み{% else %}未設定{% endif %}</span></div>{% endfor %}</div></div>
             </div>
             <div class="setting-row" data-setting-row data-search="install configure uv 初期設定 変更 CLI command">
-              <div class="setting-label">初期設定・再設定<small>基盤接続情報とInstagramアクセストークンはHub上のCLIで変更します。</small></div>
+              <div class="setting-label with-help"><span>初期設定・再設定</span><details class="context-help"><summary aria-label="初期設定コマンドの説明を開く">?</summary><div class="context-help-panel" role="note"><strong>Hub本体で行う設定</strong><p>基盤接続情報とInstagramアクセストークンは、Hub本体のコマンドから変更します。</p></div></details></div>
               <div class="setting-control"><div class="command">uv run ina-hub install</div><div class="command">uv run ina-hub configure</div></div>
+            </div>
+            <div class="setting-row" data-setting-row data-search="追加機能 Extension インストール 監査 セキュリティ コミュニティ">
+              <div class="setting-label with-help"><span>追加機能</span><details class="context-help"><summary aria-label="追加機能の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>コミュニティの追加機能</strong><p>コミュニティが提供する画面機能を、内容と安全性を確認して追加します。インストール前に監査結果を確認できます。</p></div></details></div>
+              <div class="setting-control"><a class="setting-link" href="/settings/extensions">追加機能を管理</a></div>
             </div>
           </div>
         </section>
         <p class="empty-search" id="settings-empty" hidden>一致する設定がありません。</p>
       </div>
     </main>
+    <dialog class="confirm-dialog" id="disable-all-notifications-dialog" aria-labelledby="disable-all-notifications-title">
+      <div class="confirm-dialog-body"><h2 id="disable-all-notifications-title">すべての通知を止めますか？</h2><p>種類別の設定は残ります。あとで「Discord通知を受け取る」をONにすると、同じ設定で再開できます。</p></div>
+      <div class="confirm-dialog-actions"><button type="button" data-close-disable-all>キャンセル</button><button class="danger" type="button" id="confirm-disable-all-notifications">すべて止める</button></div>
+    </dialog>
     <div class="ai-dialog-backdrop" id="ai-test-dialog" hidden>
       <section class="ai-dialog" role="dialog" aria-modal="true" aria-labelledby="ai-test-dialog-title" aria-describedby="ai-test-dialog-summary">
         <header class="ai-dialog-header">
@@ -294,6 +392,7 @@
         <footer class="ai-dialog-footer"><button class="primary" type="button" data-ai-dialog-close>閉じる</button></footer>
       </section>
     </div>
+    <script src="/static/context-help.js"></script>
     <script src="/static/stateful-actions.js"></script>
     <script src="/static/select-filter.js"></script>
     <script>
@@ -323,6 +422,28 @@
       const activeSection = {{ active_section|tojson }};
       document.querySelector(`[data-settings-nav="${CSS.escape(activeSection)}"]`)?.classList.add("active");
       if (activeSection !== "ai") requestAnimationFrame(() => document.getElementById(activeSection)?.scrollIntoView({block:"start"}));
+
+      const notificationForm = document.getElementById("notification-settings-form");
+      const notificationMaster = notificationForm.querySelector("[data-notification-master]");
+      const plantTaskToggle = notificationForm.elements.notify_plant_tasks;
+      const plantTaskOptionsContainer = notificationForm.querySelector("[data-plant-task-notification-options]");
+      const syncNotificationControls = () => {
+        notificationForm.dataset.notificationsPaused = String(!notificationMaster.checked);
+        plantTaskOptionsContainer.dataset.notificationsPaused = String(!plantTaskToggle.checked);
+      };
+      notificationMaster.addEventListener("change", syncNotificationControls);
+      plantTaskToggle.addEventListener("change", syncNotificationControls);
+      syncNotificationControls();
+      const disableAllDialog = document.getElementById("disable-all-notifications-dialog");
+      document.getElementById("open-disable-all-notifications").addEventListener("click", () => disableAllDialog.showModal());
+      disableAllDialog.querySelector("[data-close-disable-all]").addEventListener("click", () => disableAllDialog.close());
+      document.getElementById("confirm-disable-all-notifications").addEventListener("click", () => {
+        document.getElementById("disable-all-notifications-value").value = "1";
+        notificationMaster.checked = false;
+        disableAllDialog.close();
+        syncNotificationControls();
+        notificationForm.requestSubmit();
+      });
 
       const aiTestDialog = document.getElementById("ai-test-dialog");
       const closeAiTestDialog = () => {

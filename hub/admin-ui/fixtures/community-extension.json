@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "com.example.community.tank-check",
+  "name": "液肥タンクの見守りガイド",
+  "version": "1.0.0",
+  "description": "液肥を作る前後に、タンクと配管を確認する順番を機器画面へ追加します。",
+  "compatibility": {
+    "hub_extension_api": 1
+  },
+  "ui": {
+    "device_detail": {
+      "device_kinds": [
+        "FGT"
+      ],
+      "overview_cards": [
+        {
+          "id": "tank-check",
+          "type": "callout",
+          "title": "運転前にタンクを確認",
+          "description": "水位、A液・B液の残量、洗浄水の準備を順番に確認します。",
+          "tone": "water"
+        }
+      ]
+    }
+  }
+}

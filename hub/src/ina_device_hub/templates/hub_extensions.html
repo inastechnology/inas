@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>追加機能 - INA Device Hub</title>
+    <style>
+      :root { --ink:#202b26; --muted:#5f6e66; --line:#ccd7cf; --green:#176b52; --green-dark:#104d3c; --green-soft:#e9f4ee; --amber:#80510b; --amber-soft:#fff3d9; --red:#983b32; --red-soft:#fff0ee; --blue:#315f78; --blue-soft:#edf6fa; --surface:#fff; --bg:#eef2ee; }
+      * { box-sizing:border-box; }
+      [hidden] { display:none !important; }
+      body { min-width:320px; min-height:100vh; margin:0; color:var(--ink); background:var(--bg); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+      button,input { font:inherit; letter-spacing:0; }
+      button { min-height:44px; padding:9px 15px; border:1px solid var(--green); border-radius:7px; color:var(--green); background:#fff; cursor:pointer; font-weight:850; }
+      button.primary { color:#fff; background:var(--green); }
+      button.danger { border-color:#b75b52; color:#8b3029; }
+      button:disabled { border-color:#b9c3bc; color:#7b8780; background:#eff2f0; cursor:not-allowed; }
+      button:focus-visible,a:focus-visible,input:focus-visible { outline:3px solid rgba(23,107,82,.26); outline-offset:2px; }
+      a { color:inherit; }
+      .page-header { border-bottom:1px solid var(--line); background:#fff; }
+      .header-inner,main { width:min(1080px,calc(100% - 40px)); margin:auto; }
+      .header-inner { display:flex; align-items:end; justify-content:space-between; gap:20px; padding:18px 0; }
+      .brand { color:#56645c; font-size:11px; font-weight:850; text-decoration:none; }
+      h1 { margin:4px 0 0; font-size:28px; line-height:1.25; }
+      .back-link { color:#245f4a; font-size:13px; font-weight:850; }
+      main { display:grid; gap:18px; padding:22px 0 56px; }
+      .hero { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(240px,.75fr); gap:22px; overflow:hidden; padding:24px; border:1px solid var(--line); border-radius:14px; background:linear-gradient(135deg,#fff 0%,#f7fbf8 60%,#e1f0e8 100%); }
+      .eyebrow { display:block; margin-bottom:7px; color:#527166; font-size:11px; font-weight:900; letter-spacing:.1em; }
+      .hero h2 { margin:0; font-size:24px; line-height:1.4; }
+      .hero p { max-width:650px; margin:10px 0 0; color:#46574e; line-height:1.75; }
+      .safety-visual { display:grid; align-content:center; gap:10px; padding:18px; border-radius:12px; color:#174c3b; background:rgba(255,255,255,.76); box-shadow:0 12px 32px rgba(28,78,57,.1); }
+      .safety-step { display:grid; grid-template-columns:34px minmax(0,1fr); align-items:center; gap:10px; font-size:13px; font-weight:800; }
+      .safety-step span { display:grid; width:34px; height:34px; place-items:center; border:2px solid #8cbba7; border-radius:50%; background:#fff; }
+      .panel { overflow:hidden; border:1px solid var(--line); border-radius:12px; background:#fff; }
+      .panel-heading { display:flex; align-items:start; justify-content:space-between; gap:16px; padding:20px 22px 15px; border-bottom:1px solid #e0e6e1; }
+      .panel-heading h2 { margin:0; font-size:20px; }
+      .panel-heading p { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.6; }
+      .upload-body { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:14px; padding:20px 22px; }
+      .file-field { display:grid; gap:7px; font-size:13px; font-weight:850; }
+      input[type=file] { width:100%; min-height:48px; padding:9px; border:1px solid #aebeb3; border-radius:7px; color:#33443a; background:#f9fbfa; }
+      input[type=file]::file-selector-button { min-height:32px; margin-right:10px; padding:5px 11px; border:1px solid #8ba99a; border-radius:5px; color:#245c48; background:#fff; font-weight:800; cursor:pointer; }
+      .help { margin:0; color:var(--muted); font-size:12px; line-height:1.65; }
+      .status-message { margin:0 22px 20px; padding:12px 14px; border-left:4px solid #759b88; color:#34473d; background:#f0f6f2; font-size:13px; line-height:1.6; }
+      .status-message.error { border-left-color:#b74c43; color:#7d2e28; background:var(--red-soft); }
+      .catalog { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+      .extension-list { display:grid; gap:10px; padding:16px 18px 20px; }
+      .extension-card { padding:15px; border:1px solid #d9e1db; border-radius:9px; background:#fbfcfb; }
+      .extension-card-header { display:flex; align-items:start; justify-content:space-between; gap:12px; }
+      .extension-card h3 { margin:0; font-size:15px; line-height:1.45; }
+      .extension-card p { margin:7px 0 0; color:#526159; font-size:12px; line-height:1.6; }
+      .meta { margin-top:9px; color:#64736b; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:10px; overflow-wrap:anywhere; }
+      .badge { display:inline-flex; align-items:center; min-height:26px; padding:4px 8px; border-radius:999px; color:#245e49; background:var(--green-soft); font-size:11px; font-weight:900; white-space:nowrap; }
+      .badge.community { color:#6d4a14; background:var(--amber-soft); }
+      .empty { margin:0; padding:18px; border:1px dashed #b9c7bd; border-radius:8px; color:var(--muted); font-size:13px; text-align:center; }
+      dialog { width:min(760px,calc(100% - 28px)); max-height:calc(100vh - 36px); padding:0; border:0; border-radius:14px; color:var(--ink); background:#fff; box-shadow:0 24px 80px rgba(15,32,23,.34); }
+      dialog::backdrop { background:rgba(16,30,23,.62); }
+      .dialog-header { display:flex; align-items:start; justify-content:space-between; gap:14px; padding:20px 22px 15px; border-bottom:1px solid #dfe6e1; }
+      .dialog-header h2 { margin:3px 0 0; font-size:21px; line-height:1.4; }
+      .dialog-close { min-width:48px; padding:6px 10px; border-color:#c3cec7; color:#4e5f56; white-space:nowrap; }
+      .dialog-body { display:grid; gap:16px; padding:18px 22px; }
+      .identity { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; padding:15px; border-radius:9px; background:#f1f6f3; }
+      .identity h3 { margin:0; font-size:17px; }
+      .identity p { margin:4px 0 0; color:#526159; font-size:12px; }
+      .identity dl { grid-column:1/-1; display:grid; grid-template-columns:max-content minmax(0,1fr); gap:5px 12px; margin:4px 0 0; font-size:11px; }
+      .identity dt { color:#627169; font-weight:800; }
+      .identity dd { margin:0; overflow-wrap:anywhere; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+      .review-section { padding:15px; border:1px solid #dbe3dd; border-radius:9px; }
+      .review-section h3 { margin:0; font-size:15px; }
+      .review-section > p { margin:6px 0 0; color:#4e5e55; font-size:13px; line-height:1.65; }
+      .finding-list { display:grid; gap:8px; margin:12px 0 0; padding:0; list-style:none; }
+      .finding { display:grid; grid-template-columns:74px minmax(0,1fr); gap:10px; padding:10px; border-radius:7px; background:#f4f7f5; }
+      .finding strong { font-size:12px; }
+      .finding p { margin:3px 0 0; color:#526159; font-size:12px; line-height:1.55; }
+      .finding-label { align-self:start; padding:3px 6px; border-radius:999px; color:#226048; background:#dff0e7; font-size:10px; font-weight:900; text-align:center; }
+      .finding.warning .finding-label { color:#744b09; background:#ffedc5; }
+      .finding.block .finding-label { color:#8a3029; background:#ffdeda; }
+      .ai-pending { border-color:#c6d9e2; background:var(--blue-soft); }
+      .ai-pending-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:12px; }
+      .capabilities { display:flex; flex-wrap:wrap; gap:7px; margin-top:10px; }
+      .capabilities span { padding:5px 8px; border:1px solid #bcd0c5; border-radius:999px; color:#345b49; background:#f5faf7; font-size:11px; font-weight:800; }
+      .dialog-error { margin:0; padding:11px 13px; border-left:4px solid #b74c43; color:#7e2f29; background:var(--red-soft); font-size:13px; line-height:1.6; }
+      .dialog-footer { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:10px; padding:15px 22px 20px; border-top:1px solid #e2e7e3; }
+      .confirm-dialog { width:min(600px,calc(100% - 28px)); }
+      .confirm-lead { margin:0; color:#35483e; font-size:15px; font-weight:750; line-height:1.7; }
+      .sharing-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+      .sharing-list li { display:grid; grid-template-columns:24px minmax(0,1fr); gap:9px; color:#3f5047; font-size:13px; line-height:1.55; }
+      .sharing-list li::before { display:grid; width:22px; height:22px; place-items:center; border-radius:50%; color:#fff; background:#33765e; content:"✓"; font-size:12px; font-weight:900; }
+      .sharing-list li.not-shared::before { background:#8a504a; content:"×"; }
+      .provider-box { display:grid; grid-template-columns:110px minmax(0,1fr); gap:7px 12px; padding:13px; border-radius:8px; background:#f2f5f3; font-size:12px; }
+      .provider-box strong { color:#59685f; }
+      .provider-box span { overflow-wrap:anywhere; }
+      .cost-note { margin:0; padding:12px 13px; border-left:4px solid #c38a2c; color:#674810; background:#fff6e4; font-size:12px; line-height:1.65; }
+      body:has(dialog[open]) { overflow:hidden; }
+      @media (max-width:760px) {
+        .header-inner,main { width:min(100% - 24px,1080px); }
+        .header-inner { align-items:start; }
+        .hero { grid-template-columns:1fr; padding:19px; }
+        .hero h2 { font-size:21px; }
+        .catalog { grid-template-columns:1fr; }
+        .upload-body { grid-template-columns:1fr; align-items:stretch; padding:17px; }
+        .upload-body button { width:100%; }
+        .panel-heading { padding:17px; }
+        .status-message { margin:0 17px 17px; }
+        dialog { width:100%; max-height:90vh; margin:auto 0 0; border-radius:16px 16px 0 0; }
+        .dialog-header,.dialog-body,.dialog-footer { padding-left:17px; padding-right:17px; }
+        .identity { grid-template-columns:1fr; }
+        .identity .badge { justify-self:start; }
+        .finding { grid-template-columns:1fr; }
+        .finding-label { justify-self:start; }
+        .ai-pending-row { align-items:stretch; flex-direction:column; }
+        .dialog-footer { align-items:stretch; flex-direction:column-reverse; }
+        .dialog-footer button { width:100%; }
+        .provider-box { grid-template-columns:1fr; }
+      }
+    </style>
+    <link rel="stylesheet" href="/static/hub-ui.css">
+  </head>
+  <body class="hub-shell hub-settings {{ accessibility_body_class }}">
+    <header class="page-header">
+      <div class="header-inner">
+        <div><a class="brand" href="/">INA Device Hub</a><h1>追加機能</h1></div>
+        <a class="back-link" href="/settings?section=system">アプリ設定へ戻る</a>
+      </div>
+    </header>
+    <main>
+      <section class="hero" aria-labelledby="extension-hero-title">
+        <div><span class="eyebrow">HUB EXTENSIONS</span><div class="context-help-row"><h2 id="extension-hero-title">中身を確かめてから、Hubに機能を足す</h2><details class="context-help"><summary aria-label="追加機能の安全確認の説明を開く" title="安全確認の流れ">?</summary><div class="context-help-panel" role="note"><strong>安全確認の流れ</strong><p>コミュニティの追加機能は、まずHub内で形式と危険な内容を検査します。AI監査は自動では始まりません。送信内容を確認し、同意した場合だけ実行します。</p></div></details></div></div>
+        <div class="safety-visual" aria-label="追加機能を安全に確認する3段階"><div class="safety-step"><span>1</span>Hub内で静的検査</div><div class="safety-step"><span>2</span>確認後にAI監査</div><div class="safety-step"><span>3</span>人が追加を決定</div></div>
+      </section>
+
+      <section class="panel" aria-labelledby="upload-title">
+        <div class="panel-heading"><div class="context-help-row"><h2 id="upload-title">追加機能を確認する</h2><details class="context-help"><summary aria-label="ファイル確認で行われることの説明を開く" title="この段階で行われること">?</summary><div class="context-help-panel" role="note"><strong>この段階で行われること</strong><p>この操作だけではインストールされず、AIにも送信されません。まずHub内で検査します。</p></div></details></div><span class="badge community">未確認ファイル</span></div>
+        <form id="extension-upload-form">
+          <div class="upload-body">
+            <label class="file-field">追加機能ファイル<input id="extension-file" name="extension" type="file" accept=".json,.inas-extension,.zip,application/json,application/zip" required><span class="help">extension.json または .inas-extension（上限512KB）</span></label>
+            <button class="primary" id="static-review-button" type="submit">Hub内で安全性を確認</button>
+          </div>
+        </form>
+        <p class="status-message" id="page-status" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <div class="catalog">
+        <section class="panel" aria-labelledby="installed-title">
+          <div class="panel-heading"><div class="context-help-row"><h2 id="installed-title">追加済み</h2><details class="context-help"><summary aria-label="追加済み機能の説明を開く" title="追加済みとは">?</summary><div class="context-help-panel" role="note"><strong>追加済みとは</strong><p>管理者が監査結果を確認して追加した機能です。</p></div></details></div><span class="badge community">COMMUNITY</span></div>
+          <div class="extension-list">
+            {% for extension in installed_extensions %}<article class="extension-card"><div class="extension-card-header"><h3>{{ extension.name }}</h3><span class="badge community">追加済み</span></div><p>{{ extension.description }}</p><div class="meta">{{ extension.id }} · v{{ extension.version }}</div></article>{% else %}<p class="empty">追加したコミュニティ機能はまだありません。</p>{% endfor %}
+          </div>
+        </section>
+        <section class="panel" aria-labelledby="bundled-title">
+          <div class="panel-heading"><div class="context-help-row"><h2 id="bundled-title">Hubに同梱</h2><details class="context-help"><summary aria-label="同梱機能の説明を開く" title="Hubに同梱とは">?</summary><div class="context-help-panel" role="note"><strong>Hubに同梱とは</strong><p>リポジトリのレビューと試験を通して配布される機能です。</p></div></details></div><span class="badge">BUNDLED</span></div>
+          <div class="extension-list">
+            {% for extension in bundled_extensions %}<article class="extension-card"><div class="extension-card-header"><h3>{{ extension.name }}</h3><span class="badge">同梱</span></div><p>{{ extension.description }}</p><div class="meta">{{ extension.id }} · v{{ extension.version }}</div></article>{% else %}<p class="empty">同梱機能はありません。</p>{% endfor %}
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <dialog id="review-dialog" aria-labelledby="review-title">
+      <div class="dialog-header"><div><span class="eyebrow">SECURITY REVIEW</span><h2 id="review-title">追加機能の監査結果</h2></div><button class="dialog-close" type="button" data-close-review aria-label="監査結果を閉じる">× 閉じる</button></div>
+      <div class="dialog-body">
+        <section class="identity"><div><h3 id="review-name">追加機能</h3><p id="review-description"></p></div><span class="badge community" id="review-risk">確認中</span><dl><dt>ID</dt><dd id="review-extension-id"></dd><dt>バージョン</dt><dd id="review-version"></dd><dt>SHA-256</dt><dd id="review-digest"></dd><dt>提供元</dt><dd>未検証（署名なし）</dd></dl></section>
+        <section class="review-section"><h3>Hub内の静的検査</h3><p>形式、危険なファイル構造、実行可能な表現、権限を機械的に確認しました。</p><ul class="finding-list" id="static-findings"></ul></section>
+        <section class="review-section ai-pending" id="ai-review-section"><h3>AIによる内容監査</h3><p id="ai-summary">まだ実行していません。確認ダイアログで送信内容を確かめてから開始できます。</p><ul class="finding-list" id="ai-findings"></ul><div class="ai-pending-row" id="ai-action-row"><span class="help">AIは補助判断です。静的検査の拒否を覆すことはできません。</span><button id="open-ai-confirmation" type="button">送信内容を確認してAI監査</button></div></section>
+        <section class="review-section"><h3>この追加機能に許可すること</h3><div class="capabilities"><span>機器詳細への説明表示</span><span>許可済み値の読み取り表示</span><span>実行コードなし</span><span>機器操作なし</span><span>秘密情報へのアクセスなし</span></div></section>
+        <p class="dialog-error" id="review-error" role="alert" hidden></p>
+      </div>
+      <div class="dialog-footer"><button type="button" data-close-review>インストールしない</button><button class="primary" id="install-button" type="button" disabled>監査後にインストールできます</button></div>
+    </dialog>
+
+    <dialog class="confirm-dialog" id="ai-confirm-dialog" aria-labelledby="ai-confirm-title">
+      <div class="dialog-header"><div><span class="eyebrow">BEFORE AI REVIEW</span><h2 id="ai-confirm-title">AI監査を始めますか？</h2></div><button class="dialog-close" type="button" data-cancel-ai aria-label="AI監査の確認を閉じる">× 閉じる</button></div>
+      <div class="dialog-body">
+        <p class="confirm-lead">次の内容を確認してください。「開始」を押すまではAIサービスへ何も送信しません。</p>
+        <ul class="sharing-list"><li>送信する: 検証済みの追加機能定義（表示名、説明、対応機器、画面構成）</li><li>送信する: Hub内の静的検査結果</li><li class="not-shared">送信しない: APIキー、DB、機器データ、圃場データ、利用者情報</li></ul>
+        <div class="provider-box"><strong>利用モデル</strong><span id="ai-model">{{ ai_review.model }}</span><strong>送信先</strong><span id="ai-destination">{{ ai_review.destination }}</span><strong>現在の状態</strong><span>{% if ai_review.configured %}AI監査を利用できます{% else %}AIが未設定のため、外部送信せず利用不可として記録します{% endif %}</span></div>
+        <p class="cost-note">AIサービスの契約内容に応じて利用料が発生する場合があります。AIの判定には見逃しや誤検知があり、安全を保証するものではありません。</p>
+        <p class="dialog-error" id="ai-confirm-error" role="alert" hidden></p>
+      </div>
+      <div class="dialog-footer"><button type="button" data-cancel-ai>今回は実行しない</button><button class="primary" id="confirm-ai-audit" type="button">同意してAI監査を開始</button></div>
+    </dialog>
+
+    <script src="/static/context-help.js"></script>
+    <script>
+      (() => {
+        const uploadForm = document.getElementById("extension-upload-form");
+        const staticButton = document.getElementById("static-review-button");
+        const pageStatus = document.getElementById("page-status");
+        const reviewDialog = document.getElementById("review-dialog");
+        const confirmDialog = document.getElementById("ai-confirm-dialog");
+        const confirmButton = document.getElementById("confirm-ai-audit");
+        const installButton = document.getElementById("install-button");
+        const aiButton = document.getElementById("open-ai-confirmation");
+        let currentReview = null;
+
+        const setBusy = (button, busy, busyLabel) => {
+          if (busy) {
+            button.dataset.idleLabel = button.textContent;
+            button.textContent = busyLabel;
+            button.disabled = true;
+            button.setAttribute("aria-busy", "true");
+          } else {
+            button.textContent = button.dataset.idleLabel || button.textContent;
+            button.removeAttribute("aria-busy");
+            button.disabled = false;
+          }
+        };
+        const setMessage = (element, message, error = false) => {
+          element.textContent = message || "";
+          element.classList.toggle("error", error);
+          element.hidden = !message;
+        };
+        const requestJSON = async (url, options) => {
+          const response = await fetch(url, options);
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(body.error || `処理に失敗しました（${response.status}）`);
+          return body;
+        };
+        const addFinding = (list, finding) => {
+          const item = document.createElement("li");
+          const severity = ["pass", "warning", "block"].includes(finding.severity) ? finding.severity : "warning";
+          item.className = `finding ${severity}`;
+          const label = document.createElement("span");
+          label.className = "finding-label";
+          label.textContent = severity === "pass" ? "確認済み" : severity === "block" ? "拒否" : "要確認";
+          const copy = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = finding.title || "確認事項";
+          const detail = document.createElement("p");
+          detail.textContent = finding.detail || "";
+          copy.append(title, detail);
+          item.append(label, copy);
+          list.append(item);
+        };
+        const fillFindings = (id, findings) => {
+          const list = document.getElementById(id);
+          list.replaceChildren();
+          (findings || []).forEach((finding) => addFinding(list, finding));
+        };
+        const riskLabel = (risk) => ({low:"低リスク",medium:"要確認",high:"高リスク",blocked:"インストール不可"})[risk] || "確認中";
+        const renderReview = (review) => {
+          currentReview = review;
+          const manifest = review.manifest || {};
+          document.getElementById("review-name").textContent = manifest.name || "読み取れない追加機能";
+          document.getElementById("review-description").textContent = manifest.description || "定義を読み取れませんでした。";
+          document.getElementById("review-extension-id").textContent = manifest.id || "不明";
+          document.getElementById("review-version").textContent = manifest.version || "不明";
+          document.getElementById("review-digest").textContent = review.sha256 || "不明";
+          document.getElementById("review-risk").textContent = riskLabel(review.overall_risk);
+          fillFindings("static-findings", review.static_findings);
+          fillFindings("ai-findings", review.ai_audit?.findings);
+          document.getElementById("ai-summary").textContent = review.ai_audit?.summary || "AI監査はまだ実行していません。";
+          const aiStatus = review.ai_audit?.status;
+          const auditFinished = aiStatus === "completed" || aiStatus === "unavailable";
+          aiButton.hidden = !review.install_allowed || auditFinished;
+          document.getElementById("ai-action-row").hidden = !review.install_allowed || auditFinished;
+          installButton.disabled = !review.install_allowed || !auditFinished;
+          installButton.textContent = !review.install_allowed ? "インストールできません" : auditFinished ? "この追加機能をインストール" : "AI監査前の確認が必要です";
+          setMessage(document.getElementById("review-error"), "");
+        };
+
+        uploadForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          setMessage(pageStatus, "");
+          const formData = new FormData(uploadForm);
+          setBusy(staticButton, true, "Hub内で検査しています");
+          try {
+            const body = await requestJSON("/local/api/extensions/reviews", {method:"POST", body:formData});
+            renderReview(body.review);
+            reviewDialog.showModal();
+          } catch (error) {
+            setMessage(pageStatus, error.message, true);
+          } finally {
+            setBusy(staticButton, false);
+          }
+        });
+
+        aiButton.addEventListener("click", () => {
+          setMessage(document.getElementById("ai-confirm-error"), "");
+          confirmDialog.showModal();
+        });
+        document.querySelectorAll("[data-cancel-ai]").forEach((button) => button.addEventListener("click", () => confirmDialog.close()));
+        confirmButton.addEventListener("click", async () => {
+          if (!currentReview) return;
+          setMessage(document.getElementById("ai-confirm-error"), "");
+          setBusy(confirmButton, true, "AIで監査しています");
+          try {
+            const body = await requestJSON(`/local/api/extensions/reviews/${encodeURIComponent(currentReview.id)}/ai-audit`, {
+              method:"POST",
+              headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({confirmed:true}),
+            });
+            confirmDialog.close();
+            renderReview(body.review);
+          } catch (error) {
+            setMessage(document.getElementById("ai-confirm-error"), error.message, true);
+          } finally {
+            setBusy(confirmButton, false);
+          }
+        });
+        installButton.addEventListener("click", async () => {
+          if (!currentReview) return;
+          setMessage(document.getElementById("review-error"), "");
+          setBusy(installButton, true, "インストールしています");
+          try {
+            await requestJSON(`/local/api/extensions/reviews/${encodeURIComponent(currentReview.id)}/install`, {method:"POST"});
+            reviewDialog.close();
+            setMessage(pageStatus, "追加機能をインストールしました。機器詳細画面ですぐに利用できます。");
+            window.setTimeout(() => window.location.reload(), 900);
+          } catch (error) {
+            setMessage(document.getElementById("review-error"), error.message, true);
+            setBusy(installButton, false);
+          }
+        });
+        document.querySelectorAll("[data-close-review]").forEach((button) => button.addEventListener("click", () => reviewDialog.close()));
+      })();
+    </script>
+  </body>
+</html>

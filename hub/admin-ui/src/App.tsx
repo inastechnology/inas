@@ -50,6 +50,7 @@ import {
 import { DisabledActionReason, disabledActionTitle } from "./DisabledActionReason";
 import { errorMessage, formatDate, todayString } from "./formatters";
 import { InstallationCanvas } from "./InstallationCanvas";
+import { HelpDisclosure } from "./HelpDisclosure";
 import { mergeLayouts } from "./layoutMerge";
 import { ActivityIndicator, LoadingState } from "./LoadingState";
 import { PlantCalendarDrawer } from "./plant-calendar/PlantCalendarDrawer";
@@ -1079,7 +1080,7 @@ function PlacementInspector({
             ]}
           />
         </div>
-        {placement.preset === "camera" && <small className="field-help">登録済みのネットワークカメラを選択します。候補がない場合は<a href="/cameras/new">カメラを登録</a>してください。</small>}
+        {placement.preset === "camera" && <HelpDisclosure title="カメラの候補について" align="left"><p>登録済みのネットワークカメラを選択します。候補がない場合は<a href="/cameras/new" target="_blank" rel="noopener">カメラを登録</a>してください。</p></HelpDisclosure>}
         <p className="binding-location"><span>設置環境</span><strong>{spaceLocation}</strong></p>
       </section>}
       {canBindDevice && placement.binding && placement.preset !== "camera" && (
@@ -1100,7 +1101,7 @@ function PlacementInspector({
               ...(placement.preset === "sensor" ? [{ value: "sensor:", label: "搭載センサーすべて", fixed: true }] : []),
             ]}
           />
-          <small className="field-help">{bindingResourceHelp(placement.preset)}</small>
+          <HelpDisclosure title={`${bindingResourceLabel(placement.preset)}とは`} align="left"><p>{bindingResourceHelp(placement.preset)}</p></HelpDisclosure>
         </div>
       )}
       {canBindDevice && placement.binding && selectableTargets.length > 0 && (

@@ -134,10 +134,7 @@ def validate_plant_question(question: str, planting: dict | None = None) -> tupl
     if isinstance(planting, dict):
         context_terms.extend((planting.get("crop_name"), planting.get("cultivar"), planting.get("placement_name")))
     has_cultivation_context = any(term in normalized for term in _AGRICULTURE_TERMS)
-    has_registered_name = any(
-        (name := unicodedata.normalize("NFKC", str(value or "")).casefold().strip()) and name in normalized
-        for value in context_terms
-    )
+    has_registered_name = any((name := unicodedata.normalize("NFKC", str(value or "")).casefold().strip()) and name in normalized for value in context_terms)
     if not has_cultivation_context and not has_registered_name:
         return (
             False,

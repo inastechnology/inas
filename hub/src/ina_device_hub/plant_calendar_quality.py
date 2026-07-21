@@ -89,9 +89,7 @@ def evaluate_plant_calendar(context: dict, calendar: dict, expectations: dict | 
     last_start = max((start for start, _end, _action in dated_actions), default=plan_start)
     horizon_days = (last_start - plan_start).days
     recurring_rules = [
-        rule
-        for rule in task_rules
-        if isinstance(rule, dict) and rule.get("recurrence_type") in {"interval_after_completion", "seasonal", "continuous_review"}
+        rule for rule in task_rules if isinstance(rule, dict) and rule.get("recurrence_type") in {"interval_after_completion", "seasonal", "continuous_review"}
     ]
     horizon_covered = horizon_days >= min_horizon_days or bool(recurring_rules)
     horizon_detail = (

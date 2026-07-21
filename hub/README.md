@@ -99,6 +99,27 @@ npm install
 npm run build
 ```
 
+## Hub Extensions
+
+Repository Extensions live under `../extensions/<name>/extension.json`. Validate
+them and refresh the packaged registry after changing a manifest:
+
+```bash
+uv run python scripts/build_extension_registry.py
+uv run python scripts/build_extension_registry.py --check
+```
+
+Extension API version 1 supports safe, declarative device-detail overview cards
+and supplementary tabs. See
+[`../docs/EXTENSION_SPECIFICATION.md`](../docs/EXTENSION_SPECIFICATION.md). The
+running Hub reads the generated registry packaged under
+`ina_device_hub/extensions/generated/` plus manifests explicitly installed by
+an administrator from **App settings → Extensions**. Upload runs local static
+checks only; a separate confirmation is required before optional AI review, and
+installation is a final independent action. Neither source executes
+Extension-owned code. See the
+[security review policy](../docs/EXTENSION_SECURITY_REVIEW_POLICY.md).
+
 With the demo server running on port 39252, the browser smoke test can be run
 with `HUB_URL=http://127.0.0.1:39252 npm run smoke`.
 

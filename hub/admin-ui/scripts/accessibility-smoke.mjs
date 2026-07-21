@@ -109,10 +109,27 @@ try {
   }
   await page.goto(`${baseUrl}/preferences`, { waitUntil: "networkidle0" });
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  const helpSummary = ".hub-guide-banner .context-help > summary";
+  assert.equal(await page.$eval(helpSummary, (summary) => {
+    const rect = summary.getBoundingClientRect();
+    return rect.width >= 47.5 && rect.height >= 47.5;
+  }), true, "context help must provide a 48px touch target");
+  assert.doesNotMatch(await page.$eval(".hub-guide-banner", (banner) => banner.innerText || ""), /機器や圃場の設定値には影響しません/, "optional help must start collapsed");
+  await page.click(helpSummary);
+  assert.equal(await page.$eval(".hub-guide-banner .context-help", (details) => details.open), true);
+  assert.match(await page.$eval(".hub-guide-banner", (banner) => banner.innerText || ""), /機器や圃場の設定値には影響しません/);
+  const helpPanelBounds = await page.$eval(".hub-guide-banner .context-help-panel", (panel) => {
+    const rect = panel.getBoundingClientRect();
+    return { left: rect.left, right: rect.right, bottom: rect.bottom, width: rect.width };
+  });
+  assert(helpPanelBounds.left >= 0 && helpPanelBounds.right <= 390 && helpPanelBounds.bottom <= 844, "mobile help must stay inside the viewport");
+  await page.screenshot({ path: "/tmp/ina-context-help-mobile-open.png", fullPage: false });
+  await page.keyboard.press("Escape");
+  assert.equal(await page.$eval(".hub-guide-banner .context-help", (details) => details.open), false, "Escape must close context help");
   await page.keyboard.press("Tab");
   await page.screenshot({ path: "/tmp/ina-accessibility-keyboard-mobile.png", fullPage: false });
   assert.equal(browserErrors.length, 0, browserErrors.join("\n"));
-  process.stdout.write(JSON.stringify({ audited: audited.map(({ label, mode }) => `${label}:${mode}`), screenshot: "/tmp/ina-accessibility-keyboard-mobile.png" }, null, 2) + "\n");
+  process.stdout.write(JSON.stringify({ audited: audited.map(({ label, mode }) => `${label}:${mode}`), screenshots: ["/tmp/ina-context-help-mobile-open.png", "/tmp/ina-accessibility-keyboard-mobile.png"] }, null, 2) + "\n");
 } finally {
   await browser.close();
 }

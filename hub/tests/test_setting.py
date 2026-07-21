@@ -102,6 +102,41 @@ class SettingTest(unittest.TestCase):
             self.assertFalse(reloaded["plant_calendar_web_knowledge_enabled"])
             self.assertEqual(reloaded["plant_calendar_web_knowledge_cache_days"], 45)
 
+    def test_discord_preferences_are_runtime_editable_without_persisting_webhook(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.json"
+            current = Setting(path)
+
+            current.set(
+                "discord",
+                {
+                    "enabled": False,
+                    "notify_plant_tasks": True,
+                    "plant_task_reminder_days_before": 3,
+                    "plant_task_notify_on_start_day": False,
+                    "webhook_url": "https://discord.example/secret",
+                },
+            )
+
+            reloaded = Setting(path).get("discord")
+            persisted = json.loads(path.read_text())
+            self.assertFalse(reloaded["enabled"])
+            self.assertEqual(reloaded["plant_task_reminder_days_before"], 3)
+            self.assertFalse(reloaded["plant_task_notify_on_start_day"])
+            self.assertNotIn("webhook_url", persisted["discord"])
+            self.assertNotIn("discord.example/secret", path.read_text())
+
+    def test_legacy_runtime_settings_receive_new_discord_defaults(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.json"
+            path.write_text(json.dumps({"schema_version": 1, "ai": {"enabled": True}}))
+
+            discord = Setting(path).get("discord")
+
+            self.assertTrue(discord["enabled"])
+            self.assertEqual(discord["plant_task_reminder_days_before"], 7)
+            self.assertFalse(discord["notify_mqtt_activity"])
+
     def test_non_runtime_section_cannot_be_saved(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             current = Setting(Path(temporary_directory) / "config.json")

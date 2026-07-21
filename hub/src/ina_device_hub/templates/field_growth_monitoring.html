@@ -114,7 +114,7 @@
 
       <section>
         <div class="section-heading">
-          <div><h2>監視カメラ</h2><p>設置ビューの監視対象と、定植中の作物を使って評価範囲を決めます。</p></div>
+          <div class="context-help-row"><h2>監視カメラ</h2><details class="context-help left"><summary aria-label="評価範囲の決め方の説明を開く" title="評価範囲の決め方">?</summary><div class="context-help-panel" role="note"><strong>評価範囲の決め方</strong><p>設置ビューの監視対象と、定植中の作物を使って評価範囲を決めます。</p></div></details></div>
           <span class="meta">{{ dashboard.sources|length }}台</span>
         </div>
         {% if dashboard.sources %}
@@ -197,6 +197,7 @@
         {% else %}<div class="empty">まだ評価履歴がありません。評価可能なカメラから「今の状態を撮影してAI評価」を実行してください。</div>{% endif %}
       </section>
     </main>
+    <script src="/static/context-help.js"></script>
     <script>
       document.querySelectorAll("[data-analyze-camera]").forEach((button) => {
         button.addEventListener("click", async () => {

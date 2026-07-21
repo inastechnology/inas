@@ -1,0 +1,8 @@
+{
+  "name": "inas-demand-validation-lp",
+  "private": true,
+  "scripts": {
+    "serve": "python -m http.server 4173 --directory .",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}

@@ -1,0 +1,57 @@
+# Discord 通知設計
+
+英語版: [../DISCORD_NOTIFICATION_DESIGN.md](../DISCORD_NOTIFICATION_DESIGN.md)
+
+## 目的
+
+Discord 通知はログの転送ではなく、栽培者が次の確認へ迷わず進むための案内とする。通知は次の順で理解できるようにする。
+
+1. 何を確認する必要があるか
+2. どの圃場・作物・機器か
+3. Hub のどの画面を開けば確認を終えられるか
+
+## 通知頻度
+
+- 栽培作業は Asia/Tokyo の毎朝 4:00 に、最大 1 通へ集約する。
+- 「今日確認」「事前確認」「新しく追加」の順でカードをまとめる。
+- 事前通知は `window_start` の設定日数前に 1 回だけ送り、事前期間中に毎日繰り返さない。
+- 作業期間の初日と、期間中の未完了作業は別々に ON/OFF できる。
+- 今日または事前確認に該当した新規作業を、新規欄へ重複表示しない。
+- 1 通に表示する作業カードは最大 6 件とし、残りは年間栽培カレンダーで確認させる。
+- MQTT 通信ログは通常 OFF とし、上級者が問題調査中だけ使用する。
+
+カード数は、Discord Webhook の現行上限である 1 メッセージ 10 embeds と、embed 全体 6,000 文字にも余裕を持たせる。[Discord Webhook Resource](https://docs.discord.com/developers/resources/webhook)、[Message Resource](https://docs.discord.com/developers/resources/message) を参照。
+
+## 確認画面へのリンク
+
+通知内リンクは次の環境変数から得た HTTPS の Cloudflare 公開ホストだけを使用する。
+
+1. `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME`
+2. `CLOUDFLARE_TUNNEL_HOSTNAME`
+
+リクエストの Host、localhost、`.local`、IP アドレスへはフォールバックしない。公開 URL が未設定の場合は、誤ったリンクを付けずに通知本文だけを送る。
+
+栽培作業は対象作業の詳細を直接開く。
+
+```text
+/fields/{field_id}/calendar?planting={planting_id}&action={action_id}
+```
+
+機器通知は、目的に応じて概要、設定、診断タブを直接開く。
+
+## 管理者設定
+
+アプリ設定の「通知」では次を管理する。
+
+- 種類別設定を残したまま送信だけを止める全体スイッチ
+- 確認ダイアログ付きの「全通知を無効にする」
+- 栽培作業、新規作業、事前日数、初日、作業期間中の通知
+- 新しい機器、長時間オフライン、水やり未確認、土壌水分表示の調整候補
+- 上級者向け MQTT 通信ログ
+
+`DISCORD_WEBHOOK_URL` は基盤設定のままとし、画面へ表示せず、ランタイム設定ファイルにも保存しない。
+
+## 既存 DB・設定ファイルとの整合性
+
+ランタイム設定は既定値とマージして読む。既存の `config.json` に `discord` セクションや新項目がなくても、そのまま起動できる。通知設定は管理者が保存した時点で追加され、Webhook URL は許可リストから除外されるため混入しない。
+

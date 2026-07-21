@@ -9,8 +9,8 @@ from ina_device_hub.device_config_repository import (
     device_config_repository,
     validate_device_config,
 )
-from ina_device_hub.device_event_log import append_device_event
 from ina_device_hub.device_definition_registry import project_runtime_config
+from ina_device_hub.device_event_log import append_device_event
 from ina_device_hub.discord_notification_service import discord_notification_service
 from ina_device_hub.general_log import logger
 from ina_device_hub.sensor_measurement_repository import safe_record_status_measurements

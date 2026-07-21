@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "id": "jp.example.device.sample-guide",
+  "name": "サンプル機器ガイド",
+  "version": "0.1.0",
+  "description": "機器詳細へ短いガイドを追加する雛形です。",
+  "compatibility": {
+    "hub_extension_api": 1
+  },
+  "ui": {
+    "device_detail": {
+      "device_kinds": [
+        "ABC"
+      ],
+      "overview_cards": [
+        {
+          "id": "daily-guide",
+          "title": "今日見るところ",
+          "description": "日常確認で最初に見る内容を短く説明します。",
+          "type": "callout",
+          "tone": "leaf"
+        }
+      ],
+      "tabs": [
+        {
+          "id": "operation-guide",
+          "label": "使い方",
+          "title": "この機器の使い方",
+          "description": "一つの目的に関係する内容を、このタブへまとめます。",
+          "blocks": [
+            {
+              "type": "process_flow",
+              "title": "確認の流れ",
+              "items": [
+                {
+                  "title": "状態を見る",
+                  "description": "現在の表示に異常がないか確認します。"
+                },
+                {
+                  "title": "必要なら対応する",
+                  "description": "Hubの安全な操作画面から対応します。"
+                }
+              ]
+            },
+            {
+              "type": "metric_grid",
+              "title": "現在値",
+              "items": [
+                {
+                  "label": "表示例",
+                  "value": {
+                    "source": "status",
+                    "path": "sample_value",
+                    "unit": "%"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "callout",
+              "title": "覚えておくこと",
+              "description": "危険や判断条件を、専門用語を避けて説明します。",
+              "tone": "water"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

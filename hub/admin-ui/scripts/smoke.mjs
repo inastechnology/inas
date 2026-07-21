@@ -353,6 +353,7 @@ try {
   await historyPage.waitForFunction(() => (document.querySelector(".plant-chat-history")?.scrollTop ?? 100) <= 32);
   await historyPage.$eval(".plant-chat-history", (history) => history.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -120 })));
   await historyPage.waitForFunction(() => document.querySelectorAll(".plant-chat-turn").length === 10 && document.querySelector(".plant-chat-history")?.getAttribute("data-question-page") === "2");
+  await historyPage.waitForFunction(() => (document.querySelector(".plant-chat-history")?.scrollTop ?? 0) > 0);
   assert((await historyPage.$eval(".plant-chat-history", (history) => history.scrollTop)) > 0, "loading older chat records must preserve the visible scroll position");
   await historyPage.$eval(".plant-chat-history", (history) => history.scrollTo({ top: 0, behavior: "instant" }));
   await historyPage.waitForFunction(() => (document.querySelector(".plant-chat-history")?.scrollTop ?? 100) <= 32);

@@ -552,6 +552,7 @@
     <script type="application/json" id="record-measurement-data">{{ deferred_context.record_calendar.measurements_by_date|tojson }}</script>
     <script type="application/json" id="record-catalog-data">{{ context.record_catalog|tojson }}</script>
     <script type="application/json" id="record-recent-data">{{ context.recent_record_items|map(attribute='key')|list|tojson }}</script>
+    <script src="/static/context-help.js"></script>
     <script src="/static/stateful-actions.js"></script>
     <script src="/static/select-filter.js"></script>
     <script>

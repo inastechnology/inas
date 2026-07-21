@@ -420,7 +420,8 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(settings.status_code, 200)
 
     def test_app_settings_page_renders_secret_write_only_inputs_and_instagram_settings(self):
-        response = self.client.get("/settings")
+        with patch.dict(os.environ, {"CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME": "hub.example.com"}):
+            response = self.client.get("/settings?section=notifications")
 
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
@@ -459,6 +460,66 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('name="plant_position_prompt"', html)
         self.assertEqual(response.headers["Cache-Control"], "no-store")
         self.assertIn("接続を確認", html)
+        self.assertIn('id="notification-settings-form"', html)
+        self.assertIn("今日の栽培作業", html)
+        self.assertIn('name="plant_task_reminder_days_before"', html)
+        self.assertIn('id="disable-all-notifications-dialog"', html)
+        self.assertIn('role="switch" name="enabled"', html)
+        self.assertIn('class="notification-switch-control"', html)
+        self.assertIn("https://hub.example.com", html)
+        self.assertNotIn("127.0.0.1", html)
+
+    def test_discord_notification_preferences_can_be_saved_and_all_disabled(self):
+        current_discord = dict(web_server.setting().get("discord"))
+        try:
+            with patch.object(web_server, "reload_discord_notification_settings") as reload_settings:
+                response = self.client.post(
+                    "/settings",
+                    data={
+                        "settings_section": "notifications",
+                        "enabled": "on",
+                        "notify_plant_tasks": "on",
+                        "plant_task_notify_new": "on",
+                        "plant_task_reminder_days_before": "3",
+                        "plant_task_notify_on_start_day": "on",
+                        "notify_new_device": "on",
+                        "notify_device_offline": "on",
+                        "notify_watering_missing": "on",
+                        "notify_soil_calibration_suggested": "on",
+                    },
+                )
+
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers["Location"], "/settings?section=notifications&saved=1")
+                saved = web_server.setting().get("discord")
+                self.assertTrue(saved["enabled"])
+                self.assertEqual(saved["plant_task_reminder_days_before"], 3)
+                self.assertTrue(saved["plant_task_notify_on_start_day"])
+                self.assertFalse(saved["plant_task_notify_during_window"])
+                reload_settings.assert_called_once_with()
+
+            with patch.object(web_server, "reload_discord_notification_settings"):
+                disabled = self.client.post(
+                    "/settings",
+                    data={"settings_section": "notifications", "disable_all": "1"},
+                )
+
+            self.assertEqual(disabled.status_code, 302)
+            self.assertFalse(web_server.setting().get("discord")["enabled"])
+            self.assertEqual(web_server.setting().get("discord")["plant_task_reminder_days_before"], 3)
+        finally:
+            web_server.setting().set("discord", current_discord)
+
+    def test_discord_notification_rejects_invalid_reminder_days(self):
+        response = self.client.post(
+            "/settings",
+            data={
+                "settings_section": "notifications",
+                "plant_task_reminder_days_before": "many",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
 
     def test_plant_calendar_prompt_template_requires_safe_placeholders(self):
         invalid = self.client.post(

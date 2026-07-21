@@ -62,7 +62,7 @@ try {
   assert.match(await page.$eval("#device-result-summary", (summary) => summary.textContent || ""), /1件中 1件/);
 
   await page.goto(`${baseUrl}/mqtt-devices/INADS-DEMO-WTR-001?tab=monitoring`, { waitUntil: "networkidle0" });
-  assert.equal(await page.$$eval(".tab-button", (tabs) => tabs.length), 5);
+  assert.equal(await page.$$eval(".tab-button", (tabs) => tabs.length), 6, "WTR must receive the operation-check Extension tab");
   const wateringDecisionText = await page.$eval(".priority-panel", (panel) => panel.innerText || "");
   assert.match(wateringDecisionText, /次の潅水/);
   assert.match(wateringDecisionText, /土壌水分しきい値/);
@@ -97,7 +97,28 @@ try {
     await page.$eval('.metric-action[aria-label="次の潅水の設定を変更"]', (link) => link.getAttribute("href")),
     "/mqtt-devices/INADS-DEMO-WTR-001?tab=settings#watering-schedules",
   );
+  assert.match(ordinaryOverview, /この機器の追加ガイド.*プラグインが動作しています/s);
   await page.screenshot({ path: "/tmp/ina-device-wtr-overview.png", fullPage: true });
+
+  const operationCheckTabKey = await page.$eval(".extension-tab-button", (button) => button.getAttribute("data-tab-key"));
+  assert.match(operationCheckTabKey || "", /^ext-jp-inas-development-operation-check-/);
+  await page.click(".extension-tab-button");
+  await assertSelectedTab(operationCheckTabKey);
+  assert.equal(await page.$$(".extension-process-step").then((items) => items.length), 3);
+  const operationCheckText = await page.$eval(".extension-shell", (panel) => panel.innerText || "");
+  assert.match(operationCheckText, /定義を検証.*対応機器へ追加.*現在値を表示/s);
+  assert.match(operationCheckText, /機器の表示名\s*デモ潅水機1/);
+  assert.match(operationCheckText, /現在の土壌水分\s*42 %/);
+  assert.match(operationCheckText, /水やり状態\s*無効/);
+  assert.match(operationCheckText, /水やり開始の目安\s*35 %/);
+  assert.doesNotMatch(operationCheckText, /内部ID|MOSFET|channel_mask|実行コード/);
+  await page.screenshot({ path: "/tmp/ina-device-operation-check-extension.png", fullPage: true });
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const operationCheckOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  assert(operationCheckOverflow <= 1, `mobile operation-check Extension must not overflow horizontally: ${operationCheckOverflow}px`);
+  await page.screenshot({ path: "/tmp/ina-device-operation-check-extension-mobile.png", fullPage: true });
+  await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   await page.click('.tab-button[data-tab-key="monitoring"]');
   await assertSelectedTab("monitoring");
   await waitForCharts(2);
@@ -304,13 +325,33 @@ try {
   assert(overflow <= 1, `mobile page must not overflow horizontally: ${overflow}px`);
   await page.screenshot({ path: "/tmp/ina-device-env-mobile.png", fullPage: true });
 
+  await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await page.goto(`${baseUrl}/mqtt-devices/INADS-DEMO-FGT-001`, { waitUntil: "networkidle0" });
+  assert.equal(await page.$$eval(".tab-button", (tabs) => tabs.length), 6, "FGT must receive one tab from the Extension registry");
+  assert.match(await page.$eval("#tab-overview", (panel) => panel.innerText || ""), /この機器の追加ガイド.*液肥づくりの流れ/s);
+  const extensionTabKey = await page.$eval(".extension-tab-button", (button) => button.getAttribute("data-tab-key"));
+  assert.match(extensionTabKey || "", /^ext-jp-inas-device-fgt-operation-guide-/);
+  await page.click(".extension-tab-button");
+  await assertSelectedTab(extensionTabKey);
+  assert.equal(await page.$$(".extension-process-step").then((items) => items.length), 5);
+  const extensionText = await page.$eval(".extension-shell", (panel) => panel.innerText || "");
+  assert.match(extensionText, /水を入れる.*A液を量る.*B液を量る.*仕上げに混ぜる.*植物へ送る/s);
+  assert.match(extensionText, /作る液肥\s*5000 mL/);
+  assert.match(extensionText, /最初の水\s*1250 mL/);
+  await page.screenshot({ path: "/tmp/ina-device-fgt-extension.png", fullPage: true });
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const extensionOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  assert(extensionOverflow <= 1, `mobile Extension tab must not overflow horizontally: ${extensionOverflow}px`);
+  await page.screenshot({ path: "/tmp/ina-device-fgt-extension-mobile.png", fullPage: true });
+
   await page.goto(`${baseUrl}/fields/demo-strawberry-field`, { waitUntil: "networkidle0" });
   await page.click('[data-field-tab="monitoring"]');
   assert(await page.$('.scope-device-settings[href$="?tab=settings"]'));
   assert.equal(browserErrors.length, 0, browserErrors.join("\n"));
 
   process.stdout.write(JSON.stringify({
-    deviceTabs: 5,
+    deviceTabs: 6,
     wtrCharts: 2,
     environmentCharts: 3,
     settingsDeepLink: true,
@@ -318,11 +359,15 @@ try {
     layoutAssignmentLinks: true,
     wateringDecisionFirst: true,
     mobileOverflow: overflow,
+    extensionMobileOverflow: extensionOverflow,
+    operationCheckMobileOverflow: operationCheckOverflow,
     screenshots: [
       "/tmp/ina-device-wtr-monitoring.png",
       "/tmp/ina-device-advanced-communication.png",
       "/tmp/ina-device-list.png",
       "/tmp/ina-device-wtr-overview.png",
+      "/tmp/ina-device-operation-check-extension.png",
+      "/tmp/ina-device-operation-check-extension-mobile.png",
     "/tmp/ina-device-wtr-settings.png",
     "/tmp/ina-device-builder-dialog.png",
     "/tmp/ina-device-route-new-tab-link.png",
@@ -334,6 +379,8 @@ try {
       "/tmp/ina-device-env-sensor-workbench.png",
       "/tmp/ina-device-env-calibration-summary.png",
       "/tmp/ina-device-env-mobile.png",
+      "/tmp/ina-device-fgt-extension.png",
+      "/tmp/ina-device-fgt-extension-mobile.png",
     ],
   }, null, 2) + "\n");
 } finally {

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="畑に行く前に、今日やることがわかる。観測、AI栽培計画、記録、潅水をひとつにつなぐオープンソースのスマート栽培基盤 INAS App。">
+  <meta name="theme-color" content="#123a2c">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="INAS App｜畑に行く前に、今日やることがわかる。">
+  <meta property="og:description" content="センサー、カメラ、AI栽培計画、作業記録、潅水機器をひとつに。小さく始められるスマート栽培基盤。">
+  <meta property="og:image" content="assets/og-cover.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>INAS App｜畑に行く前に、今日やることがわかる。</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%23123a2c'/%3E%3Cpath d='M32 51V28M32 37c-11 0-18-7-18-17 11 0 18 7 18 17Zm0-3c0-11 7-18 18-18 0 11-7 18-18 18Z' fill='none' stroke='%23c7eb78' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+
+  <div class="survey-strip">
+    <span>開発中</span>
+    <p>より役立つ製品にするため、先行利用に関心のある方の声を募集しています。</p>
+    <a href="#interest" data-track="survey_strip">需要調査に参加</a>
+  </div>
+
+  <header class="site-header" data-header>
+    <a class="brand" href="#top" aria-label="INAS App トップへ">
+      <span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="brand-name"><strong>INAS</strong><small>APP</small></span>
+    </a>
+    <nav class="desktop-nav" aria-label="ページ内メニュー">
+      <a href="#problems">こんな困りごとに</a>
+      <a href="#demo">できること</a>
+      <a href="#opensource">導入方法</a>
+      <a href="#faq">よくある質問</a>
+    </nav>
+    <a class="header-cta" href="#interest" data-track="header_cta">先行案内を受け取る</a>
+    <button class="menu-button" type="button" aria-expanded="false" aria-controls="mobile-menu" data-menu-button>
+      <span class="sr-only">メニューを開く</span><i></i><i></i><i></i>
+    </button>
+    <nav class="mobile-menu" id="mobile-menu" aria-label="スマートフォン用メニュー" hidden data-mobile-menu>
+      <a href="#problems">こんな困りごとに</a>
+      <a href="#demo">できること</a>
+      <a href="#opensource">導入方法</a>
+      <a href="#faq">よくある質問</a>
+      <a class="mobile-menu-cta" href="#interest" data-track="mobile_menu_cta">先行案内を受け取る</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="hero-kicker"><span aria-hidden="true"></span> OPEN-SOURCE SMART CULTIVATION</p>
+        <h1 id="hero-title">畑に行く前に、<br><em>今日やること</em>がわかる。</h1>
+        <p class="hero-lead">センサー、カメラ、AI栽培計画、作業記録、潅水機器をひとつに。<strong>INAS App</strong>は、栽培の「見る・考える・動かす」をやさしくつなぐ、オープンソースのスマート栽培基盤です。</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#interest" data-track="hero_primary">先行利用の案内を受け取る <span aria-hidden="true">→</span></a>
+          <button class="button secondary" type="button" data-open-video data-track="hero_video"><span class="play-icon" aria-hidden="true">▶</span>33秒のデモを見る</button>
+        </div>
+        <p class="hero-note">家庭菜園から小規模農家・実証圃場まで。機器なしでも栽培計画と記録から始められます。</p>
+        <ul class="hero-points" aria-label="主な特徴">
+          <li><span aria-hidden="true">✓</span>やさしい画面</li>
+          <li><span aria-hidden="true">✓</span>小さく始める</li>
+          <li><span aria-hidden="true">✓</span>自分で直せるOSS</li>
+        </ul>
+      </div>
+      <div class="hero-visual" aria-label="INAS Appを使いながらイチゴの状態を確認する様子">
+        <picture><source srcset="assets/hero.webp" type="image/webp"><img src="assets/hero.png" alt="スマートフォンで栽培情報を確認しながら、ハウスのイチゴを観察する人" fetchpriority="high"></picture>
+        <div class="hero-gradient" aria-hidden="true"></div>
+        <article class="field-status-card">
+          <header><span><i></i>イチゴ 1号畝</span><small>更新 3分前</small></header>
+          <div class="status-grid">
+            <div><small>土の水分</small><strong>42<span>%</span></strong><em class="ok">ちょうどよい</em></div>
+            <div><small>次の水やり</small><strong class="status-time">明日<br>6:30</strong><em>自動スケジュール</em></div>
+          </div>
+          <footer><span aria-hidden="true">●</span>今日は葉裏の病害虫を確認</footer>
+        </article>
+        <div class="floating-tag tag-plan"><strong>AI</strong><span>次の作業を整理</span></div>
+        <div class="floating-tag tag-water"><strong>水</strong><span>必要な時だけ潅水</span></div>
+      </div>
+    </section>
+
+    <section class="signal-bar" aria-label="INAS Appの位置づけ">
+      <p><strong>見るだけ</strong>から始められる</p>
+      <p><strong>1台</strong>から機器を追加</p>
+      <p><strong>初心者〜プロ</strong>まで使える</p>
+      <p><strong>ソフト・仕様</strong>を公開</p>
+    </section>
+
+    <section class="section problems" id="problems" aria-labelledby="problems-title">
+      <div class="section-intro">
+        <p class="eyebrow">BEFORE INAS</p>
+        <h2 id="problems-title">こんな「分からない」を、<br>抱えていませんか？</h2>
+        <p>数字を見るだけのIoTでは、栽培は楽になりません。INASは、観測した情報を次の判断と作業へつなげます。</p>
+      </div>
+      <div class="problem-grid">
+        <article>
+          <span class="problem-number">01</span>
+          <div class="problem-icon" aria-hidden="true">⌂</div>
+          <h3>見に行くまで<br>圃場の状態が分からない</h3>
+          <p>土壌水分、温湿度、光、カメラを、作物と場所に結びつけて確認します。</p>
+        </article>
+        <article>
+          <span class="problem-number">02</span>
+          <div class="problem-icon" aria-hidden="true">?</div>
+          <h3>次に何をすべきか<br>毎回迷ってしまう</h3>
+          <p>AIが栽培資料と現場条件を整理し、期限超過・今やる・まもなくを見せます。</p>
+        </article>
+        <article>
+          <span class="problem-number">03</span>
+          <div class="problem-icon" aria-hidden="true">↻</div>
+          <h3>記録が散らばり<br>翌年に活かせない</h3>
+          <p>作業、写真、施肥、相談履歴を作物ごとに残し、次の計画へ反映します。</p>
+        </article>
+        <article>
+          <span class="problem-number">04</span>
+          <div class="problem-icon" aria-hidden="true">⌁</div>
+          <h3>高価で固いシステムは<br>導入しづらい</h3>
+          <p>必要な機器だけ後から追加。公開された設計を使って自分で製作することもできます。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section outcomes" aria-labelledby="outcomes-title">
+      <div class="section-heading">
+        <div><p class="eyebrow">ONE CONTINUOUS FLOW</p><h2 id="outcomes-title">見る。わかる。動かせる。</h2></div>
+        <p>ばらばらだった栽培の情報と行動を、ひとつの流れにします。</p>
+      </div>
+      <ol class="outcome-list">
+        <li><span class="step">1</span><div class="outcome-art observe" aria-hidden="true"><i></i><i></i><i></i></div><div><small>OBSERVE</small><h3>圃場の「いま」を見る</h3><p>作物、畝、鉢、センサー、カメラを、実際の配置に近い画面で確認。</p></div></li>
+        <li><span class="step">2</span><div class="outcome-art decide" aria-hidden="true"><i></i><i></i><i></i></div><div><small>DECIDE</small><h3>次にやることがわかる</h3><p>AI栽培計画とWebの栽培基準が、作業の理由と判断条件を整理。</p></div></li>
+        <li><span class="step">3</span><div class="outcome-art act" aria-hidden="true"><i></i><i></i><i></i></div><div><small>ACT</small><h3>水やりと作業へつなぐ</h3><p>人の確認を残しながら、必要な潅水や機器の動作へ段階的に接続。</p></div></li>
+      </ol>
+    </section>
+
+    <section class="demo-band" id="demo" aria-labelledby="demo-title">
+      <div class="demo-copy">
+        <p class="eyebrow light">34-SECOND PRODUCT TOUR</p>
+        <h2 id="demo-title">まずは、動いているところを。</h2>
+        <p>見栄えのためのモックではなく、実際のHubをデモデータで操作した映像です。圃場の確認からAI計画、作業記録、機器までを短く紹介します。</p>
+        <button class="button light" type="button" data-open-video data-track="demo_video"><span class="play-icon" aria-hidden="true">▶</span>デモ動画を再生</button>
+      </div>
+      <button class="video-poster" type="button" data-open-video data-track="demo_poster" aria-label="INAS Appの34秒デモ動画を再生">
+        <img src="assets/demo-poster.jpg" alt="INAS Appデモ動画。圃場の概要と栽培作業を表示している">
+        <span class="poster-play" aria-hidden="true">▶</span>
+        <small>00:34</small>
+      </button>
+    </section>
+
+    <section class="section product" aria-labelledby="product-title">
+      <div class="section-heading">
+        <div><p class="eyebrow">REAL PRODUCT SCREENS</p><h2 id="product-title">畑の情報を、<br>次の行動へ。</h2></div>
+        <p>実際のINAS Hub画面です。数値を並べるのではなく、利用者が次にしたいことへの動線を近くに置いています。</p>
+      </div>
+
+      <article class="product-feature">
+        <div class="screen-frame">
+          <div class="screen-bar" aria-hidden="true"><span></span><span></span><span></span><small>INAS HUB / 圃場の概要</small></div>
+          <img src="assets/hub-field-dashboard.png" alt="圃場ダッシュボード。作物、土壌水分、環境、今日の作業と設置ビューを表示">
+        </div>
+        <div class="product-copy"><span>01 / FIELD</span><h3>圃場の「いま大丈夫？」を<br>ひと目で。</h3><p>現在値と目標範囲、今日確認したい作業、作物と設備の配置を同じ画面に。異常がある場所から確認できます。</p><ul><li>土壌・環境・光・カメラ</li><li>作物ごとの目標範囲</li><li>圃場を再現する設置ビュー</li></ul></div>
+      </article>
+
+      <article class="product-feature reverse">
+        <div class="screen-frame">
+          <div class="screen-bar" aria-hidden="true"><span></span><span></span><span></span><small>INAS HUB / 年間栽培カレンダー</small></div>
+          <img src="assets/hub-cultivation-calendar.png" alt="年間栽培カレンダー。期限超過、今やる、まもなくと作業カンバンを表示">
+        </div>
+        <div class="product-copy"><span>02 / PLAN</span><h3>AIの提案を、<br>自分の段取りに。</h3><p>Webの栽培資料、定植日、現在の作業、施肥履歴、栽培条件を整理。提案を一つずつ比較して採用することもできます。</p><div class="evidence-box"><strong>出典つきの栽培基準</strong><small>公的機関などの資料を、潅水・施肥・季節作業に使える形へ要約。</small></div><ul><li>期限超過・今やる・まもなく</li><li>作業の理由と判断条件</li><li>施肥履歴と残存肥効</li></ul></div>
+      </article>
+
+      <article class="product-feature">
+        <div class="screen-frame">
+          <div class="screen-bar" aria-hidden="true"><span></span><span></span><span></span><small>INAS HUB / 潅水機器</small></div>
+          <img src="assets/hub-irrigation-device.png" alt="潅水機器画面。次の潅水、現在の土壌水分、設定変更と水やりルートを表示">
+        </div>
+        <div class="product-copy"><span>03 / DEVICE</span><h3>設定値ではなく、<br>水の流れで考える。</h3><p>次の潅水時刻、現在の水分、どの設備からどの畝へ水を送るかを視覚化。設定変更も見ている場所から進めます。</p><ul><li>水やりルートの見える化</li><li>条件と予定の確認</li><li>機器の状態と更新</li></ul></div>
+      </article>
+    </section>
+
+    <section class="section audience" aria-labelledby="audience-title">
+      <div class="section-heading compact">
+        <div><p class="eyebrow">CHOOSE YOUR FIELD</p><h2 id="audience-title">あなたなら、どこから始めますか？</h2></div>
+        <p>選択内容は先行案内フォームへ引き継がれます。</p>
+      </div>
+      <div class="audience-tabs" role="tablist" aria-label="利用者の種類">
+        <button type="button" role="tab" aria-selected="true" aria-controls="audience-home" id="audience-tab-home" data-audience="home">家庭菜園・小さな畑</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="audience-farmer" id="audience-tab-farmer" data-audience="farmer">農家・生産者</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="audience-team" id="audience-tab-team" data-audience="team">学校・地域・実証</button>
+      </div>
+      <div class="audience-panels">
+        <article role="tabpanel" id="audience-home" aria-labelledby="audience-tab-home" data-audience-panel="home"><div><span>HOME GROWER</span><h3>水やり忘れを減らし、<br>育て方を少しずつ学ぶ。</h3><p>最初は栽培計画と写真記録だけ。必要になったら土壌センサーや自動潅水を足せます。</p></div><ul><li>今週やることが分かる</li><li>作業の理由をやさしく説明</li><li>安価な構成から始める</li></ul></article>
+        <article role="tabpanel" id="audience-farmer" aria-labelledby="audience-tab-farmer" data-audience-panel="farmer" hidden><div><span>PRODUCER</span><h3>複数の作物・畝・機器を、<br>判断できる情報にまとめる。</h3><p>圃場全体の作業、センサー、施肥、潅水、写真をつなぎ、経験を翌年とチームへ残します。</p></div><ul><li>圃場全体の作業カンバン</li><li>施肥と環境の履歴</li><li>人の承認を残した自動化</li></ul></article>
+        <article role="tabpanel" id="audience-team" aria-labelledby="audience-tab-team" data-audience-panel="team" hidden><div><span>TEAM &amp; RESEARCH</span><h3>誰が見ても同じ状況を、<br>学びと実証の記録に。</h3><p>観測と作業の理由を共有し、栽培の過程を教材や実証データとして振り返れます。</p></div><ul><li>写真付きの共同記録</li><li>センサーと作業の時系列</li><li>公開仕様を使った拡張</li></ul></article>
+      </div>
+    </section>
+
+    <section class="open-source" id="opensource" aria-labelledby="opensource-title">
+      <div class="open-intro"><p class="eyebrow light">OPEN, REPAIRABLE, YOURS</p><h2 id="opensource-title">つくってもいい。<br>任せてもいい。</h2><p>スマート栽培を、一部の高価な設備だけのものにしない。必要な分だけ、小さく始められる選択肢を目指します。</p></div>
+      <article><span>BUILD IT YOURSELF</span><h3>公開情報を使って、<br>自分でつくる</h3><p>ソースコード、デバイス定義、製作資料を使い、Raspberry Piと必要な機器を用意できます。</p><a href="https://github.com/inastechnology" target="_blank" rel="noopener noreferrer" data-config-link="github" data-track="github">GitHubを見る <span aria-hidden="true">↗</span></a></article>
+      <article class="official"><span>OFFICIAL HARDWARE</span><h3>組み立て済みから、<br>安心して始める</h3><p>製作が不安な方向けに、Hub導入済み機器や潅水デバイスの提供を準備しています。</p><em>提供準備中</em></article>
+    </section>
+
+    <section class="section faq" id="faq" aria-labelledby="faq-title">
+      <div class="section-intro narrow"><p class="eyebrow">FREQUENTLY ASKED</p><h2 id="faq-title">よくある質問</h2></div>
+      <div class="faq-list">
+        <details><summary>電子工作やプログラミングができなくても使えますか？<span aria-hidden="true">＋</span></summary><p>利用画面は電子回路の知識がなくても分かることを優先しています。機器を自作しない方向けには、組み立て済み製品や導入支援を提供できるよう準備しています。</p></details>
+        <details><summary>機器を買わないと使えませんか？<span aria-hidden="true">＋</span></summary><p>いいえ。栽培計画、作業カレンダー、写真付き記録から始め、必要になった場所へセンサーや潅水機器を追加する設計です。</p></details>
+        <details><summary>AIの提案どおりに自動で作業されますか？<span aria-hidden="true">＋</span></summary><p>現在は人が内容を確認することを基本にしています。提案の比較・承認や機器ごとの安全条件を設け、任せる範囲を段階的に選べる設計を進めています。</p></details>
+        <details><summary>価格はいくらですか？<span aria-hidden="true">＋</span></summary><p>利用方法と必要な機器を含めて検討中です。まず需要調査で、困りごと、圃場規模、必要な機能を伺い、無理なく始められる構成を設計します。</p></details>
+        <details><summary>オープンソースとは何ですか？<span aria-hidden="true">＋</span></summary><p>ソフトウェアや機器の仕様を公開し、利用者が確認・修正・改良できる形です。利用条件は各リポジトリのライセンスを確認してください。</p></details>
+      </div>
+    </section>
+
+    <section class="interest" id="interest" aria-labelledby="interest-title">
+      <div class="interest-copy">
+        <p class="eyebrow light">EARLY INTEREST SURVEY</p>
+        <h2 id="interest-title">あなたの「ここが困る」を、<br>次の開発へ。</h2>
+        <p>現在、先行利用に関心のある方を探しています。販売の申込みではありません。使ってみたい場面や必要な機能を教えてください。</p>
+        <ul><li>先行利用・デモの案内</li><li>価格や提供方法の検討情報</li><li>開発中機能への意見募集</li></ul>
+        <small>入力情報は需要調査とご案内にのみ利用します。送信先設定後は公式サイトのプライバシーポリシーに従います。</small>
+      </div>
+      <form class="interest-form" data-lead-form novalidate>
+        <div class="form-heading"><span>所要時間 約1分</span><strong>先行案内に興味を登録</strong><small>必須項目は4つです</small></div>
+        <label>あなたに近いもの <span>必須</span><select name="role" required data-role-select><option value="">選択してください</option><option value="home">家庭菜園・小さな畑</option><option value="farmer">農家・生産者</option><option value="company">農業法人・企業</option><option value="school">学校・地域団体</option><option value="research">研究・実証</option><option value="other">その他</option></select></label>
+        <label>栽培規模 <span>必須</span><select name="scale" required><option value="">選択してください</option><option value="pots">鉢・プランター</option><option value="under_100m2">100㎡未満</option><option value="100_1000m2">100〜1,000㎡</option><option value="over_1000m2">1,000㎡以上</option><option value="planning">これから始める</option></select></label>
+        <fieldset><legend>一番困っていること <span>必須</span></legend><div class="choice-grid"><label><input type="radio" name="pain" value="remote_monitoring" required><span>遠隔で状態を見たい</span></label><label><input type="radio" name="pain" value="task_planning"><span>次の作業が分からない</span></label><label><input type="radio" name="pain" value="watering"><span>水やりを楽にしたい</span></label><label><input type="radio" name="pain" value="records"><span>記録を次に活かしたい</span></label></div></fieldset>
+        <label>案内を受け取るメールアドレス <span>必須</span><input type="email" name="email" required autocomplete="email" inputmode="email" placeholder="name@example.com"></label>
+        <label>使ってみたい場面・欲しい機能 <small>任意</small><textarea name="message" rows="3" maxlength="1000" placeholder="例：離れた畑の水やりを確認したい"></textarea></label>
+        <label class="consent"><input type="checkbox" name="consent" required><span><a href="https://inas-technologies.com/privacy" target="_blank" rel="noopener noreferrer" data-config-link="privacy">プライバシーポリシー</a>を確認し、需要調査と案内のための利用に同意します。</span></label>
+        <button class="button submit" type="submit" data-track="lead_submit">興味を登録する <span aria-hidden="true">→</span></button>
+        <p class="form-status" role="status" aria-live="polite" data-form-status></p>
+        <noscript><p class="form-status error">フォームの送信にはJavaScriptが必要です。公式サイトまたはInstagramからお問い合わせください。</p></noscript>
+      </form>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div><a class="brand footer-brand" href="#top"><span class="brand-symbol" aria-hidden="true"><i></i><i></i><i></i></span><span class="brand-name"><strong>INAS</strong><small>TECHNOLOGIES</small></span></a><p>スマート栽培を、すべての人へ。</p></div>
+    <nav aria-label="外部リンク"><a href="https://inas-technologies.com/" target="_blank" rel="noopener noreferrer" data-config-link="official" data-track="official">公式サイト</a><a href="https://github.com/inastechnology" target="_blank" rel="noopener noreferrer" data-config-link="github" data-track="github_footer">GitHub</a><a href="https://www.instagram.com/inas_technologies.ja/" target="_blank" rel="noopener noreferrer" data-config-link="instagram" data-track="instagram">Instagram</a><a href="https://inas-technologies.com/privacy" target="_blank" rel="noopener noreferrer" data-config-link="privacy">プライバシー</a></nav>
+    <p class="copyright">© 2026 INAS Technologies</p>
+  </footer>
+
+  <dialog class="video-dialog" data-video-dialog aria-labelledby="video-title">
+    <div class="video-dialog-header"><div><small>INAS APP PRODUCT TOUR</small><h2 id="video-title">34秒で見る、栽培の流れ</h2></div><button type="button" data-close-video aria-label="動画を閉じる">×</button></div>
+    <video controls preload="none" poster="assets/demo-poster.jpg" data-demo-video><source src="assets/demo.mp4" type="video/mp4">お使いのブラウザは動画再生に対応していません。</video>
+    <p>圃場の状態確認、作業カンバン、作業記録、機器画面を実際のデモ環境で操作しています。</p>
+  </dialog>
+
+  <div class="mobile-conversion-bar" data-mobile-conversion>
+    <div><small>開発中・先行案内</small><strong>INAS Appに興味がある</strong></div>
+    <a href="#interest" data-track="mobile_sticky">登録する</a>
+  </div>
+</body>
+</html>

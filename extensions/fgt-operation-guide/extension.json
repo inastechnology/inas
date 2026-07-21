@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "id": "jp.inas.device.fgt-operation-guide",
+  "name": "FGT 液肥づくりガイド",
+  "version": "1.0.0",
+  "description": "FGTの液肥づくり工程と、現在の配合設定を機器詳細に追加します。",
+  "compatibility": {
+    "hub_extension_api": 1
+  },
+  "ui": {
+    "device_detail": {
+      "device_kinds": [
+        "FGT"
+      ],
+      "overview_cards": [
+        {
+          "id": "mixing-cycle",
+          "title": "液肥づくりの流れ",
+          "description": "水を先に入れ、A液とB液を別々に量り、十分に混ぜてから植物へ送ります。",
+          "type": "callout",
+          "tone": "leaf"
+        }
+      ],
+      "tabs": [
+        {
+          "id": "fertigation-flow",
+          "label": "液肥の流れ",
+          "title": "今日の液肥づくり",
+          "description": "この機器が行う工程と、現在設定されている1回分の配合をまとめて確認できます。",
+          "blocks": [
+            {
+              "type": "process_flow",
+              "title": "5つの工程",
+              "items": [
+                {
+                  "title": "水を入れる",
+                  "description": "タンクへ最初の水を入れます。"
+                },
+                {
+                  "title": "A液を量る",
+                  "description": "タンクを混ぜながらA液を加えます。"
+                },
+                {
+                  "title": "B液を量る",
+                  "description": "A液と同時に入れず、続けてB液を加えます。"
+                },
+                {
+                  "title": "仕上げに混ぜる",
+                  "description": "残りの水を入れ、濃度を均一にします。"
+                },
+                {
+                  "title": "植物へ送る",
+                  "description": "完成した液肥を潅水系統へ送ります。"
+                }
+              ]
+            },
+            {
+              "type": "metric_grid",
+              "title": "現在の1回分",
+              "items": [
+                {
+                  "label": "作る液肥",
+                  "value": {
+                    "source": "config",
+                    "path": "fgt.recipe.total_water_ml",
+                    "unit": "mL"
+                  }
+                },
+                {
+                  "label": "最初の水",
+                  "value": {
+                    "source": "config",
+                    "path": "fgt.recipe.initial_water_ml",
+                    "unit": "mL"
+                  }
+                },
+                {
+                  "label": "A液",
+                  "value": {
+                    "source": "config",
+                    "path": "fgt.recipe.nutrient_a_ml",
+                    "unit": "mL"
+                  }
+                },
+                {
+                  "label": "B液",
+                  "value": {
+                    "source": "config",
+                    "path": "fgt.recipe.nutrient_b_ml",
+                    "unit": "mL"
+                  }
+                }
+              ]
+            },
+            {
+              "type": "callout",
+              "title": "混ぜ残しを防ぐために",
+              "description": "A液とB液は原液のまま同時に入れません。運転後は洗浄用の水を流し、タンクと配管に濃い液肥を残さないようにします。",
+              "tone": "water"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

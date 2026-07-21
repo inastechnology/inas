@@ -158,11 +158,17 @@ DEVICE_CONFIG_DEFAULT_TIMEZONE_OFFSET_SEC = int(os.environ.get("DEVICE_CONFIG_DE
 DEVICE_CONFIG_DEFAULT_MOISTURE_THRESHOLD = int(os.environ.get("DEVICE_CONFIG_DEFAULT_MOISTURE_THRESHOLD", "35"))
 
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
-DISCORD_NOTIFY_MQTT_ACTIVITY = _bool_env("DISCORD_NOTIFY_MQTT_ACTIVITY", True)
+DISCORD_ENABLED = _bool_env("DISCORD_ENABLED", True)
+DISCORD_NOTIFY_MQTT_ACTIVITY = _bool_env("DISCORD_NOTIFY_MQTT_ACTIVITY", False)
 DISCORD_NOTIFY_NEW_DEVICE = _bool_env("DISCORD_NOTIFY_NEW_DEVICE", True)
 DISCORD_NOTIFY_DEVICE_OFFLINE = _bool_env("DISCORD_NOTIFY_DEVICE_OFFLINE", True)
 DISCORD_NOTIFY_WATERING_MISSING = _bool_env("DISCORD_NOTIFY_WATERING_MISSING", True)
+DISCORD_NOTIFY_SOIL_CALIBRATION_SUGGESTED = _bool_env("DISCORD_NOTIFY_SOIL_CALIBRATION_SUGGESTED", True)
 DISCORD_NOTIFY_PLANT_TASKS = _bool_env("DISCORD_NOTIFY_PLANT_TASKS", True)
+DISCORD_PLANT_TASK_NOTIFY_NEW = _bool_env("DISCORD_PLANT_TASK_NOTIFY_NEW", True)
+DISCORD_PLANT_TASK_REMINDER_DAYS_BEFORE = _int_env("DISCORD_PLANT_TASK_REMINDER_DAYS_BEFORE", 7)
+DISCORD_PLANT_TASK_NOTIFY_ON_START_DAY = _bool_env("DISCORD_PLANT_TASK_NOTIFY_ON_START_DAY", True)
+DISCORD_PLANT_TASK_NOTIFY_DURING_WINDOW = _bool_env("DISCORD_PLANT_TASK_NOTIFY_DURING_WINDOW", True)
 HEALTH_MONITOR_ENABLED = _bool_env("HEALTH_MONITOR_ENABLED", False)
 HEALTH_MONITOR_INTERVAL_SECONDS = _int_env("HEALTH_MONITOR_INTERVAL_SECONDS", 1800)
 HEALTH_DEVICE_OFFLINE_AFTER_HOURS = _int_env("HEALTH_DEVICE_OFFLINE_AFTER_HOURS", 12)
@@ -304,11 +310,17 @@ DEFAULT_SETTINGS = {
     },
     "discord": {
         "webhook_url": DISCORD_WEBHOOK_URL,
+        "enabled": DISCORD_ENABLED,
         "notify_mqtt_activity": DISCORD_NOTIFY_MQTT_ACTIVITY,
         "notify_new_device": DISCORD_NOTIFY_NEW_DEVICE,
         "notify_device_offline": DISCORD_NOTIFY_DEVICE_OFFLINE,
         "notify_watering_missing": DISCORD_NOTIFY_WATERING_MISSING,
+        "notify_soil_calibration_suggested": DISCORD_NOTIFY_SOIL_CALIBRATION_SUGGESTED,
         "notify_plant_tasks": DISCORD_NOTIFY_PLANT_TASKS,
+        "plant_task_notify_new": DISCORD_PLANT_TASK_NOTIFY_NEW,
+        "plant_task_reminder_days_before": DISCORD_PLANT_TASK_REMINDER_DAYS_BEFORE,
+        "plant_task_notify_on_start_day": DISCORD_PLANT_TASK_NOTIFY_ON_START_DAY,
+        "plant_task_notify_during_window": DISCORD_PLANT_TASK_NOTIFY_DURING_WINDOW,
     },
     "health_monitor": {
         "enabled": HEALTH_MONITOR_ENABLED,
@@ -350,6 +362,19 @@ RUNTIME_SETTING_FIELDS = {
         "account_id",
         "account_username",
         "account_profile_updated_at",
+    },
+    "discord": {
+        "enabled",
+        "notify_mqtt_activity",
+        "notify_new_device",
+        "notify_device_offline",
+        "notify_watering_missing",
+        "notify_soil_calibration_suggested",
+        "notify_plant_tasks",
+        "plant_task_notify_new",
+        "plant_task_reminder_days_before",
+        "plant_task_notify_on_start_day",
+        "plant_task_notify_during_window",
     },
 }
 

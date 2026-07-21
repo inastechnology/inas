@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } 
 import { ArrowLeft, Beaker, BookOpen, CalendarDays, Check, ChevronRight, Leaf, ListTodo, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Send, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
+import { HelpDisclosure } from "../HelpDisclosure";
 import { errorMessage, formatDate, todayString } from "../formatters";
 import { ActivityIndicator, InlineLoading } from "../LoadingState";
 import { ModalDialog } from "../ModalDialog";
@@ -688,8 +689,13 @@ export function PlantCalendarDrawer({
                 </div>
                 <output>{filteredActions.length} / {scopedActionEntries.length}件</output>
               </div>
-              {(actionQuery || workDate || workScopePlantingId !== "all") && <p className="calendar-filter-summary">条件に合う作業だけを表示しています。作業期間が指定日を含む場合に表示されます。</p>}
-              <p className="kanban-dnd-help">{generationLockActive ? "AI計画の作成中は閲覧のみです。完了するとカードの移動と編集が自動で再開します。" : "カードを列へドラッグして状態を変更できます。完了列への移動では実績入力が開きます。"}</p>
+              <div className="calendar-kanban-guidance">
+                {(actionQuery || workDate || workScopePlantingId !== "all") && <span className="calendar-filter-active">絞り込み中</span>}
+                <HelpDisclosure title="作業ボードの使い方" align="left">
+                  <p>検索や日付を指定すると、条件に合う作業だけを表示します。日付では、その日が作業期間に含まれる作業を探します。</p>
+                  <p>{generationLockActive ? "AI計画の作成中は閲覧のみです。完了するとカードの移動と編集が自動で再開します。" : "カードを列へドラッグすると状態を変更できます。完了列へ移すと実績入力が開きます。"}</p>
+                </HelpDisclosure>
+              </div>
               <p className="kanban-drop-status" role="status" aria-live="polite">{dropMessage}</p>
               <div className="calendar-kanban-stage">
               <div className="calendar-kanban-scroll">
@@ -715,7 +721,7 @@ export function PlantCalendarDrawer({
                       >
                         <header>
                           <div><span className="kanban-column-marker" /><h3 id={`kanban-column-${planting.id}-${column.id}`}>{column.label}</h3><strong>{columnActions.length}</strong></div>
-                          <p>{column.description}</p>
+                          <HelpDisclosure title={`${column.label}とは`}><p>{column.description}</p></HelpDisclosure>
                           <small>{formatPersonHours(columnActions)}人時</small>
                         </header>
                         <div className="calendar-kanban-cards">

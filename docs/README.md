@@ -10,6 +10,12 @@ firmware, Cloudflare hosted options, field data, OTA, and operational model.
 - [DEVICE_DEFINITION_SPECIFICATION.md](DEVICE_DEFINITION_SPECIFICATION.md):
   firmware-owned Hub metadata, definition-driven device UI, Runtime Config
   projection, and database compatibility.
+- [EXTENSION_SPECIFICATION.md](EXTENSION_SPECIFICATION.md): declarative,
+  folder-owned Hub extensions and safe UI contribution points.
+- [EXTENSION_SECURITY_REVIEW_POLICY.md](EXTENSION_SECURITY_REVIEW_POLICY.md):
+  quarantine, deterministic checks, AI-assisted review, and human approval.
+- [DISCORD_NOTIFICATION_DESIGN.md](DISCORD_NOTIFICATION_DESIGN.md): low-noise
+  actionable cards, Cloudflare-only deep links, and administrator controls.
 - [DOCUMENTATION_GUIDE.md](DOCUMENTATION_GUIDE.md): documentation writing,
   localization, linking, and asset rules.
 - [CULTIVATION_SYSTEM_ORCHESTRATION.md](CULTIVATION_SYSTEM_ORCHESTRATION.md):

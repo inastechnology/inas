@@ -420,6 +420,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
             set(result["payload"]),
             {"ntp_server", "timezone_offset_sec", "sleep_sec", "ota_check_interval_sec", "soil_calibration"},
         )
+
     def test_config_validation_rejects_unsafe_fgt_cross_field_values(self):
         base = {
             "ntp_server": "pool.ntp.org",

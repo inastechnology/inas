@@ -44,8 +44,7 @@
       <p class="breadcrumbs"><a href="/fields">圃場一覧</a> / <a href="/mqtt-devices">機器保守</a> / {{ "カメラを編集" if form_mode == "edit" else "カメラを登録" }}</p>
       <header class="camera-header">
         <div>
-          <h1>{{ "カメラを編集" if form_mode == "edit" else "ネットワークカメラを登録" }}</h1>
-          <p>固定IPまたはDHCP予約したアドレスと、カメラ側で作成したRTSP認証情報を入力します。</p>
+          <div class="context-help-row"><h1>{{ "カメラを編集" if form_mode == "edit" else "ネットワークカメラを登録" }}</h1><details class="context-help"><summary aria-label="カメラ登録の準備の説明を開く" title="登録前の準備">?</summary><div class="context-help-panel" role="note"><strong>登録前の準備</strong><p>固定IPまたはDHCP予約したアドレスと、カメラ側で作成したRTSP認証情報を入力します。</p></div></details></div>
         </div>
         {% if camera %}<span>{{ camera.id }}</span>{% endif %}
       </header>
@@ -102,7 +101,7 @@
               <div class="camera-field" data-custom-field>
                 <label for="camera-path">RTSPパス</label>
                 <input id="camera-path" name="rtsp_path" maxlength="240" placeholder="例: /Preview_01_main">
-                <small>カスタムRTSPでは必須です。Reolink/Tapoでも既定パスを上書きできます。</small>
+                <details class="context-help"><summary aria-label="RTSPパスの説明を開く" title="RTSPパスとは">?</summary><div class="context-help-panel" role="note"><strong>RTSPパスとは</strong><p>カスタムRTSPでは必須です。Reolink/Tapoでも既定パスを上書きできます。</p></div></details>
               </div>
             </div>
           </details>
@@ -115,6 +114,7 @@
         </form>
       </section>
     </main>
+    <script src="/static/context-help.js"></script>
     <script>
       const existingCamera = {{ (camera or {}) | tojson }};
       const formMode = {{ form_mode | tojson }};

@@ -1,8 +1,11 @@
+import ipaddress
 import json
+import os
 import struct
 import threading
 from datetime import UTC, datetime, timedelta, timezone
 from urllib import error, request
+from urllib.parse import quote, urlencode, urlsplit
 
 from ina_device_hub.general_log import logger
 from ina_device_hub.setting import setting
@@ -12,6 +15,10 @@ PAYLOAD_PREVIEW_LIMIT = 900
 DEBUG_LOG_HEADER_SIZE = 16
 DEBUG_LOG_RECORD_SIZE = 13
 DEBUG_LOG_MAX_DISPLAY_RECORDS = 20
+DISCORD_EMBED_LIMIT = 10
+DISCORD_EMBED_TOTAL_CHARACTER_LIMIT = 6000
+DISCORD_EMBED_SAFE_CHARACTER_LIMIT = DISCORD_EMBED_TOTAL_CHARACTER_LIMIT - 200
+TASK_CARD_LIMIT = 6
 
 DEBUG_LOG_LEVELS = {
     1: "INFO",
@@ -67,15 +74,24 @@ DEBUG_LOG_EVENTS = {
 
 
 class DiscordNotificationService:
-    def __init__(self, webhook_url: str | None = None):
-        discord_settings = setting().get("discord") or {}
-        self.discord_settings = discord_settings
-        self.webhook_url = (webhook_url if webhook_url is not None else discord_settings.get("webhook_url", "")).strip()
+    def __init__(self, webhook_url: str | None = None, public_base_url: str | None = None):
+        self.webhook_url_override = webhook_url
+        self.public_base_url_override = public_base_url
+        self.reload_settings()
+
+    def reload_settings(self):
+        self.discord_settings = setting().get("discord") or {}
+        self.webhook_url = (self.webhook_url_override if self.webhook_url_override is not None else self.discord_settings.get("webhook_url", "")).strip()
+        self.public_base_url = (
+            _normalize_cloudflare_public_base_url(self.public_base_url_override) if self.public_base_url_override is not None else cloudflare_public_base_url()
+        )
 
     def enabled(self):
-        return bool(self.webhook_url)
+        return bool(self.webhook_url and self.discord_settings.get("enabled", True))
 
     def notification_enabled(self, notification_type: str):
+        if not self.enabled():
+            return False
         key = f"notify_{notification_type}"
         return bool(self.discord_settings.get(key, True))
 
@@ -91,22 +107,22 @@ class DiscordNotificationService:
         if not self.enabled() or not self.notification_enabled("new_device"):
             return
 
-        content = format_new_device(device_id, record, source, payload=payload)
-        worker_thread = threading.Thread(target=self._post, args=(content,), daemon=True)
+        notification = format_new_device_notification(device_id, record, source, payload=payload, base_url=self.public_base_url)
+        worker_thread = threading.Thread(target=self._post_payload, args=(notification,), daemon=True)
         worker_thread.start()
 
     def notify_health_alert(self, alert_type: str, device_id: str, record: dict, details: dict):
         if not self.enabled() or not self.notification_enabled(alert_type):
             return
 
-        content = format_health_alert(alert_type, device_id, record, details)
-        worker_thread = threading.Thread(target=self._post, args=(content,), daemon=True)
+        notification = format_health_alert_notification(alert_type, device_id, record, details, base_url=self.public_base_url)
+        worker_thread = threading.Thread(target=self._post_payload, args=(notification,), daemon=True)
         worker_thread.start()
 
     def notify_plant_task_digest(self, digest: dict):
         if not self.enabled() or not self.notification_enabled("plant_tasks"):
-            return False
-        return self._post_payload(format_plant_task_digest(digest))
+            return True
+        return self._post_payload(format_plant_task_digest(digest, base_url=self.public_base_url))
 
     def _post(self, content: str):
         return self._post_payload({"content": content})
@@ -132,49 +148,210 @@ class DiscordNotificationService:
         return False
 
 
-def format_plant_task_digest(digest: dict):
+def cloudflare_public_base_url(environ=None):
+    values = os.environ if environ is None else environ
+    candidate = str(values.get("CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME") or values.get("CLOUDFLARE_TUNNEL_HOSTNAME") or "").strip()
+    return _normalize_cloudflare_public_base_url(candidate)
+
+
+def _normalize_cloudflare_public_base_url(candidate):
+    value = str(candidate or "").strip()
+    if not value:
+        return ""
+    if "://" not in value:
+        value = f"https://{value}"
+    parsed = urlsplit(value)
+    hostname = (parsed.hostname or "").lower().rstrip(".")
+    if parsed.scheme != "https" or not hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in {"", "/"}:
+        return ""
+    if hostname == "localhost" or hostname.endswith(".local"):
+        return ""
+    try:
+        ipaddress.ip_address(hostname)
+        return ""
+    except ValueError:
+        pass
+    return f"https://{parsed.netloc}".rstrip("/")
+
+
+def format_plant_task_digest(digest: dict, *, base_url=""):
     digest_date = str(digest.get("date") or "")
-    fields = []
     groups = (
-        ("due", "🌱 作業期間中"),
-        ("upcoming", "⏳ 7日以内に開始"),
-        ("new", "➕ 新しく追加"),
+        ("due", "🌱 今日確認する作業"),
+        ("upcoming", "⏳ 事前に確認する作業"),
+        ("new", "🆕 新しく追加された作業"),
     )
+    ordered_items = []
+    counts = []
     for key, label in groups:
         items = digest.get(key) if isinstance(digest.get(key), list) else []
         if not items:
             continue
-        lines = [_plant_task_digest_line(item) for item in items[:12]]
-        if len(items) > len(lines):
-            lines.append(f"ほか {len(items) - len(lines)} 件")
-        value = "\n".join(lines)
-        fields.append({"name": f"{label}（{len(items)}件）", "value": value[:1024], "inline": False})
+        counts.append(f"{label} {len(items)}件")
+        ordered_items.extend((key, item) for item in items)
+    total = len(ordered_items)
+    summary = "\n".join(counts) if counts else "今日お知らせする作業はありません。"
+    reminder = digest.get("reminder") if isinstance(digest.get("reminder"), dict) else {}
+    footer_parts = ["毎朝4:00に1通へまとめて通知"]
+    if reminder.get("days_before", 0):
+        footer_parts.append(f"事前通知は開始{reminder['days_before']}日前の1回")
+    summary_embed = {
+        "title": "🌿 今日の栽培作業",
+        "description": f"**{digest_date}**\n{summary}\n\n通知から作業カードを開き、確認・記録まで進められます。",
+        "color": 0x2E7D32,
+        "footer": {"text": " / ".join(footer_parts)},
+    }
+    embeds = [summary_embed]
+    for state, item in ordered_items[:TASK_CARD_LIMIT]:
+        card = _plant_task_embed(state, item, base_url=base_url)
+        if _discord_embed_character_count([*embeds, card]) > DISCORD_EMBED_SAFE_CHARACTER_LIMIT:
+            break
+        embeds.append(card)
+    shown_count = len(embeds) - 1
+    if total > shown_count:
+        summary_embed["description"] += f"\n\nほか {total - shown_count}件は年間栽培カレンダーで確認できます。"
+    return {
+        "username": "INA Device Hub",
+        "allowed_mentions": {"parse": []},
+        "embeds": embeds[:DISCORD_EMBED_LIMIT],
+    }
+
+
+def _discord_embed_character_count(embeds):
+    total = 0
+    for embed in embeds:
+        total += len(str(embed.get("title") or ""))
+        total += len(str(embed.get("description") or ""))
+        total += len(str((embed.get("footer") or {}).get("text") or ""))
+        total += len(str((embed.get("author") or {}).get("name") or ""))
+        for field in embed.get("fields") or []:
+            total += len(str(field.get("name") or "")) + len(str(field.get("value") or ""))
+    return total
+
+
+def _plant_task_embed(state: str, item: dict, *, base_url=""):
+    action = item.get("action") if isinstance(item.get("action"), dict) else {}
+    field_name = item.get("field_name") or item.get("field_id") or "圃場未設定"
+    crop = item.get("crop_name") or "作物未設定"
+    cultivar = f"（{item['cultivar']}）" if item.get("cultivar") else ""
+    placement = item.get("placement_name") or "場所未設定"
+    emoji = _plant_action_emoji(action.get("action_type"))
+    state_label = {"due": "今日の確認", "upcoming": "事前確認", "new": "新しい予定"}.get(state, "確認")
+    color = {"due": 0x2E7D32, "upcoming": 0xD18B22, "new": 0x397B8F}.get(state, 0x2E7D32)
+    url = _plant_action_url(base_url, item)
+    lines = [
+        f"**{field_name}｜{crop}{cultivar}**",
+        f"📍 {placement}",
+        f"📅 {action.get('window_start') or '?'} 〜 {action.get('window_end') or '?'}",
+    ]
+    if action.get("reason"):
+        lines.append(f"💡 {str(action['reason'])[:360]}")
+    lines.append(f"\n[この作業を確認・記録する →]({url})" if url else "\nHubの年間栽培カレンダーから確認してください。")
+    return {
+        "title": (f"{emoji} {action.get('title') or '名称未設定'}" + ("  🆕" if item.get("is_new") else ""))[:256],
+        **({"url": url} if url else {}),
+        "description": "\n".join(lines)[:4096],
+        "color": color,
+        "footer": {"text": f"{state_label} · タップして詳細を開く"},
+    }
+
+
+def _plant_action_emoji(action_type):
+    return {
+        "watering": "💧",
+        "fertilization": "🌾",
+        "observation": "👀",
+        "pest_control": "🐛",
+        "pruning": "✂️",
+        "harvest": "🧺",
+        "winter_care": "🧣",
+        "pollination": "🐝",
+        "transplanting": "🌱",
+    }.get(str(action_type or ""), "🌿")
+
+
+def _plant_action_url(base_url, item):
+    action = item.get("action") if isinstance(item.get("action"), dict) else {}
+    field_id = str(item.get("field_id") or "")
+    planting_id = str(item.get("planting_id") or "")
+    action_id = str(action.get("id") or "")
+    if not base_url or not field_id or not planting_id or not action_id:
+        return ""
+    query = urlencode({"planting": planting_id, "action": action_id})
+    return f"{base_url}/fields/{quote(field_id, safe='')}/calendar?{query}"
+
+
+def format_new_device_notification(device_id: str, record: dict, source: str, payload: dict | None = None, *, base_url=""):
+    device_kind = record.get("device_kind") or (payload or {}).get("device_kind") or "未判定"
+    firmware_version = record.get("firmware_version") or (payload or {}).get("firmware_version") or "未確認"
+    url = _device_url(base_url, device_id, "overview")
+    description = "新しい機器を検出しました。名前と設置場所を確認して、利用を開始してください。"
+    if url:
+        description += f"\n\n[機器を確認して登録する →]({url})"
     return {
         "username": "INA Device Hub",
         "allowed_mentions": {"parse": []},
         "embeds": [
             {
-                "title": "🌿 今日の栽培作業",
-                "description": f"{digest_date} 04:00 時点の作業を、圃場・作物ごとにまとめました。",
-                "color": 0x2E7D32,
-                "fields": fields,
-                "footer": {"text": "作業期間の7日前から毎朝通知します"},
+                "title": "🆕 新しい機器が見つかりました",
+                **({"url": url} if url else {}),
+                "description": description,
+                "color": 0x397B8F,
+                "fields": [
+                    {"name": "機器", "value": record.get("name") or device_id, "inline": True},
+                    {"name": "種類", "value": str(device_kind), "inline": True},
+                    {"name": "F/W", "value": str(firmware_version), "inline": True},
+                ],
+                "footer": {"text": "タップして名前・設置場所・接続先を確認"},
             }
         ],
     }
 
 
-def _plant_task_digest_line(item: dict):
-    action = item.get("action") if isinstance(item.get("action"), dict) else {}
-    field_name = item.get("field_name") or item.get("field_id") or "圃場未設定"
-    crop = item.get("crop_name") or "作物未設定"
-    cultivar = f"（{item['cultivar']}）" if item.get("cultivar") else ""
-    placement = f" / {item['placement_name']}" if item.get("placement_name") else ""
-    new_badge = " 🆕" if item.get("is_new") else ""
-    return (
-        f"**{field_name}｜{crop}{cultivar}{placement}**{new_badge}\n"
-        f"{action.get('title') or '名称未設定'}  ` {action.get('window_start') or '?'}〜{action.get('window_end') or '?'} `"
-    )
+def format_health_alert_notification(alert_type: str, device_id: str, record: dict, details: dict, *, base_url=""):
+    title, instruction, tab, emoji, color = {
+        "device_offline": ("機器の接続を確認してください", "電源、通信環境、最終接続時刻を確認します。", "diagnostics", "📡", 0xC44D42),
+        "watering_missing": ("水やり状況を確認してください", "タンク、ポンプ、配管と直近の水やり記録を確認します。", "overview", "💧", 0x397B8F),
+        "soil_calibration_suggested": (
+            "土の水分表示を調整できます",
+            "乾いた状態と湿った状態を確認し、必要なら案内に沿って調整します。",
+            "settings",
+            "🌱",
+            0xD18B22,
+        ),
+    }.get(alert_type, ("機器の確認が必要です", "機器の状態を確認してください。", "diagnostics", "⚠️", 0xC44D42))
+    url = _device_url(base_url, device_id, tab)
+    description = instruction
+    if url:
+        description += f"\n\n[確認画面を開く →]({url})"
+    fields = [
+        {"name": "機器", "value": record.get("name") or device_id, "inline": True},
+        {"name": "場所", "value": record.get("location") or "未設定", "inline": True},
+    ]
+    if details.get("last_seen_at"):
+        fields.append({"name": "最後に確認できた時刻", "value": str(details["last_seen_at"]), "inline": False})
+    if details.get("last_watering_at"):
+        fields.append({"name": "最後の水やり", "value": str(details["last_watering_at"]), "inline": False})
+    return {
+        "username": "INA Device Hub",
+        "allowed_mentions": {"parse": []},
+        "embeds": [
+            {
+                "title": f"{emoji} {title}",
+                **({"url": url} if url else {}),
+                "description": description,
+                "color": color,
+                "fields": fields,
+                "footer": {"text": "タップして状態を確認"},
+            }
+        ],
+    }
+
+
+def _device_url(base_url, device_id, tab):
+    if not base_url or not device_id:
+        return ""
+    return f"{base_url}/mqtt-devices/{quote(str(device_id), safe='')}?{urlencode({'tab': tab})}"
 
 
 def format_mqtt_activity(direction: str, topic: str, payload=None, parsed_message: dict | None = None, mqtt_rc: int | None = None):
@@ -690,3 +867,8 @@ def discord_notification_service():
     if not __instance:
         __instance = DiscordNotificationService()
     return __instance
+
+
+def reload_discord_notification_settings():
+    if __instance:
+        __instance.reload_settings()
