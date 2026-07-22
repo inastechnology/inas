@@ -33,6 +33,11 @@ class DeviceConfigService:
             "timezone_offset_sec": device_config_defaults["timezone_offset_sec"],
             "moisture_threshold": device_config_defaults["moisture_threshold"],
             "force_watering": True,
+            "startup_watering_test": {
+                "enabled": False,
+                "duration_sec": 5,
+                "channel_mask": 1,
+            },
             "debug_log_on_wake": False,
             "sleep_sec": 300,
             "ota_check_interval_sec": 21600,

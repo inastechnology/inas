@@ -19,6 +19,7 @@
 #define APP_RUNTIME_CONFIG_STORE_VERSION_V1 1
 
 static app_runtime_config_t s_runtime_config;
+static app_startup_watering_test_config_t s_startup_watering_test = {false, 5, 1};
 
 typedef struct
 {
@@ -636,6 +637,14 @@ bool app_runtime_config_apply_json(const uint8_t *payload, size_t length)
     threshold = constrain(threshold, 0, 100);
     next.moisture_threshold = static_cast<uint8_t>(threshold);
     next.force_watering = doc["force_watering"] | false;
+    s_startup_watering_test = {false, 5, 1};
+    if (doc["startup_watering_test"].is<JsonObjectConst>())
+    {
+        JsonObjectConst startup_test = doc["startup_watering_test"].as<JsonObjectConst>();
+        s_startup_watering_test.enabled = startup_test["enabled"] | false;
+        s_startup_watering_test.duration_sec = static_cast<uint8_t>(constrain(startup_test["duration_sec"] | 5, 1, 30));
+        s_startup_watering_test.channel_mask = 1;
+    }
     next.debug_log_on_wake = doc["debug_log_on_wake"] | (doc["debug_log_enabled"] | false);
     long ota_check_interval_sec = doc["ota_check_interval_sec"] | static_cast<long>(next.ota_check_interval_sec);
     if (ota_check_interval_sec < 0)
@@ -843,6 +852,11 @@ bool app_runtime_config_apply_json(const uint8_t *payload, size_t length)
                         static_cast<int32_t>(s_runtime_config.timezone_offset_sec));
 
     return true;
+}
+
+const app_startup_watering_test_config_t &app_runtime_config_get_startup_watering_test()
+{
+    return s_startup_watering_test;
 }
 
 bool app_runtime_config_load_saved()

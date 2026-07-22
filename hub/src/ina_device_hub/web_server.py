@@ -94,6 +94,7 @@ from ina_device_hub.field_status_dashboard import build_field_status_dashboard a
 from ina_device_hub.instagram_client import InstagramClient
 from ina_device_hub.instagram_post_task import reload_instagram_post_task_settings
 from ina_device_hub.location_repository import location_repository
+from ina_device_hub.operations_api import operations_api
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
 from ina_device_hub.plant_action_decision_service import PlantActionDecisionService
 from ina_device_hub.plant_action_review_service import PlantActionAuthorizationError, PlantActionReviewService
@@ -138,6 +139,7 @@ from ina_device_hub.user_preference_repository import (
 from ina_device_hub.utils import Utils
 
 app = Flask(__name__)
+app.register_blueprint(operations_api)
 app.config["MAX_CONTENT_LENGTH"] = int((setting().get("http") or {}).get("max_request_bytes", 64 * 1024 * 1024))
 MQTT_ADMIN_STATUS_HISTORY_LIMIT = 2000
 SAFE_HTTP_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -192,7 +194,12 @@ def authenticate_hub_request():
 
     if authentication_mode() == "cloudflare_access" and _admin_access_required(request.path, request.method) and user.role != "admin":
         return _access_error_response("administrator role is required", 403)
-    if authentication_mode() == "cloudflare_access" and request.method not in SAFE_HTTP_METHODS and not _is_same_origin_request():
+    if (
+        authentication_mode() == "cloudflare_access"
+        and request.method not in SAFE_HTTP_METHODS
+        and not request.path.startswith("/operations/api/")
+        and not _is_same_origin_request()
+    ):
         return _access_error_response("same-origin request is required", 403)
     return None
 
@@ -219,7 +226,7 @@ def apply_security_headers(response):
 
 @app.errorhandler(RequestEntityTooLarge)
 def request_entity_too_large(_error):
-    if request.path.startswith("/local/api/"):
+    if request.path.startswith(("/local/api/", "/operations/api/")):
         return jsonify({"error": "request body is too large"}), 413
     return Response("request body is too large", status=413, mimetype="text/plain")
 
@@ -231,7 +238,7 @@ def _admin_access_required(path: str, method: str) -> bool:
 
 
 def _access_error_response(message: str, status: int):
-    if request.path.startswith("/local/api/"):
+    if request.path.startswith(("/local/api/", "/operations/api/")):
         return jsonify({"error": message}), status
     return Response(message, status=status, mimetype="text/plain")
 
@@ -3646,6 +3653,15 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   予約時刻には水分条件を無視して灌水する
                 </label>
               </div>
+              {% if selected.device_kind == 'WTR' %}
+              <div class="config-toolbar startup-watering-test-panel">
+                <div><strong>電源投入時の敷設試験</strong><p class="field-help">電源投入またはリセット後に一度だけ、選んだ接続口へ短時間通水します。通常運転ではOFFにしてください。</p></div>
+                <label class="switch-row" for="startup-watering-test-enabled"><input id="startup-watering-test-enabled" type="checkbox">敷設試験を有効にする</label>
+                <div class="config-field"><label for="startup-watering-test-duration">通水時間（秒）</label><input id="startup-watering-test-duration" type="number" min="1" max="30" step="1"></div>
+                <div class="config-field"><label for="startup-watering-test-channel">試験する接続口</label><select id="startup-watering-test-channel"><option value="1">接続口1</option><option value="2">接続口2</option><option value="3">接続口1と2</option></select></div>
+                <p class="notice warn">電源を入れるたびに水が出ます。配管と排水を確認し、人が立ち会う敷設試験中だけ有効にしてください。</p>
+              </div>
+              {% endif %}
               </section>
               <details><summary>通信・開発者向け設定</summary><div class="detail-body"><p class="lead">通常は変更不要です。時刻同期、保守確認間隔、デバッグ送信を調整します。</p><div class="config-toolbar"><div class="config-field"><label for="timezone-offset">機器の時刻基準</label><select id="timezone-offset"><option value="32400">日本時間（UTC+09:00）</option><option value="0">UTC</option></select></div><div class="config-field"><label for="ntp-server">時刻同期サーバー（NTP）</label><input id="ntp-server" type="text" autocomplete="off"></div><label class="switch-row" for="debug-log-on-wake"><input id="debug-log-on-wake" type="checkbox">次回起動時に診断ログを送る</label><div class="config-field"><label for="ota-check-interval">更新確認の間隔</label><select id="ota-check-interval"><option value="3600">1時間</option><option value="10800">3時間</option><option value="21600">6時間</option><option value="43200">12時間</option><option value="86400">24時間</option></select></div></div></div></details>
 
@@ -4991,6 +5007,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (timezoneOffset) timezoneOffset.value = String(Number.isInteger(config.timezone_offset_sec) ? config.timezone_offset_sec : 32400);
             const forceWatering = document.getElementById("force-watering");
             if (forceWatering) forceWatering.checked = Boolean(config.force_watering);
+            const startupWateringTest = config.startup_watering_test || {};
+            const startupWateringTestEnabled = document.getElementById("startup-watering-test-enabled");
+            if (startupWateringTestEnabled) startupWateringTestEnabled.checked = Boolean(startupWateringTest.enabled);
+            const startupWateringTestDuration = document.getElementById("startup-watering-test-duration");
+            if (startupWateringTestDuration) startupWateringTestDuration.value = String(Number.isInteger(startupWateringTest.duration_sec) ? startupWateringTest.duration_sec : 5);
+            const startupWateringTestChannel = document.getElementById("startup-watering-test-channel");
+            if (startupWateringTestChannel) startupWateringTestChannel.value = String(Number.isInteger(startupWateringTest.channel_mask) ? startupWateringTest.channel_mask : 1);
             const debugLogOnWake = document.getElementById("debug-log-on-wake");
             if (debugLogOnWake) debugLogOnWake.checked = Boolean(config.debug_log_on_wake);
             const otaCheckInterval = document.getElementById("ota-check-interval");
@@ -5175,6 +5198,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               timezone_offset_sec: timezoneOffset,
               moisture_threshold: threshold,
               force_watering: document.getElementById("force-watering").checked,
+              startup_watering_test: document.getElementById("startup-watering-test-enabled") ? {
+                enabled: document.getElementById("startup-watering-test-enabled").checked,
+                duration_sec: Number(document.getElementById("startup-watering-test-duration").value),
+                channel_mask: Number(document.getElementById("startup-watering-test-channel").value),
+              } : (initialRuntimeConfig.startup_watering_test || { enabled: false, duration_sec: 5, channel_mask: 1 }),
               debug_log_on_wake: document.getElementById("debug-log-on-wake").checked,
               ota_check_interval_sec: otaCheckInterval,
               watering_pattern: wateringPattern,

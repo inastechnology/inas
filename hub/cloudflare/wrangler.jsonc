@@ -8,6 +8,13 @@
   "observability": {
     "enabled": true
   },
+  "ai_search": [
+    {
+      "binding": "SYSTEM_HELP_SEARCH",
+      "instance_name": "inas-system-help",
+      "remote": true
+    }
+  ],
   "vars": {
     "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "",
     "CLOUDFLARE_ACCESS_POLICY_AUD": "",

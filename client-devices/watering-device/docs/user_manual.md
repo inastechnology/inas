@@ -67,6 +67,8 @@ recovery instead of irrigating.
 
 ## Runtime Config Topics
 
+`startup_watering_test` is only for supervised installation testing. Set `duration_sec` from 1 to 30 and `channel_mask` to 1, 2, or 3. After a power-on or reset, the device retrieves fresh MQTT configuration and completes its OTA check before running the selected output once. It never runs from saved configuration, during an OTA attempt, or after a normal deep-sleep timer wake. Disable the mode immediately after confirming the wiring and water path.
+
 Request topic:
 
 ```text
@@ -95,6 +97,7 @@ Push topic:
 | `timezone_offset_sec` | No | Local timezone offset seconds |
 | `moisture_threshold` | No | Irrigate only when soil moisture is below this value |
 | `force_watering` | No | Irrigate on schedule regardless of soil moisture |
+| `startup_watering_test` | No | On a supervised cold boot, run the selected irrigation output once for 1–30 seconds; never runs on deep-sleep wake |
 | `debug_log_on_wake` | No | Publish compact debug log at the end of the wake cycle |
 | `ota_check_interval_sec` | No | Maximum deep sleep interval for OTA checks |
 | `env_sensors.par.enabled` | No | Enable RS485 light/PAR sensor |

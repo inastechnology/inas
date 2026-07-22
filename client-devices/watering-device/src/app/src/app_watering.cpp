@@ -5,12 +5,9 @@
 #include "app_pin.h"
 
 static const uint8_t kWateringPins[] = {
-    VALVE_PIN,
-    PUMP_PIN,
+    WATERING_PIN,
 };
-static constexpr uint8_t kPumpOutputIndex = (sizeof(kWateringPins) / sizeof(kWateringPins[0])) - 1;
-static constexpr uint32_t kPumpOutputMask = (1UL << kPumpOutputIndex);
-static constexpr uint32_t kValveChannelMask = kPumpOutputMask - 1;
+static constexpr uint32_t kWateringChannelMask = 0x1;
 
 static uint8_t _last_moisture = 0;
 static bool s_last_moisture_valid = false;
@@ -32,16 +29,14 @@ void app_watering_init()
     }
 
     hal_output_init(kWateringPins, sizeof(kWateringPins) / sizeof(kWateringPins[0]));
-    Serial.printf("Watering output map: valve_mask=0x%lx pump_mask=0x%lx valve_pin=%u pump_pin=%u\n",
-                  static_cast<unsigned long>(kValveChannelMask),
-                  static_cast<unsigned long>(kPumpOutputMask),
-                  static_cast<unsigned int>(VALVE_PIN),
-                  static_cast<unsigned int>(PUMP_PIN));
+    Serial.printf("Watering output map: channel_mask=0x%lx watering_pin=%u\n",
+                  static_cast<unsigned long>(kWateringChannelMask),
+                  static_cast<unsigned int>(WATERING_PIN));
     APP_DEBUG_LOG_EVENT(APP_DEBUG_FILE_WATERING,
                         APP_DEBUG_LOG_INFO,
                         APP_DEBUG_EVENT_WATERING_OUTPUT_MAP,
-                        static_cast<int32_t>(kValveChannelMask),
-                        static_cast<int32_t>(kPumpOutputMask));
+                        static_cast<int32_t>(kWateringChannelMask),
+                        static_cast<int32_t>(WATERING_PIN));
     Serial.println("Watering system initialized successfully");
 }
 
@@ -165,15 +160,14 @@ bool app_watering_start_async(int duration_sec, uint32_t channel_mask, bool forc
         return false;
     }
 
-    const uint32_t valve_mask = channel_mask & kValveChannelMask;
-    if (valve_mask == 0)
+    const uint32_t output_mask = channel_mask & kWateringChannelMask;
+    if (output_mask == 0)
     {
-        Serial.printf("No watering valve channels selected: requested_mask=0x%lx valve_mask=0x%lx\n",
+        Serial.printf("No watering channel selected: requested_mask=0x%lx valid_mask=0x%lx\n",
                       static_cast<unsigned long>(channel_mask),
-                      static_cast<unsigned long>(kValveChannelMask));
+                      static_cast<unsigned long>(kWateringChannelMask));
         return false;
     }
-    const uint32_t output_mask = valve_mask | kPumpOutputMask;
 
     uint8_t moisture = s_last_moisture_valid ? _last_moisture : app_watering_read_soil_moisture();
     Serial.printf("Current soil moisture: %u%% threshold=%u%% force_watering=%s requested_mask=0x%lx output_mask=0x%lx\n",
@@ -194,15 +188,15 @@ bool app_watering_start_async(int duration_sec, uint32_t channel_mask, bool forc
     {
         if (force_watering)
         {
-            Serial.printf("Force watering enabled, starting watering on valve mask 0x%lx with pump...\n",
-                          static_cast<unsigned long>(valve_mask));
+            Serial.printf("Force watering enabled, starting watering on mask 0x%lx...\n",
+                          static_cast<unsigned long>(output_mask));
         }
         else
         {
-            Serial.printf("Soil is dry (%u < %u), starting watering on valve mask 0x%lx with pump...\n",
+            Serial.printf("Soil is dry (%u < %u), starting watering on mask 0x%lx...\n",
                           moisture,
                           s_watering_threshold,
-                          static_cast<unsigned long>(valve_mask));
+                          static_cast<unsigned long>(output_mask));
         }
         if (!hal_output_start_channels_async(output_mask, static_cast<uint32_t>(duration_sec) * 1000UL, on_watering_complete))
         {

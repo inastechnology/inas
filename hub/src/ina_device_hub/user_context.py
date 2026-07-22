@@ -10,6 +10,7 @@ EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 ACCESS_EMAIL_HEADER = "Cf-Access-Authenticated-User-Email"
 ACCESS_JWT_HEADER = "Cf-Access-Jwt-Assertion"
 CURRENT_USER_ENV_KEY = "ina.current_user"
+OPERATIONS_API_PATH_PREFIX = "/operations/api/"
 
 
 class AccessAuthenticationError(ValueError):
@@ -32,7 +33,9 @@ def authenticate_request(request) -> CurrentUser:
     if isinstance(cached, CurrentUser):
         return cached
 
-    if authentication_mode() == "local":
+    if request.path.startswith(OPERATIONS_API_PATH_PREFIX):
+        user = _operations_service_user(request)
+    elif authentication_mode() == "local":
         user = _local_user(request)
     elif authentication_mode() == "cloudflare_access":
         user = _cloudflare_access_user(request)
@@ -78,6 +81,27 @@ def _cloudflare_access_user(request) -> CurrentUser:
     if header_email and header_email != email:
         raise AccessAuthenticationError("Cloudflare Access identity headers do not match")
     return CurrentUser(email=email, role=_role_for_email(email), authenticated=True)
+
+
+def _operations_service_user(request) -> CurrentUser:
+    if authentication_mode() != "cloudflare_access":
+        raise AccessAuthenticationError("operations API requires cloudflare_access authentication")
+    token = str(request.headers.get(ACCESS_JWT_HEADER) or "").strip()
+    if not token:
+        raise AccessAuthenticationError("missing Cloudflare Access JWT")
+    team_domain = _normalized_team_domain(os.environ.get("CLOUDFLARE_ACCESS_TEAM_DOMAIN"))
+    audience = os.environ.get("CLOUDFLARE_ACCESS_POLICY_AUD", "").strip()
+    if not team_domain or not audience:
+        raise AccessAuthenticationError("Cloudflare Access verification is not configured")
+    try:
+        payload = _verify_access_token(token, team_domain, audience)
+    except Exception as exc:
+        raise AccessAuthenticationError("invalid Cloudflare Access JWT") from exc
+    service_id = str(payload.get("common_name") or "").strip()
+    allowed_ids = {value.strip() for value in os.environ.get("HUB_OPERATIONS_SERVICE_IDS", "").split(",") if value.strip()}
+    if not service_id or service_id not in allowed_ids:
+        raise AccessAuthenticationError("Cloudflare Access service is not allowed")
+    return CurrentUser(email=f"service:{service_id}", role="service", authenticated=True)
 
 
 def _verify_access_token(token: str, team_domain: str, audience: str) -> dict:

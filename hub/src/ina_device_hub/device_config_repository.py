@@ -301,6 +301,10 @@ def validate_device_config(config: dict):  # noqa: PLR0915
     if not isinstance(force_watering, bool):
         raise DeviceConfigValidationError("force_watering must be a boolean")
 
+    startup_watering_test = config.get("startup_watering_test", {"enabled": False})
+    if not isinstance(startup_watering_test, dict):
+        raise DeviceConfigValidationError("startup_watering_test must be an object")
+
     debug_log_on_wake = config.get("debug_log_on_wake", False)
     if not isinstance(debug_log_on_wake, bool):
         raise DeviceConfigValidationError("debug_log_on_wake must be a boolean")
@@ -335,6 +339,12 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         if not min_value <= value <= max_value:
             raise DeviceConfigValidationError(f"{label or key} must be between {min_value} and {max_value}")
         return value
+
+    normalized_startup_watering_test = {
+        "enabled": _optional_bool(startup_watering_test, "enabled", False, "startup_watering_test.enabled"),
+        "duration_sec": _optional_int(startup_watering_test, "duration_sec", 5, 1, 30, "startup_watering_test.duration_sec"),
+        "channel_mask": _optional_int(startup_watering_test, "channel_mask", 1, 1, 3, "startup_watering_test.channel_mask"),
+    }
 
     def _optional_str(parent: dict, key: str, default: str, label: str | None = None, max_length: int = 64):
         value = parent.get(key, default)
@@ -711,6 +721,7 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         "timezone_offset_sec": timezone_offset_sec,
         "moisture_threshold": moisture_threshold,
         "force_watering": force_watering,
+        "startup_watering_test": normalized_startup_watering_test,
         "debug_log_on_wake": debug_log_on_wake,
         "sleep_sec": sleep_sec,
         "ota_check_interval_sec": ota_check_interval_sec,

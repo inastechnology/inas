@@ -10,13 +10,13 @@ from ina_device_hub.device_output_capabilities import (
 
 
 class DeviceOutputCapabilitiesTest(unittest.TestCase):
-    def test_watering_device_exposes_only_two_fixed_irrigation_outputs(self):
+    def test_watering_device_exposes_its_single_fixed_irrigation_output(self):
         outputs = device_output_capabilities("WTR")
 
-        self.assertEqual([item["number"] for item in outputs], [1, 2])
-        self.assertEqual([item["channel_mask"] for item in outputs], [1, 2])
-        self.assertEqual([item["role"] for item in outputs], ["irrigation", "irrigation"])
-        self.assertEqual(supported_output_ids("WTR"), {"irr1", "irr2"})
+        self.assertEqual([item["number"] for item in outputs], [1])
+        self.assertEqual([item["channel_mask"] for item in outputs], [1])
+        self.assertEqual([item["role"] for item in outputs], ["irrigation"])
+        self.assertEqual(supported_output_ids("WTR"), {"irr1"})
 
     def test_integrated_controller_adds_its_fixed_sensor_power_output(self):
         outputs = device_output_capabilities("WRS")

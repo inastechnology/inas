@@ -100,6 +100,8 @@ RS485センサー電源の注意:
 
 ## 5. MQTT runtime config
 
+`startup_watering_test` は人が立ち会う敷設試験専用です。`enabled` を有効にし、`duration_sec` を1〜30秒、`channel_mask` を1、2、3のいずれかに設定します。電源投入またはリセット後、その起動中にMQTTから最新設定を受信し、OTA確認が完了した場合だけ、選んだ出力を一度動かします。保存済み設定だけでのオフライン起動、OTA実行中、通常のdeep sleepタイマー起床では動きません。配線と通水経路を確認したら、必ず無効に戻してください。
+
 デバイスは起床後、runtime configをMQTTで要求します。
 
 要求topic:
@@ -194,15 +196,15 @@ schedule項目:
 | `hour` | 必須 | `0`から`23` | ローカル時刻の時 |
 | `minute` | 必須 | `0`から`59` | ローカル時刻の分 |
 | `duration_sec` | 必須 | `1`以上 | 灌水時間、秒 |
-| `channel_mask` | 必須 | `1`以上 | valve channelのbit mask。pumpは有効なvalve channelがある場合に自動でON |
+| `channel_mask` | 必須 | `1` | D4の潅水出力を選択するbit mask |
 
 `channel_mask`の例:
 
 | 値 | 意味 |
 |---:|---|
-| `1` | valve ch0 |
+| `1` | D4の潅水出力 |
 
-現在のファームウェアでは、valve ch0は`VALVE_PIN`に対応します。`PUMP_PIN`は、有効なvalve channelが選択されたときに自動で同時ONになります。
+現在のファームウェアでは、土壌水分入力は`A2`（デジタル表記`D2`）、潅水出力は`D4`です。
 
 制限:
 

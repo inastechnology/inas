@@ -12,11 +12,8 @@
 // Legacy TDS sensor. Not used by the current WTR cycle.
 #define TDS_SENSOR_PIN A1
 
-// Soil moisture sensor
-#define SOIL_SENSOR_PIN A5
+// Soil moisture sensor (XIAO A2 shares the physical pin with D2)
+#define SOIL_SENSOR_PIN A2
 
-// Valve control
-#define VALVE_PIN D2
-
-// Water pump
-#define PUMP_PIN D3
+// Watering control
+#define WATERING_PIN D4

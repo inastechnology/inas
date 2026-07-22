@@ -343,15 +343,15 @@ Current firmware mapping:
 
 | Bit | Value | Channel | Hardware |
 |---:|---:|---|---|
-| 0 | `1` | valve ch0 | `VALVE_PIN` |
+| 0 | `1` | 潅水 | `D4` (`WATERING_PIN`) |
 
 Examples:
 
 | `channel_mask` | Meaning |
 |---:|---|
-| `1` | valve ch0; `PUMP_PIN` is enabled automatically |
+| `1` | D4の潅水出力をON |
 
-`PUMP_PIN` is not addressed directly by `channel_mask`. The firmware enables the pump automatically whenever at least one valid valve channel is selected.
+WTRの潅水出力は1系統だけです。土壌水分入力は`A2`（同一物理ピンのデジタル表記は`D2`）です。
 
 ## 9. Payload Validation Requirements
 

@@ -494,7 +494,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("動かす設備を絵から選ぶ", html)
         self.assertIn("data-equipment-type", html)
         self.assertIn("接続口 1", html)
-        self.assertIn("接続口 2", html)
+        self.assertNotIn("接続口 2", html)
         self.assertIn("A区画", html)
         self.assertIn("既存値は維持されます", html)
         self.assertIn("&#34;switch_id&#34;: &#34;legacy_aux&#34;", html)

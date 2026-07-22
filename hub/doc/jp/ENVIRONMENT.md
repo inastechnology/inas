@@ -62,6 +62,19 @@ Instagram 自動投稿では、この一時ストレージを公開 URL 配信�
 
 ## OTA firmware 配信
 
+### Cloudflare Access Operations API
+
+- `HUB_OPERATIONS_SERVICE_IDS` — `/operations/api/v1/*`を利用できるCloudflare Access Service Tokenの`common_name`をカンマ区切りで指定します。例: `01234567-89ab-cdef-0123-456789abcdef.access`。Operations APIは`HUB_AUTH_MODE=cloudflare_access`の場合だけ有効で、通常の利用者email JWTやlocal authでは利用できません。
+
+Cloudflare Access側では`/operations/api/*`を対象とするService Auth policyを作成し、クライアントは`CF-Access-Client-Id`と`CF-Access-Client-Secret`を送ります。secretはHubのenvやリポジトリへ保存せず、呼び出し側のsecret storeで管理してください。Cloudflareがoriginへ渡す`Cf-Access-Jwt-Assertion`をHubでも検証し、JWTの`common_name`が上記allowlistに含まれる場合だけ処理します。
+
+第1段階のdevice API:
+
+- `GET /operations/api/v1/health`
+- `GET /operations/api/v1/devices?device_kind=WTR&state=active`
+- `POST /operations/api/v1/devices/firmware-artifacts/<device_kind>/<version>`（bodyはfirmware binary）
+- `POST /operations/api/v1/devices/firmware-rollouts`（既定`dry_run=true`）
+
 - `FIRMWARE_HOSTNAME` (推奨) — OTA 対象デバイスから HTTP で到達できる hub の hostname または IP address。未設定なら OS 環境変数 `HOSTNAME`、さらに未設定なら OS hostname を使います。
 - `FIRMWARE_PORT` (任意) — OTA firmware 配信 port。未設定なら `HUB_HTTP_PORT`、既定は `39151`。
 - `FIRMWARE_BASE_URL` (任意) — URL を完全に固定したい場合の明示 override。例: `http://<hubのドメイン名またはIPアドレス>:39151`。

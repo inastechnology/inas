@@ -68,6 +68,8 @@ struct WateringCycleState
 {
     bool watering_due = false;
     bool watering_started = false;
+    bool startup_watering_test_requested = false;
+    bool startup_watering_test_started = false;
     uint16_t watering_duration_sec = 0;
     uint32_t channel_mask = 0;
     time_t schedule_epoch_utc = 0;
@@ -386,10 +388,32 @@ protected:
         m_cycle.ota_check_interval_sec = runtime_config.ota_check_interval_sec;
         app_read_rs485_sensors(runtime_config, m_cycle.rs485);
 
+        const app_startup_watering_test_config_t &startup_test = app_runtime_config_get_startup_watering_test();
+        m_cycle.startup_watering_test_requested = !context.woke_from_deep_sleep && context.config_received && startup_test.enabled;
+        if (m_cycle.startup_watering_test_requested && !context.ota_update_attempted)
+        {
+            m_cycle.watering_duration_sec = startup_test.duration_sec;
+            m_cycle.channel_mask = startup_test.channel_mask;
+            m_cycle.startup_watering_test_started = app_watering_start_async(startup_test.duration_sec,
+                                                                              startup_test.channel_mask,
+                                                                              true);
+            m_cycle.watering_started = m_cycle.startup_watering_test_started;
+            Serial.printf("Startup watering test: started=%s mask=0x%lx duration=%u\n",
+                          m_cycle.startup_watering_test_started ? "true" : "false",
+                          static_cast<unsigned long>(startup_test.channel_mask),
+                          startup_test.duration_sec);
+            while (app_watering_is_in_progress())
+            {
+                app_watering_loop();
+                app_network_loop();
+                delay(50);
+            }
+        }
+
         time_t now_utc = time(nullptr);
         app_schedule_entry_t due_schedule = {};
         time_t due_schedule_epoch_utc = 0;
-        m_cycle.watering_due = context.time_synced &&
+        m_cycle.watering_due = !m_cycle.startup_watering_test_started && context.time_synced &&
                                app_runtime_config_find_due_schedule(now_utc,
                                                                     s_last_executed_schedule_utc,
                                                                     &due_schedule,
@@ -420,7 +444,7 @@ protected:
         {
             Serial.println("Watering schedule is due but skipped because OTA update was attempted in this wake cycle.");
         }
-        else if (m_cycle.watering_due)
+        else if (m_cycle.watering_due && !m_cycle.startup_watering_test_started)
         {
             m_cycle.watering_duration_sec = due_schedule.duration_sec;
             m_cycle.channel_mask = due_schedule.channel_mask;
@@ -544,7 +568,7 @@ protected:
         char payload[4096];
         snprintf(payload,
                  sizeof(payload),
-                 "{\"seq\":%u,\"device_kind\":\"%s\",\"sensor_model\":\"WTR-ALL-IN-ONE-12V-RS485\",\"firmware_version\":\"%s\",\"firmware_build_id\":\"%s\",\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"ota_check_interval_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s,\"debug_log_on_wake\":%s,\"ota_update_attempted\":%s,\"watering_pattern_enabled\":%s,\"watering_pattern_on_sec\":%u,\"watering_pattern_off_sec\":%u,\"watering_pattern_repeat_count\":%u,\"soil_calibration_auto_mode\":%s,\"soil_calibration_applied\":%s,\"soil_calibration_suggested\":%s,\"soil_raw_before_watering\":%u,\"soil_raw_after_watering\":%u,\"soil_calibration_dry_raw\":%u,\"soil_calibration_wet_raw\":%u,\"soil_calibration_suggested_dry_raw\":%u,\"soil_calibration_suggested_wet_raw\":%u,\"sensor_12v_power_requested\":%s,\"sensor_12v_power_configured\":%s,\"sensor_12v_power_error\":%s,\"par_enabled\":%s,\"par_ok\":%s,\"par_modbus_slave_id\":%u,\"par_umol_m2_s\":%.1f,\"raw_par\":%u,\"soil_rs485_enabled\":%s,\"soil_rs485_ok\":%s,\"soil_rs485_modbus_slave_id\":%u,\"soil_moisture_percent\":%.1f,\"soil_temperature_c\":%.1f,\"soil_ec_us_cm\":%.1f,\"soil_ph\":%.2f,\"soil_n_mg_kg\":%.1f,\"soil_p_mg_kg\":%.1f,\"soil_k_mg_kg\":%.1f,\"raw_soil_moisture\":%u,\"raw_soil_temperature\":%u,\"raw_soil_ec\":%u,\"raw_soil_ph\":%u,\"raw_soil_nitrogen\":%u,\"raw_soil_phosphorus\":%u,\"raw_soil_potassium\":%u,\"env_calibration_required\":%s,\"env_calibration_mode\":\"%s\",\"env_calibration_target\":\"%s\",\"env_par_calibrated\":%s,\"env_soil_calibrated\":%s,\"env_calibration_capture_applied\":%s,\"env_calibration_capture_duplicate\":%s,\"env_calibration_capture_error\":%s}",
+                 "{\"seq\":%u,\"device_kind\":\"%s\",\"sensor_model\":\"WTR-ALL-IN-ONE-12V-RS485\",\"firmware_version\":\"%s\",\"firmware_build_id\":\"%s\",\"network_connected\":%s,\"runtime_config_valid\":%s,\"config_received\":%s,\"time_synced\":%s,\"watering_due\":%s,\"watering_started\":%s,\"startup_watering_test_requested\":%s,\"startup_watering_test_started\":%s,\"watering_duration_sec\":%u,\"channel_mask\":%lu,\"schedule_epoch_utc\":%ld,\"next_sleep_sec\":%lu,\"ota_check_interval_sec\":%lu,\"last_soil_moisture\":%u,\"threshold\":%u,\"force_watering\":%s,\"debug_log_on_wake\":%s,\"ota_update_attempted\":%s,\"watering_pattern_enabled\":%s,\"watering_pattern_on_sec\":%u,\"watering_pattern_off_sec\":%u,\"watering_pattern_repeat_count\":%u,\"soil_calibration_auto_mode\":%s,\"soil_calibration_applied\":%s,\"soil_calibration_suggested\":%s,\"soil_raw_before_watering\":%u,\"soil_raw_after_watering\":%u,\"soil_calibration_dry_raw\":%u,\"soil_calibration_wet_raw\":%u,\"soil_calibration_suggested_dry_raw\":%u,\"soil_calibration_suggested_wet_raw\":%u,\"sensor_12v_power_requested\":%s,\"sensor_12v_power_configured\":%s,\"sensor_12v_power_error\":%s,\"par_enabled\":%s,\"par_ok\":%s,\"par_modbus_slave_id\":%u,\"par_umol_m2_s\":%.1f,\"raw_par\":%u,\"soil_rs485_enabled\":%s,\"soil_rs485_ok\":%s,\"soil_rs485_modbus_slave_id\":%u,\"soil_moisture_percent\":%.1f,\"soil_temperature_c\":%.1f,\"soil_ec_us_cm\":%.1f,\"soil_ph\":%.2f,\"soil_n_mg_kg\":%.1f,\"soil_p_mg_kg\":%.1f,\"soil_k_mg_kg\":%.1f,\"raw_soil_moisture\":%u,\"raw_soil_temperature\":%u,\"raw_soil_ec\":%u,\"raw_soil_ph\":%u,\"raw_soil_nitrogen\":%u,\"raw_soil_phosphorus\":%u,\"raw_soil_potassium\":%u,\"env_calibration_required\":%s,\"env_calibration_mode\":\"%s\",\"env_calibration_target\":\"%s\",\"env_par_calibrated\":%s,\"env_soil_calibrated\":%s,\"env_calibration_capture_applied\":%s,\"env_calibration_capture_duplicate\":%s,\"env_calibration_capture_error\":%s}",
                  context.seq_id,
                  APP_DEVICE_KIND,
                  APP_FIRMWARE_VERSION,
@@ -555,6 +579,8 @@ protected:
                  context.time_synced ? "true" : "false",
                  m_cycle.watering_due ? "true" : "false",
                  m_cycle.watering_started ? "true" : "false",
+                 m_cycle.startup_watering_test_requested ? "true" : "false",
+                 m_cycle.startup_watering_test_started ? "true" : "false",
                  m_cycle.watering_duration_sec,
                  static_cast<unsigned long>(m_cycle.channel_mask),
                  static_cast<long>(m_cycle.schedule_epoch_utc),

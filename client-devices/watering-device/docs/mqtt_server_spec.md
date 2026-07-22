@@ -178,6 +178,7 @@ Example:
   "timezone_offset_sec": 32400,
   "moisture_threshold": 40,
   "force_watering": false,
+  "startup_watering_test": {"enabled": false, "duration_sec": 5, "channel_mask": 1},
   "debug_log_on_wake": false,
   "ota_check_interval_sec": 21600,
   "watering_pattern": {

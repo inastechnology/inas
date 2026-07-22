@@ -4,6 +4,7 @@ import { accessAuth, type VerifyAccessJwt } from "./access";
 import { createServices } from "./repositories";
 import { eventsRoutes } from "./routes/events";
 import { healthRoutes } from "./routes/health";
+import { systemHelpRoutes } from "./routes/system-help";
 import type { AccessUser, AppServices, Env } from "./types";
 
 type Variables = {
@@ -31,6 +32,7 @@ export function createApp(options: { servicesFactory?: (env: Env) => AppServices
   );
   app.get("/api/me", (c) => c.json({ user: c.get("user") }));
   app.route("/api/events", eventsRoutes());
+  app.route("/api/system-help", systemHelpRoutes());
 
   app.notFound((c) => c.json({ error: "not found" }, 404));
 

@@ -166,6 +166,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
             "timezone_offset_sec": 32400,
             "moisture_threshold": 45,
             "force_watering": True,
+            "startup_watering_test": {"enabled": True, "duration_sec": 7, "channel_mask": 3},
             "debug_log_on_wake": True,
             "ota_check_interval_sec": 3600,
             "schedules": [{"hour": 8, "minute": 15, "duration_sec": 30, "channel_mask": 3}],
@@ -186,6 +187,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
 
         self.assertIn('"moisture_threshold":45', self.mqtt_client.published[0]["payload"])
         self.assertIn('"force_watering":true', self.mqtt_client.published[0]["payload"])
+        self.assertIn('"startup_watering_test":{"enabled":true,"duration_sec":7,"channel_mask":3}', self.mqtt_client.published[0]["payload"])
         self.assertIn('"debug_log_on_wake":true', self.mqtt_client.published[0]["payload"])
         self.assertIn('"ota_check_interval_sec":3600', self.mqtt_client.published[0]["payload"])
         event = _read_last_device_event()
@@ -193,6 +195,16 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertEqual(event["direction"], "outbound")
         self.assertEqual(event["device_id"], device_id)
         self.assertEqual(event["payload"]["moisture_threshold"], 45)
+
+    def test_startup_watering_test_is_safe_by_default_and_bounded(self):
+        base = self.service.default_config()
+        normalized = validate_device_config(base)
+        self.assertEqual(normalized["startup_watering_test"], {"enabled": False, "duration_sec": 5, "channel_mask": 1})
+
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config({**base, "startup_watering_test": {"enabled": True, "duration_sec": 31, "channel_mask": 1}})
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config({**base, "startup_watering_test": {"enabled": True, "duration_sec": 5, "channel_mask": 4}})
 
     def test_device_state_transitions_follow_the_operational_lifecycle(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000020"

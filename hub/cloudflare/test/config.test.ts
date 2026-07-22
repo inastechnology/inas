@@ -13,4 +13,13 @@ describe("Wrangler exposure defaults", () => {
     expect(config.workers_dev).toBe(false);
     expect(config.preview_urls).toBe(false);
   });
+
+  it("binds the private system help AI Search instance", () => {
+    const configPath = resolve(dirname(fileURLToPath(import.meta.url)), "../wrangler.jsonc");
+    const config = JSON.parse(readFileSync(configPath, "utf8"));
+
+    expect(config.ai_search).toEqual([
+      { binding: "SYSTEM_HELP_SEARCH", instance_name: "inas-system-help", remote: true },
+    ]);
+  });
 });

@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "system-help:setup": "node scripts/setup-system-help.mjs",
+    "system-help:sync": "node scripts/sync-system-help.mjs",
+    "system-help:evaluate": "node scripts/evaluate-system-help.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },

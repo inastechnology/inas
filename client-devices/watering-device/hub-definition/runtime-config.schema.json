@@ -5,6 +5,7 @@
     "timezone_offset_sec",
     "moisture_threshold",
     "force_watering",
+    "startup_watering_test",
     "debug_log_on_wake",
     "ota_check_interval_sec",
     "watering_pattern",

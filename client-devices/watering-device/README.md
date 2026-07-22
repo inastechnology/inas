@@ -231,6 +231,11 @@ Payload example:
   "timezone_offset_sec": 32400,
   "moisture_threshold": 35,
   "force_watering": false,
+  "startup_watering_test": {
+    "enabled": false,
+    "duration_sec": 5,
+    "channel_mask": 1
+  },
   "debug_log_on_wake": false,
   "ota_check_interval_sec": 21600,
   "schedules": [
@@ -253,10 +258,11 @@ Payload example:
 Notes:
 
 - `ntp_server` should point to the NTP server running on the same PC as MQTT.
-- `channel_mask` uses valve-channel bit flags. `1` means valve ch0. The pump output is enabled automatically whenever at least one valve channel is selected.
-- Current firmware maps valve ch0 to `VALVE_PIN` and drives `PUMP_PIN` automatically in [`app_watering.cpp`](src/app/src/app_watering.cpp).
+- `channel_mask` selects the single watering output. The only supported value is `1`.
+- Current firmware reads soil moisture from `A2`/`D2` and drives watering from `D4`; see [`app_pin.h`](src/app/inc/app_pin.h).
 - Up to 8 schedules are accepted.
 - Set `force_watering` to `true` to water on due schedules even when the soil sensor reports enough moisture.
+- `startup_watering_test` is an installer-only continuity test. When enabled, a cold boot or reset runs the selected irrigation output once for 1 to 30 seconds after fresh MQTT config retrieval and the OTA check. Deep-sleep wakes never run the test. Disable it after supervised installation testing.
 - Set `debug_log_on_wake` to `true` to publish one compact binary debug log payload for each wake cycle to `/DEVICE_ID/kinds/debug/log`.
 - Set `ota_check_interval_sec` to control the maximum deep-sleep interval before the next OTA check. The default is 21,600 seconds (6 hours), and the firmware clamps accepted values to 1 to 24 hours.
   See [docs/debug_log_format.md](docs/debug_log_format.md) for the binary format.

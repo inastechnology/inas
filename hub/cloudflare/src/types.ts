@@ -5,6 +5,29 @@ export interface Env {
   CLOUDFLARE_ACCESS_POLICY_AUD?: string;
   TURSO_DATABASE_URL?: string;
   TURSO_AUTH_TOKEN?: string;
+  SYSTEM_HELP_SEARCH?: AISearchInstance;
+}
+
+export interface AISearchChunk {
+  id: string;
+  score: number;
+  text: string;
+  item?: { key?: string; timestamp?: number; metadata?: Record<string, unknown> };
+}
+
+export interface AISearchInstance {
+  search(input: {
+    query: string;
+    ai_search_options?: {
+      retrieval?: {
+        retrieval_type?: "vector" | "keyword" | "hybrid";
+        match_threshold?: number;
+        max_num_results?: number;
+        context_expansion?: number;
+      };
+      reranking?: { enabled: boolean; model?: string; match_threshold?: number };
+    };
+  }): Promise<{ search_query?: string; chunks?: AISearchChunk[] }>;
 }
 
 export interface AccessUser {

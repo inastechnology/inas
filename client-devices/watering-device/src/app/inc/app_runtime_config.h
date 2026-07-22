@@ -83,6 +83,13 @@ typedef struct
 
 typedef struct
 {
+    bool enabled;
+    uint8_t duration_sec;
+    uint32_t channel_mask;
+} app_startup_watering_test_config_t;
+
+typedef struct
+{
     bool auto_mode_enabled;
     bool apply_auto_calibration;
     bool drift_check_enabled;
@@ -177,6 +184,7 @@ bool app_runtime_config_env_metric_is_supported(const char *metric);
 const app_env_metric_calibration_t &app_runtime_config_env_metric_calibration(const app_runtime_config_t &config,
                                                                               const char *metric);
 const app_runtime_config_t &app_runtime_config_get();
+const app_startup_watering_test_config_t &app_runtime_config_get_startup_watering_test();
 bool app_runtime_config_find_due_schedule(time_t now_utc,
                                           time_t last_executed_schedule_utc,
                                           app_schedule_entry_t *schedule_out,

@@ -1346,7 +1346,7 @@
         ],
         "schema_version": 1
       },
-      "definition_version": "1.0.0",
+      "definition_version": "1.2.0",
       "device": {
         "category": "watering",
         "icon": "💧",
@@ -1369,28 +1369,12 @@
           ],
           "assignable": true,
           "channel_mask": 1,
-          "default_name": "潅水1系",
+          "default_name": "潅水",
           "id": "irr1",
           "number": 1,
           "role": "irrigation",
           "role_label": "水やり",
-          "terminal": "IRR1"
-        },
-        {
-          "allowed_load_types": [
-            "pump",
-            "valve",
-            "drip_line",
-            "sprinkler"
-          ],
-          "assignable": true,
-          "channel_mask": 2,
-          "default_name": "潅水2系",
-          "id": "irr2",
-          "number": 2,
-          "role": "irrigation",
-          "role_label": "水やり",
-          "terminal": "IRR2"
+          "terminal": "D4"
         }
       ],
       "runtime_config": {
@@ -1400,6 +1384,7 @@
           "timezone_offset_sec",
           "moisture_threshold",
           "force_watering",
+          "startup_watering_test",
           "debug_log_on_wake",
           "ota_check_interval_sec",
           "watering_pattern",

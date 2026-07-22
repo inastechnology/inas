@@ -143,6 +143,53 @@ describe("cloud hub app", () => {
       },
     ]);
   });
+
+  it("returns ranked system help sources to an authenticated reader", async () => {
+    const app = createApp({
+      servicesFactory: () => fakeServices({ roleByEmail: { "reader@example.com": "reader" } }),
+      verifyAccessJwt: async () => ({ email: "reader@example.com" }),
+    });
+    const searchCalls: unknown[] = [];
+    const env: Env = {
+      ...baseEnv,
+      SYSTEM_HELP_SEARCH: {
+        async search(input) {
+          searchCalls.push(input);
+          return {
+            search_query: "圃場 追加",
+            chunks: [
+              { id: "chunk-1", score: 0.82, text: "圃場一覧の＋ 圃場を追加を押します。", item: { key: "system-help/01-navigation-and-fields.md" } },
+            ],
+          };
+        },
+      },
+    };
+
+    const response = await app.request("/api/system-help/search", jsonRequest({ question: "圃場を追加するには？" }), env);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      question: "圃場を追加するには？",
+      search_query: "圃場 追加",
+      sources: [
+        { id: "chunk-1", score: 0.82, text: "圃場一覧の＋ 圃場を追加を押します。", document: "system-help/01-navigation-and-fields.md" },
+      ],
+    });
+    expect(searchCalls).toMatchObject([{ ai_search_options: { retrieval: { retrieval_type: "hybrid", max_num_results: 5 } } }]);
+  });
+
+  it("validates system help questions and reports a missing binding", async () => {
+    const app = createApp({
+      servicesFactory: () => fakeServices({ roleByEmail: { "reader@example.com": "reader" } }),
+      verifyAccessJwt: async () => ({ email: "reader@example.com" }),
+    });
+
+    const empty = await app.request("/api/system-help/search", jsonRequest({ question: "  " }), baseEnv);
+    expect(empty.status).toBe(400);
+
+    const unavailable = await app.request("/api/system-help/search", jsonRequest({ question: "圃場を追加するには？" }), baseEnv);
+    expect(unavailable.status).toBe(503);
+  });
 });
 
 function accessHeaders() {

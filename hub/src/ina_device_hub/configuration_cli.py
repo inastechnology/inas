@@ -152,6 +152,7 @@ FIELDS = (
     ConfigurationField("CLOUDFLARE_ACCESS_SESSION_DURATION", "Access session duration", "cloudflare", "4h"),
     ConfigurationField("CLOUDFLARE_ACCESS_ALLOWED_EMAILS", "許可email", "cloudflare"),
     ConfigurationField("CLOUDFLARE_ACCESS_ALLOWED_EMAIL_DOMAINS", "許可email domain", "cloudflare"),
+    ConfigurationField("HUB_OPERATIONS_SERVICE_IDS", "Operations API許可service ID", "cloudflare"),
     ConfigurationField("CLOUDFLARE_TUNNEL_NAME", "Tunnel name", "cloudflare"),
     ConfigurationField("CLOUDFLARE_TUNNEL_ID", "Tunnel ID", "cloudflare"),
     ConfigurationField("CLOUDFLARE_TUNNEL_HOSTNAME", "Tunnel hostname", "cloudflare"),
