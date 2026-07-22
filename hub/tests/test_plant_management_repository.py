@@ -375,7 +375,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         self.assertEqual(by_period["page_count"], 2)
         self.assertTrue(by_period["has_next"])
 
-    def test_complete_action_stores_selected_work_date(self):
+    def test_completion_submission_waits_for_manager_approval(self):
         planting = self._create_blueberry()
         calendar = self._create_calendar(planting["id"])
         action_id = calendar["actions"][0]["id"]
@@ -397,6 +397,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
             "少量施肥",
             rating=4,
             attachments=[attachment],
+            performed_by="grower@example.com",
             work_details={
                 "execution": {
                     "target": "鉢Aの根域",
@@ -413,13 +414,82 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         bundle = self.repository.field_bundle("field-1", today="2026-07-24")
 
         self.assertEqual(work_log["performed_on"], "2026-07-23")
+        self.assertEqual(work_log["performed_by"], "grower@example.com")
         self.assertEqual(work_log["rating"], 4)
         self.assertEqual(work_log["attachments"][0]["storage"], "r2")
         self.assertEqual(work_log["work_details"]["execution"]["follow_up_days"], 10)
         self.assertEqual(work_log["work_details"]["execution"]["material_name"], "液肥A")
         self.assertEqual(work_log["work_details"]["execution"]["amount_or_rate"], "500倍を1鉢2L")
         self.assertEqual(bundle["work_logs"][0]["note"], "少量施肥")
-        self.assertEqual(bundle["calendars"][planting["id"]]["actions"][0]["status"], "completed")
+        self.assertEqual(bundle["calendars"][planting["id"]]["actions"][0]["completion"]["performed_by"], "grower@example.com")
+        self.assertEqual(bundle["calendars"][planting["id"]]["actions"][0]["status"], "awaiting_review")
+        self.assertEqual(work_log["review_status"], "pending")
+        self.assertEqual(self.repository.recent_work_logs(planting["id"]), [])
+
+        reviewed = self.repository.review_action_completion(
+            planting["id"],
+            action_id,
+            "approved",
+            reviewed_by="manager@example.com",
+            note="写真と使用量を確認",
+        )
+
+        self.assertEqual(reviewed["action"]["status"], "completed")
+        self.assertEqual(reviewed["action"]["completion"]["review_status"], "approved")
+        self.assertEqual(reviewed["work_log"]["reviewed_by"], "manager@example.com")
+        self.assertEqual(self.repository.recent_work_logs(planting["id"])[0]["id"], work_log["id"])
+
+    def test_rejected_completion_can_be_resubmitted_without_losing_evidence(self):
+        planting = self._create_blueberry()
+        calendar = self._create_calendar(planting["id"])
+        action_id = calendar["actions"][0]["id"]
+        self.repository.update_action(
+            planting["id"],
+            action_id,
+            {"status": "in_progress", "assigned_to": "worker@example.com"},
+        )
+
+        first = self.repository.complete_action(planting["id"], action_id, "2026-07-20", "写真不足", rating=3, performed_by="worker@example.com")
+        rejected = self.repository.review_action_completion(
+            planting["id"],
+            action_id,
+            "rejected",
+            reviewed_by="manager@example.com",
+            note="作業後の写真を追加してください",
+        )
+
+        self.assertEqual(rejected["action"]["status"], "in_progress")
+        self.assertEqual(rejected["work_log"]["review_status"], "rejected")
+        self.assertEqual(self.repository.recent_work_logs(planting["id"]), [])
+
+        second = self.repository.complete_action(planting["id"], action_id, "2026-07-20", "写真を追加", rating=4, performed_by="worker@example.com")
+        approved = self.repository.review_action_completion(planting["id"], action_id, "approved", reviewed_by="manager@example.com")
+
+        logs = self.repository.field_bundle("field-1")["work_logs"]
+        self.assertEqual(len(logs), 2)
+        self.assertEqual(next(item for item in logs if item["id"] == first["id"])["review_status"], "rejected")
+        self.assertEqual(next(item for item in logs if item["id"] == second["id"])["review_status"], "approved")
+        self.assertEqual(approved["action"]["status"], "completed")
+
+    def test_legacy_completed_work_normalizes_as_approved(self):
+        planting = self._create_blueberry()
+        calendar = self._create_calendar(planting["id"])
+        action_id = calendar["actions"][0]["id"]
+        self.repository.update_action(planting["id"], action_id, {"status": "in_progress"})
+        work_log = self.repository.complete_action(planting["id"], action_id, "2026-07-20", rating=4, performed_by="worker@example.com")
+        self.repository.review_action_completion(planting["id"], action_id, "approved", reviewed_by="manager@example.com")
+        action = self.repository.data["calendars"][calendar["id"]]["actions"][0]
+        persisted_log = next(item for item in self.repository.data["work_logs"] if item["id"] == work_log["id"])
+        for key in ("review_status", "submitted_at", "reviewed_by", "reviewed_at", "review_note"):
+            action["completion"].pop(key, None)
+            persisted_log.pop(key, None)
+        self.repository.save()
+        self.repository.load()
+
+        normalized = self.repository.get_calendar(planting["id"])["actions"][0]
+        self.assertEqual(normalized["status"], "completed")
+        self.assertEqual(normalized["completion"]["review_status"], "approved")
+        self.assertEqual(self.repository.recent_work_logs(planting["id"])[0]["review_status"], "approved")
 
     def test_legacy_pest_control_fields_migrate_to_common_work_model(self):
         planting = self._create_blueberry()
@@ -540,6 +610,12 @@ class PlantManagementRepositoryTest(unittest.TestCase):
         calendar = self._create_calendar(planting["id"])
         self.repository.update_action(planting["id"], calendar["actions"][0]["id"], {"status": "in_progress"})
         self.repository.complete_action(planting["id"], calendar["actions"][0]["id"], "2026-07-23", "実施")
+        self.repository.review_action_completion(
+            planting["id"],
+            calendar["actions"][0]["id"],
+            "approved",
+            reviewed_by="manager@example.com",
+        )
 
         replaced = self.repository.replace_calendar(
             planting["id"],
@@ -555,7 +631,7 @@ class PlantManagementRepositoryTest(unittest.TestCase):
             {"source": "llm"},
         )
 
-        self.assertEqual(replaced["revision"], 4)
+        self.assertEqual(replaced["revision"], 5)
         self.assertEqual([action["status"] for action in replaced["actions"]], ["completed", "planned"])
         self.assertEqual(replaced["actions"][1]["title"], "新しい観察計画")
 

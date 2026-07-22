@@ -1,4 +1,4 @@
-import type { FieldLayout, LayoutDevice, PlantActionCompletionPayload, PlantActionMutationPayload, PlantActionSkipPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
+import type { FieldLayout, LayoutDevice, PlantActionCompletionPayload, PlantActionMutationPayload, PlantActionReviewPayload, PlantActionSkipPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
 
 export interface SearchPage<Item> {
   items: Item[];
@@ -218,6 +218,17 @@ export function completePlantAction(
   return requestJson(
     `/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/actions/${encodeURIComponent(actionId)}/complete`,
     { method: "POST", body: form },
+  );
+}
+
+export function reviewPlantAction(
+  plantingId: string,
+  actionId: string,
+  payload: PlantActionReviewPayload,
+): Promise<unknown> {
+  return requestJson(
+    `/local/api/plantings/${encodeURIComponent(plantingId)}/calendar/actions/${encodeURIComponent(actionId)}/review`,
+    { method: "POST", body: JSON.stringify(payload) },
   );
 }
 

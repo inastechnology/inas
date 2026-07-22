@@ -93,7 +93,8 @@ export interface GrowthTarget {
 }
 
 export type PlantActionPriority = "required" | "should" | "recommended" | "optional";
-export type PlantActionStatus = "planned" | "in_progress" | "completed" | "skipped";
+export type PlantActionStatus = "planned" | "in_progress" | "awaiting_review" | "completed" | "skipped";
+export type PlantActionReviewStatus = "pending" | "approved" | "rejected";
 export type PlantActionSkipReason =
   | "already_satisfied"
   | "start_conditions_not_met"
@@ -164,15 +165,22 @@ export interface PlantCalendarAction {
   tags: string[];
   required_people: number;
   estimated_minutes: number;
+  assigned_to: string;
   work_plan: ActionWorkPlan;
   status: PlantActionStatus;
   completion: {
     work_log_id: string;
     performed_on: string;
+    performed_by: string;
     note: string;
     rating?: number | null;
     attachments?: RecordImageAttachment[];
     work_details?: PlantActionWorkDetails;
+    review_status: PlantActionReviewStatus;
+    submitted_at: string;
+    reviewed_by: string;
+    reviewed_at: string;
+    review_note: string;
   } | null;
   skip_decision: {
     decided_on: string;
@@ -266,6 +274,11 @@ export interface PlantActionCompletionPayload {
   work_details: PlantActionWorkDetails;
 }
 
+export interface PlantActionReviewPayload {
+  decision: "approved" | "rejected";
+  note: string;
+}
+
 export interface PlantActionSkipPayload {
   decided_on: string;
   reason_code: PlantActionSkipReason;
@@ -352,10 +365,16 @@ export interface PlantWorkLog {
   action_id: string;
   title: string;
   performed_on: string;
+  performed_by: string;
   note: string;
   rating: number | null;
   attachments: RecordImageAttachment[];
   work_details: PlantActionWorkDetails;
+  review_status: PlantActionReviewStatus;
+  submitted_at: string;
+  reviewed_by: string;
+  reviewed_at: string;
+  review_note: string;
 }
 
 export type FertilizerMaterialKind =
@@ -494,6 +513,7 @@ export interface AgenticOperationReadiness {
 }
 
 export interface PlantBundle {
+  viewer: { email: string; role: "admin" | "operator" };
   action_types: PlantActionTypeDefinition[];
   plantings: Planting[];
   calendars: Record<string, PlantCalendar>;

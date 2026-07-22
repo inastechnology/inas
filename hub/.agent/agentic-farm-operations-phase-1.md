@@ -6,7 +6,7 @@ This ExecPlan is a living document. The sections `Progress`, `Surprises & Discov
 
 The cultivation calendar already explains how to water, transplant, prune, and harvest, while the field page can separately propose watering from soil moisture. After this change, every calendar action exposes one consistent execution-readiness view: what must be checked, what cancels the work, how completion is verified, and whether a physically linked device or a person can perform it.
 
-The design does not assume FarmBot-style rails. A rail, mobile robot, fixed actuator, or person is an executor selected by declared capability and physical reach. Phase 1 connects watering actions to WTR/WRS devices only when the installation layout explicitly targets the crop placement. It intentionally does not energize a pump; acknowledged, idempotent action dispatch is a later safety boundary.
+The design does not assume FarmBot-style rails. A rail, mobile robot, fixed actuator, or person is an executor selected by declared capability and physical reach. Phase 1 connects watering actions to WTR/WRS devices only when the installation layout explicitly targets the crop placement. It intentionally does not energize a pump. For the low-power WTR/WRS product, scheduled configuration received at the next wake is the canonical actuation path; on-demand dispatch is not a roadmap requirement.
 
 ## Progress
 
@@ -48,6 +48,10 @@ The design does not assume FarmBot-style rails. A rail, mobile robot, fixed actu
   Rationale: these are irreversible or quality-sensitive operations; a calendar suggestion is not sufficient evidence for autonomous actuation.
   Date/Author: 2026-07-19 / Codex
 
+- Decision: Supersede “later on-demand dispatcher” as a WTR/WRS roadmap boundary; use next-wake configuration and local schedules instead.
+  Rationale: low power is more important than immediate irrigation, and users can schedule watering to occur after the device's next wake without requiring a continuously reachable command channel.
+  Date/Author: 2026-07-21 / Codex
+
 ## Plan of Work
 
 Add a deterministic operation-readiness builder to the agricultural action service. It merges each calendar action's work-plan conditions with operation-specific safety checks and discovers executor candidates from device definitions and installation-layout target bindings. It returns additive data keyed by action ID, so existing databases and calendar documents require no migration.
@@ -81,6 +85,8 @@ The field-bundle API now computes `operation_readiness` for every calendar actio
 
 Watering readiness discovers only active WTR/WRS devices whose device definition declares an irrigation action and whose installation-layout binding targets the planting placement. The action detail shows the linked device, route placement, start/stop/completion checks, and opens settings in a new tab. A missing route degrades to a human-guided explanation and links to the installation editor.
 
-The older soil-moisture candidate path now follows the same boundary: merely having a WTR/WRS in the field is insufficient, and `can_execute_now` stays false until an acknowledged, idempotent on-demand protocol exists. This avoids presenting runtime-config push as a safe actuator command.
+The older soil-moisture candidate path now follows the same physical-route boundary: merely having a WTR/WRS in the field is insufficient. `can_execute_now` remains false because immediate dispatch is not exposed; the supported path is a reviewed watering schedule delivered through runtime configuration at the device's next wake.
 
 Validation passed 335 Python tests, focused Ruff checks, TypeScript/Vite production build, and the full field-detail browser smoke after restarting the demo with the final backend. Browser assertions covered linked-device selection, new-tab preservation, human-guided irreversible work, desktop/mobile overflow, and absence of console errors. Visual inspection of `/tmp/ina-agentic-watering-readiness.png`, `/tmp/ina-agentic-watering-readiness-mobile.png`, and `/tmp/ina-agentic-human-readiness.png` found and corrected the initial narrow mobile layout; the final panel uses the available width with readable hierarchy and no horizontal overflow.
+
+The 2026-07-21 product review clarified that immediate irrigation is unnecessary. This plan's readiness UI remains useful for showing physical reach and safety checks, but it must lead to scheduled configuration rather than imply a future “water now” control for sleeping WTR/WRS devices.

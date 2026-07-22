@@ -95,11 +95,13 @@ try {
   assert.equal(await page.$eval("#field-status-dashboard .range-card", (link) => link.getAttribute("target")), "_blank");
   const targetSettingsUrl = new URL(targetSettingsHref);
   const targetMetric = targetSettingsUrl.searchParams.get("target_metric");
-  assert(targetMetric, "an environment metric must carry its target metric to the editor");
+  assert.equal(targetMetric, "air_temperature_c", "the latest ENV air temperature must reach the field dashboard and target editor");
   const targetPage = await browser.newPage();
   await targetPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   await targetPage.goto(targetSettingsHref, { waitUntil: "networkidle0" });
   await targetPage.waitForSelector(`.plant-target-row.focused[data-target-metric="${targetMetric}"]`);
+  assert(await targetPage.$('.plant-target-row[data-target-metric="air_temperature_c"]'), "the target editor must include air temperature");
+  assert(await targetPage.$('.plant-target-row[data-target-metric="soil_temperature_c"]'), "the target editor must include soil temperature");
   assert(await targetPage.$(".inspector-panel .active-planting"), "the metric link must select the target planting");
   await targetPage.screenshot({ path: "/tmp/ina-environment-target-direct.png", fullPage: true });
   await targetPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
@@ -212,10 +214,17 @@ try {
   await calendarPage.evaluate(() => { const shell = document.querySelector('.calendar-page-shell'); if (shell instanceof HTMLElement) shell.scrollTop = 0; });
   await calendarPage.click(".care-profile-trigger");
   await calendarPage.waitForSelector(".care-evidence a");
+  await calendarPage.waitForSelector(".care-inputs");
+  assert.match(await calendarPage.$eval(".care-inputs", (panel) => panel.textContent || ""), /作付け・圃場条件.*施肥履歴 1件.*作業記録 1件.*植物相談 1件.*Web根拠 2件/s);
   assert.equal(await calendarPage.$$(".care-evidence a").then((items) => items.length), 2, "the demo plan must show its public evidence sources");
   assert.equal(await calendarPage.$eval(".care-evidence a", (link) => link.getAttribute("target")), "_blank", "evidence must open without losing the calendar");
   assert.match(await calendarPage.$eval(".care-evidence", (panel) => panel.textContent || ""), /農林水産省.*農研機構/s);
   await calendarPage.screenshot({ path: "/tmp/ina-calendar-crop-plan-desktop.png", fullPage: false });
+  await calendarPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert((await calendarPage.$eval(".care-profile-dialog", (dialog) => dialog.scrollWidth - dialog.clientWidth)) <= 1, "the generation input summary must not overflow on mobile");
+  await calendarPage.screenshot({ path: "/tmp/ina-care-profile-mobile.png", fullPage: false });
+  await calendarPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
   await calendarPage.click(".care-profile-dialog > header .icon-button");
   await calendarPage.waitForFunction(() => !document.querySelector(".care-profile-dialog"));
   await calendarPage.click(".calendar-generation .calendar-section-heading button");
@@ -320,12 +329,34 @@ try {
   await calendarPage.screenshot({ path: "/tmp/ina-fertilizer-effect-desktop.png", fullPage: false });
   await selectCalendarWorkspace(calendarPage, "圃場の作業");
   await calendarPage.waitForSelector(".calendar-kanban-card");
+  await calendarPage.waitForSelector(".member-task-summary-list button");
   await calendarPage.evaluate(() => { const shell = document.querySelector('.calendar-page-shell'); if (shell instanceof HTMLElement) shell.scrollTop = 0; });
   await calendarPage.screenshot({ path: "/tmp/ina-calendar-workboard-desktop.png", fullPage: true });
+  const managerAchievementText = await calendarPage.$eval(".member-task-summary", (panel) => panel.textContent || "");
+  assert.match(managerAchievementText, /メンバー別の完遂状況.*管理者が承認した作業だけ/s);
+  assert.match(managerAchievementText, /最初の一歩.*1件 完遂.*あと2件で「着実な実践者」/s);
+  assert.match(managerAchievementText, /1件 確認待ち/);
+  assert(await calendarPage.$('[data-member-email="demo-worker@ina.local"]'), "the manager summary must show the approved worker");
+  assert(await calendarPage.$('[data-member-email="demo-operator@ina.local"]'), "the manager summary must show the pending worker");
+  await calendarPage.click('[data-member-email="demo-worker@ina.local"]');
+  await calendarPage.waitForFunction(() => document.querySelector('[data-member-email="demo-worker@ina.local"]')?.getAttribute("aria-pressed") === "true");
+  assert(await calendarPage.$('[data-kanban-status="completed"] .calendar-kanban-card'), "selecting a member must retain their approved task in the completed column");
+  assert.match(await calendarPage.$eval('.calendar-assignment-scope', (scope) => scope.textContent || ""), /demo-worker@ina\.local（完遂 1件）/);
+  await calendarPage.$eval(".member-task-summary", (panel) => panel.scrollIntoView({ block: "start" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-member-achievement-admin.png", fullPage: false });
+  await calendarPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert((await calendarPage.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)) <= 1, "member achievements must not overflow on mobile");
+  await assertMinimumControlTargets(calendarPage, ".member-task-summary", "member achievement summary");
+  await calendarPage.screenshot({ path: "/tmp/ina-member-achievement-mobile.png", fullPage: false });
+  await calendarPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await calendarPage.click('[data-member-email="demo-worker@ina.local"]');
+  await calendarPage.waitForFunction(() => document.querySelector('[data-member-email="demo-worker@ina.local"]')?.getAttribute("aria-pressed") === "false");
   assert(await calendarPage.$eval(".calendar-kanban-toolbar > :first-child", (element) => element.classList.contains("calendar-action-date")), "the work date filter must be the leftmost control");
-  assert.equal(await calendarPage.$$(".calendar-kanban-column").then((items) => items.length), 3, "the work board must always show three states");
+  assert.equal(await calendarPage.$$(".calendar-kanban-column").then((items) => items.length), 4, "the work board must always show four states");
   assert.match(await calendarPage.$eval('[data-kanban-status="planned"] > header', (header) => header.textContent || ""), /未完了.*人時/);
   assert.match(await calendarPage.$eval('[data-kanban-status="in_progress"] > header', (header) => header.textContent || ""), /作業中.*人時/);
+  assert.match(await calendarPage.$eval('[data-kanban-status="awaiting_review"] > header', (header) => header.textContent || ""), /確認待ち.*人時/);
   assert.match(await calendarPage.$eval('[data-kanban-status="completed"] > header', (header) => header.textContent || ""), /完了.*人時/);
   assert.equal(await calendarPage.$$(".calendar-action").then((items) => items.length), 0, "full work details must stay closed until a summary card is selected");
   const cardCountBeforeFilter = await calendarPage.$$(".calendar-kanban-card").then((items) => items.length);
@@ -342,7 +373,7 @@ try {
 
   await calendarPage.click('.calendar-action-list .calendar-section-heading button');
   await calendarPage.waitForSelector('.calendar-action-create-dialog .new-action-form');
-  assert.match(await calendarPage.$eval('.calendar-action-create-dialog', (dialog) => dialog.textContent || ""), /対象の作物.*今日やること.*写真つき作業メモ/s);
+  assert.match(await calendarPage.$eval('.calendar-action-create-dialog', (dialog) => dialog.textContent || ""), /対象の作物.*担当者の認証メール.*今日やること.*写真つき作業メモ/s);
   await calendarPage.screenshot({ path: "/tmp/ina-calendar-add-action-modal.png", fullPage: true });
   await calendarPage.click('.calendar-action-create-dialog > header .icon-button');
 
@@ -366,13 +397,40 @@ try {
   }));
   assert.deepEqual(urgencyOrder, [...urgencyOrder].sort((left, right) => left - right), "incomplete work must be sorted by urgency");
   await selectCalendarWorkspace(calendarPage, "圃場の作業");
-  const completedGanttBar = await calendarPage.$(".gantt-bar.completed");
-  if (completedGanttBar) {
-    await completedGanttBar.click();
-    await calendarPage.waitForSelector(".calendar-action-detail-dialog .calendar-action.completed");
-    assert(await calendarPage.$(".calendar-action-detail-dialog .completed-badge"), "a completed gantt item must open its detail");
-    await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
-  }
+  assert(await calendarPage.$(".gantt-bar.awaiting_review"), "the demo must include a work record awaiting manager review");
+  await calendarPage.$eval(".gantt-bar.awaiting_review", (bar) => bar.click());
+  await calendarPage.waitForSelector(".calendar-action-detail-dialog .calendar-action.awaiting_review");
+  assert(await calendarPage.$(".calendar-action-detail-dialog .review-pending-badge"), "a pending gantt item must open its review detail");
+  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .completion-performer", (line) => line.textContent || ""), /demo-operator@ina\.local/);
+  assert.match(await calendarPage.$eval(".calendar-action-detail-dialog .manager-review-panel", (panel) => panel.textContent || ""), /証跡を見て承認または差戻し.*作業者へ差し戻す.*確認して承認/s);
+  await calendarPage.$eval(".calendar-action-detail-dialog .manager-review-panel", (record) => record.scrollIntoView({ block: "center" }));
+  await calendarPage.screenshot({ path: "/tmp/ina-manager-review-desktop.png", fullPage: false });
+  await calendarPage.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  await calendarPage.$eval(".calendar-action-detail-dialog .manager-review-panel", (panel) => panel.scrollIntoView({ block: "center" }));
+  assert((await calendarPage.$eval(".calendar-action-detail-dialog", (dialog) => dialog.scrollWidth - dialog.clientWidth)) <= 1, "manager review must not overflow on mobile");
+  await calendarPage.screenshot({ path: "/tmp/ina-manager-review-mobile.png", fullPage: false });
+  await calendarPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await calendarPage.click(".calendar-action-detail-dialog > header .icon-button");
+  const workerReviewPage = await browser.newPage();
+  await workerReviewPage.setExtraHTTPHeaders({ "Cf-Access-Authenticated-User-Email": "demo-worker@ina.local" });
+  await workerReviewPage.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await workerReviewPage.goto(`${baseUrl}/fields/${fieldId}/calendar`, { waitUntil: "networkidle0" });
+  assert.match(await workerReviewPage.$eval(".calendar-assignment-scope", (scope) => scope.textContent || ""), /自分が担当できる作業（おすすめ）/);
+  await workerReviewPage.waitForSelector(".member-task-summary-list button");
+  assert.match(await workerReviewPage.$eval(".member-task-summary", (panel) => panel.textContent || ""), /あなたの作業実績.*最初の一歩.*1件 完遂.*あと2件で「着実な実践者」/s);
+  assert.equal(await workerReviewPage.$$(".member-task-summary-list button").then((items) => items.length), 1, "workers must see only their personal achievement card");
+  assert(await workerReviewPage.$('[data-member-email="demo-worker@ina.local"]'), "the worker must see their own achievement card");
+  assert.equal(await workerReviewPage.$('[data-member-email="demo-operator@ina.local"]'), null, "the worker summary must not expose another member");
+  await workerReviewPage.$eval(".member-task-summary", (panel) => panel.scrollIntoView({ block: "start" }));
+  await workerReviewPage.screenshot({ path: "/tmp/ina-member-achievement-worker.png", fullPage: false });
+  await workerReviewPage.$eval(".gantt-bar.awaiting_review", (bar) => bar.click());
+  const workerReviewPanel = await workerReviewPage.waitForSelector(".calendar-action-detail-dialog .manager-review-panel");
+  assert(workerReviewPanel, "the worker review state must be visible in the selected task");
+  assert.match(await workerReviewPanel.evaluate((panel) => panel.textContent || ""), /管理者の確認を待っています/);
+  assert.equal(await workerReviewPage.$$(".manager-review-panel button").then((items) => items.length), 0, "workers must not receive manager review controls");
+  await workerReviewPanel.screenshot({ path: "/tmp/ina-worker-review-pending.png" });
+  await workerReviewPage.close();
   await selectCalendarWorkspace(calendarPage, "圃場の作業");
   await calendarPage.click(".calendar-kanban-card");
   await calendarPage.waitForSelector(".calendar-action-detail-dialog .work-guidance");
@@ -716,6 +774,13 @@ try {
       "/tmp/ina-environment-target-direct.png",
       "/tmp/ina-environment-target-direct-mobile.png",
       "/tmp/ina-care-profile-desktop.png",
+      "/tmp/ina-care-profile-mobile.png",
+      "/tmp/ina-manager-review-desktop.png",
+      "/tmp/ina-manager-review-mobile.png",
+      "/tmp/ina-worker-review-pending.png",
+      "/tmp/ina-member-achievement-admin.png",
+      "/tmp/ina-member-achievement-mobile.png",
+      "/tmp/ina-member-achievement-worker.png",
       "/tmp/ina-calendar-regeneration-modes.png",
       "/tmp/ina-fertilizer-catalog-desktop.png",
       "/tmp/ina-fertilizer-catalog-add.png",

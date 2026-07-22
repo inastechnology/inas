@@ -79,6 +79,12 @@ async function fillLeadForm(page, email) {
 const consoleErrors = [];
 try {
   const desktop = await browser.newPage();
+  await desktop.setRequestInterception(true);
+  desktop.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/config.js") {
+      void request.respond({ status: 200, contentType: "text/javascript", body: 'window.INAS_LP_CONFIG=Object.freeze({leadEndpoint:"",officialSiteUrl:"https://inas-technologies.com/",githubUrl:"https://github.com/inastechnology",instagramUrl:"https://www.instagram.com/inas_technologies.ja/",privacyUrl:"https://inas-technologies.com/privacy",turnstileSiteKey:"",analyticsMeasurementId:"",metaPixelId:""});' });
+    } else void request.continue();
+  });
   desktop.on("pageerror", (error) => consoleErrors.push(error.message));
   desktop.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   await desktop.evaluateOnNewDocument(() => {
@@ -128,7 +134,7 @@ try {
   await configured.setRequestInterception(true);
   configured.on("request", (request) => {
     if (new URL(request.url()).pathname === "/config.js") {
-      void request.respond({ status: 200, contentType: "text/javascript", body: `window.INAS_LP_CONFIG=Object.freeze({leadEndpoint:${JSON.stringify(`${baseUrl}/api/leads`)},officialSiteUrl:"https://inas-technologies.com/",githubUrl:"https://github.com/inastechnology",instagramUrl:"https://www.instagram.com/inas_technologies.ja/",privacyUrl:"https://inas-technologies.com/privacy",analyticsMeasurementId:"",metaPixelId:""});` });
+      void request.respond({ status: 200, contentType: "text/javascript", body: `window.INAS_LP_CONFIG=Object.freeze({leadEndpoint:${JSON.stringify(`${baseUrl}/api/leads`)},officialSiteUrl:"https://inas-technologies.com/",githubUrl:"https://github.com/inastechnology",instagramUrl:"https://www.instagram.com/inas_technologies.ja/",privacyUrl:"https://inas-technologies.com/privacy",turnstileSiteKey:"",analyticsMeasurementId:"",metaPixelId:""});` });
     } else void request.continue();
   });
   await configured.goto(`${baseUrl}/?utm_source=google&utm_medium=cpc&utm_campaign=farmer_validation&audience=farmer`, { waitUntil: "networkidle0" });

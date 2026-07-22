@@ -1,10 +1,10 @@
 # INAS App 広告・需要検証LP
 
-`lp/` は、Web広告から流入した方へINAS Appの価値を短時間で伝え、需要を計測するための独立した静的サイトです。Hubの実行環境やデータベースには依存しません。
+`lp/` は、Web広告から流入した方へINAS Appの価値を短時間で伝え、需要を計測するための独立したサイトです。公開URLは `https://inas-technologies.com/app/` です。LPの静的ファイル、フォーム受付Worker、D1スキーマをまとめて管理し、Hubの実行環境には依存しません。
 
 ## ローカル確認
 
-リポジトリのルートで次を実行します。
+見た目だけを素早く確認する場合は、リポジトリのルートで次を実行します。
 
 ```bash
 python -m http.server 4173 --directory lp
@@ -16,9 +16,48 @@ python -m http.server 4173 --directory lp
 http://127.0.0.1:4173/?utm_source=instagram&utm_medium=paid_social&utm_campaign=early_interest&audience=home
 ```
 
-## 公開前に必ず設定する項目
+フォームAPIとD1を含む公開構成は次の手順で確認します。
 
-`config.js` の `leadEndpoint` に、先行案内フォームを受け取るHTTPSエンドポイントを設定してください。設定しない場合、フォームは個人情報を送信せず、「受付先が未設定」と明示します。受付完了を偽って表示することはありません。
+```bash
+cd lp
+npm install
+npm run build
+npm run db:local
+npm run dev:worker
+```
+
+ブラウザで `http://127.0.0.1:8787/app/` を開きます。ローカルD1は `.wrangler/` 以下に作成され、Gitには含まれません。
+
+## 公開構成
+
+Cloudflare Worker `inas-app-lp` が `inas-technologies.com/app/*` を担当します。静的ファイルは `dist/app/` へ生成し、`/app/api/leads` だけをフォームAPIとして処理します。回答はD1 `inas-lp-leads` に保存し、送信から365日を超えたものを自動削除します。IPアドレスは回答テーブルに保存しません。
+
+APIは、サーバー側の許可値・文字数・同意確認、Origin確認、レート制限、ハニーポット、任意のTurnstile検証を実施します。Turnstileを有効にする場合は、公開サイトキーを `config.js` の `turnstileSiteKey` に設定し、秘密キーを次のようにWorker Secretへ登録します。
+
+```bash
+npx wrangler secret put TURNSTILE_SECRET_KEY
+```
+
+秘密キーを `config.js`、JavaScript、Wranglerの通常変数へ書いてはいけません。
+
+初回デプロイではCloudflare上にD1を作成し、返された `database_id` を `wrangler.jsonc` に反映してからマイグレーションとデプロイを実行します。
+
+```bash
+npx wrangler d1 create inas-lp-leads
+npm run db:remote
+npm run deploy
+```
+
+最近の回答は、権限のある運用端末から次のように確認できます。自由記述やメールアドレスを通常のWorkerログへ出力しないでください。
+
+```bash
+npx wrangler d1 execute inas-lp-leads --remote --command \
+  "SELECT submission_id, role, scale, pain, email, message, audience, attribution_json, created_at, status FROM leads ORDER BY created_at DESC LIMIT 100"
+```
+
+## フォーム契約
+
+`config.js` の `leadEndpoint` は本番の同一オリジンAPI `/app/api/leads` を指します。設定を空にしたプレビューでは個人情報を送信せず、「受付先が未設定」と明示します。受付完了を偽って表示することはありません。
 
 エンドポイントはJSONのPOSTを受け取り、2xxを返す必要があります。送信項目は次のとおりです。
 
@@ -27,13 +66,15 @@ http://127.0.0.1:4173/?utm_source=instagram&utm_medium=paid_social&utm_campaign=
 - `pain`: 主な困りごと
 - `email`: 案内先
 - `message`: 任意の要望
+- `website`: bot判定用の非表示項目。通常は空文字
 - `consent`: 同意の有無
+- `turnstile_token`: Turnstile有効時の検証トークン
 - `audience`: LP上で選択した利用者区分
 - `attribution`: UTM、広告クリックID、流入元ホスト、最初のLPパス
 - `submitted_at`: ISO 8601形式の送信日時
 - `source`: `inas-demand-validation-lp`
 
-静的ファイルに秘密情報を置くことはできません。APIキーを`config.js`やJavaScriptへ入れず、公開フォーム専用のエンドポイント側でレート制限、bot対策、入力検証、保存、通知を行ってください。
+クライアントが送る `submitted_at` は参考値であり、保存時刻にはWorkerが生成した時刻を使用します。
 
 ## 計測
 
@@ -74,6 +115,11 @@ GA4や広告ピクセルを有効にする場合は、公開地域と利用す�
 - `styles.css`: レスポンシブ・アクセシブルな見た目
 - `config.js`: 公開環境ごとのURL・計測設定
 - `app.js`: 計測、対象切替、動画モーダル、フォーム送信
+- `worker.js`: 静的配信、セキュリティヘッダー、フォーム受付API
+- `wrangler.jsonc`: `/app/*` ルート、D1、レート制限、静的アセット設定
+- `migrations/`: D1の回答保存スキーマ
 - `assets/`: 既存チラシで使用した写真、実画面、デモ動画。画面表示には約181KBのWebPを使い、PNGはフォールバック、JPEGはOGP用です
+- `scripts/build.mjs`: 公開ファイルを `dist/app/` に生成
+- `scripts/worker-test.mjs`: APIの入力検証・保存・bot判定テスト
 - `scripts/smoke.mjs`: PC・スマホのブラウザ回帰と画面キャプチャ
 - `artifacts/`: smokeで生成する確認用キャプチャ

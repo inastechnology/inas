@@ -63,6 +63,8 @@ class FieldViewModelsTest(unittest.TestCase):
             "work_logs": [
                 {"id": "work-1", "performed_on": "2026-07-18", "title": "重複する作業"},
                 {"id": "work-2", "performed_on": "2026-07-19", "title": "追肥"},
+                {"id": "work-3", "performed_on": "2026-07-20", "title": "確認待ち作業", "review_status": "pending"},
+                {"id": "work-4", "performed_on": "2026-07-21", "title": "差戻し作業", "review_status": "rejected"},
             ],
             "plantings": [
                 {
@@ -86,6 +88,8 @@ class FieldViewModelsTest(unittest.TestCase):
         self.assertEqual(calendar["items_by_date"]["2026-07-18"][0]["rating_emoji"], "😄")
         self.assertEqual(calendar["items_by_date"]["2026-07-18"][0]["attachments"][0]["url"], "/record-images/image-1")
         self.assertEqual([item["label"] for item in calendar["items_by_date"]["2026-07-19"]], ["追肥"])
+        self.assertNotIn("2026-07-20", calendar["items_by_date"])
+        self.assertNotIn("2026-07-21", calendar["items_by_date"])
         self.assertEqual(len(calendar["measurements_by_date"]["2026-07-18"]), 2)
 
     def test_status_dashboard_uses_target_for_sensor_placement(self):
@@ -114,7 +118,7 @@ class FieldViewModelsTest(unittest.TestCase):
             ],
         )
 
-        moisture = dashboard["metrics"][0]
+        moisture = next(metric for metric in dashboard["metrics"] if metric["metric"] == "soil_moisture_percent")
         self.assertEqual(dashboard["overall_state"], "attention")
         self.assertEqual(moisture["minimum"], 45)
         self.assertEqual(moisture["maximum"], 65)
@@ -124,6 +128,36 @@ class FieldViewModelsTest(unittest.TestCase):
             moisture["target_url"],
             "/fields/field-1/layout?target_metric=soil_moisture_percent&space=space-a&placement=pot-a&planting=planting-a",
         )
+
+    def test_status_dashboard_includes_air_and_soil_temperature_targets(self):
+        dashboard = build_field_status_dashboard(
+            {
+                "id": "field-1",
+                "growth_targets": {
+                    "air_temperature_c": {"min": 15, "max": 30},
+                    "soil_temperature_c": {"min": 12, "max": 28},
+                },
+            },
+            [
+                {
+                    "device_id": "ENV-001",
+                    "updated_at": "2026-07-21T01:00:00+00:00",
+                    "values": {"air_temperature_c": 31.5},
+                },
+                {
+                    "device_id": "WRS-001",
+                    "updated_at": "2026-07-21T01:05:00+00:00",
+                    "values": {"soil_temperature_c": 21.5},
+                },
+            ],
+        )
+
+        metrics = {metric["metric"]: metric for metric in dashboard["metrics"]}
+        self.assertEqual(metrics["air_temperature_c"]["state"], "high")
+        self.assertEqual(metrics["air_temperature_c"]["unit"], "℃")
+        self.assertEqual(metrics["soil_temperature_c"]["state"], "good")
+        self.assertEqual(metrics["soil_temperature_c"]["minimum"], 12)
+        self.assertEqual(dashboard["counts"]["attention"], 1)
 
 
 if __name__ == "__main__":

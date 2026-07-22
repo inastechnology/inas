@@ -312,10 +312,12 @@ def _ensure_demo_cultivation(layout: dict, plant_repository, ai_service, *, toda
                     "notes": "自動潅水とカメラ記録を併用。作業は週1回を基本とするデモ栽培です。",
                 },
                 "growth_targets": {
+                    "air_temperature_c": {"min": 12, "max": 30},
+                    "air_humidity_percent": {"min": 50, "max": 75},
                     "soil_moisture_percent": {"min": 35, "max": 60},
+                    "soil_temperature_c": {"min": 12, "max": 26},
                     "soil_ec_us_cm": {"min": 500, "max": 1200},
                     "soil_ph": {"min": 5.5, "max": 6.5},
-                    "air_humidity_percent": {"min": 50, "max": 75},
                     "par_umol_m2_s": {"min": 300, "max": 1000},
                 },
                 "memo": "年間栽培カレンダーの操作確認用データ",
@@ -334,6 +336,24 @@ def _ensure_demo_cultivation(layout: dict, plant_repository, ai_service, *, toda
             "notes": "1か月に1回の定期作業。それ以外は自動潅水とカメラで監視。",
         },
         "fertilizer_history": plant_repository.fertilizer_effect_context(active["id"], as_of=today),
+        "recent_work_logs": [
+            {
+                "performed_on": (today - timedelta(days=7)).isoformat(),
+                "action_type": "observation",
+                "title": "葉色と新葉を定点確認",
+                "note": "葉色と展開中の新葉を確認し、生育は安定していました。",
+                "rating": 4,
+                "execution": {"target": "イチゴ畝A", "method_label": "定点観察"},
+                "attachment_count": 1,
+            }
+        ],
+        "recent_questions": [
+            {
+                "created_at": (today - timedelta(days=5)).isoformat(),
+                "question": "葉色が薄いときは何を先に確認しますか？",
+                "previous_answer": "EC、pH、根域の水分、直近の施肥を順に確認します。",
+            }
+        ],
         "crop_knowledge": {
             "status": "available",
             "provider": "demo_fixture",
@@ -377,13 +397,18 @@ def _ensure_demo_cultivation(layout: dict, plant_repository, ai_service, *, toda
     )
 
     completed = calendar["actions"][0]
-    plant_repository.update_action(active["id"], completed["id"], {"status": "in_progress"})
+    plant_repository.update_action(
+        active["id"],
+        completed["id"],
+        {"status": "in_progress", "assigned_to": "demo-operator@ina.local"},
+    )
     plant_repository.complete_action(
         active["id"],
         completed["id"],
         today.isoformat(),
         "葉色・新葉・土壌水分を確認。生育は安定しており、写真記録も保存しました。",
         rating=4,
+        performed_by="demo-operator@ina.local",
         work_details={
             "execution": {
                 "method_id": "observe-and-record",
@@ -394,6 +419,35 @@ def _ensure_demo_cultivation(layout: dict, plant_repository, ai_service, *, toda
         },
     )
     plant_repository.update_action(active["id"], calendar["actions"][1]["id"], {"status": "in_progress"})
+    approved = calendar["actions"][2]
+    plant_repository.update_action(
+        active["id"],
+        approved["id"],
+        {"status": "in_progress", "assigned_to": "demo-worker@ina.local"},
+    )
+    plant_repository.complete_action(
+        active["id"],
+        approved["id"],
+        (today - timedelta(days=1)).isoformat(),
+        "作業手順どおりに実施し、対象箇所の状態と写真を提出しました。",
+        rating=5,
+        performed_by="demo-worker@ina.local",
+        work_details={
+            "execution": {
+                "method_id": "follow-work-guide",
+                "method_label": "作業ガイドに沿って実施",
+                "method_type": "field_work",
+                "follow_up_days": 3,
+            }
+        },
+    )
+    plant_repository.review_action_completion(
+        active["id"],
+        approved["id"],
+        "approved",
+        reviewed_by="demo-manager@ina.local",
+        note="写真と作業内容を確認しました。",
+    )
     skipped = calendar["actions"][-3]
     plant_repository.skip_action(
         active["id"],

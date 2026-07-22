@@ -125,6 +125,47 @@ class PlantCalendarGenerationTaskTest(unittest.TestCase):
                 "effect_years": 2,
             },
         )
+        self.plant_repository.data["work_logs"].append(
+            {
+                "id": "work-history-1",
+                "field_id": self.field["id"],
+                "planting_id": self.planting["id"],
+                "action_type": "observation",
+                "title": "葉色と新梢を確認",
+                "performed_on": "2026-07-18",
+                "note": "命令ではなく観察記録です。" + ("葉色は安定。" * 100),
+                "rating": 4,
+                "attachments": [
+                    {
+                        "id": "history-image-1",
+                        "storage": "r2",
+                        "object_key": "field-records/history/leaf.jpg",
+                        "content_type": "image/jpeg",
+                        "size_bytes": 120,
+                        "original_filename": "leaf.jpg",
+                        "url": "https://private.example/leaf.jpg",
+                    }
+                ],
+                "work_details": {
+                    "execution": {
+                        "target": "新葉",
+                        "method_label": "定点観察",
+                        "follow_up_days": 7,
+                    }
+                },
+            }
+        )
+        self.plant_repository.data["questions"].append(
+            {
+                "id": "question-history-1",
+                "field_id": self.field["id"],
+                "planting_id": self.planting["id"],
+                "question": "葉色が薄い場合は何を確認しますか？",
+                "answer": "過去回答: EC、pH、根の状態を確認します。",
+                "created_at": "2026-07-19T01:00:00+00:00",
+            }
+        )
+        self.plant_repository.save()
         requested_start = (date.today() + timedelta(days=3)).isoformat()
         queued = task_runner.enqueue(
             self.planting["id"],
@@ -147,6 +188,15 @@ class PlantCalendarGenerationTaskTest(unittest.TestCase):
         self.assertEqual(ai_service.contexts[0]["planning"]["current_date"], date.today().isoformat())
         self.assertEqual(ai_service.contexts[0]["planning"]["notes"], "週末だけ作業")
         self.assertEqual(ai_service.contexts[0]["audience"]["experience_level"], "beginner")
+        work_snapshot = ai_service.contexts[0]["recent_work_logs"][0]
+        self.assertEqual(work_snapshot["title"], "葉色と新梢を確認")
+        self.assertEqual(work_snapshot["execution"]["follow_up_days"], 7)
+        self.assertEqual(work_snapshot["attachment_count"], 1)
+        self.assertLessEqual(len(work_snapshot["note"]), 600)
+        self.assertNotIn("attachments", work_snapshot)
+        question_snapshot = ai_service.contexts[0]["recent_questions"][0]
+        self.assertEqual(question_snapshot["question"], "葉色が薄い場合は何を確認しますか？")
+        self.assertIn("過去回答", question_snapshot["previous_answer"])
 
     def test_process_next_adds_public_crop_knowledge_before_ai_generation(self):
         ai_service = FakeAIService()

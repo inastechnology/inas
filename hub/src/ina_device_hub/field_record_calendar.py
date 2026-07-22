@@ -105,7 +105,7 @@ def _collect_record_items(field: dict, plant_bundle: dict):
 
     event_work_log_ids = {event.get("source_work_log_id") for event in field.get("events") or [] if event.get("source_work_log_id")}
     for work_log in plant_bundle.get("work_logs") or []:
-        if work_log.get("id") in event_work_log_ids:
+        if work_log.get("review_status", "approved") != "approved" or work_log.get("id") in event_work_log_ids:
             continue
         add_item(
             work_log.get("performed_on"),

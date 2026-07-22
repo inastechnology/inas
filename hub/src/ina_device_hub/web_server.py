@@ -96,6 +96,7 @@ from ina_device_hub.instagram_post_task import reload_instagram_post_task_settin
 from ina_device_hub.location_repository import location_repository
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
 from ina_device_hub.plant_action_decision_service import PlantActionDecisionService
+from ina_device_hub.plant_action_review_service import PlantActionAuthorizationError, PlantActionReviewService
 from ina_device_hub.plant_calendar_generation_task import plant_calendar_generation_task
 from ina_device_hub.plant_calendar_prompt import (
     DEFAULT_PLANT_CALENDAR_PROMPT_TEMPLATE,
@@ -6499,6 +6500,8 @@ def list_field_plantings_api(field_id):
         )
         layout = field_layout_repository().get(field_id, field_name=field.get("name", ""))
         bundle["operation_readiness"] = build_calendar_operation_readiness(bundle, field, layout, _field_device_records(field, layout))
+        user = current_user_from_request(request)
+        bundle["viewer"] = {"email": user.email, "role": user.role}
         return jsonify(bundle)
     except PlantManagementValidationError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -6770,6 +6773,8 @@ def decide_plant_calendar_regeneration_proposals_api(planting_id, task_id):
     except PlantManagementConflictError as exc:
         return jsonify({"error": str(exc)}), 409
     result["bundle"] = repository.field_bundle(planting["field_id"])
+    user = current_user_from_request(request)
+    result["bundle"]["viewer"] = {"email": user.email, "role": user.role}
     return jsonify(result)
 
 
@@ -6779,6 +6784,9 @@ def add_plant_calendar_action_api(planting_id):
     if not isinstance(request_body, dict):
         return jsonify({"error": "request body must be a JSON object or multipart payload"}), 400
     repository = plant_management_repository()
+    user = current_user_from_request(request)
+    if "assigned_to" in request_body and user.role != "admin":
+        return jsonify({"error": "administrator role is required to assign work"}), 403
     try:
         planting = repository.get_planting(planting_id)
         if planting is None:
@@ -6799,8 +6807,12 @@ def add_plant_calendar_action_api(planting_id):
 
 @app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>", methods=["DELETE"])
 def delete_plant_calendar_action_api(planting_id, action_id):
+    repository = plant_management_repository()
     try:
-        plant_management_repository().delete_action(planting_id, action_id)
+        _assert_user_can_work_on_action(repository, planting_id, action_id, current_user_from_request(request))
+        repository.delete_action(planting_id, action_id)
+    except PlantActionAuthorizationError as exc:
+        return jsonify({"error": str(exc)}), 403
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except PlantManagementConflictError as exc:
@@ -6817,6 +6829,9 @@ def update_plant_calendar_action_api(planting_id, action_id):
         return jsonify({"error": "request body must be a JSON object or multipart payload"}), 400
     use_as_guidance = bool(request_body.pop("use_as_guidance", False))
     repository = plant_management_repository()
+    user = current_user_from_request(request)
+    if "assigned_to" in request_body and user.role != "admin":
+        return jsonify({"error": "administrator role is required to assign work"}), 403
     try:
         planting = repository.get_planting(planting_id)
         if planting is None:
@@ -6824,6 +6839,9 @@ def update_plant_calendar_action_api(planting_id, action_id):
         repository.assert_calendar_mutation_unlocked(planting_id)
         current_calendar = repository.get_calendar(planting_id) or {}
         current_action = next((item for item in current_calendar.get("actions") or [] if item.get("id") == action_id), {})
+        if not current_action:
+            raise PlantManagementNotFoundError("calendar action not found")
+        PlantActionReviewService.assert_actor_can_work(current_action, actor_email=user.email, actor_role=user.role)
         request_body = _attach_plant_action_images(
             planting,
             request_body,
@@ -6836,6 +6854,8 @@ def update_plant_calendar_action_api(planting_id, action_id):
             request_body,
             use_as_guidance=use_as_guidance,
         )
+    except PlantActionAuthorizationError as exc:
+        return jsonify({"error": str(exc)}), 403
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except PlantManagementConflictError as exc:
@@ -6856,6 +6876,27 @@ def _plant_action_request_body():
     except (TypeError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
+
+
+def _plant_action_review_service():
+    return PlantActionReviewService(
+        plant_repository=plant_management_repository(),
+        field_repository=field_repository(),
+        media_service=field_record_media_service(),
+        ai_content_service=ai_content_service(),
+    )
+
+
+def _assert_user_can_work_on_action(repository, planting_id: str, action_id: str, user):
+    planting = repository.get_planting(planting_id)
+    if planting is None:
+        raise PlantManagementNotFoundError("planting not found")
+    calendar = repository.get_calendar(planting_id) or {}
+    action = next((item for item in calendar.get("actions", []) if item.get("id") == action_id), None)
+    if action is None:
+        raise PlantManagementNotFoundError("calendar action not found")
+    PlantActionReviewService.assert_actor_can_work(action, actor_email=user.email, actor_role=user.role)
+    return action
 
 
 def _attach_plant_action_images(planting, value, files, *, existing=None):
@@ -6892,13 +6933,17 @@ def skip_plant_calendar_action_api(planting_id, action_id):
     )
     try:
         repository.assert_calendar_mutation_unlocked(planting_id)
+        user = current_user_from_request(request)
+        _assert_user_can_work_on_action(repository, planting_id, action_id, user)
         result = service.skip_action(
             planting_id,
             action_id,
             request_body,
             request.files.getlist("images"),
-            decided_by=current_user_from_request(request).email,
+            decided_by=user.email,
         )
+    except PlantActionAuthorizationError as exc:
+        return jsonify({"error": str(exc)}), 403
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except PlantManagementConflictError as exc:
@@ -6911,104 +6956,57 @@ def skip_plant_calendar_action_api(planting_id, action_id):
 
 
 @app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>/complete", methods=["POST"])
-def complete_plant_calendar_action_api(planting_id, action_id):  # noqa: PLR0911
+def complete_plant_calendar_action_api(planting_id, action_id):
     request_body = request.get_json(silent=True) if request.is_json else request.form.to_dict()
     if not isinstance(request_body, dict):
         return jsonify({"error": "request body must be an object"}), 400
-    repository = plant_management_repository()
+    user = current_user_from_request(request)
     try:
-        repository.assert_calendar_mutation_unlocked(planting_id)
+        result = _plant_action_review_service().submit_completion(
+            planting_id,
+            action_id,
+            request_body,
+            request.files.getlist("images"),
+            actor_email=user.email,
+            actor_role=user.role,
+        )
+    except PlantActionAuthorizationError as exc:
+        return jsonify({"error": str(exc)}), 403
     except PlantManagementNotFoundError as exc:
         return jsonify({"error": str(exc)}), 404
     except PlantManagementConflictError as exc:
         return jsonify({"error": str(exc)}), 409
-    planting = repository.get_planting(planting_id)
-    if planting is None:
-        return jsonify({"error": "planting not found"}), 404
-    calendar_record = repository.get_calendar(planting_id)
-    completed_action = next((action for action in (calendar_record or {}).get("actions", []) if action.get("id") == action_id), None)
-    if not calendar_record or completed_action is None:
-        return jsonify({"error": "calendar action not found"}), 404
-    if completed_action.get("status") != "in_progress":
-        return jsonify({"error": "作業を開始してから実績を記録してください"}), 409
-    try:
-        rating = _record_rating(request_body.get("rating"))
-        performed_on = date.fromisoformat(str(request_body.get("performed_on") or "")).isoformat()
-        work_details = request_body.get("work_details") or {}
-        if isinstance(work_details, str):
-            try:
-                work_details = json.loads(work_details)
-            except json.JSONDecodeError as exc:
-                raise PlantManagementValidationError("work_details must be valid JSON") from exc
-        if not isinstance(work_details, dict):
-            raise PlantManagementValidationError("work_details must be an object")
-        attachments = field_record_media_service().upload_images(
-            planting["field_id"],
-            performed_on,
-            request.files.getlist("images"),
-        )
-        work_log = repository.complete_action(
-            planting_id,
-            action_id,
-            performed_on,
-            request_body.get("note", ""),
-            rating=rating,
-            attachments=attachments,
-            work_details=work_details,
-        )
-        field_repository().add_event(
-            work_log["field_id"],
-            {
-                "event_type": _plant_action_event_type(work_log["action_type"]),
-                "occurred_at": work_log["performed_on"],
-                "title": work_log["title"],
-                "description": work_log["note"],
-                "rating": work_log["rating"],
-                "attachments": work_log["attachments"],
-                "source_work_log_id": work_log["id"],
-                "tags": ["plant-calendar", work_log["action_type"], work_log["crop_name"]],
-            },
-        )
-    except ValueError as exc:
-        return jsonify({"error": str(exc) or "performed_on must be YYYY-MM-DD"}), 400
-    except PlantManagementNotFoundError as exc:
-        return jsonify({"error": str(exc)}), 404
     except (PlantManagementValidationError, FieldValidationError, FieldRecordMediaValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
     except FieldRecordMediaStorageError as exc:
         return jsonify({"error": str(exc)}), 502
+    return jsonify({**result["work_log"], "action": result["action"]}), 201
 
-    follow_up = {"actions": [], "decision_summary": "次回を自動生成しない作業です。", "source": "rule"}
-    appended_actions = []
-    task_rule = next(
-        (rule for rule in calendar_record.get("task_rules", []) if rule.get("rule_id") == completed_action.get("rule_id")),
-        None,
-    )
-    if task_rule:
-        current_calendar = repository.get_calendar(planting_id) or {}
-        follow_up_field = field_repository().get(planting["field_id"]) or {}
-        follow_up_context = {
-            "planting": repository.get_planting(planting_id) or planting,
-            "field": {
-                "id": follow_up_field.get("id"),
-                "location": follow_up_field.get("location", {}),
-            },
-            "care_profile": current_calendar.get("care_profile", {}),
-            "growth_targets": planting.get("growth_targets", {}),
-            "task_rule": task_rule,
-            "completed_action": completed_action,
-            "completion_event": work_log,
-            "planned_actions": [action for action in current_calendar.get("actions", []) if action.get("status") == "planned"],
-            "recent_work_logs": repository.recent_work_logs(planting_id, limit=12),
-            "fertilizer_history": repository.fertilizer_effect_context(planting_id, as_of=work_log["performed_on"]),
-            "audience": _current_plant_advice_profile(),
-        }
-        follow_up = ai_content_service().generate_follow_up_tasks(follow_up_context)
-        try:
-            appended_actions = repository.append_generated_actions(planting_id, follow_up.get("actions") or [])
-        except PlantManagementValidationError:
-            app.logger.exception("Failed to append generated follow-up tasks")
-    return jsonify({**work_log, "follow_up": {**follow_up, "actions": appended_actions}}), 201
+
+@app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>/review", methods=["POST"])
+def review_plant_calendar_action_api(planting_id, action_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    user = current_user_from_request(request)
+    try:
+        result = _plant_action_review_service().review_completion(
+            planting_id,
+            action_id,
+            request_body,
+            reviewer_email=user.email,
+            reviewer_role=user.role,
+            audience=_current_plant_advice_profile(),
+        )
+    except PlantActionAuthorizationError as exc:
+        return jsonify({"error": str(exc)}), 403
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except (PlantManagementValidationError, FieldValidationError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result), 200
 
 
 @app.route("/local/api/plantings/<planting_id>/questions", methods=["GET", "POST"])
@@ -7418,10 +7416,12 @@ def _field_form_data(form):
             "target_harvest_date": form.get("target_harvest_date", ""),
         },
         "growth_targets": {
+            "air_temperature_c": _field_range_from_form(form, "target_air_temperature"),
+            "air_humidity_percent": _field_range_from_form(form, "target_air_humidity"),
             "soil_moisture_percent": _field_range_from_form(form, "target_soil_moisture"),
+            "soil_temperature_c": _field_range_from_form(form, "target_soil_temperature"),
             "soil_ec_us_cm": _field_range_from_form(form, "target_soil_ec"),
             "soil_ph": _field_range_from_form(form, "target_soil_ph"),
-            "air_humidity_percent": _field_range_from_form(form, "target_air_humidity"),
             "par_umol_m2_s": _field_range_from_form(form, "target_par"),
         },
         "cultivation_context": {
@@ -7625,15 +7625,6 @@ def _find_field_record_attachment(field: dict, attachment_id: str):
     return None
 
 
-def _plant_action_event_type(action_type):
-    return {
-        "fertilization": "fertilizer",
-        "pest_control": "pest",
-        "harvest": "harvest",
-        "watering": "watering",
-    }.get(action_type, "other")
-
-
 def _build_field_list_item(field: dict):
     item = dict(field)
     layout = field_layout_repository().get(field["id"], field_name=field.get("name", ""))
@@ -7645,12 +7636,19 @@ def _build_field_list_item(field: dict):
         label = " / ".join(value for value in (planting.get("crop_name"), planting.get("cultivar")) if value)
         if label and label not in crop_labels:
             crop_labels.append(label)
+    events = field.get("events") or []
+    event_work_log_ids = {event.get("source_work_log_id") for event in events if event.get("source_work_log_id")}
+    approved_unlinked_work_logs = [
+        work_log
+        for work_log in plant_bundle.get("work_logs") or []
+        if work_log.get("review_status", "approved") == "approved" and work_log.get("id") not in event_work_log_ids
+    ]
     item["list_summary"] = {
         "crop_labels": crop_labels,
         "placement_count": len(placements),
         "planting_count": len(active_plantings),
         "device_count": len({(placement.get("binding") or {}).get("device_id") for placement in placements} - {None, ""}),
-        "record_count": len(field.get("events") or []) + len(plant_bundle.get("work_logs") or []),
+        "record_count": len(events) + len(approved_unlinked_work_logs),
     }
     return item
 
@@ -8198,7 +8196,7 @@ def _build_active_planting_views(active_plantings: list, plant_bundle: dict, aut
             }
         ]
         for log in work_logs:
-            if log.get("planting_id") != planting.get("id"):
+            if log.get("planting_id") != planting.get("id") or log.get("review_status", "approved") != "approved":
                 continue
             activities.append(
                 {
@@ -8550,6 +8548,7 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
         "soil_temperature_c",
         "soil_ec_us_cm",
         "soil_ph",
+        "air_temperature_c",
         "air_humidity_percent",
         "par_umol_m2_s",
         "solar_radiation_w_m2",

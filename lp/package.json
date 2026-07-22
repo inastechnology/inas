@@ -1,8 +1,18 @@
 {
   "name": "inas-demand-validation-lp",
   "private": true,
+  "type": "module",
   "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "npm run build && node --check app.js && node --check worker.js && node --check scripts/build.mjs && node scripts/worker-test.mjs && npm run smoke",
+    "deploy": "npm run build && wrangler deploy",
+    "dev:worker": "npm run build && wrangler dev",
+    "db:local": "wrangler d1 migrations apply inas-lp-leads --local",
+    "db:remote": "wrangler d1 migrations apply inas-lp-leads --remote",
     "serve": "python -m http.server 4173 --directory .",
     "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.112.0"
   }
 }

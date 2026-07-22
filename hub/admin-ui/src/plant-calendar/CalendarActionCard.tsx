@@ -31,6 +31,7 @@ import type {
   PlantActionCompletionPayload,
   PlantActionMutationPayload,
   PlantActionPriority,
+  PlantActionReviewPayload,
   PlantActionSkipPayload,
   PlantActionSkipReason,
   PlantActionTypeDefinition,
@@ -48,6 +49,7 @@ type ActionUpdate = PlantActionMutationPayload & { use_as_guidance?: boolean };
 const ACTION_CAPABILITIES: Record<PlantCalendarAction["status"], { edit: boolean; delete: boolean; start: boolean; returnToPlanned: boolean; record: boolean; skip: boolean }> = {
   planned: { edit: true, delete: true, start: true, returnToPlanned: false, record: false, skip: true },
   in_progress: { edit: true, delete: false, start: false, returnToPlanned: true, record: true, skip: true },
+  awaiting_review: { edit: false, delete: false, start: false, returnToPlanned: false, record: false, skip: false },
   completed: { edit: false, delete: false, start: false, returnToPlanned: false, record: false, skip: false },
   skipped: { edit: false, delete: false, start: false, returnToPlanned: true, record: false, skip: false },
 };
@@ -72,8 +74,10 @@ interface CalendarActionCardProps {
   locked?: boolean;
   initialRecording?: boolean;
   readiness?: AgenticOperationReadiness;
+  viewer: { email: string; role: "admin" | "operator" };
   onEdit: (plantingId: string, actionId: string, payload: ActionUpdate) => Promise<void>;
   onComplete: (plantingId: string, actionId: string, payload: PlantActionCompletionPayload) => Promise<void>;
+  onReview: (plantingId: string, actionId: string, payload: PlantActionReviewPayload) => Promise<void>;
   onSkip: (plantingId: string, actionId: string, payload: PlantActionSkipPayload) => Promise<void>;
   onDelete: (plantingId: string, actionId: string) => Promise<void>;
 }
@@ -86,6 +90,7 @@ interface CalendarActionPreviewProps {
 interface NewCalendarActionFormProps {
   actionTypes: PlantActionTypeDefinition[];
   busy: boolean;
+  canAssign: boolean;
   onCancel: () => void;
   onSave: (payload: PlantActionMutationPayload) => Promise<void>;
 }
@@ -101,7 +106,7 @@ interface CalendarKanbanCardProps {
   onDragEnd: () => void;
 }
 
-export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: NewCalendarActionFormProps) {
+export function NewCalendarActionForm({ actionTypes, busy, canAssign, onCancel, onSave }: NewCalendarActionFormProps) {
   const [title, setTitle] = useState("");
   const [actionType, setActionType] = useState("observation");
   const [priority, setPriority] = useState<PlantActionPriority>("recommended");
@@ -113,6 +118,7 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
   const [images, setImages] = useState<File[]>([]);
   const [requiredPeople, setRequiredPeople] = useState(1);
   const [estimatedMinutes, setEstimatedMinutes] = useState(30);
+  const [assignedTo, setAssignedTo] = useState("");
   const [localError, setLocalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const blockingReasons = [
@@ -142,6 +148,7 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
         tags: [],
         required_people: requiredPeople,
         estimated_minutes: estimatedMinutes,
+        ...(canAssign ? { assigned_to: assignedTo.trim().toLocaleLowerCase() } : {}),
       });
     } catch (caught) {
       setLocalError(errorMessage(caught));
@@ -168,6 +175,7 @@ export function NewCalendarActionForm({ actionTypes, busy, onCancel, onSave }: N
         onRequiredPeopleChange={setRequiredPeople}
         onEstimatedMinutesChange={setEstimatedMinutes}
       />
+      {canAssign && <label>担当者の認証メール<input type="email" value={assignedTo} onChange={(event) => setAssignedTo(event.target.value)} placeholder="未設定なら誰でも着手できます" /></label>}
       <label>この作業を考えたきっかけ<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例: 葉色が薄くなり、前回の追肥から時間が経っているため" /></label>
       <label>今日やること<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="最初に目に入る作業内容を、短くやさしい言葉で" /></label>
       <RichActionContentField html={instructionsHtml} onHtmlChange={setInstructionsHtml} images={images} onImagesChange={setImages} />
@@ -211,6 +219,7 @@ export function CalendarKanbanCard({ action, actionType, timingState, cropLabel,
         <ChevronRight size={18} aria-hidden="true" />
       </span>
       {cropLabel && <span className="kanban-card-crop"><Leaf size={13} />{cropLabel}</span>}
+      <span className={`kanban-card-assignee ${action.assigned_to ? "assigned" : "unassigned"}`}><UserRound size={13} />{action.assigned_to || "担当者未設定"}</span>
       <span className="kanban-card-workload">
         <span><Users size={14} />{action.required_people}人</span>
         <span><Clock3 size={14} />{formatDuration(action.estimated_minutes)}</span>
@@ -229,8 +238,10 @@ export function CalendarActionCard({
   locked = false,
   initialRecording = false,
   readiness,
+  viewer,
   onEdit,
   onComplete,
+  onReview,
   onSkip,
   onDelete,
 }: CalendarActionCardProps) {
@@ -239,6 +250,7 @@ export function CalendarActionCard({
   const [skipping, setSkipping] = useState(false);
   const [pendingDirectAction, setPendingDirectAction] = useState<"delete" | "start" | "return" | null>(null);
   const capabilities = ACTION_CAPABILITIES[action.status];
+  const canAct = viewer.role === "admin" || !action.assigned_to || action.assigned_to.toLocaleLowerCase() === viewer.email.toLocaleLowerCase();
   const busyReason = locked ? "AI栽培計画の作成が完了すると編集できます" : busy ? "現在の処理が完了するまでお待ちください" : "";
 
   useEffect(() => {
@@ -274,7 +286,7 @@ export function CalendarActionCard({
         <div className="action-copy">
           <div className="action-heading">
             <div><small>{actionType.label}</small><h3>{action.title}</h3></div>
-            {(capabilities.edit || capabilities.delete) && <div className="action-row-tools">
+            {canAct && (capabilities.edit || capabilities.delete) && <div className="action-row-tools">
               {capabilities.edit && <button type="button" className="action-edit-button" onClick={() => setEditing(true)} disabled={busy} title={busyReason || "予定、説明、人数を編集"}><Edit3 size={16} />作業内容を編集</button>}
               {capabilities.delete && <button type="button" className="action-icon-button danger" onClick={() => { if (window.confirm(`「${action.title}」を削除しますか？\nこの操作は元に戻せません。`)) void runDirectAction("delete"); }} disabled={busy || pendingDirectAction !== null} aria-busy={pendingDirectAction === "delete"} aria-label={`${action.title}を削除`} title={busyReason || "作業を削除"}>{pendingDirectAction !== "delete" && <Trash2 size={16} />}<span>{pendingDirectAction === "delete" ? "削除しています" : "削除"}</span></button>}
             </div>}
@@ -283,6 +295,7 @@ export function CalendarActionCard({
             <span><Users size={15} />{action.required_people}人で</span>
             <span><Clock3 size={15} />{formatDuration(action.estimated_minutes)}ほど</span>
           </div>
+          <p className={`action-assignee ${action.assigned_to ? "assigned" : "unassigned"}`}><UserRound size={14} />{action.assigned_to ? `担当: ${action.assigned_to}` : "担当者未設定（作業できる人が着手）"}</p>
           {action.tags.length > 0 && <div className="action-tags">{action.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
       </div>
@@ -299,13 +312,22 @@ export function CalendarActionCard({
       {readiness && <OperationReadinessPanel readiness={readiness} />}
 
       {action.completion && <CompletionRecord action={action} />}
+      {action.status === "awaiting_review" && (
+        <ManagerReviewPanel
+          plantingId={plantingId}
+          action={action}
+          busy={busy}
+          canReview={viewer.role === "admin"}
+          onReview={onReview}
+        />
+      )}
       {action.skip_decision && <SkipDecisionRecord action={action} />}
       {editing && (
         <ModalDialog title="作業内容を編集" eyebrow="実績入力とは別に編集します" onClose={() => setEditing(false)} className="action-edit-dialog" size="standard">
-          <ActionEditForm action={action} actionTypes={actionTypes} busy={busy} onCancel={() => setEditing(false)} onSave={async (payload) => { await onEdit(plantingId, action.id, payload); setEditing(false); }} />
+          <ActionEditForm action={action} actionTypes={actionTypes} busy={busy} canAssign={viewer.role === "admin"} onCancel={() => setEditing(false)} onSave={async (payload) => { await onEdit(plantingId, action.id, payload); setEditing(false); }} />
         </ModalDialog>
       )}
-      {!editing && (capabilities.start || capabilities.returnToPlanned || capabilities.record || capabilities.skip) && (
+      {!editing && canAct && (capabilities.start || capabilities.returnToPlanned || capabilities.record || capabilities.skip) && (
         <div className={`action-state-panel ${action.status}`}>
           <div className="action-state-guidance">
             <strong>{actionStateGuidance(action.status).title}</strong>
@@ -314,11 +336,12 @@ export function CalendarActionCard({
           <div className="action-state-controls">
             {capabilities.start && <button type="button" className="start-button" onClick={() => void runDirectAction("start")} disabled={busy || pendingDirectAction !== null} aria-busy={pendingDirectAction === "start"} title={busyReason || "この作業を作業中へ移動"}>{pendingDirectAction !== "start" && <CirclePlay size={16} />}{pendingDirectAction === "start" ? "開始しています" : "作業を開始"}</button>}
             {capabilities.returnToPlanned && <button type="button" onClick={() => void runDirectAction("return")} disabled={busy || pendingDirectAction !== null} aria-busy={pendingDirectAction === "return"} title={busyReason || "この作業を未完了へ戻す"}>{pendingDirectAction !== "return" && <RotateCcw size={16} />}{pendingDirectAction === "return" ? "戻しています" : "未完了に戻す"}</button>}
-            {capabilities.record && <button type="button" className="complete-button" onClick={() => setRecording(true)} disabled={busy} title={busyReason || "実施内容を記録して完了にする"}><Check size={16} />実績を記録して完了</button>}
+            {capabilities.record && <button type="button" className="complete-button" onClick={() => setRecording(true)} disabled={busy} title={busyReason || "実施内容を記録して管理者へ確認を依頼"}><Check size={16} />実績を提出して確認依頼</button>}
             {capabilities.skip && <button type="button" className="skip-button" onClick={() => setSkipping(true)} disabled={busy} title={busyReason || "確認結果を記録して、この作業を見送る"}><Ban size={16} />確認して見送る</button>}
           </div>
         </div>
       )}
+      {!canAct && action.assigned_to && <p className="action-assignment-lock">この作業は {action.assigned_to} の担当です。内容は閲覧できます。</p>}
       {recording && capabilities.record && (
         <ModalDialog title="作業実績を記録" eyebrow={action.title} onClose={() => setRecording(false)} className="work-record-dialog" size="wide">
           <WorkRecordForm
@@ -467,9 +490,10 @@ function OperationReadinessPanel({ readiness }: { readiness: AgenticOperationRea
 
 function actionStateGuidance(status: PlantCalendarAction["status"]) {
   if (status === "planned") return { title: "まだ開始していません", description: "着手すると、実績を記録できるようになります。" };
-  if (status === "in_progress") return { title: "作業中です", description: "作業後に実施日と内容を記録して完了してください。" };
+  if (status === "in_progress") return { title: "作業中です", description: "作業後に実施日と内容を提出し、管理者へ確認を依頼してください。" };
+  if (status === "awaiting_review") return { title: "管理者の確認待ちです", description: "提出した実績は、承認されるまで正式な圃場履歴にはなりません。" };
   if (status === "skipped") return { title: "今回は見送りました", description: "実施対象へ戻す場合は未完了に戻してください。" };
-  return { title: "完了しています", description: "実施内容は記録として保持されます。" };
+  return { title: "管理者確認済みです", description: "実施内容は正式な圃場記録として保持されます。" };
 }
 
 function ActionStatusLine({ action, timingState }: { action: PlantCalendarAction; timingState?: TimingState }) {
@@ -489,6 +513,7 @@ function ActionStatusLine({ action, timingState }: { action: PlantCalendarAction
         {timingState && <span className={`timing-badge ${timingState}`}>{TIMING_LABELS[timingState]}</span>}
         {action.status === "completed" && <span className="completed-badge"><Check size={13} />実施済み</span>}
         {action.status === "in_progress" && <span className="in-progress-badge"><CirclePlay size={13} />作業中</span>}
+        {action.status === "awaiting_review" && <span className="review-pending-badge"><ClipboardCheck size={13} />確認待ち</span>}
         {action.status === "skipped" && <span className="skipped-badge">見送り</span>}
       </div>
     </>
@@ -563,11 +588,15 @@ function CompletionRecord({ action }: { action: PlantCalendarAction }) {
   if (!completion) return null;
   const rating = completion.rating ? RATING_OPTIONS[completion.rating - 1] : null;
   return (
-    <div className="completion-record">
+    <div className={`completion-record review-${completion.review_status}`}>
       <p className="completion-line">
-        <Check size={14} />{formatDate(completion.performed_on)} に実施{completion.note ? `: ${completion.note}` : ""}
+        <Check size={14} />{formatDate(completion.performed_on)} に作業者が実施{completion.note ? `: ${completion.note}` : ""}
         {rating && <span className="completion-rating" title={`評価 ${completion.rating} / 5`}>{rating.emoji}</span>}
       </p>
+      {completion.performed_by && <p className="completion-performer">作業者: {completion.performed_by}</p>}
+      {completion.review_status === "pending" && <p className="completion-review-state pending">管理者へ確認を依頼済み</p>}
+      {completion.review_status === "approved" && <p className="completion-review-state approved">管理者確認済み{completion.reviewed_by ? `: ${completion.reviewed_by}` : "（従来の完了記録）"}</p>}
+      {completion.review_status === "rejected" && <p className="completion-review-state rejected">差戻し{completion.reviewed_by ? `: ${completion.reviewed_by}` : ""}{completion.review_note ? ` — ${completion.review_note}` : ""}</p>}
       {completion.work_details?.execution && <WorkCompletion details={completion.work_details.execution} />}
       {Boolean(completion.attachments?.length) && (
         <div className="completion-images">
@@ -579,6 +608,49 @@ function CompletionRecord({ action }: { action: PlantCalendarAction }) {
         </div>
       )}
     </div>
+  );
+}
+
+function ManagerReviewPanel({ plantingId, action, busy, canReview, onReview }: {
+  plantingId: string;
+  action: PlantCalendarAction;
+  busy: boolean;
+  canReview: boolean;
+  onReview: CalendarActionCardProps["onReview"];
+}) {
+  const [note, setNote] = useState("");
+  const [pending, setPending] = useState<"approved" | "rejected" | null>(null);
+  const [localError, setLocalError] = useState("");
+
+  const decide = async (decision: "approved" | "rejected") => {
+    setLocalError("");
+    if (decision === "rejected" && !note.trim()) {
+      setLocalError("差し戻す理由を入力してください。");
+      return;
+    }
+    setPending(decision);
+    try {
+      await onReview(plantingId, action.id, { decision, note: note.trim() });
+    } catch (caught) {
+      setLocalError(errorMessage(caught));
+    } finally {
+      setPending(null);
+    }
+  };
+
+  return (
+    <section className="manager-review-panel" aria-label="作業実績の管理者確認">
+      <header><ClipboardCheck size={18} /><div><small>作業実績の確認</small><strong>{canReview ? "証跡を見て承認または差戻し" : "管理者の確認を待っています"}</strong></div></header>
+      {!canReview && <p>写真・実施内容・作業者を管理者が確認すると、正式な完了記録になります。</p>}
+      {canReview && <>
+        <label>確認メモ<textarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="承認メモは任意。差戻し時は修正点を入力してください" /></label>
+        {localError && <p className="form-error" role="alert">{localError}</p>}
+        <div>
+          <button type="button" className="review-return-button" disabled={busy || pending !== null} aria-busy={pending === "rejected"} onClick={() => void decide("rejected")}><RotateCcw size={15} />{pending === "rejected" ? "差し戻しています" : "作業者へ差し戻す"}</button>
+          <button type="button" className="review-approve-button" disabled={busy || pending !== null} aria-busy={pending === "approved"} onClick={() => void decide("approved")}><Check size={15} />{pending === "approved" ? "承認しています" : "確認して承認"}</button>
+        </div>
+      </>}
+    </section>
   );
 }
 
@@ -833,7 +905,7 @@ function WorkRecordForm({ plantingId, action, busy, onCancel, onComplete }: Work
       {localError && <p className="form-error">{localError}</p>}
       <div>
         <button type="button" onClick={onCancel}>戻る</button>
-        <button type="submit" disabled={blockingReasons.length > 0 || submitting} aria-busy={submitting} aria-describedby={blockingReasons.length > 0 ? `work-record-blocked-${action.id}` : undefined} title={disabledActionTitle(blockingReasons)}>{!submitting && <Check size={15} />}{submitting ? "作業実績を保存しています" : "この日付で記録"}</button>
+        <button type="submit" disabled={blockingReasons.length > 0 || submitting} aria-busy={submitting} aria-describedby={blockingReasons.length > 0 ? `work-record-blocked-${action.id}` : undefined} title={disabledActionTitle(blockingReasons)}>{!submitting && <Check size={15} />}{submitting ? "作業実績を提出しています" : "実績を提出して確認依頼"}</button>
       </div>
     </form>
   );
@@ -1077,11 +1149,12 @@ interface ActionEditFormProps {
   action: PlantCalendarAction;
   actionTypes: PlantActionTypeDefinition[];
   busy: boolean;
+  canAssign: boolean;
   onCancel: () => void;
   onSave: (payload: ActionUpdate) => Promise<void>;
 }
 
-function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionEditFormProps) {
+function ActionEditForm({ action, actionTypes, busy, canAssign, onCancel, onSave }: ActionEditFormProps) {
   const [title, setTitle] = useState(action.title);
   const [actionType, setActionType] = useState(action.action_type);
   const [priority, setPriority] = useState<PlantActionPriority>(action.priority);
@@ -1094,6 +1167,7 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
   const [tags, setTags] = useState(action.tags.join(", "));
   const [requiredPeople, setRequiredPeople] = useState(action.required_people);
   const [estimatedMinutes, setEstimatedMinutes] = useState(action.estimated_minutes);
+  const [assignedTo, setAssignedTo] = useState(action.assigned_to);
   const [useAsGuidance, setUseAsGuidance] = useState(true);
   const [localError, setLocalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1124,6 +1198,7 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
         tags: tags.split(/[,、\n]/).map((tag) => tag.trim()).filter(Boolean),
         required_people: requiredPeople,
         estimated_minutes: estimatedMinutes,
+        ...(canAssign ? { assigned_to: assignedTo.trim().toLocaleLowerCase() } : {}),
         use_as_guidance: useAsGuidance,
       });
     } catch (caught) {
@@ -1150,6 +1225,7 @@ function ActionEditForm({ action, actionTypes, busy, onCancel, onSave }: ActionE
         onRequiredPeopleChange={setRequiredPeople}
         onEstimatedMinutesChange={setEstimatedMinutes}
       />
+      {canAssign && <label>担当者の認証メール<input type="email" value={assignedTo} onChange={(event) => setAssignedTo(event.target.value)} placeholder="未設定なら誰でも着手できます" /></label>}
       <label>この作業を考えたきっかけ<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="例: 葉色が薄くなり、前回の追肥から時間が経っているため" /></label>
       <label>今日やること<textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="最初に目に入る作業内容を、短くやさしい言葉で" /></label>
       <RichActionContentField html={instructionsHtml} onHtmlChange={setInstructionsHtml} images={images} onImagesChange={setImages} />

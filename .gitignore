@@ -40,6 +40,7 @@ venv/
 node_modules/
 coverage/
 .wrangler/
+lp/dist/
 hub/cloudflare/.dev.vars
 hub/cloudflare/.generated/
 

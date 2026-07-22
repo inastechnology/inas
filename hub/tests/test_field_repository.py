@@ -75,7 +75,9 @@ class FieldRepositoryTest(unittest.TestCase):
                     "transplant_date": "2026-06-01",
                 },
                 "growth_targets": {
+                    "air_temperature_c": {"min": "16", "max": "30"},
                     "soil_moisture_percent": {"min": "42", "max": "68"},
+                    "soil_temperature_c": {"min": "14", "max": "26"},
                     "soil_ec_us_cm": {"min": "700", "max": "1400"},
                 },
                 "cultivation_context": {
@@ -109,6 +111,8 @@ class FieldRepositoryTest(unittest.TestCase):
         self.assertEqual(field["stage"], "開花")
         self.assertEqual(field["crop_profile"]["cultivar"], "アイコ")
         self.assertEqual(field["growth_targets"]["soil_moisture_percent"]["min"], 42.0)
+        self.assertEqual(field["growth_targets"]["air_temperature_c"]["max"], 30.0)
+        self.assertEqual(field["growth_targets"]["soil_temperature_c"]["min"], 14.0)
         self.assertEqual(field["growth_targets"]["soil_ec_us_cm"]["max"], 1400.0)
         self.assertEqual(field["cultivation_context"]["plant_count"], 18)
         self.assertEqual(field["areas"][0]["name"], "1番畝")

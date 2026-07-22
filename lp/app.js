@@ -142,6 +142,36 @@
 
   const form = document.querySelector("[data-lead-form]");
   const formStatus = document.querySelector("[data-form-status]");
+  const turnstileSlot = document.querySelector("[data-turnstile-slot]");
+  const turnstileSiteKey = typeof config.turnstileSiteKey === "string" ? config.turnstileSiteKey.trim() : "";
+  let turnstileToken = "";
+  let turnstileWidgetId;
+  if (turnstileSlot && turnstileSiteKey) {
+    turnstileSlot.hidden = false;
+    const renderTurnstile = () => {
+      if (!window.turnstile || turnstileWidgetId !== undefined) return;
+      turnstileSlot.textContent = "";
+      turnstileWidgetId = window.turnstile.render(turnstileSlot, {
+        sitekey: turnstileSiteKey,
+        action: "lead_submit",
+        theme: "auto",
+        size: "flexible",
+        callback: (token) => { turnstileToken = token; },
+        "expired-callback": () => { turnstileToken = ""; },
+        "error-callback": () => {
+          turnstileToken = "";
+          setFormStatus("安全確認を読み込めませんでした。ページを再読み込みして、もう一度お試しください。", "error");
+        },
+      });
+    };
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    script.async = true;
+    script.defer = true;
+    script.addEventListener("load", renderTurnstile);
+    script.addEventListener("error", () => setFormStatus("安全確認を読み込めませんでした。ページを再読み込みしてください。", "error"));
+    document.head.append(script);
+  }
   const endpointIsValid = () => {
     if (typeof config.leadEndpoint !== "string" || !config.leadEndpoint.trim()) return false;
     try {
@@ -173,6 +203,11 @@
       track("lead_endpoint_missing");
       return;
     }
+    if (turnstileSiteKey && !turnstileToken) {
+      setFormStatus("安全確認が完了していません。確認後にもう一度送信してください。", "error");
+      track("lead_turnstile_missing");
+      return;
+    }
 
     const submitButton = form.querySelector('button[type="submit"]');
     const originalLabel = submitButton.textContent;
@@ -186,7 +221,9 @@
       pain: values.pain,
       email: values.email,
       message: values.message || "",
+      website: values.website || "",
       consent: values.consent === "on",
+      turnstile_token: turnstileToken,
       audience: selectedAudience(),
       attribution,
       submitted_at: new Date().toISOString(),
@@ -207,6 +244,10 @@
       setFormStatus("送信できませんでした。通信状態を確認して、時間をおいてもう一度お試しください。", "error");
       track("lead_submit_error");
     } finally {
+      if (turnstileWidgetId !== undefined && window.turnstile) {
+        window.turnstile.reset(turnstileWidgetId);
+        turnstileToken = "";
+      }
       submitButton.disabled = false;
       submitButton.removeAttribute("aria-busy");
       submitButton.textContent = originalLabel;

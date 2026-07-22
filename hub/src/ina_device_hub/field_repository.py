@@ -555,10 +555,12 @@ def _normalize_crop_profile(value, legacy_record=None):
 def _normalize_growth_targets(value):
     value = _clean_dict(value)
     return {
+        "air_temperature_c": _clean_range(value.get("air_temperature_c")),
+        "air_humidity_percent": _clean_range(value.get("air_humidity_percent")),
         "soil_moisture_percent": _clean_range(value.get("soil_moisture_percent"), 35.0, 70.0),
+        "soil_temperature_c": _clean_range(value.get("soil_temperature_c")),
         "soil_ec_us_cm": _clean_range(value.get("soil_ec_us_cm")),
         "soil_ph": _clean_range(value.get("soil_ph"), 5.5, 7.0),
-        "air_humidity_percent": _clean_range(value.get("air_humidity_percent")),
         "par_umol_m2_s": _clean_range(value.get("par_umol_m2_s")),
     }
 

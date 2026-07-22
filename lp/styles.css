@@ -22,6 +22,9 @@
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 96px; }
 body { margin: 0; overflow-x: hidden; color: var(--ink); background: var(--paper); font-family: "Hiragino Sans", "Yu Gothic", "YuGothic", "Noto Sans JP", system-ui, sans-serif; font-feature-settings: "palt"; line-height: 1.75; -webkit-font-smoothing: antialiased; }
+.not-found { display: grid; align-content: center; justify-items: start; width: min(100% - 40px, 680px); min-height: 100vh; margin: 0 auto; }
+.not-found h1 { margin: 8px 0 12px; font-size: clamp(32px, 7vw, 58px); }
+.not-found > p:not(.eyebrow) { margin: 0 0 28px; color: var(--ink-soft); line-height: 1.8; }
 body.menu-open { overflow: hidden; }
 a { color: inherit; }
 img, video { display: block; max-width: 100%; }
@@ -242,6 +245,9 @@ button { cursor: pointer; }
 .consent input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--forest-700); }
 .consent span { margin: 0 !important; color: var(--ink-soft) !important; font-size: 11px !important; }
 .consent a { color: var(--forest-700); font-weight: 900; text-underline-offset: 3px; }
+.form-trap { position: absolute !important; left: -10000px !important; width: 1px !important; height: 1px !important; overflow: hidden !important; }
+.turnstile-slot { min-height: 65px; }
+.turnstile-slot > p { margin: 0; color: var(--ink-soft); font-size: 12px; }
 .button.submit { width: 100%; border: 0; color: #fff; background: var(--forest-700); }
 .button.submit[aria-busy="true"] { cursor: progress; opacity: .82; }
 .button.submit[aria-busy="true"]::before { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; content: ""; animation: spin .8s linear infinite; }

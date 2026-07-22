@@ -40,6 +40,7 @@ import {
   loadLayoutDevices,
   loadPlantBundle,
   regeneratePlantCalendar,
+  reviewPlantAction,
   saveLayout,
   searchLayoutDevices,
   skipPlantAction,
@@ -65,6 +66,7 @@ import type {
   PlacementPreset,
   PlantActionCompletionPayload,
   PlantActionMutationPayload,
+  PlantActionReviewPayload,
   PlantActionSkipPayload,
   PlantBundle,
   PlantCalendarGenerationTask,
@@ -80,7 +82,7 @@ interface AppProps {
 
 const HISTORY_LIMIT = 40;
 const EMPTY_PLANT_BUNDLE: PlantBundle = {
-  action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {},
+  viewer: { email: "", role: "operator" }, action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {},
 };
 const PLANTABLE_PRESETS = new Set<PlacementPreset>(["ridge", "tree", "pot", "hydroponic_bed"]);
 const SPACE_TARGET_PRESETS = new Set<PlacementPreset>(["greenhouse", "open_field", "shade_area"]);
@@ -366,6 +368,20 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     setError("");
     try {
       await completePlantAction(plantingId, actionId, payload);
+      await refreshPlants(plantingId);
+    } catch (caught) {
+      setError(errorMessage(caught));
+      throw caught;
+    } finally {
+      setPlantBusy(false);
+    }
+  };
+
+  const reviewPlantActionCompletion = async (plantingId: string, actionId: string, payload: PlantActionReviewPayload) => {
+    setPlantBusy(true);
+    setError("");
+    try {
+      await reviewPlantAction(plantingId, actionId, payload);
       await refreshPlants(plantingId);
     } catch (caught) {
       setError(errorMessage(caught));
@@ -791,6 +807,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
           onClose={() => setCalendarOpen(false)}
           onEditAction={editPlantAction}
           onCompleteAction={recordPlantAction}
+          onReviewAction={reviewPlantActionCompletion}
           onSkipAction={skipPlantCalendarAction}
           onAskQuestion={answerPlantQuestion}
           onListQuestions={(plantingId, options) => listPlantQuestions(plantingId, options)}
@@ -1204,10 +1221,12 @@ function CollectionSearch({ value, onChange, placeholder, label }: { value: stri
 }
 
 const PLANT_TARGET_SPECS = [
+  { id: "air_temperature_c", label: "気温", unit: "℃", min: -40, max: 80, step: 0.5, defaults: [10, 35] },
+  { id: "air_humidity_percent", label: "湿度", unit: "%", min: 0, max: 100, step: 1, defaults: [50, 75] },
   { id: "soil_moisture_percent", label: "土壌水分", unit: "%", min: 0, max: 100, step: 1, defaults: [35, 65] },
+  { id: "soil_temperature_c", label: "地温", unit: "℃", min: -20, max: 60, step: 0.5, defaults: [10, 30] },
   { id: "soil_ec_us_cm", label: "土壌EC", unit: "uS/cm", min: 0, max: 3000, step: 10, defaults: [500, 1500] },
   { id: "soil_ph", label: "土壌pH", unit: "", min: 0, max: 14, step: 0.1, defaults: [5.5, 6.5] },
-  { id: "air_humidity_percent", label: "湿度", unit: "%", min: 0, max: 100, step: 1, defaults: [50, 75] },
   { id: "par_umol_m2_s", label: "PAR", unit: "umol/m2/s", min: 0, max: 2000, step: 10, defaults: [300, 1000] },
 ] as const;
 

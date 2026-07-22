@@ -5,11 +5,32 @@ from urllib.parse import urlencode
 
 METRIC_SPECS = (
     {
+        "metric": "air_temperature_c",
+        "label": "気温",
+        "unit": "℃",
+        "aliases": ("air_temperature_c",),
+        "domain": (-40.0, 80.0),
+    },
+    {
+        "metric": "air_humidity_percent",
+        "label": "湿度",
+        "unit": "%",
+        "aliases": ("air_humidity_percent",),
+        "domain": (0.0, 100.0),
+    },
+    {
         "metric": "soil_moisture_percent",
         "label": "土壌水分",
         "unit": "%",
         "aliases": ("soil_moisture_percent", "last_soil_moisture", "soil_moisture_1_pct", "soil_moisture_2_pct"),
         "domain": (0.0, 100.0),
+    },
+    {
+        "metric": "soil_temperature_c",
+        "label": "地温",
+        "unit": "℃",
+        "aliases": ("soil_temperature_c", "soil_temp_c"),
+        "domain": (-20.0, 60.0),
     },
     {
         "metric": "soil_ec_us_cm",
@@ -24,13 +45,6 @@ METRIC_SPECS = (
         "unit": "",
         "aliases": ("soil_ph",),
         "domain": (0.0, 14.0),
-    },
-    {
-        "metric": "air_humidity_percent",
-        "label": "湿度",
-        "unit": "%",
-        "aliases": ("air_humidity_percent",),
-        "domain": (0.0, 100.0),
     },
     {
         "metric": "par_umol_m2_s",

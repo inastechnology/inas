@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ArrowLeft, Beaker, BookOpen, CalendarDays, Check, ChevronRight, Leaf, ListTodo, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Send, Sparkles, Sprout, Trash2, Wheat, X, Zap } from "lucide-react";
+import { ArrowLeft, Beaker, BookOpen, CalendarDays, Check, ChevronRight, Leaf, ListTodo, LockKeyhole, MessageCircle, PackageOpen, Plus, RefreshCw, Search, Send, Sparkles, Sprout, Trash2, Trophy, UsersRound, Wheat, X, Zap } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
 import { HelpDisclosure } from "../HelpDisclosure";
@@ -13,6 +13,7 @@ import type {
   FertilizerMaterialKind,
   PlantActionCompletionPayload,
   PlantActionMutationPayload,
+  PlantActionReviewPayload,
   PlantActionSkipPayload,
   PlantBundle,
   PlantCalendar,
@@ -23,7 +24,8 @@ import { AnnualCalendarGantt } from "./AnnualCalendarGantt";
 import { CalendarActionCard, CalendarActionPreview, CalendarKanbanCard, NewCalendarActionForm } from "./CalendarActionCard";
 import { FALLBACK_ACTION_TYPES } from "./constants";
 
-type KanbanColumn = "planned" | "in_progress" | "completed";
+type KanbanColumn = "planned" | "in_progress" | "awaiting_review" | "completed";
+type AssignmentScope = "recommended" | "all" | "mine" | "unassigned" | `member:${string}`;
 type ActionTimingState = PlantBundle["suggestions"][number]["timing_state"];
 type RegenerationDecision = "approved" | "rejected";
 type CalendarOperation = "regenerate" | "review-decisions" | "question";
@@ -31,12 +33,20 @@ type CalendarOperation = "regenerate" | "review-decisions" | "question";
 const KANBAN_COLUMNS: Array<{ id: KanbanColumn; label: string; description: string }> = [
   { id: "planned", label: "未完了", description: "着手を待っている作業" },
   { id: "in_progress", label: "作業中", description: "現在取り組んでいる作業" },
+  { id: "awaiting_review", label: "確認待ち", description: "作業者が実績を提出し、管理者の確認を待っている作業" },
   { id: "completed", label: "完了・見送り", description: "実施済み、または確認して不要と判断した作業" },
 ];
 
 const TIMING_SORT_ORDER: Record<ActionTimingState, number> = { overdue: 0, due: 1, upcoming: 2 };
 const PRIORITY_SORT_ORDER: Record<PlantCalendarAction["priority"], number> = { required: 0, should: 1, recommended: 2, optional: 3 };
 const QUESTION_HISTORY_PAGE_SIZE = 5;
+
+interface MemberTaskSummary {
+  email: string;
+  approvedCount: number;
+  pendingCount: number;
+  latestApprovedOn: string;
+}
 
 
 export interface PlantCalendarDrawerProps {
@@ -51,6 +61,7 @@ export interface PlantCalendarDrawerProps {
   onClose: () => void;
   onEditAction: (plantingId: string, actionId: string, payload: PlantActionMutationPayload & { use_as_guidance?: boolean }) => Promise<void>;
   onCompleteAction: (plantingId: string, actionId: string, payload: PlantActionCompletionPayload) => Promise<void>;
+  onReviewAction: (plantingId: string, actionId: string, payload: PlantActionReviewPayload) => Promise<void>;
   onSkipAction: (plantingId: string, actionId: string, payload: PlantActionSkipPayload) => Promise<void>;
   onAskQuestion: (plantingId: string, question: string) => Promise<PlantQuestionRecord>;
   onListQuestions: (plantingId: string, options?: { query?: string; page?: number; pageSize?: number; signal?: AbortSignal }) => Promise<{ items: PlantQuestionRecord[]; total: number }>;
@@ -80,6 +91,7 @@ export function PlantCalendarDrawer({
   onClose,
   onEditAction,
   onCompleteAction,
+  onReviewAction,
   onSkipAction,
   onAskQuestion,
   onListQuestions,
@@ -120,6 +132,7 @@ export function PlantCalendarDrawer({
   const [activeRegenerationProposalId, setActiveRegenerationProposalId] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<"work" | "crop">("work");
   const [workScopePlantingId, setWorkScopePlantingId] = useState("all");
+  const [assignmentScope, setAssignmentScope] = useState<AssignmentScope>("recommended");
   const [workDate, setWorkDate] = useState("");
   const [addingAction, setAddingAction] = useState(false);
   const [newActionPlantingId, setNewActionPlantingId] = useState(selectedPlantingId);
@@ -262,9 +275,46 @@ export function PlantCalendarDrawer({
   const scopedActionEntries = useMemo(() => actionEntries.filter((entry) => (
     workScopePlantingId === "all" || entry.planting.id === workScopePlantingId
   )), [actionEntries, workScopePlantingId]);
+  const scopedWorkLogs = useMemo(() => bundle.work_logs.filter((workLog) => (
+    workScopePlantingId === "all" || workLog.planting_id === workScopePlantingId
+  )), [bundle.work_logs, workScopePlantingId]);
+  const memberTaskSummaries = useMemo(
+    () => buildMemberTaskSummaries(scopedActionEntries.map((entry) => entry.action), scopedWorkLogs),
+    [scopedActionEntries, scopedWorkLogs],
+  );
+  const visibleMemberTaskSummaries = useMemo(() => {
+    if (bundle.viewer.role === "admin") return memberTaskSummaries;
+    const viewerEmail = bundle.viewer.email.toLocaleLowerCase();
+    return [memberTaskSummaries.find((summary) => summary.email === viewerEmail) ?? {
+      email: viewerEmail,
+      approvedCount: 0,
+      pendingCount: 0,
+      latestApprovedOn: "",
+    }].filter((summary) => summary.email);
+  }, [bundle.viewer.email, bundle.viewer.role, memberTaskSummaries]);
+  useEffect(() => {
+    if (!assignmentScope.startsWith("member:")) return;
+    const selectedMemberEmail = assignmentScope.slice("member:".length);
+    if (!visibleMemberTaskSummaries.some((summary) => summary.email === selectedMemberEmail)) {
+      setAssignmentScope("recommended");
+    }
+  }, [assignmentScope, visibleMemberTaskSummaries]);
   const filteredActionEntries = useMemo(() => {
     const terms = normalizeActionSearch(actionQuery).split(/\s+/).filter(Boolean);
     return scopedActionEntries.filter(({ action, planting: owner }) => {
+      const viewerEmail = bundle.viewer.email.toLocaleLowerCase();
+      const assignedTo = action.assigned_to.toLocaleLowerCase();
+      const performedBy = action.completion?.performed_by.toLocaleLowerCase() ?? "";
+      const effectiveAssignmentScope = assignmentScope === "recommended"
+        ? bundle.viewer.role === "admin" ? "all" : "available"
+        : assignmentScope;
+      if (effectiveAssignmentScope === "mine" && assignedTo !== viewerEmail) return false;
+      if (effectiveAssignmentScope === "unassigned" && assignedTo) return false;
+      if (effectiveAssignmentScope === "available" && assignedTo && assignedTo !== viewerEmail) return false;
+      if (effectiveAssignmentScope.startsWith("member:")) {
+        const memberEmail = effectiveAssignmentScope.slice("member:".length);
+        if (assignedTo !== memberEmail && performedBy !== memberEmail) return false;
+      }
       if (workDate && !(action.window_start <= workDate && action.window_end >= workDate)) return false;
       if (terms.length === 0) return true;
       const searchable = normalizeActionSearch(JSON.stringify({
@@ -276,11 +326,13 @@ export function PlantCalendarDrawer({
         reason: action.reason,
         instructions: action.instructions,
         tags: action.tags,
+        assignedTo,
+        performedBy,
         workPlan: action.work_plan,
       }));
       return terms.every((term) => searchable.includes(term));
     });
-  }, [actionQuery, scopedActionEntries, workDate]);
+  }, [actionQuery, assignmentScope, bundle.viewer.email, bundle.viewer.role, scopedActionEntries, workDate]);
   const filteredActions = useMemo(() => filteredActionEntries.map((entry) => entry.action), [filteredActionEntries]);
   const questionHistoryHasMore = questionHistory.length < questionHistoryTotal;
   const suggestions = useMemo(
@@ -331,13 +383,13 @@ export function PlantCalendarDrawer({
     const owner = action ? actionOwnerById.get(action.id) : null;
     if (!action || !owner || calendarMutationBusy || !canDropAction(action, destination)) return;
     try {
-      if (destination === "completed") {
+      if (destination === "awaiting_review") {
         if (action.status === "planned") {
           await onEditAction(owner.id, action.id, { status: "in_progress", use_as_guidance: false });
         }
         setSelectedActionId(action.id);
         setRecordActionId(action.id);
-        setDropMessage(`${action.title}の実績入力を開きました。保存すると完了になります。`);
+        setDropMessage(`${action.title}の実績入力を開きました。保存すると管理者の確認待ちになります。`);
         return;
       }
       const status = destination === "planned" ? "planned" : "in_progress";
@@ -670,6 +722,12 @@ export function PlantCalendarDrawer({
                   {!addingAction && <button type="button" onClick={() => { setNewActionPlantingId(workScopePlantingId === "all" ? planting.id : workScopePlantingId); setAddingAction(true); }} disabled={calendarMutationBusy} title={calendarMutationBusy ? "AI計画の作成または現在の操作が完了するまでお待ちください" : "管理作業を追加"}><Plus size={15} />作業を追加</button>}
                 </div>
               </div>
+              <MemberTaskCompletionSummary
+                summaries={visibleMemberTaskSummaries}
+                selectedScope={assignmentScope}
+                teamView={bundle.viewer.role === "admin"}
+                onSelect={(email) => setAssignmentScope((current) => current === memberAssignmentScope(email) ? "recommended" : memberAssignmentScope(email))}
+              />
               <div className="calendar-kanban-toolbar">
                 <label className="calendar-action-date"><CalendarDays size={16} /><span>この日に行う作業</span><input type="date" value={workDate} onChange={(event) => setWorkDate(event.target.value)} aria-label="作業期間に含まれる日" />{workDate && <button type="button" onClick={() => setWorkDate("")} aria-label="日付フィルタを解除" title="日付フィルタを解除"><X size={14} /></button>}</label>
                 <label className="calendar-action-search"><Search size={16} /><input type="search" value={actionQuery} onChange={(event) => setActionQuery(event.target.value)} placeholder="作物、場所、作業名、資材をあいまい検索" aria-label="管理作業を検索" />{actionQuery && <button type="button" onClick={() => setActionQuery("")} aria-label="作業検索をクリア" title="作業検索をクリア"><X size={14} /></button>}</label>
@@ -687,13 +745,34 @@ export function PlantCalendarDrawer({
                     ]}
                   />
                 </div>
+                <div className="calendar-work-scope calendar-assignment-scope filterable-field">
+                  <span className="field-label">担当者</span>
+                  <SearchableSelect
+                    ariaLabel="担当者で絞り込む"
+                    value={assignmentScope}
+                    onChange={(value) => setAssignmentScope(value as AssignmentScope)}
+                    searchPlaceholder="担当範囲を検索"
+                    emptyMessage="一致する担当範囲はありません。"
+                    options={[
+                      { value: "recommended", label: bundle.viewer.role === "admin" ? "すべての担当者（おすすめ）" : "自分が担当できる作業（おすすめ）", fixed: true },
+                      { value: "mine", label: `自分の担当（${bundle.viewer.email || "ログイン中"}）`, fixed: true },
+                      { value: "unassigned", label: "担当者未設定", fixed: true },
+                      { value: "all", label: "すべての担当者", fixed: true },
+                      ...visibleMemberTaskSummaries.map((summary) => ({
+                        value: memberAssignmentScope(summary.email),
+                        label: `${summary.email}（完遂 ${summary.approvedCount}件）`,
+                        searchText: summary.email,
+                      })),
+                    ]}
+                  />
+                </div>
                 <output>{filteredActions.length} / {scopedActionEntries.length}件</output>
               </div>
               <div className="calendar-kanban-guidance">
-                {(actionQuery || workDate || workScopePlantingId !== "all") && <span className="calendar-filter-active">絞り込み中</span>}
+                {(actionQuery || workDate || workScopePlantingId !== "all" || assignmentScope !== "recommended") && <span className="calendar-filter-active">絞り込み中</span>}
                 <HelpDisclosure title="作業ボードの使い方" align="left">
                   <p>検索や日付を指定すると、条件に合う作業だけを表示します。日付では、その日が作業期間に含まれる作業を探します。</p>
-                  <p>{generationLockActive ? "AI計画の作成中は閲覧のみです。完了するとカードの移動と編集が自動で再開します。" : "カードを列へドラッグすると状態を変更できます。完了列へ移すと実績入力が開きます。"}</p>
+                  <p>{generationLockActive ? "AI計画の作成中は閲覧のみです。完了するとカードの移動と編集が自動で再開します。" : "カードを列へドラッグすると状態を変更できます。確認待ちへ移すと実績入力が開きます。"}</p>
                 </HelpDisclosure>
               </div>
               <p className="kanban-drop-status" role="status" aria-live="polite">{dropMessage}</p>
@@ -733,7 +812,11 @@ export function PlantCalendarDrawer({
                               timingState={suggestionByActionId.get(action.id)}
                               cropLabel={`${actionOwnerById.get(action.id)?.crop_name ?? "作物"} / ${actionOwnerById.get(action.id)?.placement_name ?? "未設定"}`}
                               onOpen={() => { setRecordActionId(null); setSelectedActionId(action.id); }}
-                              draggable={!calendarMutationBusy && action.status !== "completed"}
+                              draggable={
+                                !calendarMutationBusy
+                                && ["planned", "in_progress", "skipped"].includes(action.status)
+                                && (bundle.viewer.role === "admin" || !action.assigned_to || action.assigned_to.toLocaleLowerCase() === bundle.viewer.email.toLocaleLowerCase())
+                              }
                               onDragStart={(event) => {
                                 setDraggedActionId(action.id);
                                 setDropMessage("");
@@ -925,7 +1008,7 @@ export function PlantCalendarDrawer({
                       <span className="field-label">対象の作物</span>
                       <SearchableSelect ariaLabel="作業を追加する作物" value={newActionPlantingId} onChange={setNewActionPlantingId} searchPlaceholder="作物、品種、設置場所を検索" emptyMessage="一致する栽培はありません。" options={activePlantings.map((item) => ({ value: item.id, label: `${item.placement_name} / ${item.crop_name}${item.cultivar ? ` (${item.cultivar})` : ""}`, searchText: `${item.crop_name} ${item.cultivar} ${item.placement_name}` }))} />
                     </div>
-                    <NewCalendarActionForm actionTypes={actionTypes} busy={calendarMutationBusy} onCancel={() => setAddingAction(false)} onSave={async (payload) => { await onAddAction(newActionPlantingId, payload); setAddingAction(false); }} />
+                    <NewCalendarActionForm actionTypes={actionTypes} busy={calendarMutationBusy} canAssign={bundle.viewer.role === "admin"} onCancel={() => setAddingAction(false)} onSave={async (payload) => { await onAddAction(newActionPlantingId, payload); setAddingAction(false); }} />
                   </div>
                 </section>
               </div>
@@ -949,8 +1032,10 @@ export function PlantCalendarDrawer({
                       locked={generationLockActive}
                       initialRecording={recordActionId === selectedAction.id}
                       readiness={bundle.operation_readiness?.[selectedAction.id]}
+                      viewer={bundle.viewer}
                       onEdit={onEditAction}
                       onComplete={onCompleteAction}
+                      onReview={onReviewAction}
                       onSkip={onSkipAction}
                       onDelete={async (...args) => {
                         await onDeleteAction(...args);
@@ -982,13 +1067,15 @@ function sortKanbanActions(
 function actionKanbanColumn(action: PlantCalendarAction): KanbanColumn {
   if (action.status === "planned") return "planned";
   if (action.status === "in_progress") return "in_progress";
+  if (action.status === "awaiting_review") return "awaiting_review";
   return "completed";
 }
 
 function canDropAction(action: PlantCalendarAction, destination: KanbanColumn): boolean {
   if (destination === "planned") return action.status === "in_progress" || action.status === "skipped";
   if (destination === "in_progress") return action.status === "planned";
-  return action.status === "planned" || action.status === "in_progress";
+  if (destination === "awaiting_review") return action.status === "planned" || action.status === "in_progress";
+  return false;
 }
 
 function compareManagementActions(
@@ -996,7 +1083,7 @@ function compareManagementActions(
   right: PlantCalendarAction,
   timingByActionId: Map<string, ActionTimingState>,
 ) {
-  const statusOrder = { planned: 0, in_progress: 1, completed: 2, skipped: 3 };
+  const statusOrder = { planned: 0, in_progress: 1, awaiting_review: 2, completed: 3, skipped: 4 };
   const statusDifference = statusOrder[left.status] - statusOrder[right.status];
   if (statusDifference !== 0) return statusDifference;
 
@@ -1025,12 +1112,108 @@ function normalizeActionSearch(value: string): string {
   return value.normalize("NFKC").toLocaleLowerCase("ja-JP").replace(/[\s　]+/g, " ").trim();
 }
 
+function memberAssignmentScope(email: string): AssignmentScope {
+  return `member:${email.toLocaleLowerCase()}`;
+}
+
+function buildMemberTaskSummaries(actions: PlantCalendarAction[], workLogs: PlantBundle["work_logs"]): MemberTaskSummary[] {
+  const memberEmails = new Set<string>();
+  actions.forEach((action) => {
+    if (action.assigned_to) memberEmails.add(action.assigned_to.toLocaleLowerCase());
+  });
+  workLogs.forEach((workLog) => {
+    if (workLog.performed_by) memberEmails.add(workLog.performed_by.toLocaleLowerCase());
+  });
+  return [...memberEmails]
+    .map((email) => {
+      const memberLogs = workLogs.filter((workLog) => workLog.performed_by.toLocaleLowerCase() === email);
+      const approvedLogs = memberLogs.filter((workLog) => workLog.review_status === "approved");
+      return {
+        email,
+        approvedCount: approvedLogs.length,
+        pendingCount: memberLogs.filter((workLog) => workLog.review_status === "pending").length,
+        latestApprovedOn: approvedLogs.map((workLog) => workLog.performed_on).sort().at(-1) ?? "",
+      };
+    })
+    .sort((left, right) => (
+      right.approvedCount - left.approvedCount
+      || right.pendingCount - left.pendingCount
+      || left.email.localeCompare(right.email)
+    ));
+}
+
+function MemberTaskCompletionSummary({ summaries, selectedScope, teamView, onSelect }: {
+  summaries: MemberTaskSummary[];
+  selectedScope: AssignmentScope;
+  teamView: boolean;
+  onSelect: (email: string) => void;
+}) {
+  return (
+    <section className="member-task-summary" aria-label={teamView ? "メンバー別の完遂状況" : "あなたの作業実績"}>
+      <header>
+        <span><UsersRound size={18} /></span>
+        <div><strong>{teamView ? "メンバー別の完遂状況" : "あなたの作業実績"}</strong><small>管理者が承認した作業だけを「完遂」に集計</small></div>
+      </header>
+      {summaries.length > 0 ? (
+        <div className="member-task-summary-list">
+          {summaries.map((summary) => {
+            const selected = selectedScope === memberAssignmentScope(summary.email);
+            const achievement = taskAchievement(summary.approvedCount);
+            return (
+              <button
+                key={summary.email}
+                type="button"
+                data-member-email={summary.email}
+                className={selected ? "selected" : ""}
+                aria-pressed={selected}
+                onClick={() => onSelect(summary.email)}
+              >
+                <span className={`member-achievement-icon ${summary.approvedCount > 0 ? "achieved" : ""}`}><Trophy size={18} /></span>
+                <span className="member-achievement-copy"><small>現在の称号</small><em>{achievement.currentTitle}</em></span>
+                <strong>{teamView ? summary.email : "自分の完遂記録"}</strong>
+                <span className="member-task-count"><b>{summary.approvedCount}</b>件 完遂</span>
+                <span className={`member-task-count ${summary.pendingCount > 0 ? "pending" : "quiet"}`}><b>{summary.pendingCount}</b>件 確認待ち</span>
+                <span className="member-achievement-progress" aria-label={achievement.nextLabel}>
+                  <i><i style={{ width: `${achievement.progressPercent}%` }} /></i>
+                  <small>{achievement.nextLabel}</small>
+                </span>
+                <small className="member-latest-completion">{summary.latestApprovedOn ? `最新実施 ${formatDate(summary.latestApprovedOn)}` : "最初の承認を待っています"}</small>
+              </button>
+            );
+          })}
+        </div>
+      ) : <p>認証済みメンバーの提出記録はまだありません。</p>}
+      <footer>速さや順位ではなく、承認済みの積み重ねを表示します。報酬額や送金状態はまだ扱いません。</footer>
+    </section>
+  );
+}
+
+const TASK_ACHIEVEMENTS = [
+  { count: 1, title: "最初の一歩" },
+  { count: 3, title: "着実な実践者" },
+  { count: 5, title: "頼れるメンバー" },
+  { count: 10, title: "圃場の達人" },
+  { count: 20, title: "継続の名手" },
+] as const;
+
+function taskAchievement(approvedCount: number) {
+  const current = [...TASK_ACHIEVEMENTS].reverse().find((achievement) => approvedCount >= achievement.count);
+  const next = TASK_ACHIEVEMENTS.find((achievement) => approvedCount < achievement.count);
+  return {
+    currentTitle: current?.title ?? "スタート地点",
+    progressPercent: next ? Math.round(approvedCount / next.count * 100) : 100,
+    nextLabel: next ? `あと${next.count - approvedCount}件で「${next.title}」` : "すべての節目を達成しました",
+  };
+}
+
 function KanbanEmptyState({ column }: { column: KanbanColumn }) {
   const message = column === "planned"
     ? "着手待ちの作業はありません。"
     : column === "in_progress"
       ? "作業中の項目はありません。"
-      : "完了した作業はありません。";
+      : column === "awaiting_review"
+        ? "管理者の確認を待つ作業はありません。"
+        : "完了した作業はありません。";
   return <p className="calendar-kanban-empty">{message}</p>;
 }
 
@@ -1515,6 +1698,7 @@ function formatNutrientKg(value: number) {
 function CareProfileSummary({ calendar }: { calendar: PlantCalendar }) {
   const profile = calendar.care_profile;
   const rules = calendar.task_rules ?? [];
+  const generationInputs = calendarGenerationInputItems(calendar);
   const [open, setOpen] = useState(false);
   if (!profile && rules.length === 0) return null;
 
@@ -1544,6 +1728,13 @@ function CareProfileSummary({ calendar }: { calendar: PlantCalendar }) {
             ))}
           </div>
         )}
+        {generationInputs.length > 0 && (
+          <section className="care-inputs" aria-label="この計画に反映した情報">
+            <strong>この計画に反映した情報</strong>
+            <ul>{generationInputs.map((item) => <li key={item}>{item}</li>)}</ul>
+            <small>生成時点の記録スナップショットです。新しい記録は次回の再計画で反映されます。</small>
+          </section>
+        )}
         {profile?.knowledge_evidence?.length > 0 && (
           <section className="care-evidence" aria-label="栽培根拠の出典">
             <strong>参考にした公的資料</strong>
@@ -1562,6 +1753,34 @@ function CareProfileSummary({ calendar }: { calendar: PlantCalendar }) {
       </ModalDialog>}
     </section>
   );
+}
+
+function calendarGenerationInputItems(calendar: PlantCalendar): string[] {
+  const snapshot = objectRecord(calendar.generation.context_snapshot);
+  if (Object.keys(snapshot).length === 0) return [];
+  const items: string[] = [];
+  if (Object.keys(objectRecord(snapshot.planting)).length > 0 || Object.keys(objectRecord(snapshot.field)).length > 0) {
+    items.push("作付け・圃場条件");
+  }
+  const fertilizerCount = arrayLength(objectRecord(snapshot.fertilizer_history).applications);
+  const workLogCount = arrayLength(snapshot.recent_work_logs);
+  const questionCount = arrayLength(snapshot.recent_questions);
+  const evidenceCount = arrayLength(objectRecord(snapshot.crop_knowledge).sources);
+  const guidanceCount = Number(calendar.generation.guidance_count || 0);
+  if (fertilizerCount > 0) items.push(`施肥履歴 ${fertilizerCount}件`);
+  if (workLogCount > 0) items.push(`作業記録 ${workLogCount}件`);
+  if (questionCount > 0) items.push(`植物相談 ${questionCount}件`);
+  if (evidenceCount > 0) items.push(`Web根拠 ${evidenceCount}件`);
+  if (guidanceCount > 0) items.push(`利用者の修正例 ${guidanceCount}件`);
+  return items;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function formatChatTime(value: string) {

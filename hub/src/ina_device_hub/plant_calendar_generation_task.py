@@ -9,6 +9,9 @@ from ina_device_hub.field_repository import field_repository
 from ina_device_hub.general_log import logger
 from ina_device_hub.plant_management_repository import plant_management_repository
 
+RECENT_WORK_LOG_LIMIT = 12
+RECENT_QUESTION_LIMIT = 8
+
 
 class PlantCalendarGenerationTask:
     def __init__(self, *, plant_repository, field_repository, layout_repository, ai_service, knowledge_provider=None):
@@ -115,6 +118,17 @@ class PlantCalendarGenerationTask:
             as_of=effective_start,
         )
         context["fertilizer_catalog"] = self.plant_repository.list_fertilizer_materials()
+        # These are bounded, textual history snapshots. The AI prompt treats every
+        # user-entered string as data, never as an instruction.
+        context["recent_work_logs"] = [
+            _work_log_generation_snapshot(item) for item in self.plant_repository.recent_work_logs(planting["id"], limit=RECENT_WORK_LOG_LIMIT)
+        ]
+        question_page = self.plant_repository.list_questions(
+            planting["id"],
+            page=1,
+            page_size=RECENT_QUESTION_LIMIT,
+        )
+        context["recent_questions"] = [_question_generation_snapshot(item) for item in question_page.get("items") or []]
         existing_calendar = self.plant_repository.get_calendar(planting["id"])
         context["existing_calendar"] = (
             {
@@ -185,6 +199,41 @@ def _calendar_action_generation_snapshot(action):
             key: copy.deepcopy(work_plan.get(key) or []) for key in ("targets", "checkpoints", "start_conditions", "skip_conditions", "completion_criteria")
         }
     }
+
+
+def _work_log_generation_snapshot(work_log):
+    work_details = work_log.get("work_details") if isinstance(work_log.get("work_details"), dict) else {}
+    execution = work_details.get("execution") if isinstance(work_details.get("execution"), dict) else {}
+    execution_snapshot = {
+        key: _generation_text(execution.get(key), 300)
+        for key in ("target", "method_label", "method_type", "material_name", "amount_or_rate", "custom_method")
+        if _generation_text(execution.get(key), 300)
+    }
+    follow_up_days = execution.get("follow_up_days")
+    if isinstance(follow_up_days, int) and not isinstance(follow_up_days, bool):
+        execution_snapshot["follow_up_days"] = follow_up_days
+    attachments = work_log.get("attachments") if isinstance(work_log.get("attachments"), list) else []
+    return {
+        "performed_on": _generation_text(work_log.get("performed_on"), 10),
+        "action_type": _generation_text(work_log.get("action_type"), 80),
+        "title": _generation_text(work_log.get("title"), 180),
+        "note": _generation_text(work_log.get("note"), 600),
+        "rating": work_log.get("rating") if isinstance(work_log.get("rating"), int) else None,
+        "execution": execution_snapshot,
+        "attachment_count": min(len(attachments), 5),
+    }
+
+
+def _question_generation_snapshot(question):
+    return {
+        "created_at": _generation_text(question.get("created_at"), 40),
+        "question": _generation_text(question.get("question"), 600),
+        "previous_answer": _generation_text(question.get("answer"), 1200),
+    }
+
+
+def _generation_text(value, limit):
+    return str(value or "").strip()[:limit]
 
 
 __instance = None

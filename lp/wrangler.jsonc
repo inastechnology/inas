@@ -1,0 +1,46 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "inas-app-lp",
+  "main": "worker.js",
+  "compatibility_date": "2026-07-21",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "inas-technologies.com/app/*",
+      "zone_name": "inas-technologies.com"
+    }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "LEADS_DB",
+      "database_name": "inas-lp-leads",
+      "database_id": "05fdc480-6ae1-4959-9a3d-2cd187ba5d36",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "LEAD_RATE_LIMITER",
+      "namespace_id": "7319021",
+      "simple": {
+        "limit": 12,
+        "period": 60
+      }
+    }
+  ],
+  "vars": {
+    "LEAD_RETENTION_DAYS": "365",
+    "TURNSTILE_EXPECTED_HOSTNAME": "inas-technologies.com"
+  },
+  "observability": {
+    "enabled": true
+  },
+  "upload_source_maps": true
+}

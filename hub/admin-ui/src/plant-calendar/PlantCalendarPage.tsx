@@ -14,6 +14,7 @@ import {
   loadPlantBundle,
   listPlantQuestions,
   regeneratePlantCalendar,
+  reviewPlantAction,
   skipPlantAction,
   updatePlantAction,
   updateFertilizerMaterial,
@@ -24,7 +25,7 @@ import type { PlantActionMutationPayload, PlantBundle } from "../types";
 import { PlantCalendarDrawer } from "./PlantCalendarDrawer";
 
 const EMPTY_BUNDLE: PlantBundle = {
-  action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {},
+  viewer: { email: "", role: "operator" }, action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {},
 };
 
 interface PlantCalendarPageProps {
@@ -138,6 +139,9 @@ export function PlantCalendarPage({ fieldId, fieldName, fieldDetailUrl, initialP
         })}
         onCompleteAction={(plantingId, actionId, payload) => execute(async () => {
           await completePlantAction(plantingId, actionId, payload);
+        })}
+        onReviewAction={(plantingId, actionId, payload) => execute(async () => {
+          await reviewPlantAction(plantingId, actionId, payload);
         })}
         onSkipAction={(plantingId, actionId, payload) => execute(async () => {
           await skipPlantAction(plantingId, actionId, payload);

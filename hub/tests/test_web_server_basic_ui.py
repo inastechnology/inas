@@ -1377,10 +1377,16 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertTrue(layout_context["assignments"][0]["field_level"])
         self.assertEqual(selected["location"], "環境センサー圃場 / 圃場全体")
         self.assertEqual(selected["location_href"], f"/fields/{field['id']}")
+        latest = web_server._field_latest_sensor_value("ENV-001", record)
+        self.assertEqual(latest["values"]["air_temperature_c"], 24.5)
 
     def test_planting_calendar_edit_completion_and_question_flow(self):
         self.fake_user_preference_repository.records["local-user@ina.local"] = {
             **self.fake_user_preference_repository.get("local-user@ina.local"),
+            "preferences": {"cultivation_experience": "beginner"},
+        }
+        self.fake_user_preference_repository.records["worker@example.com"] = {
+            **self.fake_user_preference_repository.get("worker@example.com"),
             "preferences": {"cultivation_experience": "beginner"},
         }
         field = self.field_repository.upsert(None, {"name": "果樹圃場", "crop": "ブルーベリー"})
@@ -1438,7 +1444,11 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(planting["growth_targets"]["soil_moisture_percent"], {"min": 32.0, "max": 62.0})
         self.assertEqual(action["priority"], "recommended")
         self.assertEqual(self.fake_ai_content_service.calendar_contexts[-1]["audience"]["experience_level"], "beginner")
-        generated_bundle = self.client.get(f"/local/api/fields/{field['id']}/plantings").get_json()
+        generated_bundle = self.client.get(
+            f"/local/api/fields/{field['id']}/plantings",
+            headers={"Cf-Access-Authenticated-User-Email": "worker@example.com"},
+        ).get_json()
+        self.assertEqual(generated_bundle["viewer"], {"email": "worker@example.com", "role": "operator"})
         self.assertIn(action["id"], generated_bundle["operation_readiness"])
         self.assertEqual(generated_bundle["operation_readiness"][action["id"]]["executor_mode"], "human")
 
@@ -1508,6 +1518,7 @@ class WebServerBasicUITest(unittest.TestCase):
                 "status": "in_progress",
                 "required_people": 2,
                 "estimated_minutes": 45,
+                "assigned_to": "worker@example.com",
                 "use_as_guidance": True,
             },
         )
@@ -1516,6 +1527,14 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(edited.get_json()["status"], "in_progress")
         self.assertEqual(edited.get_json()["required_people"], 2)
         self.assertEqual(edited.get_json()["estimated_minutes"], 45)
+        self.assertEqual(edited.get_json()["assigned_to"], "worker@example.com")
+
+        another_worker = self.client.patch(
+            f"/local/api/plantings/{planting['id']}/calendar/actions/{action['id']}",
+            headers={"Cf-Access-Authenticated-User-Email": "other@example.com"},
+            json={"reason": "別担当者による変更"},
+        )
+        self.assertEqual(another_worker.status_code, 403)
 
         action_search = self.client.get(f"/local/api/plantings/{planting['id']}/calendar/actions?q=葉色&status=in_progress&page_size=1")
         self.assertEqual(action_search.status_code, 200)
@@ -1554,6 +1573,7 @@ class WebServerBasicUITest(unittest.TestCase):
 
         completed = self.client.post(
             f"/local/api/plantings/{planting['id']}/calendar/actions/{action['id']}/complete",
+            headers={"Cf-Access-Authenticated-User-Email": "worker@example.com"},
             data={
                 "performed_on": "2026-07-20",
                 "note": "少量施肥",
@@ -1578,12 +1598,35 @@ class WebServerBasicUITest(unittest.TestCase):
         )
         self.assertEqual(completed.status_code, 201)
         self.assertEqual(completed.get_json()["performed_on"], "2026-07-20")
+        self.assertEqual(completed.get_json()["performed_by"], "worker@example.com")
         self.assertEqual(completed.get_json()["rating"], 4)
         self.assertEqual(completed.get_json()["work_details"]["execution"]["follow_up_days"], 10)
         self.assertEqual(completed.get_json()["work_details"]["execution"]["material_name"], "液肥A")
         self.assertEqual(completed.get_json()["attachments"][0]["storage"], "r2")
-        self.assertEqual(completed.get_json()["follow_up"]["actions"][0]["title"], "次回の追肥要否を確認")
-        self.assertEqual(self.fake_ai_content_service.follow_up_contexts[-1]["audience"]["experience_level"], "beginner")
+        self.assertEqual(completed.get_json()["review_status"], "pending")
+        self.assertEqual(completed.get_json()["action"]["status"], "awaiting_review")
+        self.assertEqual(self.fake_ai_content_service.follow_up_contexts, [])
+        self.assertEqual(self.field_repository.get(field["id"])["events"], [])
+        pending_field_detail = self.client.get(f"/fields/{field['id']}?planting={planting['id']}#cultivation")
+        self.assertNotIn("少量施肥", pending_field_detail.get_data(as_text=True))
+
+        operator_review = self.client.post(
+            f"/local/api/plantings/{planting['id']}/calendar/actions/{action['id']}/review",
+            headers={"Cf-Access-Authenticated-User-Email": "worker@example.com"},
+            json={"decision": "approved", "note": ""},
+        )
+        self.assertEqual(operator_review.status_code, 403)
+        with patch.dict(os.environ, {"HUB_ADMIN_EMAILS": "manager@example.com"}):
+            reviewed = self.client.post(
+                f"/local/api/plantings/{planting['id']}/calendar/actions/{action['id']}/review",
+                headers={"Cf-Access-Authenticated-User-Email": "manager@example.com"},
+                json={"decision": "approved", "note": "写真と使用量を確認"},
+            )
+        self.assertEqual(reviewed.status_code, 200)
+        self.assertEqual(reviewed.get_json()["action"]["status"], "completed")
+        self.assertEqual(reviewed.get_json()["work_log"]["reviewed_by"], "manager@example.com")
+        self.assertEqual(reviewed.get_json()["follow_up"]["actions"][0]["title"], "次回の追肥要否を確認")
+        self.assertEqual(self.fake_ai_content_service.follow_up_contexts[-1]["audience"]["experience_level"], "standard")
         self.assertEqual(self.field_repository.get(field["id"])["events"][0]["occurred_at"], "2026-07-20")
 
         record_search = self.client.get(f"/local/api/fields/{field['id']}/records?q=少量施肥&page_size=1")

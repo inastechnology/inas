@@ -435,6 +435,33 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .calendar-section-heading span { color: #718078; font-size: 11px; }
 .calendar-section-heading small { color: #78867d; font-size: 10px; }
 .calendar-section-heading button { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 4px 8px; border: 1px solid #afbeb5; border-radius: 4px; color: #3d5b4d; background: #fff; font-size: 10px; font-weight: 800; }
+.member-task-summary { display: grid; gap: 10px; padding: 12px; border: 1px solid #cbd8ce; border-radius: 9px; background: linear-gradient(145deg, #f6faf6, #eef5f0); }
+.member-task-summary > header { display: flex; align-items: center; gap: 9px; color: #304e3a; }
+.member-task-summary > header > span { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: 10px; color: #fff; background: #44765a; }
+.member-task-summary > header > div { display: grid; gap: 2px; }
+.member-task-summary > header strong { font-size: 12px; }
+.member-task-summary > header small { color: #6a7b70; font-size: 9px; line-height: 1.45; }
+.member-task-summary-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 8px; }
+.member-task-summary-list button { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto auto; align-items: center; gap: 5px 8px; min-width: 0; min-height: 112px; padding: 10px; border: 1px solid #cad5cc; border-radius: 8px; color: #34483b; background: rgba(255, 255, 255, .94); text-align: left; cursor: pointer; box-shadow: 0 3px 10px rgba(37, 66, 45, .04); }
+.member-task-summary-list button:hover { border-color: #6f987d; background: #fff; }
+.member-task-summary-list button.selected { border-color: #327358; background: #edf7f0; box-shadow: inset 0 0 0 1px #327358, 0 4px 12px rgba(39, 95, 67, .09); }
+.member-achievement-icon { display: grid; grid-row: 1 / 3; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: #849188; background: #e7ece8; }
+.member-achievement-icon.achieved { color: #765a18; background: linear-gradient(145deg, #ffe8a3, #efc75d); box-shadow: 0 3px 8px rgba(133, 98, 24, .18); }
+.member-achievement-copy { display: grid; min-width: 0; gap: 1px; }
+.member-achievement-copy small { color: #7b887f; font-size: 8px; font-weight: 800; }
+.member-achievement-copy em { overflow: hidden; color: #355a42; font-size: 11px; font-style: normal; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+.member-task-summary-list button > strong { grid-column: 2 / -1; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.member-task-count { display: inline-flex; align-items: baseline; justify-content: center; gap: 2px; min-width: 68px; padding: 5px 7px; border-radius: 999px; color: #2f6849; background: #e2f1e8; font-size: 8px; font-weight: 800; white-space: nowrap; }
+.member-task-count b { font-size: 14px; }
+.member-task-count.pending { color: #795914; background: #fff1c9; }
+.member-task-count.quiet { color: #718078; background: #edf1ee; }
+.member-achievement-progress { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(70px, 1fr) auto; align-items: center; gap: 8px; min-width: 0; }
+.member-achievement-progress > i { overflow: hidden; height: 6px; border-radius: 999px; background: #dce5de; }
+.member-achievement-progress > i > i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4d8665, #82ad69); }
+.member-achievement-progress small { color: #65766b; font-size: 8px; white-space: nowrap; }
+.member-latest-completion { grid-column: 1 / -1; color: #748078; font-size: 8px; }
+.member-task-summary > p { margin: 0; padding: 9px; color: #68776e; background: rgba(255, 255, 255, .7); font-size: 10px; }
+.member-task-summary > footer { color: #65766b; font-size: 8px; line-height: 1.5; }
 .fertilizer-heading-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .fertilizer-effect-panel { display: grid; gap: 10px; padding: 13px 16px; border-bottom: 1px solid #d5ddcf; background: #f7f6ed; }
 .fertilizer-empty, .fertilizer-caution, .fertilizer-regenerate-note { margin: 0; color: #657067; font-size: 10px; line-height: 1.6; }
@@ -500,7 +527,7 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .fertilizer-advanced-fields { border: 1px solid #d5ddd2; border-radius: 6px; background: #f7f9f6; }
 .fertilizer-advanced-fields summary { padding: 9px 11px; color: #4f6656; font-size: 10px; font-weight: 900; cursor: pointer; }
 .fertilizer-advanced-fields > div { padding: 0 10px 10px; }
-.calendar-kanban-toolbar { display: grid; grid-template-columns: minmax(250px, .95fr) minmax(280px, 1.4fr) minmax(220px, 1fr) auto; align-items: end; gap: 9px; }
+.calendar-kanban-toolbar { display: grid; grid-template-columns: minmax(220px, .9fr) minmax(250px, 1.2fr) minmax(190px, .9fr) minmax(190px, .9fr) auto; align-items: end; gap: 9px; }
 .calendar-kanban-toolbar .calendar-action-date { grid-template-columns: 18px auto minmax(120px, 1fr) 24px; }
 .calendar-kanban-toolbar .calendar-action-date span { color: #56685e; font-size: 9px; font-weight: 800; white-space: nowrap; }
 .calendar-work-scope .field-label { display: block; margin-bottom: 4px; color: #5a6c61; font-size: 9px; font-weight: 900; }
@@ -521,9 +548,10 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .calendar-kanban-lock-overlay strong { font-size: 16px; }
 .calendar-kanban-lock-overlay p { max-width: 440px; margin: 0; color: #70633d; font-size: 11px; line-height: 1.6; }
 .calendar-kanban-lock-overlay button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; margin-top: 5px; padding: 9px 15px; border: 1px solid #76530f; border-radius: 7px; color: #fff; background: #8b6415; font-size: 12px; font-weight: 900; }
-.calendar-kanban { display: grid; grid-template-columns: repeat(3, minmax(290px, 1fr)); align-items: start; gap: 10px; min-width: 900px; }
+.calendar-kanban { display: grid; grid-template-columns: repeat(4, minmax(230px, 1fr)); align-items: start; gap: 10px; min-width: 950px; }
 .calendar-kanban-column { min-width: 0; border: 1px solid #cbd4cd; border-radius: 5px; background: #eef1ee; overflow: hidden; }
 .calendar-kanban-column.in_progress { border-color: #d5b978; background: #f8f0dc; }
+.calendar-kanban-column.awaiting_review { border-color: #9eb9c9; background: #edf5f8; }
 .calendar-kanban-column.completed { border-color: #c5d0cb; background: #edf3f0; }
 .calendar-kanban-column.drag-over { border-color: #277258; outline: 3px solid #cfe6da; background: #e4f2eb; }
 .calendar-kanban-column > header { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 3px 8px; min-height: 74px; padding: 10px 11px; border-bottom: 1px solid #cbd4cd; background: rgba(255, 255, 255, .76); }
@@ -536,6 +564,8 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .kanban-column-marker { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: #738078; }
 .calendar-kanban-column.in_progress .kanban-column-marker,
 .calendar-kanban-column.in_progress > header strong { background: #b36b14; }
+.calendar-kanban-column.awaiting_review .kanban-column-marker,
+.calendar-kanban-column.awaiting_review > header strong { background: #39718c; }
 .calendar-kanban-column.completed .kanban-column-marker,
 .calendar-kanban-column.completed > header strong { background: #33745c; }
 .calendar-kanban-cards { display: grid; gap: 8px; min-height: 104px; padding: 8px; }
@@ -543,9 +573,12 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .calendar-kanban-card:hover { border-color: #89a497; box-shadow: 0 3px 9px rgba(31, 50, 40, .12); transform: translateY(-1px); }
 .calendar-kanban-card[draggable="true"] { cursor: grab; }
 .calendar-kanban-card[draggable="true"]:active { cursor: grabbing; opacity: .72; }
-.kanban-card-crop { display: inline-flex; align-items: center; gap: 4px; overflow: hidden; color: #4e6b5c; font-size: 9px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.kanban-card-crop, .kanban-card-assignee { display: inline-flex; align-items: center; gap: 4px; overflow: hidden; color: #4e6b5c; font-size: 9px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.kanban-card-assignee { color: #5f6e78; }
+.kanban-card-assignee.unassigned { color: #7b776b; font-weight: 700; }
 .calendar-kanban-card:focus-visible { outline: 2px solid #287055; outline-offset: 2px; }
 .calendar-kanban-card.in_progress { box-shadow: inset 0 0 0 1px #e2c78c, 0 1px 2px rgba(28, 43, 35, .07); }
+.calendar-kanban-card.awaiting_review { background: #f7fbfd; box-shadow: inset 0 0 0 1px #bdd3df, 0 1px 2px rgba(28, 43, 35, .07); }
 .calendar-kanban-card.completed,
 .calendar-kanban-card.skipped { background: #f9fbf9; }
 .kanban-card-topline { display: flex; align-items: center; gap: 5px; min-width: 0; }
@@ -581,6 +614,11 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .care-rule-list > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 2px; border-bottom: 1px solid #e0e6e1; }
 .care-rule-list strong { color: #3b5045; font-size: 10px; }
 .care-rule-list span { color: #6f7d75; font-size: 9px; }
+.care-inputs { display: grid; gap: 7px; padding: 9px 10px; border: 1px solid #cfddd3; border-radius: 7px; background: #edf5f0; }
+.care-inputs > strong { color: #315846; font-size: 10px; }
+.care-inputs ul { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.care-inputs li { padding: 4px 7px; border: 1px solid #c3d7ca; border-radius: 999px; color: #365c49; background: #fff; font-size: 9px; font-weight: 800; }
+.care-inputs > small { color: #6d7c73; font-size: 9px; line-height: 1.45; }
 .care-evidence { display: grid; gap: 6px; padding: 9px 10px; border: 1px solid #d8e3db; border-radius: 7px; background: #fff; }
 .care-evidence > strong { color: #315846; font-size: 10px; }
 .care-evidence ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
@@ -686,6 +724,7 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .timing-badge,
 .completed-badge,
 .in-progress-badge,
+.review-pending-badge,
 .skipped-badge { display: inline-flex; align-items: center; gap: 3px; min-height: 21px; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 800; }
 .priority-badge.required { color: #8d2f2a; background: #fae5e2; }
 .priority-badge.should { color: #845016; background: #f8ecd7; }
@@ -696,6 +735,7 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .timing-badge.upcoming { color: #685b1a; background: #f1e8b9; }
 .completed-badge { color: #276149; background: #dcf0e6; }
 .in-progress-badge { color: #78490d; background: #f8e9c8; }
+.review-pending-badge { color: #275f78; background: #deedf4; }
 .skipped-badge { color: #6b6250; background: #ece8df; }
 
 .action-main { display: grid; grid-template-columns: 190px minmax(0, 1fr); align-items: start; gap: 16px; }
@@ -714,6 +754,8 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .action-workload { display: flex; flex-wrap: wrap; gap: 7px; }
 .action-workload > span { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid #ded5c3; border-radius: 999px; color: #665d4d; background: rgb(255 255 255 / 74%); font-size: 11px; font-weight: 800; }
 .action-workload svg { color: #4e745f; }
+.action-assignee { display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin: 0; color: #526b5e; font-size: 10px; font-weight: 800; overflow-wrap: anywhere; }
+.action-assignee.unassigned { color: #7a766c; font-weight: 700; }
 .action-detail { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 5px 8px; margin: 0; color: #45574d; font-size: 12px; line-height: 1.55; }
 .action-detail dt { color: #79857e; font-weight: 800; }
 .action-detail dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -810,6 +852,23 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .completion-line { display: flex; align-items: flex-start; gap: 5px; margin: 0; padding: 7px 8px; color: #35644f; background: #ecf5f0; font-size: 11px; line-height: 1.45; }
 .completion-line svg { flex: 0 0 auto; margin-top: 1px; }
 .completion-rating { margin-left: auto; font-size: 20px; line-height: 1; }
+.completion-performer { margin: 0; padding: 5px 8px; border-top: 1px solid #dbe8e1; color: #66786e; background: #f3f8f5; font-size: 9px; overflow-wrap: anywhere; }
+.completion-review-state { margin: 0; padding: 6px 8px; border-top: 1px solid #dbe8e1; font-size: 10px; font-weight: 900; overflow-wrap: anywhere; }
+.completion-review-state.pending { color: #285e77; background: #edf6fa; }
+.completion-review-state.approved { color: #236047; background: #e9f5ee; }
+.completion-review-state.rejected { color: #873d36; background: #fbedeb; }
+.manager-review-panel { display: grid; gap: 9px; padding: 11px; border: 1px solid #a8c4d2; border-radius: 7px; color: #344f5c; background: #f2f8fb; }
+.manager-review-panel > header { display: flex; align-items: center; gap: 8px; }
+.manager-review-panel > header > div { display: grid; gap: 1px; }
+.manager-review-panel > header small { color: #6a8190; font-size: 9px; font-weight: 800; }
+.manager-review-panel > header strong { font-size: 12px; }
+.manager-review-panel > p { margin: 0; font-size: 10px; line-height: 1.55; }
+.manager-review-panel label { display: grid; gap: 4px; font-size: 10px; font-weight: 800; }
+.manager-review-panel textarea { width: 100%; min-height: 66px; padding: 7px 8px; border: 1px solid #adc2cc; border-radius: 5px; background: #fff; resize: vertical; }
+.manager-review-panel > div { display: flex; justify-content: flex-end; gap: 7px; }
+.manager-review-panel button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 6px 10px; border: 1px solid #a8b9b0; border-radius: 5px; font-size: 10px; font-weight: 900; }
+.manager-review-panel .review-return-button { color: #7f433b; border-color: #d5aaa5; background: #fff4f2; }
+.manager-review-panel .review-approve-button { color: #fff; border-color: #347157; background: #347157; }
 .completion-images { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; margin-top: 6px; }
 .completion-images a { display: block; aspect-ratio: 4 / 3; overflow: hidden; border: 1px solid #cbd6ce; border-radius: 5px; background: #e8ede9; }
 .completion-images img { width: 100%; height: 100%; object-fit: cover; }
@@ -831,6 +890,7 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
 .action-state-guidance span { color: #6b746e; font-size: 10px; line-height: 1.45; }
 .action-state-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
 .action-state-panel.skipped .action-state-controls { grid-template-columns: 1fr; }
+.action-assignment-lock { margin: 0; padding: 8px 10px; border-left: 3px solid #8f9893; color: #657169; background: #f2f4f3; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
 .action-state-controls > button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 10px; border: 1px solid #ae7932; border-radius: 5px; color: #754911; background: #fff8e8; font-size: 11px; font-weight: 800; }
 .action-state-controls > .start-button { border-color: #a86a18; color: #fff; background: #a86a18; }
 .complete-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; min-height: 34px; padding: 6px 10px; border: 1px solid #4e806b; border-radius: 5px; color: #2f6751; background: #edf6f1; font-size: 12px; font-weight: 800; }
@@ -1089,6 +1149,8 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
   .field-grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .calendar-drawer { width: 100vw; }
   .calendar-workspace-tabs { grid-template-columns: 1fr; padding: 8px; }
+  .member-task-summary-list { grid-template-columns: 1fr; }
+  .member-task-summary-list button { min-height: 118px; }
   .calendar-kanban-toolbar { grid-template-columns: 1fr; align-items: stretch; }
   .gantt-period-controls { grid-template-columns: 1fr 1fr; }
   .gantt-period-controls button { grid-column: 1 / -1; }
@@ -1120,6 +1182,8 @@ button[aria-busy="true"]::after { position: absolute; inset: 0; content: ""; bac
   .action-edit-button { min-height: 28px; }
   .action-workload { gap: 4px; }
   .action-workload > span { padding: 4px 6px; font-size: 9px; }
+  .manager-review-panel > div { align-items: stretch; flex-direction: column; }
+  .manager-review-panel button { width: 100%; }
   .action-decision-story { padding: 10px; }
   .action-decision-story > header { align-items: start; flex-direction: column; gap: 5px; }
   .action-decision-flow { grid-template-columns: 1fr; gap: 0; }

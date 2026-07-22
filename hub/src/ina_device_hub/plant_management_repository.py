@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import re
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from difflib import SequenceMatcher
@@ -29,7 +30,8 @@ MAX_FERTILIZER_MATERIALS = 500
 
 VALID_PLANTING_STATUSES = {"active", "harvested", "removed"}
 VALID_CROP_CATEGORIES = {"vegetable", "fruit_tree", "flower", "herb", "other"}
-VALID_ACTION_STATUSES = {"planned", "in_progress", "completed", "skipped"}
+VALID_ACTION_STATUSES = {"planned", "in_progress", "awaiting_review", "completed", "skipped"}
+VALID_WORK_REVIEW_STATUSES = {"pending", "approved", "rejected"}
 VALID_GENERATION_TASK_STATUSES = {"queued", "running", "awaiting_review", "succeeded", "failed"}
 ACTIVE_GENERATION_TASK_STATUSES = {"queued", "running", "awaiting_review"}
 CALENDAR_MUTATION_LOCK_TASK_STATUSES = {"queued", "running"}
@@ -47,9 +49,11 @@ VALID_FERTILIZER_MATERIAL_KINDS = {
 ACTION_STATUS_TRANSITIONS = {
     "planned": {"in_progress", "skipped"},
     "in_progress": {"planned", "skipped"},
+    "awaiting_review": set(),
     "completed": set(),
     "skipped": {"planned"},
 }
+ACTOR_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 VALID_ACTION_PRIORITIES = {"required", "should", "recommended", "optional"}
 VALID_ACTION_SKIP_REASON_CODES = {
     "already_satisfied",
@@ -76,10 +80,12 @@ VALID_RECURRENCE_TYPES = {"one_time", "interval_after_completion", "seasonal", "
 VALID_RECURRENCE_ANCHORS = {"planting_date", "completion_date", "calendar_date", "observation"}
 VALID_ACTION_TYPES = plant_action_type_codes()
 PLANTING_TARGET_RANGES = {
+    "air_temperature_c": (-40.0, 80.0),
+    "air_humidity_percent": (0.0, 100.0),
     "soil_moisture_percent": (0.0, 100.0),
+    "soil_temperature_c": (-20.0, 60.0),
     "soil_ec_us_cm": (0.0, 3000.0),
     "soil_ph": (0.0, 14.0),
-    "air_humidity_percent": (0.0, 100.0),
     "par_umol_m2_s": (0.0, 2000.0),
 }
 
@@ -487,8 +493,8 @@ class PlantManagementRepository:
         if not isinstance(value, dict):
             raise PlantManagementValidationError("action data must be an object")
         before = copy.deepcopy(action)
-        if before["status"] == "completed" and value:
-            raise PlantManagementValidationError("completed actions are read-only")
+        if before["status"] in {"awaiting_review", "completed"} and value:
+            raise PlantManagementValidationError("actions awaiting review or completed actions are read-only")
 
         for key in ("title", "reason", "instructions", "timing_label"):
             if key in value:
@@ -531,6 +537,8 @@ class PlantManagementRepository:
             action["required_people"] = _bounded_int(value.get("required_people"), action["required_people"], 1, 100, "required_people")
         if "estimated_minutes" in value:
             action["estimated_minutes"] = _bounded_int(value.get("estimated_minutes"), action["estimated_minutes"], 1, 1440, "estimated_minutes")
+        if "assigned_to" in value:
+            action["assigned_to"] = _assigned_identity(value.get("assigned_to"), "assigned_to")
         if "work_plan" in value:
             action["work_plan"] = _normalize_action_work_plan(value.get("work_plan"), action["action_type"])
         elif "pest_control" in value:
@@ -732,6 +740,7 @@ class PlantManagementRepository:
         rating=None,
         attachments: list | None = None,
         work_details: dict | None = None,
+        performed_by: str = "",
     ):
         planting = self._planting(planting_id)
         self._assert_calendar_mutation_unlocked(planting_id)
@@ -752,21 +761,38 @@ class PlantManagementRepository:
             "placement_id": planting["placement_id"],
             "placement_name": planting["placement_name"],
             "performed_on": performed_on,
+            "performed_by": _clean_string(performed_by)[:180],
             "note": _clean_string(note)[:1000],
             "rating": _optional_rating(rating),
             "attachments": _normalize_work_attachments(attachments),
             "work_details": _normalize_work_details(work_details),
             "created_at": _utc_now(),
         }
-        action["status"] = "completed"
+        submitted_at = _utc_now()
+        action["status"] = "awaiting_review"
         action["completion"] = {
             "work_log_id": work_log["id"],
             "performed_on": performed_on,
+            "performed_by": work_log["performed_by"],
             "note": work_log["note"],
             "rating": work_log["rating"],
             "attachments": work_log["attachments"],
             "work_details": work_log["work_details"],
+            "review_status": "pending",
+            "submitted_at": submitted_at,
+            "reviewed_by": "",
+            "reviewed_at": "",
+            "review_note": "",
         }
+        work_log.update(
+            {
+                "review_status": "pending",
+                "submitted_at": submitted_at,
+                "reviewed_by": "",
+                "reviewed_at": "",
+                "review_note": "",
+            }
+        )
         calendar["revision"] += 1
         calendar["updated_at"] = _utc_now()
         self.data["calendars"][calendar["id"]] = calendar
@@ -774,6 +800,52 @@ class PlantManagementRepository:
         self.data["work_logs"] = self.data["work_logs"][-MAX_WORK_LOGS:]
         self.save()
         return copy.deepcopy(work_log)
+
+    @serialized_repository_write("repository_path")
+    def review_action_completion(
+        self,
+        planting_id: str,
+        action_id: str,
+        decision: str,
+        *,
+        reviewed_by: str,
+        note: str = "",
+    ):
+        planting = self._planting(planting_id)
+        self._assert_calendar_mutation_unlocked(planting_id)
+        calendar = self._calendar_for_planting(planting)
+        action = _find_action(calendar, action_id)
+        if action.get("status") != "awaiting_review":
+            raise PlantManagementValidationError("action must be awaiting review")
+        decision = _clean_string(decision)
+        if decision not in {"approved", "rejected"}:
+            raise PlantManagementValidationError("review decision must be approved or rejected")
+        note = _clean_string(note)[:2000]
+        if decision == "rejected" and not note:
+            raise PlantManagementValidationError("review note is required when returning work")
+        completion = action.get("completion") if isinstance(action.get("completion"), dict) else None
+        if completion is None or completion.get("review_status") != "pending":
+            raise PlantManagementValidationError("pending completion record was not found")
+        work_log_id = completion.get("work_log_id")
+        work_log = next((item for item in self.data["work_logs"] if item.get("id") == work_log_id), None)
+        if work_log is None:
+            raise PlantManagementNotFoundError("completion work log not found")
+
+        reviewed_at = _utc_now()
+        review_values = {
+            "review_status": decision,
+            "reviewed_by": _assigned_identity(reviewed_by, "reviewed_by"),
+            "reviewed_at": reviewed_at,
+            "review_note": note,
+        }
+        completion.update(review_values)
+        work_log.update(review_values)
+        action["status"] = "completed" if decision == "approved" else "in_progress"
+        calendar["revision"] += 1
+        calendar["updated_at"] = reviewed_at
+        self.data["calendars"][calendar["id"]] = calendar
+        self.save()
+        return {"action": copy.deepcopy(action), "work_log": copy.deepcopy(work_log)}
 
     @serialized_repository_write("repository_path")
     def record_question(self, planting_id: str, question: str, answer: str):
@@ -1012,7 +1084,7 @@ class PlantManagementRepository:
                 continue
             actions.append(copy.deepcopy(action))
 
-        status_order = {"in_progress": 0, "planned": 1, "completed": 2, "skipped": 3}
+        status_order = {"in_progress": 0, "planned": 1, "awaiting_review": 2, "completed": 3, "skipped": 4}
         actions.sort(
             key=lambda action: (
                 status_order.get(action.get("status"), 9),
@@ -1157,7 +1229,13 @@ class PlantManagementRepository:
 
     def recent_work_logs(self, planting_id: str, limit: int = 20):
         self._planting(planting_id)
-        return copy.deepcopy([item for item in reversed(self.data["work_logs"]) if item.get("planting_id") == planting_id][:limit])
+        return copy.deepcopy(
+            [
+                item
+                for item in reversed(self.data["work_logs"])
+                if item.get("planting_id") == planting_id and item.get("review_status", "approved") == "approved"
+            ][:limit]
+        )
 
     def assert_calendar_mutation_unlocked(self, planting_id: str):
         """Reject stale-browser mutations while AI is replacing planned work."""
@@ -1634,6 +1712,9 @@ def _normalize_action(value, index: int):
         raise PlantManagementValidationError(f"actions[{index}].window_end must be on or after window_start")
     legacy_plan = value.get("pest_control") if action_type == "pest_control" else None
     skip_decision = _normalize_action_skip_decision(value.get("skip_decision"))
+    completion = _normalize_action_completion(value.get("completion"), default_review_status="approved" if status == "completed" else "pending")
+    if status == "awaiting_review" and (completion is None or completion.get("review_status") != "pending"):
+        status = "in_progress"
     return {
         "id": _clean_string(value.get("id"))[:120] or str(uuid.uuid4()),
         "action_type": action_type,
@@ -1649,9 +1730,10 @@ def _normalize_action(value, index: int):
         "tags": _clean_string_list(value.get("tags"), limit=20, item_length=60),
         "required_people": _bounded_int(value.get("required_people"), 1, 1, 100, f"actions[{index}].required_people"),
         "estimated_minutes": _bounded_int(value.get("estimated_minutes"), 30, 1, 1440, f"actions[{index}].estimated_minutes"),
+        "assigned_to": _assigned_identity(value.get("assigned_to"), f"actions[{index}].assigned_to"),
         "work_plan": _normalize_action_work_plan(value.get("work_plan") or legacy_plan, action_type),
         "status": status,
-        "completion": _normalize_action_completion(value.get("completion")),
+        "completion": completion,
         "skip_decision": skip_decision if status == "skipped" else None,
         "source": _clean_string(value.get("source"), "llm")[:40],
         "rule_id": _clean_string(value.get("rule_id"))[:120],
@@ -1984,7 +2066,7 @@ def _normalize_work_details(value):
     }
 
 
-def _normalize_action_completion(value):
+def _normalize_action_completion(value, *, default_review_status: str = "approved"):
     if not isinstance(value, dict):
         return None
     performed_on = _clean_string(value.get("performed_on"))
@@ -1992,13 +2074,22 @@ def _normalize_action_completion(value):
         performed_on = date.fromisoformat(performed_on).isoformat()
     except ValueError:
         return None
+    review_status = _clean_string(value.get("review_status"), default_review_status)
+    if review_status not in VALID_WORK_REVIEW_STATUSES:
+        review_status = default_review_status
     return {
         "work_log_id": _clean_string(value.get("work_log_id"))[:120],
         "performed_on": performed_on,
+        "performed_by": _clean_string(value.get("performed_by"))[:180],
         "note": _clean_string(value.get("note"))[:1000],
         "rating": _optional_rating(value.get("rating")),
         "attachments": _normalize_work_attachments(value.get("attachments")),
         "work_details": _normalize_work_details(value.get("work_details")),
+        "review_status": review_status,
+        "submitted_at": _clean_string(value.get("submitted_at") or value.get("created_at"))[:40],
+        "reviewed_by": _clean_string(value.get("reviewed_by"))[:180],
+        "reviewed_at": _clean_string(value.get("reviewed_at"))[:40],
+        "review_note": _clean_string(value.get("review_note"))[:2000],
     }
 
 
@@ -2035,10 +2126,24 @@ def _normalize_action_skip_decision(value):
 
 def _normalize_work_log(value):
     record = copy.deepcopy(value)
+    record["performed_by"] = _clean_string(record.get("performed_by"))[:180]
     record["work_details"] = _normalize_work_details(record.get("work_details"))
     record["attachments"] = _normalize_work_attachments(record.get("attachments"))
     record["rating"] = _optional_rating(record.get("rating"))
+    review_status = _clean_string(record.get("review_status"), "approved")
+    record["review_status"] = review_status if review_status in VALID_WORK_REVIEW_STATUSES else "approved"
+    record["submitted_at"] = _clean_string(record.get("submitted_at") or record.get("created_at"))[:40]
+    record["reviewed_by"] = _clean_string(record.get("reviewed_by"))[:180]
+    record["reviewed_at"] = _clean_string(record.get("reviewed_at"))[:40]
+    record["review_note"] = _clean_string(record.get("review_note"))[:2000]
     return record
+
+
+def _assigned_identity(value, path: str):
+    identity = _clean_string(value).lower()[:180]
+    if identity and not ACTOR_EMAIL_PATTERN.fullmatch(identity):
+        raise PlantManagementValidationError(f"{path} must be a valid email address")
+    return identity
 
 
 def _safe_http_url(value):

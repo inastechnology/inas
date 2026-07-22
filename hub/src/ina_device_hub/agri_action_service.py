@@ -3,6 +3,7 @@ from urllib.parse import quote
 from ina_device_hub.device_definition_registry import get_device_definition
 
 METRIC_LABELS = {
+    "air_temperature_c": "気温",
     "last_soil_moisture": "土壌水分",
     "soil_moisture_1_pct": "土壌水分1",
     "soil_moisture_2_pct": "土壌水分2",
