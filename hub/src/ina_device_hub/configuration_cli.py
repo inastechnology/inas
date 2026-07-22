@@ -125,6 +125,8 @@ FIELDS = (
     ConfigurationField("DISCORD_WEBHOOK_URL", "Discord webhook URL", "notification", secret=True),
     ConfigurationField("DISCORD_ENABLED", "Discord通知を有効化", "notification", "true"),
     ConfigurationField("DISCORD_NOTIFY_MQTT_ACTIVITY", "MQTT activity通知", "notification", "false"),
+    ConfigurationField("DISCORD_NOTIFY_OPERATIONS_SECURITY_ALERTS", "Operations API認証拒否通知", "notification", "true"),
+    ConfigurationField("DISCORD_SECURITY_ALERT_COOLDOWN_SECONDS", "認証拒否通知の重複抑制（秒）", "notification", "300"),
     ConfigurationField("DISCORD_NOTIFY_NEW_DEVICE", "新規device通知", "notification", "true"),
     ConfigurationField("DISCORD_NOTIFY_DEVICE_OFFLINE", "device offline通知", "notification", "true"),
     ConfigurationField("DISCORD_NOTIFY_WATERING_MISSING", "潅水なし通知", "notification", "true"),

@@ -160,6 +160,8 @@ DEVICE_CONFIG_DEFAULT_MOISTURE_THRESHOLD = int(os.environ.get("DEVICE_CONFIG_DEF
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 DISCORD_ENABLED = _bool_env("DISCORD_ENABLED", True)
 DISCORD_NOTIFY_MQTT_ACTIVITY = _bool_env("DISCORD_NOTIFY_MQTT_ACTIVITY", False)
+DISCORD_NOTIFY_OPERATIONS_SECURITY_ALERTS = _bool_env("DISCORD_NOTIFY_OPERATIONS_SECURITY_ALERTS", True)
+DISCORD_SECURITY_ALERT_COOLDOWN_SECONDS = _int_env("DISCORD_SECURITY_ALERT_COOLDOWN_SECONDS", 300)
 DISCORD_NOTIFY_NEW_DEVICE = _bool_env("DISCORD_NOTIFY_NEW_DEVICE", True)
 DISCORD_NOTIFY_DEVICE_OFFLINE = _bool_env("DISCORD_NOTIFY_DEVICE_OFFLINE", True)
 DISCORD_NOTIFY_WATERING_MISSING = _bool_env("DISCORD_NOTIFY_WATERING_MISSING", True)
@@ -312,6 +314,8 @@ DEFAULT_SETTINGS = {
         "webhook_url": DISCORD_WEBHOOK_URL,
         "enabled": DISCORD_ENABLED,
         "notify_mqtt_activity": DISCORD_NOTIFY_MQTT_ACTIVITY,
+        "notify_operations_security_alerts": DISCORD_NOTIFY_OPERATIONS_SECURITY_ALERTS,
+        "security_alert_cooldown_sec": DISCORD_SECURITY_ALERT_COOLDOWN_SECONDS,
         "notify_new_device": DISCORD_NOTIFY_NEW_DEVICE,
         "notify_device_offline": DISCORD_NOTIFY_DEVICE_OFFLINE,
         "notify_watering_missing": DISCORD_NOTIFY_WATERING_MISSING,
@@ -366,6 +370,8 @@ RUNTIME_SETTING_FIELDS = {
     "discord": {
         "enabled",
         "notify_mqtt_activity",
+        "notify_operations_security_alerts",
+        "security_alert_cooldown_sec",
         "notify_new_device",
         "notify_device_offline",
         "notify_watering_missing",

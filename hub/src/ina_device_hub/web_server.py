@@ -57,6 +57,7 @@ from ina_device_hub.device_output_capabilities import (
 from ina_device_hub.device_removal_service import DeviceRemovalConflictError, device_removal_service
 from ina_device_hub.discord_notification_service import (
     cloudflare_public_base_url,
+    discord_notification_service,
     reload_discord_notification_settings,
 )
 from ina_device_hub.extension_installation_service import (
@@ -190,6 +191,17 @@ def authenticate_hub_request():
     try:
         user = authenticate_request(request)
     except AccessAuthenticationError as exc:
+        if request.path.startswith("/operations/api/"):
+            discord_notification_service().notify_operations_security_alert(
+                str(exc),
+                {
+                    "method": request.method,
+                    "path": request.path,
+                    "client_ip": request.headers.get("CF-Connecting-IP") or request.remote_addr,
+                    "cf_ray": request.headers.get("CF-Ray"),
+                    "user_agent": request.headers.get("User-Agent"),
+                },
+            )
         return _access_error_response(str(exc), 401)
 
     if authentication_mode() == "cloudflare_access" and _admin_access_required(request.path, request.method) and user.role != "admin":
@@ -5817,6 +5829,8 @@ def hub_settings_page():
                     "notify_watering_missing": request.form.get("notify_watering_missing") == "on",
                     "notify_soil_calibration_suggested": request.form.get("notify_soil_calibration_suggested") == "on",
                     "notify_mqtt_activity": request.form.get("notify_mqtt_activity") == "on",
+                    "notify_operations_security_alerts": request.form.get("notify_operations_security_alerts") == "on",
+                    "security_alert_cooldown_sec": current_discord.get("security_alert_cooldown_sec", 300),
                 }
             setting().set("discord", updated_discord)
             reload_discord_notification_settings()
@@ -5887,6 +5901,7 @@ def hub_settings_page():
         "notify_watering_missing": bool(current_discord.get("notify_watering_missing", True)),
         "notify_soil_calibration_suggested": bool(current_discord.get("notify_soil_calibration_suggested", True)),
         "notify_mqtt_activity": bool(current_discord.get("notify_mqtt_activity", False)),
+        "notify_operations_security_alerts": bool(current_discord.get("notify_operations_security_alerts", True)),
         "webhook_configured": bool(current_discord.get("webhook_url")),
         "public_base_url": public_notification_url,
         "public_url_configured": bool(public_notification_url),

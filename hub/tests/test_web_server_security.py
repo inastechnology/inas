@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("LOCAL_STORAGE_BASE_DIR", tempfile.mkdtemp())
@@ -53,6 +53,24 @@ class WebServerSecurityTest(unittest.TestCase):
             response = self.client.get("/firmware/WTR/missing/firmware.bin")
 
         self.assertEqual(response.status_code, 404)
+
+    def test_operations_authentication_rejection_notifies_discord_without_secret_headers(self):
+        notification_service = Mock()
+        headers = {
+            "CF-Connecting-IP": "203.0.113.10",
+            "CF-Ray": "ray-123",
+            "User-Agent": "unexpected-client/1.0",
+            "CF-Access-Client-Secret": "must-not-be-forwarded",
+        }
+        with patch.dict(os.environ, self.environment, clear=False), patch.object(web_server, "discord_notification_service", return_value=notification_service):
+            response = self.client.get("/operations/api/v1/health", headers=headers)
+
+        self.assertEqual(response.status_code, 401)
+        reason, details = notification_service.notify_operations_security_alert.call_args.args
+        self.assertIn("missing", reason)
+        self.assertEqual(details["client_ip"], "203.0.113.10")
+        self.assertEqual(details["cf_ray"], "ray-123")
+        self.assertNotIn("must-not-be-forwarded", str(details))
 
     def test_cloudflare_write_requires_same_origin(self):
         with (

@@ -65,8 +65,14 @@ Instagram 自動投稿では、この一時ストレージを公開 URL 配信�
 ### Cloudflare Access Operations API
 
 - `HUB_OPERATIONS_SERVICE_IDS` — `/operations/api/v1/*`を利用できるCloudflare Access Service Tokenの`common_name`をカンマ区切りで指定します。例: `01234567-89ab-cdef-0123-456789abcdef.access`。Operations APIは`HUB_AUTH_MODE=cloudflare_access`の場合だけ有効で、通常の利用者email JWTやlocal authでは利用できません。
+- `DISCORD_NOTIFY_OPERATIONS_SECURITY_ALERTS` — Cloudflareを通過してHubへ届いたOperations APIのJWT不正・Service ID許可リスト不一致をDiscordへ通知します。既定は`true`です。
+- `DISCORD_SECURITY_ALERT_COOLDOWN_SECONDS` — 同一の接続元IP・method・path・拒否理由を再通知しない時間です。既定は300秒です。
 
 Cloudflare Access側では`/operations/api/*`を対象とするService Auth policyを作成し、クライアントは`CF-Access-Client-Id`と`CF-Access-Client-Secret`を送ります。secretはHubのenvやリポジトリへ保存せず、呼び出し側のsecret storeで管理してください。Cloudflareがoriginへ渡す`Cf-Access-Jwt-Assertion`をHubでも検証し、JWTの`common_name`が上記allowlistに含まれる場合だけ処理します。
+
+Client ID・Secret不正などCloudflare Accessがorigin到達前に拒否する要求はHubから観測できません。Cloudflare側のAccess authentication logsまたはLogpushで別に監視してください。HubのDiscord通知にはJWT、Client ID、Client Secret、query stringを含めません。
+
+センシティブなOperations API操作をDiscordで人が承認してから実行する仕組みは未実装です。将来方針は[Hub Operations API Discord承認方針](HUB_OPERATIONS_DISCORD_APPROVAL_POLICY.md)を参照してください。
 
 第1段階のdevice API:
 

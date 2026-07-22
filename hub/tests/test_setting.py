@@ -136,6 +136,8 @@ class SettingTest(unittest.TestCase):
             self.assertTrue(discord["enabled"])
             self.assertEqual(discord["plant_task_reminder_days_before"], 7)
             self.assertFalse(discord["notify_mqtt_activity"])
+            self.assertTrue(discord["notify_operations_security_alerts"])
+            self.assertEqual(discord["security_alert_cooldown_sec"], 300)
 
     def test_non_runtime_section_cannot_be_saved(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

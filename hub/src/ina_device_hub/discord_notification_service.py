@@ -3,6 +3,7 @@ import json
 import os
 import struct
 import threading
+import time
 from datetime import UTC, datetime, timedelta, timezone
 from urllib import error, request
 from urllib.parse import quote, urlencode, urlsplit
@@ -19,6 +20,7 @@ DISCORD_EMBED_LIMIT = 10
 DISCORD_EMBED_TOTAL_CHARACTER_LIMIT = 6000
 DISCORD_EMBED_SAFE_CHARACTER_LIMIT = DISCORD_EMBED_TOTAL_CHARACTER_LIMIT - 200
 TASK_CARD_LIMIT = 6
+SECURITY_ALERT_DEFAULT_COOLDOWN_SEC = 300
 
 DEBUG_LOG_LEVELS = {
     1: "INFO",
@@ -77,6 +79,8 @@ class DiscordNotificationService:
     def __init__(self, webhook_url: str | None = None, public_base_url: str | None = None):
         self.webhook_url_override = webhook_url
         self.public_base_url_override = public_base_url
+        self._security_alert_lock = threading.Lock()
+        self._security_alert_last_sent = {}
         self.reload_settings()
 
     def reload_settings(self):
@@ -123,6 +127,27 @@ class DiscordNotificationService:
         if not self.enabled() or not self.notification_enabled("plant_tasks"):
             return True
         return self._post_payload(format_plant_task_digest(digest, base_url=self.public_base_url))
+
+    def notify_operations_security_alert(self, reason: str, details: dict):
+        if not self.enabled() or not self.notification_enabled("operations_security_alerts"):
+            return False
+        fingerprint = "|".join(str(details.get(key) or "")[:200] for key in ("client_ip", "method", "path")) + f"|{str(reason or '')[:200]}"
+        now = time.monotonic()
+        try:
+            cooldown_sec = max(0, int(self.discord_settings.get("security_alert_cooldown_sec", SECURITY_ALERT_DEFAULT_COOLDOWN_SEC)))
+        except (TypeError, ValueError):
+            cooldown_sec = SECURITY_ALERT_DEFAULT_COOLDOWN_SEC
+        with self._security_alert_lock:
+            last_sent = self._security_alert_last_sent.get(fingerprint)
+            if last_sent is not None and now - last_sent < cooldown_sec:
+                return False
+            self._security_alert_last_sent[fingerprint] = now
+            cutoff = now - max(cooldown_sec, SECURITY_ALERT_DEFAULT_COOLDOWN_SEC) * 2
+            self._security_alert_last_sent = {key: sent_at for key, sent_at in self._security_alert_last_sent.items() if sent_at >= cutoff}
+        notification = format_operations_security_alert(reason, details)
+        worker_thread = threading.Thread(target=self._post_payload, args=(notification,), daemon=True)
+        worker_thread.start()
+        return True
 
     def _post(self, content: str):
         return self._post_payload({"content": content})
@@ -214,6 +239,32 @@ def format_plant_task_digest(digest: dict, *, base_url=""):
         "username": "INA Device Hub",
         "allowed_mentions": {"parse": []},
         "embeds": embeds[:DISCORD_EMBED_LIMIT],
+    }
+
+
+def format_operations_security_alert(reason: str, details: dict):
+    fields = [
+        {"name": "拒否理由", "value": str(reason or "authentication rejected")[:1024], "inline": False},
+        {"name": "要求", "value": f"{str(details.get('method') or '?')[:16]} {str(details.get('path') or '/')[:500]}", "inline": False},
+        {"name": "接続元IP", "value": str(details.get("client_ip") or "不明")[:200], "inline": True},
+        {"name": "Cloudflare Ray ID", "value": str(details.get("cf_ray") or "不明")[:200], "inline": True},
+    ]
+    user_agent = str(details.get("user_agent") or "").strip()
+    if user_agent:
+        fields.append({"name": "User-Agent", "value": user_agent[:500], "inline": False})
+    return {
+        "username": "INA Device Hub",
+        "allowed_mentions": {"parse": []},
+        "embeds": [
+            {
+                "title": "🚨 Hub Operations APIの認証を拒否しました",
+                "description": "Cloudflareを通過してHubへ到達した要求を、Hub側の認証・許可リストで拒否しました。Service Token設定とアクセス元を確認してください。",
+                "color": 0xC62828,
+                "fields": fields,
+                "footer": {"text": "同一の接続元・要求・理由は一定時間まとめて抑制します"},
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        ],
     }
 
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hub Operations API"
+  short_description: "Cloudflare認証でHubの運用APIを安全に操作"
+  default_prompt: "Use $manage-hub-operations to inspect INA Hub devices and safely publish or roll out firmware."

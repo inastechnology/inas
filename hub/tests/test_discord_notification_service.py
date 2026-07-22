@@ -27,11 +27,48 @@ from ina_device_hub.discord_notification_service import (  # noqa: E402
     format_mqtt_activity,
     format_new_device,
     format_new_device_notification,
+    format_operations_security_alert,
     format_plant_task_digest,
 )
 
 
 class DiscordNotificationServiceTest(unittest.TestCase):
+    def test_operations_security_alert_contains_safe_request_metadata_only(self):
+        payload = format_operations_security_alert(
+            "Cloudflare Access service is not allowed",
+            {
+                "method": "POST",
+                "path": "/operations/api/v1/devices/firmware-rollouts",
+                "client_ip": "203.0.113.10",
+                "cf_ray": "ray-123",
+                "user_agent": "inas-hub-operations/1.0",
+                "client_secret": "must-not-appear",
+            },
+        )
+
+        rendered = str(payload)
+        self.assertIn("認証を拒否", rendered)
+        self.assertIn("203.0.113.10", rendered)
+        self.assertIn("ray-123", rendered)
+        self.assertNotIn("must-not-appear", rendered)
+        self.assertEqual(payload["allowed_mentions"], {"parse": []})
+
+    def test_operations_security_alert_suppresses_duplicate_fingerprint(self):
+        service = discord_notification_service.DiscordNotificationService(webhook_url="https://discord.example/webhook")
+        service.discord_settings = {"enabled": True, "notify_operations_security_alerts": True, "security_alert_cooldown_sec": 300}
+        details = {"method": "GET", "path": "/operations/api/v1/health", "client_ip": "203.0.113.10"}
+
+        with (
+            patch.object(discord_notification_service.threading, "Thread") as thread,
+            patch.object(discord_notification_service.time, "monotonic", side_effect=[1000, 1001]),
+        ):
+            first = service.notify_operations_security_alert("invalid JWT", details)
+            second = service.notify_operations_security_alert("invalid JWT", details)
+
+        self.assertTrue(first)
+        self.assertFalse(second)
+        thread.assert_called_once()
+
     def test_plant_task_digest_uses_visual_embed_groups(self):
         item = {
             "field_id": "field-1",

@@ -288,6 +288,10 @@
                 <div class="setting-label with-help"><span>すべてのDiscord通知</span><details class="context-help"><summary aria-label="全通知スイッチの説明を開く">?</summary><div class="context-help-panel" role="note"><strong>一時停止しても設定は残ります</strong><p>OFFにすると、下の種類別設定を残したままDiscordへの送信だけを止めます。</p></div></details></div>
                 <div class="setting-control"><label class="notification-switch"><input type="checkbox" role="switch" name="enabled" data-notification-master{% if discord.enabled %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">Discord通知を受け取る</span></label></div>
               </div>
+              <div class="setting-row" data-setting-row data-search="Operations API セキュリティ 認証拒否 不正アクセス Service Token">
+                <div class="setting-label with-help"><span>Operations APIのセキュリティ</span><details class="context-help"><summary aria-label="Operations API認証拒否通知の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>Hubへ到達した認証失敗を通知</strong><p>JWT不正やService IDの許可リスト不一致をDiscordへ通知します。Cloudflareが手前で拒否したClient ID・Secret不正はCloudflare側のログ監視対象です。</p></div></details></div>
+                <div class="setting-control"><label class="notification-switch"><input type="checkbox" role="switch" name="notify_operations_security_alerts" data-notification-option{% if discord.notify_operations_security_alerts %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">Operations APIの認証拒否を受け取る</span></label></div>
+              </div>
               <div class="setting-row" data-setting-row data-search="今日 栽培作業 日次 4時 カード リマインド">
                 <div class="setting-label with-help"><span>今日の栽培作業</span><details class="context-help"><summary aria-label="栽培作業通知の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>栽培作業の通知</strong><p>毎朝4:00に、必要な作業だけを1通のカードへまとめます。通知から対象作業の詳細・記録画面を直接開けます。</p></div></details></div>
                 <div class="setting-control">
