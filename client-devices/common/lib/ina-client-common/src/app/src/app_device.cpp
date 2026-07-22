@@ -199,6 +199,8 @@ void AppDevice::print_boot_settings() const
     Serial.printf("MQTT TCP probe: %s timeout=%u ms\n",
                   APP_MQTT_TCP_PROBE_ENABLED ? "enabled" : "disabled",
                   static_cast<unsigned int>(APP_MQTT_TCP_PROBE_TIMEOUT_MS));
+    Serial.printf("Runtime config wait timeout: %u ms\n",
+                  static_cast<unsigned int>(m_options.config_fetch_timeout_ms));
     Serial.printf("Setup portal button pin: %u\n", static_cast<unsigned int>(APP_SETUP_PORTAL_BUTTON_PIN));
     Serial.printf("Setup portal arm window: %u ms\n", static_cast<unsigned int>(APP_SETUP_PORTAL_ARM_WINDOW_MS));
     Serial.printf("Setup portal hold: %u ms\n", static_cast<unsigned int>(APP_SETUP_PORTAL_HOLD_MS));

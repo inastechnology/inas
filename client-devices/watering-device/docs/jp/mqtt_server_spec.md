@@ -170,9 +170,9 @@ payload:
 
 重要なタイミング要件:
 
-- デバイスはrequest publish後、約5秒だけruntime configを待ちます。
+- デバイスはrequest publish後、最大15秒runtime configを待ちます。Wi-Fi/MQTT接続時間はこの待機時間に含みません。
 - サーバはrequest受信後、可能な限り即時にreplyしてください。
-- 5秒以内にreplyできない場合、その起床サイクルではデバイスが古い設定またはdefault設定で動作する可能性があります。
+- 15秒以内にreplyできない場合、その起床サイクルではデバイスが古い設定またはdefault設定で動作する可能性があります。
 
 ## 7. Runtime Config Push
 
@@ -499,7 +499,7 @@ Canonical binary layout, event code table, argument semantics, and decoder examp
 
 | Condition | Meaning |
 |---|---|
-| `config_received=false` | サーバ応答が5秒以内に届かなかった、またはpayloadが無効 |
+| `config_received=false` | サーバ応答が15秒以内に届かなかった、またはpayloadが無効 |
 | `network_connected=false` | 通信障害のあるcycle。通常、このstatus自体はMQTT復帰後のログや将来の拡張でのみ確認可能 |
 | `runtime_config_valid=true`, `config_received=false` | 今回は新規configを受信できなかったが、保存済みruntime configで動作している |
 | `time_synced=false` | NTP同期に失敗。schedule実行判定は行われない |

@@ -10,7 +10,7 @@ struct AppDeviceInitializeOptions
     bool setup_ap_enabled = true;
     bool start_network = true;
     bool print_littlefs_files = false;
-    uint32_t config_fetch_timeout_ms = 5000;
+    uint32_t config_fetch_timeout_ms = 15000;
     uint32_t ntp_sync_timeout_ms = 15000;
     uint32_t min_sleep_sec = 5;
     uint32_t network_retry_sleep_sec = 60;

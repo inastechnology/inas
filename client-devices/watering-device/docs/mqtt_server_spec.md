@@ -148,7 +148,7 @@ Reply topic:
 
 Timing requirements:
 
-- The device waits about 5 seconds after publishing the request.
+- The device waits up to 15 seconds after publishing the request. Wi-Fi/MQTT connection time is not included in this window.
 - The hub should reply immediately after receiving the request.
 - If no valid reply arrives in time, the device may continue with the saved
   runtime configuration or its firmware default.

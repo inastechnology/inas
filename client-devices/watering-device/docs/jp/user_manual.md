@@ -213,7 +213,7 @@ schedule項目:
 - 無効なschedule entryは無視されます。
 - 有効なscheduleが1件もない場合、runtime configは適用されません。
 - 有効なruntime configはデバイス内に保存され、次回以降の通信障害時にも利用されます。
-- runtime configの応答待ちは起床後5秒です。
+- runtime configの応答待ちはrequest送信後15秒です。Wi-Fi/MQTT接続に要する時間はこの15秒に含みません。
 - schedule時刻から15分を超えて遅れた場合、そのscheduleは古いものとして灌水せずに処理済みにします。
 - センサ異常時などに強制灌水したい場合は、サーバ側で`force_watering: true`を返してください。
 
@@ -411,7 +411,7 @@ LED表示:
 - topicが`/<device_id>/kinds/config/reply`または`/<device_id>/kinds/config/push`になっているか確認してください。
 - payloadが4096 bytes未満か確認してください。
 - `schedules`に有効なentryが1件以上あるか確認してください。
-- 起床後5秒以内にreplyを返せているか確認してください。
+- request送信後15秒以内にreplyを返せているか確認してください。
 
 ### 灌水されない
 
