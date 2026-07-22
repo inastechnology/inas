@@ -16,6 +16,7 @@
 - [DISCORD_NOTIFICATION_DESIGN.md](DISCORD_NOTIFICATION_DESIGN.md): 通知疲れを抑えるDiscordカード、Cloudflare限定の確認画面リンク、管理者設定の設計。
 - [CULTIVATION_SYSTEM_ORCHESTRATION.md](CULTIVATION_SYSTEM_ORCHESTRATION.md): イチゴ点滴栽培のような作物別システムを、複数デバイスと hub のオーケストレーションとして扱う設計方針。
 - [AGENTIC_AGRICULTURE_VISION.md](AGENTIC_AGRICULTURE_VISION.md): 人・固定設備・ロボットを段階的に組み合わせ、判断、実行、確認、学習を循環させるエージェンティック農耕の思想と判断基準。
+- [FUTURE_FEATURES.md](FUTURE_FEATURES.md): 検討中・一部提供・条件待ちの将来機能と、コミュニティ提案を公開台帳へ追加する方針。
 - [../../hub/doc/jp/README.md](../../hub/doc/jp/README.md): hub の日本語ドキュメント入口。
 - [../../client-devices/docs/jp/README.md](../../client-devices/docs/jp/README.md): client device firmware と配線・製造ドキュメントの日本語入口。
 

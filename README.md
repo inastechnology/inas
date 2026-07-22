@@ -12,6 +12,8 @@ Documentation writing and localization rules are defined in
 [docs/DOCUMENTATION_GUIDE.md](docs/DOCUMENTATION_GUIDE.md).
 System-wide layer boundaries are defined in
 [docs/ARCHITECTURE_LAYERING_POLICY.md](docs/ARCHITECTURE_LAYERING_POLICY.md).
+Planned and community-proposed work is indexed in
+[docs/FUTURE_FEATURES.md](docs/FUTURE_FEATURES.md).
 Japanese documentation is stored under documentation directories such as
 [docs/jp/README.md](docs/jp/README.md), [hub/doc/jp/README.md](hub/doc/jp/README.md),
 and [client-devices/docs/jp/README.md](client-devices/docs/jp/README.md).

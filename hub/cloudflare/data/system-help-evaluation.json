@@ -8,6 +8,8 @@
     { "question": "年間カレンダーの作業を完了にするには？", "expected": "03-records-and-calendar.md", "must_include": ["完了", "実施日"] },
     { "question": "AIモデルの接続先は圃場設定のどこにありますか？", "expected": "04-settings-and-permissions.md", "must_include": ["アプリ設定", "Hub 全体"] },
     { "question": "Cloudflare認証後にアクセスできないのはなぜ？", "expected": "05-troubleshooting.md", "must_include": ["利用者登録", "権限"] },
-    { "question": "イチゴの追肥量を教えて", "expected": "README.md", "must_include": ["栽培相談"] }
+    { "question": "イチゴの追肥量を教えて", "expected": "README.md", "must_include": ["栽培相談"] },
+    { "question": "点滴チューブの吐出量校正や培地リセットは今使えますか？", "expected": "06-future-features-and-community.md", "must_include": ["FUT-001", "将来機能"] },
+    { "question": "新しい機能をコミュニティに提案するにはどうすればいいですか？", "expected": "06-future-features-and-community.md", "must_include": ["コミュニティ", "匿名"] }
   ]
 }

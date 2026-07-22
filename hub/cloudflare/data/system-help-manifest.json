@@ -7,6 +7,7 @@
     { "path": "../doc/system-help/02-installation-and-devices.md", "key": "system-help/02-installation-and-devices.md" },
     { "path": "../doc/system-help/03-records-and-calendar.md", "key": "system-help/03-records-and-calendar.md" },
     { "path": "../doc/system-help/04-settings-and-permissions.md", "key": "system-help/04-settings-and-permissions.md" },
-    { "path": "../doc/system-help/05-troubleshooting.md", "key": "system-help/05-troubleshooting.md" }
+    { "path": "../doc/system-help/05-troubleshooting.md", "key": "system-help/05-troubleshooting.md" },
+    { "path": "../doc/system-help/06-future-features-and-community.md", "key": "system-help/06-future-features-and-community.md" }
   ]
 }

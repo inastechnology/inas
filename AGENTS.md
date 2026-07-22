@@ -21,3 +21,24 @@ core when a declarative contribution can express the behavior.
 
 Other project-local `AGENTS.md` files may add more specific rules for their
 subtrees.
+
+## AI Search Documentation
+
+When a change affects farmer-facing Hub navigation, settings, troubleshooting,
+current-versus-future feature availability, or the community proposal process:
+
+1. Update or add a concise user-facing document under `hub/doc/system-help/`.
+2. Register it in `hub/cloudflare/data/system-help-manifest.json`.
+3. Add or update retrieval cases in
+   `hub/cloudflare/data/system-help-evaluation.json`.
+4. Run `npm run system-help:sync -- --dry-run` from `hub/cloudflare`.
+
+Do not index every internal design document directly. Keep AI Search content
+focused on what users can do now, what is explicitly planned, and where to find
+more detail. Do not present a planned feature as released.
+
+Remote sync must remain low-load: compare remote content and upload only changed
+documents, batch related edits, and do not recreate the AI Search instance.
+Normally rely on Cloudflare's scheduled incremental indexing. Use one explicit
+`--trigger-index` job only when a user-facing correction or requested update
+needs prompt indexing; do not poll or trigger jobs in a tight loop.

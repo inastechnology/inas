@@ -4,12 +4,18 @@
 
 この文書のコマンド例は、特記がない限り `hub/` ディレクトリで実行します。
 
+検討中・一部提供・条件待ちの機能とコミュニティ提案の入口は [INAS 将来機能・コミュニティ提案一覧](../../../docs/jp/FUTURE_FEATURES.md) を参照してください。
+
+利用者向けシステムヘルプをAI Searchへ低負荷で差分反映する手順は [AI Search文書の更新運用](AI_SEARCH_OPERATIONS.md) を参照してください。
+
 ina-device-hub は、MQTT で受信したセンサーデータやカメラ画像を集約し、ローカル／クラウドへ保存・連携する
 軽量な IoT ハブです（Turso / S3 互換ストレージ対応、Flask による簡易 Web 表示、タイムラプス等）。
 
 hub と client device を横断した全体仕様は [../../../docs/jp/SYSTEM_SPECIFICATION.md](../../../docs/jp/SYSTEM_SPECIFICATION.md) を参照してください。Cloudflare、デバイス種別、圃場データ、OTA の関係を図付きでまとめています。
 
 栽培カレンダーの施肥履歴、一般・独自肥料カタログ、土壌検査、施肥後の降雨・潅水、残効信頼度、初心者向けサジェストの実装方針は [施肥計画・肥料サジェスト実装方針](HUB_FERTILIZATION_RECOMMENDATION_POLICY.md) を参照してください。
+
+点滴チューブ敷設時の1穴吐出量校正、生育・天候に応じた潅水提案、排液ECを使った真水による培地リセットの将来仕様は [点滴潅水の吐出量校正・潅水提案・培地リセット仕様](HUB_DRIP_IRRIGATION_CALIBRATION_AND_SUBSTRATE_RESET_SPEC.md) を参照してください。
 
 定植・水やり・剪定・収穫をレール非依存で段階的に自動化する共通ライフサイクル、機器能力と設置先の照合、安全境界は [エージェンティック農作業の実装方針](HUB_AGENTIC_FARM_OPERATIONS_POLICY.md) を参照してください。
 

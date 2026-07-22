@@ -8,13 +8,16 @@ export const manifest = JSON.parse(readFileSync(resolve(cloudflareDir, "data/sys
 export const bucket = "inas-system-help-docs";
 
 export function wrangler(args, options = {}) {
-  const result = spawnSync("npx", ["wrangler", ...args], {
+  const executable = process.env.WRANGLER_BIN || "npx";
+  const commandArgs = process.env.WRANGLER_BIN ? args : ["wrangler", ...args];
+  const result = spawnSync(executable, commandArgs, {
     cwd: cloudflareDir,
     encoding: "utf8",
     stdio: options.capture ? "pipe" : "inherit",
+    timeout: options.timeout ?? 120_000,
   });
   if (result.status !== 0 && !options.allowFailure) {
-    const detail = options.capture ? result.stderr || result.stdout : "";
+    const detail = result.error?.message || (options.capture ? result.stderr || result.stdout : "");
     throw new Error(`wrangler ${args[0]} failed${detail ? `: ${detail.trim()}` : ""}`);
   }
   return result;
