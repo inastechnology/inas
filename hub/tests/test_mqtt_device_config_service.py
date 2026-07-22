@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
@@ -56,7 +57,11 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.repository.device_configs = {}
         self.repository.save()
         self.notification_service = _NotificationService()
-        self.service = DeviceConfigService(repository=self.repository, notification_service=self.notification_service)
+        self.service = DeviceConfigService(
+            repository=self.repository,
+            notification_service=self.notification_service,
+            event_log_dispatcher=lambda callback: callback(),
+        )
         self.mqtt_client = _MqttClient()
         self.service.attach_mqtt_client(self.mqtt_client)
 
@@ -158,6 +163,37 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(self.notification_service.new_devices, [])
+
+    def test_config_request_publishes_reply_before_logging_inbound_event(self):
+        device_id = "INADS-00000000-0000-4000-8000-000000000009"
+        deferred_event_logs = []
+        event_types = []
+        self.service.event_log_dispatcher = deferred_event_logs.append
+
+        def record_event(event_type, *_args, **_kwargs):
+            if event_type == "device_config_request":
+                self.assertNotEqual(self.mqtt_client.published, [])
+            event_types.append(event_type)
+
+        with patch("ina_device_hub.device_config_service.append_device_event", side_effect=record_event):
+            handled = self.service.handle_mqtt_message(
+                None,
+                {
+                    "message_type": "device_config",
+                    "device_id": device_id,
+                    "category": "config",
+                    "action": "request",
+                    "payload": b'{"request":"runtime_config"}',
+                },
+            )
+
+            self.assertTrue(handled)
+            self.assertNotEqual(self.mqtt_client.published, [])
+            self.assertEqual(event_types, [])
+            self.assertEqual(len(deferred_event_logs), 1)
+            deferred_event_logs[0]()
+
+        self.assertEqual(event_types, ["device_config_request", "device_config_publish"])
 
     def test_active_device_replies_saved_runtime_config(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000002"

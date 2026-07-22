@@ -1,5 +1,6 @@
 import copy
 import json
+import threading
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 
@@ -18,9 +19,10 @@ from ina_device_hub.setting import setting
 
 
 class DeviceConfigService:
-    def __init__(self, repository=None, notification_service=None):
+    def __init__(self, repository=None, notification_service=None, event_log_dispatcher=None):
         self.repository = repository or device_config_repository()
         self.notification_service = notification_service or discord_notification_service()
+        self.event_log_dispatcher = event_log_dispatcher or _dispatch_event_log
         self.mqtt_client = None
 
     def attach_mqtt_client(self, mqtt_client):
@@ -254,7 +256,7 @@ class DeviceConfigService:
             return project_runtime_config(record.get("device_kind"), stored)
         return project_runtime_config(record.get("device_kind"), self.default_config())
 
-    def publish_config(self, device_id: str, action: str, config: dict | None = None, retain: bool = False):
+    def publish_config(self, device_id: str, action: str, config: dict | None = None, retain: bool = False, record_event: bool = True):
         if self.mqtt_client is None:
             raise RuntimeError("mqtt client is not attached")
 
@@ -264,17 +266,18 @@ class DeviceConfigService:
         topic = f"/{device_id}/kinds/config/{action}"
         payload = json.dumps(config, ensure_ascii=True, separators=(",", ":"))
         result = self.mqtt_client.publish(topic, payload, qos=0, retain=retain)
-        append_device_event(
-            "device_config_publish",
-            "outbound",
-            device_id,
-            topic=topic,
-            category="config",
-            action=action,
-            payload=config,
-            mqtt_rc=result.rc,
-            retain=retain,
-        )
+        if record_event:
+            append_device_event(
+                "device_config_publish",
+                "outbound",
+                device_id,
+                topic=topic,
+                category="config",
+                action=action,
+                payload=config,
+                mqtt_rc=result.rc,
+                retain=retain,
+            )
         if result.rc != 0:
             logger.error(
                 "Failed to publish config for device_id=%s topic=%s rc=%s",
@@ -284,10 +287,34 @@ class DeviceConfigService:
             )
         return {"topic": topic, "payload": config, "mqtt_rc": result.rc}
 
-    def publish_reply(self, device_id: str):
-        published = self.publish_config(device_id, "reply", config=self._config_for_reply(device_id), retain=False)
+    def publish_reply(self, device_id: str, record_event: bool = True):
+        published = self.publish_config(device_id, "reply", config=self._config_for_reply(device_id), retain=False, record_event=record_event)
         self.repository.record_config_reply(device_id)
         return published
+
+    def _record_config_request_exchange(self, device_id, message, request_payload, request_received_at, reply_published_at, published):
+        append_device_event(
+            "device_config_request",
+            "inbound",
+            device_id,
+            topic=message.get("topic"),
+            category="config",
+            action="request",
+            payload=request_payload,
+            occurred_at=request_received_at,
+        )
+        append_device_event(
+            "device_config_publish",
+            "outbound",
+            device_id,
+            topic=published["topic"],
+            category="config",
+            action="reply",
+            payload=published["payload"],
+            mqtt_rc=published["mqtt_rc"],
+            retain=False,
+            occurred_at=reply_published_at,
+        )
 
     def publish_push(self, device_id: str):
         record = self.repository.get(device_id)
@@ -306,20 +333,27 @@ class DeviceConfigService:
         action = message.get("action")
         if category == "config" and action == "request":
             try:
+                request_received_at = datetime.now(UTC).isoformat()
                 request_payload = _decode_optional_json_payload(message.get("payload"))
-                append_device_event(
-                    "device_config_request",
-                    "inbound",
-                    device_id,
-                    topic=message.get("topic"),
-                    category=category,
-                    action=action,
-                    payload=request_payload,
-                )
                 if request_payload is not None and request_payload.get("request") != "runtime_config":
                     logger.warning("Unexpected config request payload for device_id=%s payload=%s", device_id, request_payload)
                 is_new_device = self.repository.get(device_id) is None
-                self.publish_reply(device_id)
+
+                # Return control to Paho immediately after queuing the reply. Remote
+                # event persistence can take several seconds, while firmware only
+                # waits briefly for its runtime config during startup.
+                published = self.publish_reply(device_id, record_event=False)
+                reply_published_at = datetime.now(UTC).isoformat()
+                self.event_log_dispatcher(
+                    lambda: self._record_config_request_exchange(
+                        device_id,
+                        message,
+                        request_payload,
+                        request_received_at,
+                        reply_published_at,
+                        published,
+                    )
+                )
                 if is_new_device:
                     record = self.repository.get(device_id)
                     self._notify_new_device(device_id, record, "config_request", payload=request_payload)
@@ -352,6 +386,10 @@ class DeviceConfigService:
             self.notification_service.notify_new_device(device_id, record, source, payload=payload)
         except Exception:
             logger.exception("New device Discord notification failed for device_id=%s", device_id)
+
+
+def _dispatch_event_log(callback):
+    threading.Thread(target=callback, name="device-config-event-log", daemon=True).start()
 
 
 def _decode_json_payload(payload):
