@@ -170,5 +170,5 @@ HAL modules only where they represent concrete hardware behavior.
 
 - Copy `default.env.user.ini` → `.env.user.ini` and set real credentials. The `.env*` glob is gitignored.
 - `AppConfig::show()` redacts passwords; avoid logging raw credentials elsewhere.
-- MQTT payloads > 512 bytes are rejected in the subscribe callback.
+- MQTT payloads of 4096 bytes or more are rejected in the subscribe callback.
 - `MQTT_MAX_PACKET_SIZE=65535` is set in build flags; do not transmit unvalidated external data at that size.

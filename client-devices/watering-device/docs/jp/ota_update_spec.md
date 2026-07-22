@@ -323,7 +323,7 @@ if artifact missing or artifact.revoked or rollout.paused:
 return update_offer(device, artifact)
 ```
 
-Payload size should stay below 512 bytes to match the current MQTT receive guard. Keep URLs short.
+Payload size must stay below 4096 bytes to match the MQTT receive guard. Keep URLs short.
 
 ## 10. Device Update Algorithm
 
@@ -581,7 +581,7 @@ Server tests:
 
 ## 17. Compatibility Notes
 
-- Current firmware rejects MQTT payloads of 512 bytes or more. OTA control payloads must remain below this limit unless the receive guard is changed.
+- Current firmware rejects MQTT payloads of 4096 bytes or more. OTA control payloads must remain below this limit.
 - Firmware metadata is included in normal status and OTA status payloads.
 - Current `Makefile` uses a fixed LittleFS offset. OTA-capable provisioning must write LittleFS at `0x670000`.
 - OTA-capable partition layout is a prerequisite because app OTA does not rewrite the partition table.

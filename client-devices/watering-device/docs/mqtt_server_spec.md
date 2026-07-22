@@ -225,6 +225,7 @@ Validation requirements before publish:
 
 - payload is valid JSON
 - MQTT payload is less than 4096 bytes
+- The common firmware inbound limit is `APP_MQTT_INBOUND_PAYLOAD_MAX_SIZE=4095` bytes, matching the Hub runtime-config contract.
 - `schedules` is an array
 - at least one valid schedule exists
 - schedule count is 8 or less

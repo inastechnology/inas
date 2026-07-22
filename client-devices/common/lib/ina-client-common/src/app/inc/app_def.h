@@ -62,6 +62,13 @@
 #define APP_MQTT_DISCONNECT_DRAIN_MS 250
 #endif
 
+// Hub runtime config payloads are required to stay below 4096 bytes. Keep the
+// inbound guard aligned with that contract while rejecting unexpectedly large
+// MQTT messages before device-specific parsers process them.
+#ifndef APP_MQTT_INBOUND_PAYLOAD_MAX_SIZE
+#define APP_MQTT_INBOUND_PAYLOAD_MAX_SIZE 4095
+#endif
+
 #ifndef APP_DEBUG_LOG_MAX_EVENTS
 #define APP_DEBUG_LOG_MAX_EVENTS 128
 #endif

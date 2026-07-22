@@ -345,12 +345,14 @@ static bool app_network_is_ota_kind_offer_topic(const char *topic)
 void app_network_sub_callback(char *topic, byte *payload, unsigned int length)
 {
     // handle message
-    if (length >= 512)
+    if (length > APP_MQTT_INBOUND_PAYLOAD_MAX_SIZE)
     {
         Serial.print("Message arrived [");
         Serial.print(topic);
         Serial.print("] ");
-        Serial.println("Payload too large");
+        Serial.printf("Payload too large: length=%u max=%u\n",
+                      length,
+                      static_cast<unsigned int>(APP_MQTT_INBOUND_PAYLOAD_MAX_SIZE));
         return;
     }
 

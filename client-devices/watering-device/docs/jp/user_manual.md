@@ -409,7 +409,7 @@ LED表示:
 
 - topicの`device_id`が一致しているか確認してください。
 - topicが`/<device_id>/kinds/config/reply`または`/<device_id>/kinds/config/push`になっているか確認してください。
-- payloadが512 bytes未満か確認してください。
+- payloadが4096 bytes未満か確認してください。
 - `schedules`に有効なentryが1件以上あるか確認してください。
 - 起床後5秒以内にreplyを返せているか確認してください。
 

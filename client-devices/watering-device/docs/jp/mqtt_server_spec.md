@@ -359,6 +359,7 @@ WTRの潅水出力は1系統だけです。土壌水分入力は`A2`（同一物
 
 - JSONとしてvalidであること
 - MQTT payloadが4096 bytes未満であること
+- 共通firmwareの受信上限は`APP_MQTT_INBOUND_PAYLOAD_MAX_SIZE=4095` bytesであり、Hubのruntime config契約と一致すること
 - `schedules`が配列であること
 - 有効なscheduleが1件以上あること
 - schedule数が8件以下であること
@@ -607,7 +608,7 @@ on_message(topic, payload):
 - 不正なtopic形式
 - 未登録deviceからのrequest
 - config生成失敗
-- config payloadが512 bytes以上
+- config payloadが4096 bytes以上
 - config validation failure
 - status payload parse failure
 - deviceごとの最終status受信時刻
@@ -750,14 +751,14 @@ runtime configはversion管理してください。
 
 - `schedules`が空のactive config
 - 9件以上のschedule
-- 512 bytes以上のMQTT payload
+- 4096 bytes以上のMQTT payload
 - `duration_sec <= 0`
 - `channel_mask == 0`
 - `hour` / `minute`が範囲外
 - MQTT username/passwordの片方だけ設定
 - `timezone_offset_sec`未設定のまま意図しないUTC運用になること
 
-UIではpayload sizeを表示し、512 bytesに近づいたら警告してください。
+UIではpayload sizeを表示し、4096 bytesに近づいたら警告してください。
 
 ### 15.7 Health monitoring
 
@@ -881,7 +882,7 @@ mosquitto_pub -h <broker> -r \
 
 ## 17. Compatibility Notes
 
-- デバイスは受信payloadが512 bytes以上の場合、破棄します。
+- デバイスは受信payloadが4096 bytes以上の場合、破棄します。
 - デバイスは`/<device_id>/kinds/config/reply`と`/<device_id>/kinds/config/push`のみruntime configとして処理します。
 - topic内の`device_id`が自分のIDと一致しないmessageは無視します。
 - `config/request`はデバイスからserverへの要求であり、デバイス側はrequest topicをruntime configとして処理しません。
