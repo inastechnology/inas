@@ -61,7 +61,11 @@ async function openPage({
     await page.waitForSelector('button[data-open-modal]:not([disabled])');
     await page.click('button[data-open-modal]');
     await page.type('.pagefind-ui__search-input', searchQuery);
-    await page.waitForFunction(() => document.querySelectorAll('.pagefind-ui__result').length > 0);
+    await page.waitForFunction(
+      (expectedText) => document.querySelector('dialog')?.textContent?.includes(expectedText),
+      { timeout: 10_000 },
+      searchExpectedText,
+    );
     const searchText = await page.$eval('dialog', (element) => element.textContent || '');
     assert(
       searchText.includes(searchExpectedText),
