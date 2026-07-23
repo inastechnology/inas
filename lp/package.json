@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "npm run build && node --check app.js && node --check worker.js && node --check scripts/build.mjs && node scripts/worker-test.mjs && npm run smoke",
+    "check": "npm run build && node --check app.js && node --check worker.js && node --check scripts/build.mjs && node --check scripts/wrangler-env.mjs && node scripts/wrangler-env-test.mjs && node scripts/worker-test.mjs && npm run smoke",
     "deploy": "npm run build && node scripts/wrangler-env.mjs deploy",
     "deploy:dry-run": "npm run build && node scripts/wrangler-env.mjs deploy --dry-run",
     "dev:worker": "npm run build && node scripts/wrangler-env.mjs dev",

@@ -131,11 +131,12 @@ GA4や広告ピクセルを有効にする場合は、公開地域と利用す�
 - `styles.css`: レスポンシブ・アクセシブルな見た目
 - `config.js`: 公開環境ごとのURL・計測設定
 - `app.js`: 計測、対象切替、動画モーダル、フォーム送信
-- `worker.js`: 静的配信、セキュリティヘッダー、フォーム受付API
-- `wrangler.jsonc`: `/app/*` ルート、D1、レート制限、静的アセット設定
+- `worker.js`: 静的配信、セキュリティヘッダー、フォーム受付、Discord招待発行、登録者メールAPI
+- `wrangler.jsonc`: `/app/*` ルート、D1、レート制限、Discord Service Binding、Email Service、静的アセット設定
 - `migrations/`: D1の回答保存スキーマ
 - `assets/`: 既存チラシで使用した写真、実画面、デモ動画。画面表示には約181KBのWebPを使い、PNGはフォールバック、JPEGはOGP用です
 - `scripts/build.mjs`: 公開ファイルを `dist/app/` に生成
-- `scripts/worker-test.mjs`: APIの入力検証・保存・bot判定テスト
+- `scripts/wrangler-env.mjs`: `.env` のDiscord Webhookを検証し、SecretとしてWranglerへ渡す
+- `scripts/worker-test.mjs`: APIの入力検証・保存・bot判定・招待メール・Webhook障害通知テスト
 - `scripts/smoke.mjs`: PC・スマホのブラウザ回帰と画面キャプチャ
 - `artifacts/`: smokeで生成する確認用キャプチャ

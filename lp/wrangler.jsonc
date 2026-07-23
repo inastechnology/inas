@@ -43,7 +43,10 @@
   ],
   "send_email": [
     {
-      "name": "LEAD_EMAIL"
+      "name": "LEAD_EMAIL",
+      "allowed_sender_addresses": [
+        "notifications@inas-technologies.com"
+      ]
     }
   ],
   "vars": {
