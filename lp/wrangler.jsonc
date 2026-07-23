@@ -35,9 +35,26 @@
       }
     }
   ],
+  "services": [
+    {
+      "binding": "DISCORD_INVITES",
+      "service": "inas-discord-invite"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "LEAD_EMAIL"
+    }
+  ],
   "vars": {
     "LEAD_RETENTION_DAYS": "365",
+    "LEAD_EMAIL_FROM": "notifications@inas-technologies.com",
     "TURNSTILE_EXPECTED_HOSTNAME": "inas-technologies.com"
+  },
+  "secrets": {
+    "required": [
+      "DISCORD_WEB_HOOK_URL"
+    ]
   },
   "observability": {
     "enabled": true

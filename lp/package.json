@@ -5,10 +5,13 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "npm run build && node --check app.js && node --check worker.js && node --check scripts/build.mjs && node scripts/worker-test.mjs && npm run smoke",
-    "deploy": "npm run build && wrangler deploy",
-    "dev:worker": "npm run build && wrangler dev",
+    "deploy": "npm run build && node scripts/wrangler-env.mjs deploy",
+    "deploy:dry-run": "npm run build && node scripts/wrangler-env.mjs deploy --dry-run",
+    "dev:worker": "npm run build && node scripts/wrangler-env.mjs dev",
     "db:local": "wrangler d1 migrations apply inas-lp-leads --local",
     "db:remote": "wrangler d1 migrations apply inas-lp-leads --remote",
+    "leads:summary": "wrangler d1 execute inas-lp-leads --remote --command \"SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status = 'new' THEN 1 ELSE 0 END), 0) AS new_count, MAX(created_at) AS latest_at FROM leads\"",
+    "leads:list": "wrangler d1 execute inas-lp-leads --remote --command \"SELECT submission_id, role, scale, pain, email, message, audience, attribution_json, created_at, status FROM leads ORDER BY created_at DESC LIMIT 100\"",
     "serve": "python -m http.server 4173 --directory .",
     "smoke": "node scripts/smoke.mjs"
   },

@@ -238,10 +238,10 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       form.reset();
       selectAudience("home", { emit: false });
-      setFormStatus("ありがとうございます。受付が完了しました。先行案内の準備ができ次第、ご登録のメールアドレスへお知らせします。", "success");
+      setFormStatus("ありがとうございます。ご登録のメールアドレスへDiscordコミュニティの招待をお送りしました。", "success");
       track("lead_submit_success", { role: payload.role, scale: payload.scale, pain: payload.pain });
     } catch {
-      setFormStatus("送信できませんでした。通信状態を確認して、時間をおいてもう一度お試しください。", "error");
+      setFormStatus("登録または招待メールの送信を完了できませんでした。時間をおいてもう一度お試しください。", "error");
       track("lead_submit_error");
     } finally {
       if (turnstileWidgetId !== undefined && window.turnstile) {

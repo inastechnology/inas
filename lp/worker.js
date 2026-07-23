@@ -5,6 +5,8 @@ const ALLOWED_SCALES = new Set(["pots", "under_100m2", "100_1000m2", "over_1000m
 const ALLOWED_PAINS = new Set(["remote_monitoring", "task_planning", "watering", "records"]);
 const ATTRIBUTION_KEYS = new Set(["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "landing_path", "referrer_host"]);
 const MAX_BODY_BYTES = 16_384;
+const INVITE_MAX_AGE_SECONDS = 86_400;
+const INVITE_MAX_USES = 1;
 
 const securityHeaders = {
   "Content-Security-Policy": "default-src 'self'; base-uri 'self'; connect-src 'self' https://challenges.cloudflare.com https://www.google-analytics.com https://region1.google-analytics.com; font-src 'self'; frame-ancestors 'none'; frame-src https://challenges.cloudflare.com; img-src 'self' data:; media-src 'self'; object-src 'none'; script-src 'self' https://challenges.cloudflare.com https://www.googletagmanager.com; style-src 'self'; form-action 'self'",
@@ -147,6 +149,147 @@ async function validateTurnstile(request, env, token) {
   }
 }
 
+function safeErrorCode(error, fallback = "operation_failed") {
+  const status = Number(error?.status);
+  const value = typeof error?.code === "string" && error.code
+    ? error.code
+    : Number.isInteger(status) && status >= 400
+      ? `http_${status}`
+      : fallback;
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+}
+
+function serviceError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
+function validateDiscordInvite(value) {
+  if (!value || typeof value !== "object") throw serviceError("invalid_invite_response");
+  const url = cleanString(value.url, 1000);
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw serviceError("invalid_invite_url");
+  }
+  const validDiscordUrl = parsed.protocol === "https:"
+    && (parsed.hostname === "discord.gg"
+      || (parsed.hostname === "discord.com" && parsed.pathname.startsWith("/invite/")));
+  if (!validDiscordUrl) throw serviceError("invalid_invite_url");
+  if (value.maxUses !== INVITE_MAX_USES) throw serviceError("invalid_invite_max_uses");
+  if (typeof value.expiresAt !== "string" || !Number.isFinite(Date.parse(value.expiresAt))) {
+    throw serviceError("invalid_invite_expiry");
+  }
+
+  return {
+    url,
+    expiresAt: value.expiresAt,
+  };
+}
+
+async function createDiscordInvite(env, normalizedEmail) {
+  if (!env.DISCORD_INVITES?.createInvite) throw serviceError("discord_invites_not_configured");
+  const subjectId = await sha256(String(normalizedEmail || "").trim().toLowerCase());
+  const invite = await env.DISCORD_INVITES.createInvite({
+    subjectId,
+    maxAgeSeconds: INVITE_MAX_AGE_SECONDS,
+    maxUses: INVITE_MAX_USES,
+  });
+  return validateDiscordInvite(invite);
+}
+
+function buildRegistrantInviteEmail(invite) {
+  const expiresAt = new Date(invite.expiresAt);
+  const expiresAtText = new Intl.DateTimeFormat("ja-JP", {
+    dateStyle: "long",
+    timeStyle: "short",
+    timeZone: "Asia/Tokyo",
+  }).format(expiresAt);
+  return {
+    subject: "INAS Discordコミュニティへのご招待",
+    text: [
+      "INAS Appの先行案内にご登録いただき、ありがとうございます。",
+      "",
+      "以下のリンクからINAS TechnologiesのDiscordコミュニティへご参加いただけます。",
+      "",
+      invite.url,
+      "",
+      `有効期限: ${expiresAtText}`,
+      "この招待リンクは1回だけ利用できます。",
+      "",
+      "このメールに心当たりがない場合は、そのまま破棄してください。",
+      "",
+      "INAS Technologies",
+      "https://inas-technologies.com/",
+    ].join("\n"),
+  };
+}
+
+async function sendRegistrantInvite(env, email, invite) {
+  const binding = env.LEAD_EMAIL;
+  const from = cleanString(env.LEAD_EMAIL_FROM, 254);
+  if (!binding?.send || !from) throw serviceError("lead_email_not_configured");
+
+  const content = buildRegistrantInviteEmail(invite);
+  await binding.send({
+    to: email,
+    from: { email: from, name: "INAS Technologies" },
+    subject: content.subject,
+    text: content.text,
+  });
+}
+
+function validateDiscordWebhookUrl(value) {
+  const url = cleanString(value, 2000);
+  try {
+    const parsed = new URL(url);
+    const validHost = parsed.hostname === "discord.com" || parsed.hostname === "discordapp.com";
+    if (parsed.protocol !== "https:" || !validHost || !parsed.pathname.startsWith("/api/webhooks/")) {
+      return "";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+async function sendFailureNotification(env, { submissionId, stage, error }) {
+  const webhookUrl = validateDiscordWebhookUrl(env.DISCORD_WEB_HOOK_URL);
+  const errorCode = safeErrorCode(error, `${stage}_failed`);
+  if (!webhookUrl) {
+    console.error("lead_failure_notification_unavailable", errorCode);
+    return;
+  }
+
+  try {
+    const response = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: [
+          "🚨 **INAS App LP: Discord招待処理エラー**",
+          `登録ID: \`${submissionId}\``,
+          `処理段階: \`${stage}\``,
+          `エラーコード: \`${errorCode}\``,
+          `発生日時: ${new Date().toISOString()}`,
+          "D1の登録内容を確認し、必要に応じて登録者へ再案内してください。",
+        ].join("\n"),
+        allowed_mentions: { parse: [] },
+      }),
+    });
+    if (!response.ok) {
+      console.error("lead_failure_notification_failed", `discord_webhook_http_${response.status}`);
+    }
+  } catch (notificationError) {
+    console.error(
+      "lead_failure_notification_failed",
+      safeErrorCode(notificationError, "discord_webhook_failed"),
+    );
+  }
+}
+
 async function handleLead(request, env, ctx, url) {
   if (request.method !== "POST") {
     return json({ ok: false, error: "method_not_allowed" }, 405, { Allow: "POST" });
@@ -220,6 +363,29 @@ async function handleLead(request, env, ctx, url) {
     );
   }
 
+  let invite;
+  try {
+    invite = await createDiscordInvite(env, lead.normalizedEmail);
+  } catch (error) {
+    await sendFailureNotification(env, {
+      submissionId,
+      stage: "invite_issue",
+      error,
+    });
+    return json({ ok: false, error: "invite_unavailable" }, 502);
+  }
+
+  try {
+    await sendRegistrantInvite(env, lead.email, invite);
+  } catch (error) {
+    await sendFailureNotification(env, {
+      submissionId,
+      stage: "invite_email",
+      error,
+    });
+    return json({ ok: false, error: "email_unavailable" }, 502);
+  }
+
   return json({ ok: true, submission_id: submissionId }, 201);
 }
 
@@ -253,4 +419,10 @@ export default {
   },
 };
 
-export { handleLead, validatePayload };
+export {
+  buildRegistrantInviteEmail,
+  createDiscordInvite,
+  handleLead,
+  sendFailureNotification,
+  validatePayload,
+};

@@ -21,6 +21,8 @@ http://127.0.0.1:4173/?utm_source=instagram&utm_medium=paid_social&utm_campaign=
 ```bash
 cd lp
 npm install
+cp .env.example .env
+# .env の DISCORD_WEB_HOOK_URL を障害通知用Webhookへ変更
 npm run build
 npm run db:local
 npm run dev:worker
@@ -31,6 +33,8 @@ npm run dev:worker
 ## 公開構成
 
 Cloudflare Worker `inas-app-lp` が `inas-technologies.com/app/*` を担当します。静的ファイルは `dist/app/` へ生成し、`/app/api/leads` だけをフォームAPIとして処理します。回答はD1 `inas-lp-leads` に保存し、送信から365日を超えたものを自動削除します。IPアドレスは回答テーブルに保存しません。
+
+回答の保存後、登録メールアドレスを小文字へ正規化してSHA-256ハッシュを生成し、`subjectId`としてService Binding `DISCORD_INVITES`から非公開Worker `inas-discord-invite`へ渡します。招待Workerは、この識別子に対して24時間・1回限定のDiscord招待を発行します。メールアドレスそのものは招待Workerへ渡しません。招待URLはCloudflare Email Serviceから登録者本人へ送信し、APIレスポンス、D1、通常のWorkerログには出力しません。通常時の運営者通知は行わず、招待発行または登録者へのメール送信が失敗した場合だけDiscord Webhookへ障害通知を送ります。
 
 APIは、サーバー側の許可値・文字数・同意確認、Origin確認、レート制限、ハニーポット、任意のTurnstile検証を実施します。Turnstileを有効にする場合は、公開サイトキーを `config.js` の `turnstileSiteKey` に設定し、秘密キーを次のようにWorker Secretへ登録します。
 
@@ -48,12 +52,24 @@ npm run db:remote
 npm run deploy
 ```
 
-最近の回答は、権限のある運用端末から次のように確認できます。自由記述やメールアドレスを通常のWorkerログへ出力しないでください。
+最近の回答は、Cloudflare Dashboardの `Storage & databases` → `D1` → `inas-lp-leads` → `Console`、または権限のある運用端末から確認できます。自由記述やメールアドレスを通常のWorkerログへ出力しないでください。
 
 ```bash
-npx wrangler d1 execute inas-lp-leads --remote --command \
-  "SELECT submission_id, role, scale, pain, email, message, audience, attribution_json, created_at, status FROM leads ORDER BY created_at DESC LIMIT 100"
+npm run leads:summary
+npm run leads:list
 ```
+
+登録者への送信にはCloudflare Email ServiceのEmail Sendingを使います。`inas-technologies.com` を送信ドメインとしてオンボードし、Workers Paidプランで任意の登録先へ送信できる状態にしてください。送信元は `wrangler.jsonc` の `LEAD_EMAIL_FROM` で管理します。
+
+障害通知先はGit管理外の `lp/.env` にある `DISCORD_WEB_HOOK_URL` で管理します。初回は `.env.example` をコピーし、通知先チャンネルで発行したDiscord Webhook URLへ変更してください。
+
+```bash
+cp .env.example .env
+```
+
+`npm run dev:worker` と `npm run deploy` は専用ラッパーを通します。ローカル実行ではWebhook URLだけを一時envファイルとしてWranglerへ渡し、デプロイ時は一時secretsファイルを介してCloudflare Secret `DISCORD_WEB_HOOK_URL` として登録します。一時ファイルはWrangler終了時に削除され、`.env` のほかの値はアップロードしません。Webhook URLが未設定またはDiscord以外のURLの場合は、Workerの起動・デプロイ前に失敗します。CIでは同名の環境変数で上書きでき、別のenvファイルを使う場合は `LP_ENV_FILE` にパスを指定できます。
+
+メールやDiscordの進行状態はD1へ保存しません。既に追加済みの `notification_status`、`notification_sent_at`、`notification_error_code` はマイグレーション `0003_remove_lead_notification_status.sql` で削除します。Discord障害通知には登録ID、処理段階、機械可読なエラーコードだけを含め、登録メールアドレス、招待URL、自由記述は含めません。Webhook通知にも失敗した場合に備え、個人情報を含まないエラーコードをWorkerログへ記録します。
 
 ## フォーム契約
 
