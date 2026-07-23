@@ -1,0 +1,74 @@
+---
+title: 設定が反映されない
+description: Hubへの保存、MQTT request/reply、device解析・保存を順に確認します。
+---
+
+import CommunityCta from '../../../components/CommunityCta.astro';
+
+Hub画面に値が保存されていても、deviceが受信・検証・適用するまでは動作が変わりません。設定の経路を4段階に分けます。
+
+## 1. Hubへ保存されたか
+
+- 正しいdevice IDのdetailを開いている。
+- 保存後に画面を再読込して値が残る。
+- 権限errorやconflictが表示されていない。
+- Runtime ConfigのJSONがDevice Definitionのsend keysに合う。
+
+## 2. deviceが要求したか
+
+deviceは各wake後に次へrequestをpublishします。
+
+```text
+/<device_id>/kinds/config/request
+```
+
+Hubは次へreplyします。
+
+```text
+/<device_id>/kinds/config/reply
+```
+
+即時更新に対応する場合は次のpushも使います。
+
+```text
+/<device_id>/kinds/config/push
+```
+
+broker logまたはsubscriberで、IDを含むtopicとpayload sizeを確認します。
+
+## 3. replyを受信したか
+
+- MQTT接続がreply待機中に維持されている。
+- topicのdevice IDが完全一致する。
+- ACLがreply topicのsubscribeを許可する。
+- F/WのMQTT bufferがpayloadを収容できるversionである。
+- `config_received=true` がstatusに出る。
+
+古いWTR F/Wには、512 bytesを超えるMQTT messageを破棄する版があります。HubのRuntime Configが約1.5KBになる構成では受信できません。修正版F/Wへ更新してください。
+
+## 4. configが有効か
+
+F/WはJSONと各値を検証します。代表的な無効条件:
+
+- `schedules` がarrayでない。
+- hourが0–23、minuteが0–59の範囲外。
+- durationが0以下、channel maskが0。
+- WTRでunsupported channelを指定。
+- 分割潅水のON時間またはrepeatが0。
+- soil calibrationで `dry_raw <= wet_raw`。
+
+serial logの `Ignoring invalid ...` と `Runtime config must include ...` を確認します。
+
+## timeoutについて
+
+Wi-Fi接続後、MQTT接続とAPI/config replyには追加時間が必要です。現在の共通F/Wはconfig受信を15秒待ちます。5秒程度で電源を切ったりresetしたりせず、1 cycleの完了を待ってstatusを確認してください。
+
+## 復旧の確認
+
+1. Hubに保存した値を控えます。
+2. deviceを安全に再起動します。
+3. `config_received=true` を確認します。
+4. statusに反映されたthreshold・pattern・scheduleを照合します。
+5. 次のwakeでも保存configが有効か確認します。
+
+<CommunityCta />

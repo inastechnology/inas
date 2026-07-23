@@ -1,0 +1,67 @@
+---
+title: デバイスがオフライン
+description: 電源、Wi-Fi、MQTT、Hub受信を順番に切り分けます。
+---
+
+import CommunityCta from '../../../components/CommunityCta.astro';
+
+最終受信が更新されない場合は、電源 → Wi-Fi → MQTT → Hub subscribeの順に確認します。後段から設定を変えても、前段が失敗していると復旧しません。
+
+## 1. 電源とboot
+
+- XIAOの入力電圧を測定します。
+- 異常発熱、reset反復、brownout logがないか確認します。
+- USB serial logが出るか確認します。
+- battery deviceは電圧と極性を確認します。
+
+bootしない場合はnetwork設定を変更せず、配線と電源を直します。
+
+## 2. setup APの理由
+
+setup APが起動している場合、`http://192.168.4.1/` の画面に表示される開始理由を確認します。
+
+- settings missing: Wi-Fi/MQTT未設定
+- BOOT button request: 手動でsetupを要求
+- Wi-Fi failure: SSID/password/電波/2.4GHzを確認
+- MQTT failure: broker/port/credential/firewallを確認
+
+保存済みRuntime Configがあるdeep-sleep deviceは、一時的なnetwork failureでもsetup APへ入らず、保存scheduleで継続する場合があります。cold bootではRTC時刻を信頼しないため、offlineのまま予定潅水しません。
+
+## 3. Wi-Fi
+
+- deviceが2.4GHz SSIDへ接続できる。
+- AP isolationがHub/MQTTとの通信を遮断していない。
+- DHCP leaseまたは固定割当が存在する。
+- RSSIが極端に低くない。
+- DNS名を使う場合はdeviceから解決できる。
+
+## 4. MQTT
+
+- broker hostとportが正しい。
+- username/passwordとACLが正しい。
+- device IDのtopicへpublish/subscribeできる。
+- broker logに認証拒否や接続反復がない。
+- TLS必須brokerへ非TLS設定で接続していない。
+
+## 5. Hub
+
+Hub側でserviceとMQTT接続を確認します。
+
+```bash
+cd hub
+./scripts/hub_service.sh status
+./scripts/hub_service.sh logs
+curl --fail http://127.0.0.1:39151/readyz
+```
+
+同じbrokerに他のdeviceが接続できるなら、対象deviceのcredential・ACL・Wi-Fiを優先して調べます。すべてofflineならbrokerまたはHub側を優先します。
+
+## 復旧の確認
+
+- `network_connected=true`
+- Hubの最終受信時刻が現在へ更新
+- config requestがpublishされる
+- config replyを受信
+- statusが1 cycle以上継続して届く
+
+<CommunityCta />

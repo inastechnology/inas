@@ -1,0 +1,71 @@
+---
+title: 全体構成を理解する
+description: Raspberry Pi、Hub、MQTT、デバイス、Cloudflareがどこで動き、どの経路で通信するかを理解します。
+---
+
+import SystemArchitecture from '../../../components/SystemArchitecture.astro';
+
+INASは、圃場の観測、栽培計画、作業記録、潅水をひとつにつなぐオープンソースのスマート栽培基盤です。中心になる **INAS Hub** が画面と設定を管理し、圃場のデバイスとはMQTTで通信します。
+
+<SystemArchitecture />
+
+## 何がどこで動くか
+
+| 構成要素 | 実行・設置場所 | 役割 | 誰が設定するか |
+|---|---|---|---|
+| Raspberry Pi OS | 圃場・事務所のRaspberry Pi | Hubを常時動かすOS | 自己調達では利用者 |
+| INAS Hub | Raspberry Pi上のsystemd service | 画面、圃場・作業・デバイス設定、データ処理、F/W配信 | 利用者 |
+| Mosquitto | 同じRaspberry Pi上 | HubとデバイスのMQTT broker | 利用者 |
+| Avahi / mDNS | 同じRaspberry Pi上 | `<hub名>.local`をLAN内で名前解決 | OS hostnameから生成 |
+| cloudflared | 同じRaspberry Pi上 | Cloudflareへ外向きTunnelを維持 | Cloudflare利用時に利用者 |
+| WTR / WRS / SOI / ENV | 圃場の制御盤・sensor筐体 | 測定、潅水、状態送信 | 自己調達では利用者が製作・設定 |
+| Cloudflare Access | Cloudflare上 | Hub画面へ入る利用者を認証 | 利用者のCloudflare account |
+| Turso / R2 | cloud service | database、画像・F/Wなどの保存 | Hubの`.env`で接続 |
+| Web browser | 利用者のPC・phone | Hub UIを操作 | URLへアクセスするだけ |
+
+:::tip[最初に覚える境界]
+Raspberry Piは**サーバー**、ESP32S3は**圃場デバイス**、Cloudflare Accessは**人が外部からHub画面へ入る入口**です。デバイスがCloudflare Accessへloginする構成ではありません。
+:::
+
+## 3つの通信経路
+
+1. **人がHubを使う**: browser → Cloudflare Access → Tunnel → Raspberry Pi上のHub。
+2. **Hubとデバイスが通信する**: ESP32S3 → 2.4GHz Wi‑Fi → Raspberry Pi上のMosquitto。状態とRuntime ConfigをMQTTで送受信します。
+3. **デバイスがF/Wを取得する**: ESP32S3 → LAN内HTTP → `http://<Hub予約IP>:39151`。Cloudflare公開URLは使いません。
+
+:::caution[現行デバイスのmDNS]
+Raspberry Piは`<hub名>.local`で見えますが、現行デバイスF/WはMQTT hostを通常DNSで解決し、明示的なmDNS queryを行いません。自己調達ルートでは、デバイスのMQTTとOTAにRaspberry PiのDHCP予約IPを使います。`<顧客ID>.local`をデバイスにも設定する方式は、弊社提供品の準備中仕様です。
+:::
+
+## システムを構成するもの
+
+| 構成 | 役割 | 必須 |
+|---|---|---|
+| Raspberry Pi | Hub、Mosquitto、cloudflared、mDNSを常時実行 | 必須 |
+| INAS Hub | Web画面、圃場・作業・デバイス設定、データ処理、F/W配信 | 必須 |
+| MQTT broker | Hubとデバイス間の状態・設定・OTA通知 | デバイス利用時。通常は同じPi |
+| WTR / WRS | 潅水出力と土壌水分・RS485センサー | 潅水時 |
+| SOI / ENV | 土壌水分または環境センサー | 任意 |
+| Cloudflare Access / Tunnel | Hubへ外部から安全にアクセスする入口 | 任意・推奨 |
+
+## デバイス起動時の情報と制御
+
+1. デバイスが起動し、Wi-FiとMQTTへ接続します。
+2. デバイスがHubへ状態を送り、最新のRuntime Configを要求します。
+3. Hubが機種と登録内容に合う設定を返します。
+4. デバイスは測定や潅水を実行し、結果をHubへ送ります。
+5. F/W更新が予約されている場合、デバイスはHubのHTTP endpointからバイナリを取得します。
+
+:::note[Cloudflareの役割]
+Cloudflare AccessとTunnelは、管理画面とAPIを公開する認証付き入口です。現在のデバイスOTAは、圃場LANから到達できるHubの `http://` URLを使います。
+:::
+
+## 用語を区別する
+
+- **Device Definition**: F/Wが持つ機能をHubへ伝える静的な定義。
+- **Runtime Config**: 個々の登録デバイスへHubが送る設定。
+- **Hub Extension**: Hubへ任意機能を追加するパッケージ。
+
+これらは別の仕組みです。たとえば「WTRの潅水時間を5秒にする」はRuntime Configであり、Device DefinitionやExtensionの変更ではありません。
+
+全体を理解したら[導入ルートを選びます](/start/choose-path/)。現在実行できるのは、機器を自分で購入・構築する自己調達ルートです。

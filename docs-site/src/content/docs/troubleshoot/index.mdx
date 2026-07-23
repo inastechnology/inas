@@ -1,0 +1,45 @@
+---
+title: 問題から探す
+description: INAS Hubとデバイスの症状から、確認するページへ移動します。
+---
+
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+import CommunityCta from '../../../components/CommunityCta.astro';
+
+まず「Hub」「network」「config」「device動作」のどこまで成功しているかを分けます。設定を何度も変える前に、発生時刻と現在値を記録してください。
+
+<CardGrid>
+  <Card title="デバイスがオフライン">
+    最終受信が更新されない、MQTTへ接続できない、setup APに入る。
+    [接続を切り分ける →](/troubleshoot/device-offline/)
+  </Card>
+  <Card title="潅水されない">
+    scheduleや起動試験を設定したのに、outputが開始しない。
+    [潅水条件を確認する →](/troubleshoot/watering/)
+  </Card>
+  <Card title="設定が反映されない">
+    Hubには保存されているが、deviceの `config_received` がfalse。
+    [config経路を確認する →](/troubleshoot/config/)
+  </Card>
+  <Card title="F/Wが更新されない">
+    targetを設定したがversionが変わらない、downloadに失敗する。
+    [OTAを切り分ける →](/operate/firmware/#失敗時の切り分け)
+  </Card>
+</CardGrid>
+
+## 最初に記録するもの
+
+- 発生日時とtimezone
+- device ID、device kind、F/W version
+- HubのGit revisionまたはversion
+- 最終受信時刻
+- `network_connected`、`config_received`、`time_synced`
+- 期待した動作と実際の動作
+- 直前に変更した設定
+- 可能ならserial logとHub event
+
+<Aside type="caution" title="共有しないもの">
+Wi-Fi password、MQTT password、Cloudflare Access secret、API token、個人email、private hostnameをスクリーンショットやDiscordへ載せないでください。
+</Aside>
+
+<CommunityCta />

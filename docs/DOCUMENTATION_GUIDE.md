@@ -14,6 +14,10 @@ maintained in this repository.
 - If a detailed document exists only in Japanese, keep it under the relevant
   documentation tree's `jp/` directory and add an English summary or index
   document at the default path.
+- The public task-oriented website under `docs-site/` is an explicit exception:
+  its root locale is Japanese for the initial audience. Add future translations
+  through Starlight locales instead of placing public Japanese pages under the
+  internal specification trees.
 
 Examples:
 

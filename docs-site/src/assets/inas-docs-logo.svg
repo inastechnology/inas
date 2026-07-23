@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 410 72" role="img" aria-labelledby="title">
+  <title id="title">INAS Documentation</title>
+  <g transform="translate(2 4)">
+    <rect width="64" height="64" rx="15" fill="#153f33"/>
+    <path d="M32 52V27M32 38c-11 0-18-7-18-18 11 0 18 7 18 18Zm0-4c0-11 7-18 18-18 0 11-7 18-18 18Z" fill="none" stroke="#c9ed7a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="82" y="35" fill="currentColor" font-family="Inter, system-ui, sans-serif" font-size="29" font-weight="800" letter-spacing="1">INAS</text>
+  <text x="82" y="58" fill="currentColor" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="650" letter-spacing=".7">DOCUMENTATION</text>
+</svg>

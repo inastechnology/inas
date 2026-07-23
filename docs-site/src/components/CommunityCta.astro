@@ -1,0 +1,29 @@
+---
+interface Props {
+  title?: string;
+  description?: string;
+  buttonLabel?: string;
+}
+
+const {
+  title = "ここまでで解決しないときは",
+  description = "Discord Communityで状況を共有してください。機密情報を除き、機種・F/W・発生時刻・試したことを添えると解決が早くなります。",
+  buttonLabel = "Discordで質問する",
+} = Astro.props;
+const defaultCommunityUrl = "https://discord.com/invite/bbEcv636eZ";
+const communityUrl = import.meta.env.PUBLIC_DISCORD_COMMUNITY_URL?.trim() || defaultCommunityUrl;
+const isConfigured = Boolean(communityUrl && !communityUrl.includes("replace-with"));
+---
+
+<aside class="community-cta" aria-labelledby="community-title">
+  <div>
+    <p class="community-eyebrow">COMMUNITY SUPPORT</p>
+    <h2 id="community-title">{title}</h2>
+    <p>{description}</p>
+  </div>
+  {isConfigured ? (
+    <a class="community-button" href={communityUrl} target="_blank" rel="noopener noreferrer">{buttonLabel} ↗</a>
+  ) : (
+    <span class="community-button is-disabled" aria-disabled="true">Discord招待URL 準備中</span>
+  )}
+</aside>

@@ -1,5 +1,9 @@
 # INAS Documentation
 
+利用者向けの公開セットアップ・運用ガイドは
+[`../../docs-site/`](../../docs-site/README.md) で管理する。このディレクトリは
+横断仕様、architecture policy、設計図の日本語版を管理する。
+
 このディレクトリは、INAS の hub services と client device firmware を横断する日本語ドキュメントを置く。
 
 英語版の入口は [../../README.md](../../README.md)。

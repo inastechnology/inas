@@ -1,0 +1,64 @@
+<section class="system-architecture" aria-labelledby="system-architecture-title">
+  <div class="architecture-heading">
+    <p>WHERE THINGS RUN</p>
+    <h2 id="system-architecture-title">INASの全体構成</h2>
+    <span>矢印は主な通信方向を示します。</span>
+  </div>
+
+  <div class="architecture-cloud" aria-label="インターネット上で動くもの">
+    <div class="architecture-zone-label">インターネット</div>
+    <article class="architecture-node architecture-browser">
+      <span class="architecture-node-kicker">利用者のPC・スマートフォン</span>
+      <strong>Webブラウザ</strong>
+      <p>外出先からHub画面を開く。専用アプリのインストールは不要。</p>
+    </article>
+    <div class="architecture-arrow" aria-hidden="true">→</div>
+    <article class="architecture-node architecture-cloudflare">
+      <span class="architecture-node-kicker">Cloudflare</span>
+      <strong>Access + Tunnel</strong>
+      <p>利用者を認証し、Raspberry Piから張られたTunnelへ転送。</p>
+    </article>
+    <article class="architecture-node architecture-storage">
+      <span class="architecture-node-kicker">クラウド保存先</span>
+      <strong>Turso / R2</strong>
+      <p>HubがHTTPSでデータベースとオブジェクトを読み書き。</p>
+    </article>
+  </div>
+
+  <div class="architecture-downlink" aria-hidden="true">
+    <span>cloudflaredが外向き接続</span>
+    <b>↓</b>
+  </div>
+
+  <div class="architecture-site" aria-label="圃場または事務所のLANで動くもの">
+    <div class="architecture-zone-label">圃場・事務所のLAN</div>
+    <article class="architecture-node architecture-router">
+      <span class="architecture-node-kicker">既存のネットワーク機器</span>
+      <strong>ルーター / Wi‑Fi AP</strong>
+      <p>Raspberry Piは有線LAN推奨。デバイスには2.4GHz Wi‑Fiを提供。</p>
+    </article>
+    <div class="architecture-arrow" aria-hidden="true">↔</div>
+    <article class="architecture-node architecture-hub">
+      <span class="architecture-node-kicker">Raspberry Piで常時実行</span>
+      <strong>INAS Hub</strong>
+      <ul>
+        <li>Hub UI / API <code>:39151</code></li>
+        <li>Mosquitto MQTT <code>:1883</code></li>
+        <li>cloudflared</li>
+        <li>Avahi / <code>&lt;hub名&gt;.local</code></li>
+      </ul>
+    </article>
+    <div class="architecture-arrow" aria-hidden="true">↔</div>
+    <article class="architecture-node architecture-device">
+      <span class="architecture-node-kicker">圃場の制御盤・センサー内</span>
+      <strong>ESP32S3デバイス</strong>
+      <p>Wi‑Fi接続後、Hubの予約IPへMQTT接続し、HTTPでF/Wを取得。</p>
+    </article>
+  </div>
+
+  <div class="architecture-protocols" aria-label="LAN内通信">
+    <span><b>設定・状態</b> MQTT <code>&lt;Hub予約IP&gt;:1883</code></span>
+    <span><b>F/W取得</b> HTTP <code>&lt;Hub予約IP&gt;:39151</code></span>
+    <span><b>管理PCから</b> mDNS <code>&lt;hub名&gt;.local</code></span>
+  </div>
+</section>

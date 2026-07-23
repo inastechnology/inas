@@ -1,0 +1,45 @@
+# INAS Documentation
+
+> Official Japanese documentation for selecting and purchasing hardware, installing a Raspberry Pi Hub, wiring devices, configuring networks, operating, and troubleshooting the open-source INAS smart cultivation system.
+
+## Start here
+
+- [System overview](https://docs.inas-technologies.com/start/overview/): what runs on Raspberry Pi, ESP32S3, and Cloudflare
+- [Choose an installation route](https://docs.inas-technologies.com/start/choose-path/): self-procured hardware or pending company-provided hardware
+- [Select and purchase hardware](https://docs.inas-technologies.com/start/hardware/): provisional minimum and recommended Raspberry Pi configurations
+- [Pre-purchase checklist](https://docs.inas-technologies.com/start/prerequisites/): site, power, network, and irrigation load checks
+- [Network design](https://docs.inas-technologies.com/start/network/): mDNS, reserved IP, MQTT, OTA, and Cloudflare boundaries
+- [Self-procured setup journey](https://docs.inas-technologies.com/start/quickstart/): purchase through field acceptance
+- [Company-provided hardware](https://docs.inas-technologies.com/start/provided-hardware/): pending planned setup flow, not a current product specification
+- [Safety](https://docs.inas-technologies.com/start/safety/): electrical, water, and software safety
+
+## Hub
+
+- [Prepare Raspberry Pi](https://docs.inas-technologies.com/hub/raspberry-pi/): Raspberry Pi OS, hostname, Avahi, DHCP reservation, and Mosquitto
+- [Install the Hub](https://docs.inas-technologies.com/hub/install/)
+- [Cloudflare Access and Tunnel](https://docs.inas-technologies.com/hub/cloudflare/)
+- [Update and backup](https://docs.inas-technologies.com/hub/update-backup/)
+
+## Devices
+
+- [Device catalog](https://docs.inas-technologies.com/devices/)
+- [WTR single-channel watering device](https://docs.inas-technologies.com/devices/wtr/): soil A2/D2, irrigation D4
+- [WRS RS485 watering device](https://docs.inas-technologies.com/devices/wrs/)
+- [SOI and ENV sensors](https://docs.inas-technologies.com/devices/sensors/)
+
+## Configuration and operations
+
+- [Watering settings](https://docs.inas-technologies.com/configure/watering/)
+- [Settings reference](https://docs.inas-technologies.com/configure/settings-reference/)
+- [Firmware and OTA](https://docs.inas-technologies.com/operate/firmware/)
+- [Runtime Config](https://docs.inas-technologies.com/reference/runtime-config/)
+
+## Troubleshooting and support
+
+- [Troubleshooting index](https://docs.inas-technologies.com/troubleshoot/)
+- [Device offline](https://docs.inas-technologies.com/troubleshoot/device-offline/)
+- [Watering does not start](https://docs.inas-technologies.com/troubleshoot/watering/)
+- [Runtime Config is not applied](https://docs.inas-technologies.com/troubleshoot/config/)
+- [Discord Community](https://docs.inas-technologies.com/community/)
+
+The current actionable installation route is self-procured hardware. The formal Hub hardware specification and company-provided hardware are pending. Raspberry Pi mDNS is available to management PCs, but current device firmware does not issue an explicit mDNS query; use the Hub DHCP-reserved IP for device MQTT and OTA until that capability is implemented and accepted. Detailed source-level specifications are maintained in the INAS repository. Never disclose credentials, private hostnames, or production device identifiers when requesting support.

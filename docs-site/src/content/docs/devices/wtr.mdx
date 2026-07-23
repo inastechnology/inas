@@ -1,0 +1,139 @@
+---
+title: WTR 潅水デバイス
+description: WTRの正しいA2/D2・D4配線、F/W書き込み、setup、起動時潅水試験を説明します。
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+WTRは、アナログ土壌水分を測り、1系統の潅水負荷を制御するデバイスです。公開する標準profileのpin contractは次の2信号です。
+
+<div class="pin-contract">
+  <strong>WTR pin contract</strong>
+
+  - 土壌水分 signal: **`A2 / D2 / GPIO3`**
+  - 潅水 output: **`D4 / GPIO5`**
+</div>
+
+WTRの `D4` をRS485 directionへ使わないでください。RS485が必要な構成は[WRS](/devices/wrs/)を選びます。
+
+## 必要なもの
+
+- Seeed Studio XIAO ESP32S3
+- 3.3V対応のアナログ土壌水分sensor
+- 負荷電圧・電流に合うMOSFET、relay、またはdriver input
+- pumpまたはsolenoid valve
+- 誘導負荷用flyback protection
+- 安定化電源、fuse、端子台、共通GND配線
+- USB data cable、multimeter、圧着工具
+
+:::danger[GPIOで負荷を駆動しない]
+`D4` は制御信号です。pumpやvalveを直接つなぎません。必ず外部driverを介し、負荷側の電源を適切に開閉します。
+:::
+
+## 配線
+
+| XIAO pin | GPIO | 接続先 | 検査 |
+|---|---:|---|---|
+| `A2 / D2` | `GPIO3` | soil sensor `SIG` | 乾燥・湿潤でADC値が変化 |
+| `D4` | `GPIO5` | irrigation driver input / MOSFET gate | 潅水時だけactive |
+| `3V3` | — | 3.3V soil sensor `VCC` | sensor定格が3.3V |
+| `GND` | — | sensorとdriverの共通GND | 電源negativeと導通 |
+| `VBUS` | — | 安定化5V入力 | 挿入前に4.75–5.25V |
+| `BOOT` | `GPIO0` | setup操作 | 3.3Vへshortしない |
+
+12V電源を使う場合、12Vから安定化5Vを作って `VBUS` へ入力します。12VをXIAOへ直接入れません。アナログsignal線はpump・valve配線から離します。
+
+## F/Wを書き込む
+
+<Steps>
+1. **build設定を作る**
+
+   ```bash
+   cd client-devices/watering-device
+   cp default.env.user.ini .env.user.ini
+   ```
+
+   `.env.user.ini`でsetup AP名などを設定します。秘密情報をcommitしません。
+
+2. **buildしてmanifestを検査する**
+
+   ```bash
+   make build
+   make check-firmware
+   ```
+
+3. **USB接続したdeviceへuploadする**
+
+   ```bash
+   make upload
+   ```
+
+4. **製造用の統合binaryが必要なら作る**
+
+   ```bash
+   make merged-bin
+   ```
+
+   `flash_merged.bin` はLittleFSも含めて書き換えます。既存のWi-Fi/MQTT設定と保存済みRuntime Configは消去されます。
+</Steps>
+
+## Wi-FiとMQTTを設定する
+
+初回起動で保存済み設定がないとsetup APが開始します。
+
+1. PCまたはphoneを `.env.user.ini` で指定したSSIDへ接続します。
+2. `http://192.168.4.1/` を開きます。
+3. 2.4GHz Wi-FiのSSID/passwordを入力します。
+4. MQTT hostにRaspberry PiのDHCP予約IP、portに`1883`、username/passwordにMosquittoで作成した値を入力します。
+5. 保存し、deviceが再起動するのを待ちます。
+
+設定済みdeviceでsetup APを開くときは、F/W起動後の受付時間内にBOOTを押し続けます。hardware RESETを押したままBOOTを保持するとROM bootloaderへ入るため、F/Wが起動してから操作してください。
+
+## Hubへ登録する
+
+1. Hubの「デバイス」からWTRを追加します。
+2. F/Wの `device_id` と同じIDを入力します。
+3. 設置先の圃場・区画・畝を関連付けます。
+4. Runtime Configを保存します。
+5. deviceを再起動し、`config_received=true` を確認します。
+
+設定返信はMQTTで届きます。Wi-FiだけでなくMQTT接続とconfig受信まで待つため、冷起動は数秒で終わらないことがあります。
+
+## 敷設時の起動潅水試験
+
+起動時潅水は、配線と水路の導通を現場で確認するための一時的なmodeです。
+
+```json
+{
+  "startup_watering_test": {
+    "enabled": true,
+    "duration_sec": 5,
+    "channel_mask": 1
+  }
+}
+```
+
+1. 排水を管理できる状態にします。
+2. Hubで起動時潅水を有効にし、1–5秒から始めます。
+3. deviceの電源を完全に切り、再投入します。
+4. 最新configの受信とOTA checkの後、`D4` が指定秒数だけactiveになることを確認します。
+5. eventで `startup_watering_test_requested=true` と `startup_watering_test_started=true` を確認します。
+6. **試験直後に `enabled=false` へ戻し、もう一度受信を確認します。**
+
+<Aside type="note" title="実行条件">
+起動時潅水試験はcold bootまたはreset時だけ実行され、deep-sleepからのwakeでは実行されません。freshなMQTT configを受信できない場合、またはOTA更新を試行したcycleでは開始しません。設定時間は1–30秒です。
+</Aside>
+
+## 受入試験
+
+| 項目 | 合格条件 |
+|---|---|
+| 電源 | XIAO入力が定格内、異常発熱なし |
+| standby | 起動直後にD4が意図せずactiveにならない |
+| sensor | 乾燥・湿潤で `A2` raw値が明確に変化 |
+| config | `config_received=true`、保存値と一致 |
+| 起動試験 | D4が指定時間だけactive、完了後OFF |
+| schedule | due時だけ実行し、結果eventが残る |
+| safety | 起動試験を無効化済み、手動遮断可能 |
+
+問題がある場合は[潅水されない](/troubleshoot/watering/)へ進みます。

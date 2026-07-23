@@ -4,6 +4,11 @@ This repository contains the INAS hub services and client device firmware.
 
 ## Documentation
 
+The public setup and operation guide lives in
+[`docs-site/`](docs-site/README.md). It covers Hub installation, Cloudflare
+Access/Tunnel, device wiring, runtime settings, daily operation, and
+troubleshooting in a searchable website.
+
 Start with [INAS System Specification](docs/SYSTEM_SPECIFICATION.md) for the cross-project
 architecture, device roles, field data model, OTA flow, and Cloudflare hosted
 options. The draw.io source for the system diagrams is

@@ -1,0 +1,66 @@
+---
+title: Discord Community
+description: ドキュメントで解決しない問題を、安全で再現可能な形でコミュニティへ相談します。
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import CommunityCta from '../../../components/CommunityCta.astro';
+
+検索とトラブルシューティングで解決しない場合は、Discord Communityで質問してください。再現に必要な情報を最初にまとめると、参加者が安全に判断できます。
+
+<CommunityCta />
+
+## 質問テンプレート
+
+```text
+件名: [WTR] 起動時潅水が開始しない
+
+やりたいこと:
+敷設時に、cold bootでD4を5秒だけONにしたい
+
+環境:
+- Hub commit:
+- device kind:
+- firmware version:
+- board / hardware profile:
+- 発生日時・timezone:
+
+現在のstatus:
+- network_connected:
+- config_received:
+- time_synced:
+- startup_watering_test_requested:
+- startup_watering_test_started:
+
+試したこと:
+1.
+2.
+
+期待した結果:
+
+実際の結果:
+
+添付:
+- 秘密情報を除いたserial log
+- 配線写真または図
+- 秘密情報をマスクした画面
+```
+
+## 添付前に隠すもの
+
+<Aside type="danger" title="秘密情報を投稿しない">
+Wi-Fi/MQTT password、Cloudflare token、Access Client Secret、API key、`.env`全文、private key、個人情報を投稿しないでください。漏えいした可能性があれば、投稿削除だけでなくcredentialをrotateします。
+</Aside>
+
+## 良い質問に含まれるもの
+
+- 再現できる最短手順
+- 期待値と実際値
+- 正確なversionとdevice IDの匿名化した識別子
+- failureが始まった変更点
+- status fieldまたはerror messageの全文
+- 配線の場合は電源・GND・pin名が見える図
+
+## ドキュメントへ戻す
+
+解決した内容が他の利用者にも当てはまる場合は、再現条件と解決方法をissueまたはpull requestでこのドキュメントへ反映してください。個別の会話を、検索できる知識へ育てていきます。

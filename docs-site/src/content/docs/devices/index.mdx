@@ -1,0 +1,56 @@
+---
+title: デバイス一覧
+description: 用途に合うINASデバイスを選びます。
+---
+
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+
+デバイスkindは、F/Wが提供する機能とH/W pin contractを表します。接続する部品だけでkindを変えたり、別kindのpin assignmentを混ぜたりしないでください。
+
+デバイス製作は、Raspberry Pi上でHubとMosquittoが起動し、`<hub名>.local`で到達できるようになってから始めます。まだの場合は[自己調達セットアップの全手順](/start/quickstart/)へ戻ってください。
+
+<CardGrid>
+  <Card title="WTR — 1系統の潅水">
+    土壌水分 `A2/D2` と潅水出力 `D4` の最小構成。敷設時の起動テストに対応します。
+    [WTRを作る →](/devices/wtr/)
+  </Card>
+  <Card title="WRS — 2系統 + RS485">
+    2つのgeneric irrigation出力とRS485 sensor busを扱う構成です。
+    [WRSを作る →](/devices/wrs/)
+  </Card>
+  <Card title="SOI — 土壌水分センサー">
+    18650 batteryで動く土壌水分専用node。潅水出力を持ちません。
+    [SOIを確認 →](/devices/sensors/#soi)
+  </Card>
+  <Card title="ENV — 環境・RS485センサー">
+    PAR、土壌、EC・pH・NPKなどのRS485 sensorを接続する12V構成です。
+    [ENVを確認 →](/devices/sensors/#env)
+  </Card>
+</CardGrid>
+
+## 選び方
+
+| 必要な機能 | 選ぶkind |
+|---|---|
+| アナログ土壌水分 + 潅水1出力 | WTR |
+| 潅水2出力 + RS485 | WRS |
+| battery駆動のアナログ土壌水分だけ | SOI |
+| 12V RS485 sensorだけ | ENV |
+
+<Aside type="caution" title="ピンを流用しない">
+WTRの `D4` は潅水出力です。WRS/ENVでは `D4` をRS485 directionに使います。同じXIAO ESP32S3でも、device kindごとに役割が異なります。
+</Aside>
+
+## 共通の製作フロー
+
+1. device kindを確定し、そのページのpin contractを印刷します。
+2. 電源を外した状態で結線します。
+3. continuityとshortを検査します。
+4. 電流制限付き電源で初回通電します。
+5. F/Wをbuild・uploadします。
+6. setup APから2.4GHz Wi-FiとMQTT `<Hub予約IP>:1883`を登録します。
+7. Hubへ登録し、状態とRuntime Configを確認します。
+8. device-specificな受入試験を行います。
+9. ラベルを貼り、筐体を閉じます。
+
+[安全上の注意](/start/safety/)を完了するまで、pumpやvalveへ実負荷を接続しないでください。

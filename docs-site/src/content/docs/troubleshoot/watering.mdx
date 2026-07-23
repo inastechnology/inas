@@ -1,0 +1,70 @@
+---
+title: 潅水されない
+description: WTR/WRSでoutputが開始しない原因を、statusと実配線から切り分けます。
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import CommunityCta from '../../../components/CommunityCta.astro';
+
+潅水不実行は、設定保存、config受信、時刻・schedule判定、土壌水分判定、output配線のいずれかで止まっています。次の順で確認します。
+
+## statusで停止位置を探す
+
+| status | 期待値 | falseのとき |
+|---|---|---|
+| `network_connected` | `true` | [offlineを切り分ける](/troubleshoot/device-offline/) |
+| `runtime_config_valid` | `true` | config JSONとschemaを確認 |
+| `config_received` | `true` | [config経路を確認](/troubleshoot/config/) |
+| `time_synced` | `true` | NTP host、UDP 123、timezoneを確認 |
+| `watering_due` | due時に `true` | schedule、時刻、実行済み判定を確認 |
+| `watering_started` | 開始時に `true` | threshold、mask、output HALを確認 |
+
+## schedule潅水
+
+1. deviceの現在時刻と `timezone_offset_sec` を確認します。
+2. scheduleのhour/minuteがlocal時刻として正しいか確認します。
+3. due時刻から遅れすぎ、grace window外になっていないか確認します。
+4. 同じscheduleをすでに実行済みとして記録していないか確認します。
+5. OTAを試行したwakeではscheduleをskipするため、次cycleを確認します。
+6. `force_watering=false` の場合、soil moistureがthreshold未満か確認します。
+
+## 起動時潅水試験
+
+次をすべて満たす必要があります。
+
+- cold bootまたはresetである。deep-sleep wakeではない。
+- fresh MQTT Runtime Configを受信し `config_received=true`。
+- `startup_watering_test.enabled=true`。
+- そのcycleでOTA updateを試行していない。
+- durationが1–30秒。
+- WTRのchannelは `1`。
+
+結果は次の2つで判定します。
+
+- `startup_watering_test_requested=true`: 条件を満たし、試験を要求した。
+- `startup_watering_test_started=true`: output開始に成功した。
+
+`requested=false` ならconfig・wake種別・OTAを調べます。`requested=true / started=false` ならoutput制御とH/Wを調べます。
+
+## WTRの実配線
+
+<Aside type="danger" title="現在のWTR pin contract">
+土壌水分は `A2 / D2 / GPIO3`、潅水出力は `D4 / GPIO5` です。古い資料の `A5/D5`、valve `D2`、pump `D3` を使わないでください。
+</Aside>
+
+1. 負荷を外し、D4とGNDのcontrol signalを測定します。
+2. 起動試験中だけD4がactiveになるか確認します。
+3. driver入力と共通GNDを確認します。
+4. driverの電源、fuse、flyback protectionを確認します。
+5. driver outputで負荷電圧が切り替わるか確認します。
+6. pump/valveの単体動作、配管詰まり、手動弁を確認します。
+
+GPIOが動いて負荷が動かない場合はH/W側です。GPIO自体が動かない場合はF/W version、device kind、pin contractを確認します。
+
+## 分割潅水
+
+分割有効時はscheduleの `duration_sec` を使わず、`on_sec × repeat_count` が合計ON時間です。`on_sec=0` または `repeat_count=0` のpatternは無効として無視されます。
+
+調査後は起動時潅水、`force_watering`、debug logを通常値へ戻します。
+
+<CommunityCta />

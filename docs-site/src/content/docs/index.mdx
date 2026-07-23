@@ -1,0 +1,80 @@
+---
+title: INAS Documentation
+description: INAS Hubとデバイスを、セットアップから日々の運用まで迷わず使うための公式ドキュメント。
+template: splash
+hero:
+  title: |-
+    畑とシステムを、
+    ひとつずつつなぐ。
+  tagline: 機器の選定・購入から、Raspberry Pi Hub、ネットワーク、H/W結線、運用まで。実際の導入順に進める公式ガイドです。
+  actions:
+    - text: 機器を選んで購入する
+      link: /start/hardware/
+      variant: primary
+    - text: 全体構成を見る
+      link: /start/overview/
+      variant: secondary
+---
+
+import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
+import CommunityCta from '../../components/CommunityCta.astro';
+
+<div class="quick-paths">
+  <a class="quick-path" href="/start/hardware/">
+    <div><small>BUY FIRST</small><strong>これから機器を購入する</strong></div>
+    <span>Raspberry Piの最低目安・推奨構成と購入品を確認。</span>
+  </a>
+  <a class="quick-path" href="/start/quickstart/">
+    <div><small>SELF-BUILD</small><strong>自己調達でセットアップする</strong></div>
+    <span>購入、OS、MQTT、Hub、デバイスを順番に構築。</span>
+  </a>
+  <a class="quick-path" href="/start/provided-hardware/">
+    <div><small>COMING SOON</small><strong>弊社提供機器を利用する</strong></div>
+    <span>完成品の仕様と正式セットアップ手順は準備中です。</span>
+  </a>
+</div>
+
+## 自己調達での導入順
+
+<ol class="journey" aria-label="INASの導入手順">
+  <li>構成を理解</li>
+  <li>選定・購入</li>
+  <li>LANを設計</li>
+  <li>PiとHubを構築</li>
+  <li>デバイスを製作</li>
+  <li>接続・受入試験</li>
+</ol>
+
+<CardGrid>
+  <Card title="1. 機器を選定する">
+    Raspberry Pi、電源、ストレージ、冷却、LAN、最初のデバイスを、購入前に確定します。
+  </Card>
+  <Card title="2. Raspberry Pi Hubを作る">
+    OS、mDNS、Mosquitto、Hub、Cloudflare Tunnelがどこで動くかを分けて構築します。
+  </Card>
+  <Card title="3. デバイスを作って接続する">
+    WTR・WRS・SOI・ENVの部品、配線、F/W、Wi‑Fi/MQTT、受入試験を確認します。
+  </Card>
+  <Card title="4. 運用を開始する">
+    圃場への関連付け、潅水設定、F/W更新、日々の確認と問題の切り分けを行います。
+  </Card>
+</CardGrid>
+
+<Aside type="tip" title="このサイト内を検索できます">
+  画面上部の検索から、画面名・設定名・エラーメッセージ・ピン名を入力してください。検索で解決できない場合は、各トラブルシューティングページからDiscord Communityへ進めます。
+</Aside>
+
+## まず読むページ
+
+- 何がどこで動くか知りたい: [全体構成を理解する](/start/overview/)
+- これから機器を購入する: [機器を選んで購入する](/start/hardware/)
+- 自己調達の手順を最初から見る: [自己調達セットアップの全手順](/start/quickstart/)
+- Raspberry Piを購入済み: [Raspberry Piを準備する](/hub/raspberry-pi/)
+- 潅水デバイスを作りたい: [WTR 潅水デバイス](/devices/wtr/)
+- 弊社提供機器を検討している: [提供予定と準備状況](/start/provided-hardware/)
+
+<CommunityCta
+  title="INASを使う人・つくる人とつながる"
+  description="導入の相談、活用例、改善案、デバイス製作の知見をDiscord Communityで共有しています。ドキュメントを読んで試したことや、これから実現したい栽培の形を聞かせてください。"
+  buttonLabel="Discord Communityに参加する"
+/>

@@ -3,6 +3,10 @@
 This directory contains cross-project documentation for the hub, client
 firmware, Cloudflare hosted options, field data, OTA, and operational model.
 
+Public, task-oriented setup and operation documentation is maintained in
+[`../docs-site/`](../docs-site/README.md). This directory remains the source for
+cross-project specifications and architecture policy.
+
 - [SYSTEM_SPECIFICATION.md](SYSTEM_SPECIFICATION.md): start here for the INAS
   system-level specification.
 - [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md): system-wide
