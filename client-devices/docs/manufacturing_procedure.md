@@ -67,7 +67,7 @@ It applies to `WTR`, `WRS`, `ENV`, and `SOI`.
 
 | Device kind | Required checks |
 |---|---|
-| `WTR` | Boots, publishes status, reads analog soil moisture if connected, toggles valve and pump outputs, reads enabled RS485 sensors |
+| `WTR` | Boots, publishes status, reads analog soil moisture on `A2/D2`, and toggles the irrigation output on `D4` |
 | `WRS` | Boots, publishes status, toggles irrigation output 1/2, reads RS485 soil/PAR/irradiance sensors or reports `*_ok=false` for missing sensors |
 | `ENV` | Boots, publishes status, reads each configured RS485 sensor or reports `*_ok=false` |
 | `SOI` | Boots, reads analog soil moisture, enters sleep, wakes again, and accepts calibration config |

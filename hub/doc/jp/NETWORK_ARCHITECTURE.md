@@ -1,8 +1,11 @@
 # INA Device Hub ネットワーク構成
 
-この図は、Cloudflare Tunnel 版の運用構成を示します。Cloudflare Workers で hub UI をホストするのではなく、Cloudflare Access + Tunnel を入口にして、デバイス側で起動している local hub HTTP server へ転送します。
+この図は現行Local Hubへ遠隔接続する任意構成だけを示します。Cloudflare
+Access + Tunnelから、そのLocal Hub HTTP serverへ転送しても、Local Hubの
+Turso/libSQL構成は変わりません。共有Cloud HubとEdge Gatewayの経路は
+[`../../../hub-cloud/`](../../../hub-cloud/README.md)を参照してください。
 
-![INA Device Hub network architecture](assets/ina-device-hub-network.png)
+![INA Device Hub network architecture](assets/ina-device-hub-network.svg)
 
 ## 接続の読み方
 
@@ -17,4 +20,5 @@
 - `CLOUDFLARE_TUNNEL_ORIGIN_URL` の既定は `http://127.0.0.1:39151`。
 - Cloudflare Access の public hostname は UI 用の HTTPS/認証付き入口であり、現状の OTA firmware download URL には使わない。
 - 現状の device firmware は OTA download で `http://` のみ受け付ける。HTTPS はデバイス側に証明書検証を入れてから有効化する。
-- Cloudflare Workers は現仕様では hub UI 配信に使わない。Cloud app 版は別の hosted 管理アプリとして扱う。
+- Local HubごとにTunnelとAccess application/group/policyを分離し、Cloud Hubの
+  tenant routingへ流用しない。

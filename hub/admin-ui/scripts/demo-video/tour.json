@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "fps": 10,
+  "music": {
+    "model": "ace_step_1.5_turbo_aio.safetensors",
+    "seed": 260722,
+    "duration_seconds": 62,
+    "bpm": 96,
+    "time_signature": "4",
+    "key_scale": "D major",
+    "language": "en",
+    "tags": "instrumental only, no vocals, no spoken words, warm organic electronic ambient, gentle marimba, soft plucked strings, subtle analog pulse, calm optimistic agricultural technology product demo, clean modern Japanese brand film, sparse arrangement, restrained percussion, seamless background bed, no dramatic drops",
+    "lyrics": "[Instrumental]"
+  },
+  "locales": {
+    "ja": {
+      "language_label": "日本語",
+      "html_language": "ja",
+      "voice": "Microsoft Haruka Desktop",
+      "ssml_language": "ja-JP",
+      "rate_percent": 8,
+      "volume_percent": 100,
+      "dialog_title": "約1分で見る、圃場運営の流れ",
+      "dialog_description": "圃場の状態確認、作業の提出と承認、栽培計画、省電力な潅水予約を現在のデモ環境で紹介します。",
+      "scenes": {
+        "intro": {
+          "duration_seconds": 4.6,
+          "eyebrow": "FIELD OPERATIONS, CONNECTED",
+          "title": "圃場の「いま」から、\nチームの次の一手まで。",
+          "detail": "状態・作業・潅水を、ひとつの運用画面につなぎます。",
+          "narration": "INAS Appは、圃場の状態、チームの作業、潅水をひとつにつなぎます。"
+        },
+        "field_status": {
+          "duration_seconds": 5.2,
+          "kicker": "01 / 状態をつかむ",
+          "title": "作物の目標と、現在値を並べる",
+          "detail": "圃場ごとの計測値を、今日の判断に使える形で確認できます。",
+          "narration": "作物の目標と現在の計測値を並べ、今日の状態をひと目で確認できます。"
+        },
+        "action_candidates": {
+          "duration_seconds": 4.8,
+          "kicker": "02 / 判断する",
+          "title": "数字を、理由つきの作業候補へ",
+          "detail": "優先度と判断条件を見ながら、現場で迷う時間を減らします。",
+          "narration": "計測値は、理由と優先度が分かる作業候補へ変わります。"
+        },
+        "work_board": {
+          "duration_seconds": 5.3,
+          "kicker": "03 / 仕事を共有する",
+          "title": "予定から完遂まで、4段階で管理",
+          "detail": "予定・作業中・確認待ち・完遂を、圃場全体で共有します。",
+          "narration": "作業は、予定、作業中、確認待ち、完遂の四段階で共有します。"
+        },
+        "member_progress": {
+          "duration_seconds": 5.4,
+          "kicker": "04 / 実績を見渡す",
+          "title": "誰が完遂し、何が確認待ちか",
+          "detail": "認証済みメンバーごとに、承認済みの完遂数と提出中の件数を把握できます。",
+          "narration": "メンバーごとに、承認済みの完遂数と、確認待ちの提出を把握できます。"
+        },
+        "manager_review": {
+          "duration_seconds": 6.3,
+          "kicker": "05 / 管理者が確かめる",
+          "title": "提出された作業を、承認または差戻し",
+          "detail": "作業者の実施内容と証跡を確認し、承認された記録だけを完遂に集計します。",
+          "narration": "作業者が実績を提出し、管理者が確認します。承認された記録だけが完遂に加わります。"
+        },
+        "crop_plan": {
+          "duration_seconds": 5.0,
+          "kicker": "06 / 先を見通す",
+          "title": "日々の作業を、栽培期間の時間軸へ",
+          "detail": "作業時期と収穫期を俯瞰し、圃場の計画を先回りして確認できます。",
+          "narration": "日々の作業と収穫期を、栽培期間全体の時間軸で見通せます。"
+        },
+        "irrigation_next": {
+          "duration_seconds": 4.4,
+          "kicker": "07 / 次の潅水を確認",
+          "title": "即時操作ではなく、次の予定を見る",
+          "detail": "次にいつ、どの設定で潅水するかを機器画面から確認します。",
+          "narration": "潅水は、今すぐ動かすのではなく、次の予定として確認します。"
+        },
+        "device_wake": {
+          "duration_seconds": 4.4,
+          "kicker": "08 / 電池を長く使う",
+          "title": "常時接続せず、次の起床を待つ",
+          "detail": "機器は省電力で休止し、次回起動時にHubの設定を受け取ります。",
+          "narration": "機器は常時接続せず、省電力で休止して、次の起床時に設定を受け取ります。"
+        },
+        "irrigation_schedule": {
+          "duration_seconds": 5.4,
+          "kicker": "09 / 時刻を予約する",
+          "title": "潅水したい時刻を、スケジュールへ",
+          "detail": "次の起床以降に実行される予約として設定し、待機電力を抑えます。",
+          "narration": "潅水したい時刻は、次の起床以降に実行されるスケジュールとして設定します。"
+        },
+        "outro": {
+          "duration_seconds": 4.2,
+          "eyebrow": "OPEN-SOURCE FIELD OPERATIONS",
+          "title": "見る。任せる。確かめる。",
+          "detail": "INAS Appで、圃場運営をひとつに。",
+          "narration": "見る、任せる、確かめる。INAS Appで、圃場運営をひとつに。"
+        }
+      }
+    },
+    "en": {
+      "language_label": "English",
+      "html_language": "en",
+      "voice": "Microsoft Zira Desktop",
+      "ssml_language": "en-US",
+      "rate_percent": 10,
+      "volume_percent": 100,
+      "dialog_title": "Field operations in about one minute",
+      "dialog_description": "A current demo of field status, worker submission and manager review, crop planning, and power-efficient irrigation scheduling.",
+      "scenes": {
+        "intro": {
+          "duration_seconds": 4.6,
+          "eyebrow": "FIELD OPERATIONS, CONNECTED",
+          "title": "From field conditions\nto the team's next move.",
+          "detail": "Connect status, work, and irrigation in one operational view.",
+          "narration": "INAS App connects field conditions, team work, and irrigation in one place."
+        },
+        "field_status": {
+          "duration_seconds": 5.2,
+          "kicker": "01 / UNDERSTAND",
+          "title": "See crop targets beside live readings",
+          "detail": "Turn field measurements into a clear view of today's conditions.",
+          "narration": "See crop targets beside current readings, so today's conditions are clear at a glance."
+        },
+        "action_candidates": {
+          "duration_seconds": 4.8,
+          "kicker": "02 / DECIDE",
+          "title": "Turn readings into reasoned actions",
+          "detail": "Priorities and decision criteria reduce guesswork in the field.",
+          "narration": "Measurements become prioritized work suggestions, with a reason for each decision."
+        },
+        "work_board": {
+          "duration_seconds": 5.3,
+          "kicker": "03 / COORDINATE",
+          "title": "Manage work in four clear stages",
+          "detail": "Planned, in progress, awaiting review, and completed—shared across the field.",
+          "narration": "Every task moves through planned, in progress, awaiting review, and completed."
+        },
+        "member_progress": {
+          "duration_seconds": 5.4,
+          "kicker": "04 / SEE THE RECORD",
+          "title": "Know who completed what",
+          "detail": "See approved completions and pending submissions for each authenticated member.",
+          "narration": "For each member, managers can see approved completions and submissions awaiting review."
+        },
+        "manager_review": {
+          "duration_seconds": 6.3,
+          "kicker": "05 / VERIFY",
+          "title": "Approve the work—or send it back",
+          "detail": "Review the worker's evidence. Only approved records count as completed work.",
+          "narration": "Workers submit their record and managers verify it. Only approved work counts as complete."
+        },
+        "crop_plan": {
+          "duration_seconds": 5.0,
+          "kicker": "06 / LOOK AHEAD",
+          "title": "See daily work across the growing season",
+          "detail": "Keep task windows and harvest periods visible on one timeline.",
+          "narration": "Daily work and harvest windows stay visible across the full growing season."
+        },
+        "irrigation_next": {
+          "duration_seconds": 4.4,
+          "kicker": "07 / CHECK WHAT IS NEXT",
+          "title": "Review the next irrigation—not an instant command",
+          "detail": "See when irrigation is scheduled and which settings will run.",
+          "narration": "Irrigation appears as the next scheduled event, not an instant command."
+        },
+        "device_wake": {
+          "duration_seconds": 4.4,
+          "kicker": "08 / SAVE POWER",
+          "title": "Let the device sleep until its next wake",
+          "detail": "The controller receives Hub settings when it wakes, without staying online.",
+          "narration": "The controller saves power by sleeping, then receives Hub settings when it wakes."
+        },
+        "irrigation_schedule": {
+          "duration_seconds": 5.4,
+          "kicker": "09 / SCHEDULE",
+          "title": "Set irrigation for a future wake cycle",
+          "detail": "Schedule the intended time while preserving low-power operation.",
+          "narration": "Set irrigation as a schedule for a future wake cycle, preserving low-power operation."
+        },
+        "outro": {
+          "duration_seconds": 4.2,
+          "eyebrow": "OPEN-SOURCE FIELD OPERATIONS",
+          "title": "See it. Assign it. Verify it.",
+          "detail": "Run the field with INAS App.",
+          "narration": "See it, assign it, verify it. Run the field with INAS App."
+        }
+      }
+    }
+  }
+}

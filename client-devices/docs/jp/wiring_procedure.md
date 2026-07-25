@@ -47,7 +47,7 @@
 ## Analog Soil Sensor 配線
 
 - `SOI` は `A0` を使う。
-- WTR の analog soil moisture は `A5/D5` を使う。
+- WTR の analog soil moisture は `A2/D2` を使う。
 - analog signal wire は短くし、motor wiring から離す。
 - enclosure を閉じる前に乾燥/湿潤 raw ADC 値を確認する。
 
@@ -61,7 +61,7 @@
 | RS485 A/B | short なし、twisted pair 使用 |
 | pump / valve | boot 時 OFF、command 時のみ ON |
 | WTR profile output | boot 時 OFF、command 時のみ ON |
-| sensor 12V switch | sleep 中 OFF、WTR/WRS の RS485 read 中 ON |
+| sensor 12V switch | sleep 中 OFF、WRS の RS485 read 中 ON |
 | BOOT button | 押下時だけ GPIO0 を Low にする |
 
 逸脱があれば記録し、解消するまで enclosure を閉じない。

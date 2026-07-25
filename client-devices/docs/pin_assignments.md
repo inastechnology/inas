@@ -42,31 +42,25 @@ and regenerate.
 
 ## WTR
 
-All-in-one watering device. WTR handles irrigation control, soil moisture ADC,
-RS485 sensors, and a MOSFET-switched sensor power branch. Hardware profiles may
-change supply voltage or load rating, but they keep the same WTR pin contract.
+WTR provides analog soil moisture and one irrigation output. Hardware profiles
+may change supply voltage or load rating, but they keep the same WTR pin
+contract. Use WRS when RS485 sensors or two irrigation outputs are required.
 
 ![WTR pin assignment](xiao_esp32s3_pin_assignment_wtr.svg)
 
 | Purpose | XIAO pin | GPIO | Notes |
 |---|---|---:|---|
-| Valve MOSFET | `D2` | `GPIO3` | Irrigation line 1 |
-| Pump MOSFET | `D3` | `GPIO4` | Automatically turns on while a valve line is on |
-| Soil moisture ADC | `A5` / `D5` | `GPIO6` | Avoids the old `A2/D2` conflict |
-| RS485 DE/RE | `D4` | `GPIO5` | Transmit/receive direction control |
-| RS485 TX | `D6` | `GPIO43` | UART1 TX |
-| RS485 RX | `D7` | `GPIO44` | UART1 RX |
-| 12V sensor power MOSFET | `D8` | `GPIO7` | Switches only the 12V branch going to RS485 sensors |
+| Soil moisture ADC | `A2` / `D2` | `GPIO3` | Analog soil moisture signal |
+| Irrigation output | `D4` | `GPIO5` | Controls an external MOSFET, relay, or driver input |
 | 5V input | `VBUS` | - | Input after 12V -> 5V DC/DC conversion |
-| GND | `GND` | - | Common ground for 12V system, RS485, and ESP32S3 |
+| 3.3V sensor power | `3V3` | - | Connect only a 3.3V-compatible soil sensor |
+| GND | `GND` | - | Common ground for the sensor, driver, and ESP32S3 |
 | Setup AP | `BOOT` | `GPIO0` | Active-low |
 
-Do not place ESP32S3 board power behind the `D8` switch. `D8` switches only the
-12V branch feeding external RS485 sensors.
-
-For a low-voltage WTR hardware profile, keep `A5/D5` for analog soil moisture
-and keep `D2`/`D3` as WTR irrigation outputs. Do not move the sensor to `A0` or
-create another device kind only for voltage or MOSFET rating differences.
+For a low-voltage WTR hardware profile, keep `A2/D2` for analog soil moisture
+and `D4` for the irrigation output. Never connect a pump or valve directly to a
+GPIO; use an external driver with the correct load rating and flyback
+protection. Do not wire WTR `D4` as an RS485 direction pin.
 
 ## ENV
 
@@ -86,10 +80,10 @@ sensors on the same bus.
 
 ## WRS
 
-RS485-first all-in-one watering device. WRS reuses the WTR irrigation and RS485
-pin assignment, but treats RS485 soil/PAR/irradiance sensors as the primary
-feedback path. The WTR diagram applies to WRS except that the analog soil
-moisture ADC can be unused or reserved for diagnostics.
+RS485-first all-in-one watering device. WRS uses two irrigation outputs on
+`D2/D3` and RS485 on `D4/D6/D7`, with RS485 soil/PAR/irradiance sensors as the
+primary feedback path. It has a different pin contract from WTR; the analog
+soil moisture ADC can be unused or reserved for diagnostics.
 
 Use the same RS485 bus for additional sensors. Missing or uninstalled sensors
 are detected by Modbus timeout, CRC failure, or no response and reported as

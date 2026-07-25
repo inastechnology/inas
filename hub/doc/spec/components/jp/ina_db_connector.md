@@ -2,7 +2,7 @@
 
 ## 目的
 
-- libsql（Turso）への接続ラッパー。DB への upsert/insert/fetch 操作を提供する。
+- このLocal Hub用Turso/libSQL local replicaへの接続ラッパー。DBへのupsert/insert/fetchとcommit後の同期を提供する。
 
 ## 主要 API（抜粋）
 

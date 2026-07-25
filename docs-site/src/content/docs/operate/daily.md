@@ -23,6 +23,20 @@ description: INAS Hubと圃場デバイスを安全に運用するための日�
 - Hub backupが取得できているか確認する。
 - 未適用のF/W targetと失敗中のOTAを確認する。
 
+<figure class="product-screenshot">
+  <a href="/images/screenshots/field-daily-dashboard.webp" aria-label="圃場の日次ダッシュボードのスクリーンショットを原寸で開く">
+    <img src="/images/screenshots/field-daily-dashboard.webp" alt="環境値、作業TODO、潅水状態が入った圃場の日次ダッシュボード" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>圃場の「概要」では、取得中の環境値と作業TODOを最初に見ます。異常や期限のある項目から詳細へ進みます。</figcaption>
+</figure>
+
+<figure class="product-screenshot product-screenshot--wide">
+  <a href="/images/screenshots/field-work-board.webp" aria-label="年間栽培カレンダーの作業ボードを原寸で開く">
+    <img src="/images/screenshots/field-work-board.webp" alt="未完了、作業中、確認待ち、完了に作業が入った年間栽培カレンダーの作業ボード" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>年間栽培カレンダーの「圃場の作業」では、未完了・作業中・確認待ち・完了を横並びで比較し、期限超過や次に着手する作業を選びます。</figcaption>
+</figure>
+
 ## 設定変更時
 
 1. 変更前の値を記録します。

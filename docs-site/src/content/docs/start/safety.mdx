@@ -1,0 +1,146 @@
+---
+title: 安全上の注意
+description: INAS Hubと圃場の機器を安全に置き、異常時に止め、最初の潅水を確認する流れを4場面で説明します。
+---
+
+import ManualNote from '../../../components/ManualNote.astro';
+import ManualSteps from '../../../components/ManualSteps.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
+
+:::danger[異常があるときは、先に電源と水を止めます]
+焦げたにおい、異常な熱、煙、漏水、破損がある場合は使用を続けません。安全に電源と水を止め、そのままサポートへ連絡してください。
+:::
+
+<section className="safety-story" aria-labelledby="safety-story-title">
+  <header className="safety-story__header">
+    <span>SAFETY STORY · 4 SCENES</span>
+    <h2 id="safety-story-title">置く・止める・短く試す・異常時に離れる</h2>
+    <p>最初に覚える安全行動を、作業の順番どおりに見てください。</p>
+  </header>
+  <div className="safety-story__grid">
+    <figure className="concept-illustration safety-story__panel">
+      <a href="/images/illustrations/safety-story-dry-hub.webp" aria-label="Hubを高く乾いた場所へ置く安全場面をこの場で拡大する">
+        <img src="/images/illustrations/safety-story-dry-hub.webp" alt="作業者がINAS Hubを水配管から離れた高い棚へ置いているスケッチ" width="832" height="624" loading="lazy" decoding="async" />
+      </a>
+      <figcaption><strong>1　高く乾いた場所へ置く</strong><br />電源とHubを、水配管・雨・結露から離します。</figcaption>
+    </figure>
+    <figure className="concept-illustration safety-story__panel">
+      <a href="/images/illustrations/safety-story-manual-stop.webp" aria-label="手動弁で水を止める安全場面をこの場で拡大する">
+        <img src="/images/illustrations/safety-story-manual-stop.webp" alt="作業者が配管の赤い手動弁を閉めているスケッチ" width="832" height="624" loading="lazy" decoding="async" />
+      </a>
+      <figcaption><strong>2　画面なしで止められるようにする</strong><br />手動弁とポンプの停止場所を、作業者全員で確認します。</figcaption>
+    </figure>
+    <figure className="concept-illustration safety-story__panel">
+      <a href="/images/illustrations/safety-story-short-test.webp" aria-label="人が見ている状態で短時間だけ潅水する安全場面をこの場で拡大する">
+        <img src="/images/illustrations/safety-story-short-test.webp" alt="作業者がバケツを用意し、ホースの接続部を見ながら短時間試験しているスケッチ" width="832" height="624" loading="lazy" decoding="async" />
+      </a>
+      <figcaption><strong>3　人が見ている前で数秒だけ試す</strong><br />水の行き先、接続部、漏れをその場で確認します。</figcaption>
+    </figure>
+    <figure className="concept-illustration safety-story__panel">
+      <a href="/images/illustrations/safety-story-emergency-stop.webp" aria-label="異常時に電源と水を止める安全場面をこの場で拡大する">
+        <img src="/images/illustrations/safety-story-emergency-stop.webp" alt="作業者が赤い電源停止ボタンを押し、同時に手動弁を閉めているスケッチ" width="832" height="624" loading="lazy" decoding="async" />
+      </a>
+      <figcaption><strong>4　異常を感じたら電源と水を止める</strong><br />機器へ近づき続けず、安全な場所からサポートへ連絡します。</figcaption>
+    </figure>
+  </div>
+</section>
+
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>設置前に準備すること
+
+<div className="manual-prep-panel">
+  <div>
+    <h3>電源を入れる前に、4つを確認します</h3>
+    <ul>
+      <li>Hubと電源を置く、高く乾燥した場所</li>
+      <li>手で閉められる弁と、ポンプの止め方</li>
+      <li>水が漏れたときに流れる方向</li>
+      <li>異常時に電源と水を止める担当者</li>
+    </ul>
+  </div>
+  <ManualVisual kind="dry-place" label="水配管から離れた高く乾燥した場所へINAS Hubを置く略図" />
+</div>
+
+<figure className="concept-illustration concept-illustration--compact">
+  <a href="/images/illustrations/electrical-water-safety.webp" aria-label="電気設備と水配管を離して設置する全体配置をこの場で拡大する">
+    <img src="/images/illustrations/electrical-water-safety.webp" alt="高い位置の防滴制御箱と、離して配置した配管、手動で閉められる弁、排水容器のスケッチ" width="1216" height="704" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>電気を使う機器は、水がかからない高く乾燥した場所へ置きます。水は、画面を使わなくても現場で止められるようにします。</figcaption>
+</figure>
+
+<ManualNote
+  id="keep-device-closed"
+  title="機器を開けたり、配線を変えたりしません"
+  tone="caution"
+  visual="sealed-device"
+  visualLabel="INAS Hubのふたと配線を工具で開けないことを示す略図"
+>
+  提供機器のふたを開ける、配線を付け替える、別の電源をつなぐ作業は行いません。移動や清掃の前には電源を外し、ケーブルや電源に傷があれば使用を止めます。
+</ManualNote>
+
+<ManualNote
+  id="keep-equipment-dry"
+  title="水がかからない高い場所へ置きます"
+  tone="safe"
+  visual="dry-place"
+  visualLabel="雨や水しぶきを避けた高い場所へ機器を置く略図"
+>
+  Hubと電源は屋内の乾燥した場所へ置き、雨、結露、薬剤、直射日光を避けます。水の配管より高くし、ケーブルは足や農機に引っ掛からないよう固定します。防滴と案内された機器でも、水中や常に水が当たる場所では使えません。
+</ManualNote>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>最初の潅水を安全に試す手順
+
+最初から通常の時間で動かさず、**人がその場にいる状態で少量・短時間から**確認します。
+
+<ManualSteps
+  label="最初の潅水を安全に確認する4つの手順"
+  steps={[
+    {
+      title: '現場で水を止める方法を確かめる',
+      description: '手で閉められる弁とポンプの電源を実際に指さし、画面を使わず止められることを確認します。',
+      visual: 'manual-stop',
+      visualLabel: '配管の手動弁を手で閉めて水を止める略図',
+      note: '家族や作業者にも止め方を共有します。',
+    },
+    {
+      title: '人が見ている前で短く動かす',
+      description: '水を受けられる状態にして、最初は数秒だけ動かします。意図した場所へ水が流れるか、その場で見ます。',
+      visual: 'small-water-test',
+      visualLabel: '水を受ける容器を用意して数秒だけ流す略図',
+      note: 'その場を離れたまま最初の試験をしません。',
+    },
+    {
+      title: '配管と設置場所を一周して確認する',
+      description: '接続部から漏れていないか、電源やHubへ水が近づいていないか、ケーブルが引っ掛からないかを見ます。',
+      visual: 'dry-place',
+      visualLabel: '水配管と電気機器を離した設置場所を確認する略図',
+      note: '漏れや異常があれば、すぐ電源と水を止めます。',
+    },
+    {
+      title: '画面の結果を確認して少しずつ延ばす',
+      description: 'INASの画面で実行結果が表示されたことを確認します。問題がない場合だけ、必要な水量を見ながら少しずつ通常の時間へ近づけます。',
+      visual: 'dashboard',
+      visualLabel: 'INAS画面に潅水結果と機器の状態が表示された略図',
+      note: '設定を変えたときも同じ順序で試します。',
+    },
+  ]}
+/>
+
+<ManualNote
+  id="prevent-unintended-operation"
+  title="子どもや利用方法を知らない人が触れないようにします"
+  tone="safe"
+  visual="manual-stop"
+  visualLabel="管理する人だけが手動弁と停止方法を扱う略図"
+>
+  Hub、電源、制御箱、手動弁は、誤って操作されない場所へ設置します。共有施設では機器の管理者と緊急連絡先を表示してください。
+</ManualNote>
+
+<ManualNote
+  id="safety-technician-note"
+  title="設置・製作を担当する技術者へ"
+  tone="info"
+  visual="self-build"
+  visualLabel="パソコン、基板、測定工具を使って技術者が機器を検査する略図"
+>
+  電圧、出力回路、保護部品、電線、試験方法は[電気・潅水設備の技術安全要件](/technical/hardware-safety/)に分けています。一般の利用者が機器を開けて確認する内容ではありません。
+</ManualNote>

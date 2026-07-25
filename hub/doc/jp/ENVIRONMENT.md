@@ -27,17 +27,48 @@ uv run ina-hub install
 - `HUB_LOCAL_USER_EMAIL` (任意) — Cloudflare Accessを経由しないローカル利用時のユーザーemail。既定: `local-user@ina.local`。
 - `HUB_ADMIN_EMAILS` (Cloudflare公開時は必須) — `/settings`、AI接続確認、機器状態・runtime config・OTA/F/W管理を許可するemailのカンマ区切り。本番では明示する。未設定時はAccess利用者全員を作業者とし、ローカル直利用だけを管理者として扱う。
 
-## Turso (ローカル/リモート DB)
+Cloudflare公開時の`CLOUDFLARE_ACCESS_TEAM_DOMAIN`は正確なHTTPS
+`*.cloudflareaccess.com` origin、`CLOUDFLARE_ACCESS_POLICY_AUD`は保護対象
+applicationのaudienceにします。HubはJWTの署名・issuer・audience・application
+token種別・subject・`nbf`/`iat`/`exp`を検証します。Hubのapplication/管理pathに
+Access Bypass policyを設定しないでください。
 
-- `TURSO_DATABASE_URL` (必須) — Turso（libsql）接続 URL。例: `libsql://...`。
-  - 入手方法: Turso のダッシュボードでデータベースを作成すると接続 URL が得られます。
-- `TURSO_AUTH_TOKEN` (必須) — Turso の認証トークン（API トークン）。
-  - 入手方法: Turso の管理画面で API トークンを発行してください。
-- `TURSO_SYNC_INTERVAL` (任意) — Turso と同期する間隔（秒）。デフォルト `600`。
+## 上位 Hub との階層 Sync（任意）
 
-※ `setting.py` は `TURSO_DATABASE_URL` と `TURSO_AUTH_TOKEN` が未設定だと起動を停止します。必ず設定してください。
+standalone Local Hub では `HUB_SYNC_PARENT_BASE_URL` を空にします。上位の
+上位Local Hubへ接続する場合だけ設定します。
 
-Hubは起動時にTursoのlocal replicaを同期し、計測用schemaと指標定義を準備してからHTTP受付を開始する。起動後は`TURSO_SYNC_INTERVAL`をlibSQL clientへ渡し、HTTP要求とは独立してlocal replicaを周期同期する。Hubからの書き込みはcommit後にも同期する。起動同期に失敗した場合は初回ページ表示で待たせるのではなく、起動失敗として運用監視へ通知する。確認サーバは実環境のTurso URLを継承せず、`HUB_DEMO_WORK_DIR`配下のローカルlibSQLを使用する。
+- `HUB_SYNC_PARENT_BASE_URL` — 上位 Hub の base URL。本番は HTTPS 必須。
+- `HUB_SYNC_PARENT_TOKEN_FILE` — node bearer token を保存した絶対 path。mode
+  `0600` が必須。
+- `HUB_SYNC_PARENT_CA_FILE` — private CA を使う場合の CA bundle の絶対 path。
+- `HUB_SYNC_PARENT_CLIENT_CERT_FILE` / `HUB_SYNC_PARENT_CLIENT_KEY_FILE` —
+  bearer token に加えて mTLS を併用する場合の client certificate と private
+  key の絶対 path。必ず2つを同時に設定し、private key は mode `0600` にする。
+- `HUB_SYNC_PARENT_TIMEOUT_SECONDS` — 接続・応答 timeout。1〜25秒、既定
+  `20`。
+- `HUB_SYNC_PARENT_ALLOW_INSECURE_LOOPBACK` — 開発時だけ
+  `localhost` / `127.0.0.1` / `::1` の HTTP を許可する明示フラグ。本番では
+  `false`。
+
+credential は URL や `.env` の値へ直接入れず、symlinkではない通常ファイルへ
+保存し、group/otherから読めないmodeにします。bearerは正規の
+`inas_sync_v1_`形式だけを受け付けます。上位設定や WAN 状態はローカル MQTT
+readiness に影響しません。
+event の上位転送は、最初の認証済み正常応答を永続適用した後に有効になります。
+登録、API、障害時動作は
+[Local Hub 階層 Sync v1 運用](HIERARCHICAL_SYNC.md)を参照してください。
+
+## Turso（Local Hub DB）
+
+- `TURSO_DATABASE_URL`（必須）— このLocal Hub用のTurso/libSQL接続URL。
+- `TURSO_AUTH_TOKEN`（必須）— このLocal Hub用の認証token。
+- `TURSO_SYNC_INTERVAL` — local replicaの同期間隔。既定`600`秒。
+
+Hubは起動時にTurso local replicaを同期し、schema準備後にHTTP受付を開始する。
+このcredentialはCloud Hubのdirectory/顧客DBとは別物であり、Edge Gatewayへ
+渡さない。確認serverだけは実環境URLを継承せず、`HUB_DEMO_WORK_DIR`配下のlocal
+libSQLを使用する。
 
 ## S3 / オブジェクトストレージ（メイン）
 
@@ -171,7 +202,7 @@ Cloudflare hosted option を使う場合だけ設定します。値の source of
 - `CLOUDFLARE_ACCESS_API_TOKEN` — Access application / group / policy を作成・更新するための API token。Worker には渡しません。旧名 `CLOUDFLARE_API_TOKEN` も script は fallback として読みます。
 - `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME` — Access application と Tunnel の公開 hostname。例: `hub.example.com`。
 - `CLOUDFLARE_ACCESS_TEAM_DOMAIN` — Access JWT issuer。例: `https://<team-name>.cloudflareaccess.com`。`scripts/cloudflare_access_setup.py` が Zero Trust organization から補完できます。
-- `CLOUDFLARE_ACCESS_POLICY_AUD` — Access applicationのAudience tag。WorkerとPython Hub双方のJWT検証で使う。Access application作成後に`scripts/cloudflare_access_setup.py`が出力する。
+- `CLOUDFLARE_ACCESS_POLICY_AUD` — Access applicationのAudience tag。Local HubのJWT検証で使う。Access application作成後に`scripts/cloudflare_access_setup.py`が出力する。
 - `CLOUDFLARE_ACCESS_GROUP_ID` — 許可 email を保持する Access group ID。script が出力します。
 - `CLOUDFLARE_ACCESS_APP_ID` — Access self-hosted application ID。script が出力します。
 - `CLOUDFLARE_ACCESS_POLICY_ID` — Access allow policy ID。script が出力します。
@@ -185,7 +216,7 @@ Cloudflare hosted option を使う場合だけ設定します。値の source of
 - `CLOUDFLARE_TUNNEL_ID` — 作成された Tunnel ID。`scripts/cloudflare_tunnel_setup.sh --write-env` が出力します。
 - `CLOUDFLARE_TUNNEL_HOSTNAME` — Tunnel の DNS route hostname。通常は `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME` と同じです。
 - `CLOUDFLARE_TUNNEL_ORIGIN_URL` — Tunnel が転送する local hub URL。既定: `http://127.0.0.1:39151`。
-- `CLOUDFLARE_TUNNEL_TOKEN_FILE` — `cloudflared tunnel run` 用 token file。`scripts/cloudflare_tunnel_setup.py --write-env provision` が `hub/.data/cloudflare/tunnel-token` に生成します。
+- `CLOUDFLARE_TUNNEL_TOKEN_FILE` — `cloudflared tunnel run` 用token file。`scripts/cloudflare_tunnel_setup.py --write-env provision` が対象`.env`と同じdirectoryの`.data/cloudflare/tunnel-token`へ生成します。
 - `CLOUDFLARE_TUNNEL_DNS_RECORD_ID` — Tunnel 用 CNAME record ID。script が出力します。
 - `CLOUDFLARE_ZONE_ID` — DNS record を作る zone ID。未設定なら hostname から自動探索します。
 - `CLOUDFLARE_ZONE_NAME` — DNS record を作る zone name。未設定なら hostname から自動探索します。
@@ -223,9 +254,9 @@ grep -E "TURSO_DATABASE_URL|TURSO_AUTH_TOKEN|S3_ENDPOINT_URL|S3_BUCKET_NAME|MQTT
 以下は本プロジェクトを運用する際に準備する可能性が高い外部サービスと、最短で使い始めるための要点です。詳しい手順は各サービスの公式ドキュメントを参照してください。
 
 - Turso (libsql)
-  - 目的: アプリのメタデータやセンサーデータを保存する DB（ローカル同期やクラウド利用）
+  - 目的: Local Hubのメタデータやセンサーデータを保存し、local replicaと同期する
   - 必要な値: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
-  - 最短手順: Turso にサインアップ → 新しいデータベースを作成 → ダッシュボードで接続 URL と API トークンを取得
+  - 最短手順: TursoでDB作成後、接続URLとDB tokenを取得する
 
 - オブジェクトストレージ（例: AWS S3 / DigitalOcean Spaces / Cloudflare R2）
   - 目的: 画像や音声などのメディア保存

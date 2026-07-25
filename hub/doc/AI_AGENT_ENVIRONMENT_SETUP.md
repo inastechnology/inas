@@ -47,15 +47,17 @@ Open:
 http://127.0.0.1:39251/demo/mqtt-devices
 ```
 
-## Cloudflare Tunnel Option
+## Low-Level Cloudflare Tunnel Commands
 
-Required `.env` values include:
+Required non-secret `.env` values include:
 
 - `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME`
 - `CLOUDFLARE_ACCESS_TEAM_DOMAIN`
 - `CLOUDFLARE_ACCOUNT_ID`
-- `CLOUDFLARE_ACCESS_API_TOKEN`
 - `CLOUDFLARE_ACCESS_ALLOWED_EMAILS`
+
+Supply `CLOUDFLARE_ACCESS_API_TOKEN` in the factory process environment when
+running low-level provisioning. Do not save it on the appliance.
 
 Optional or generated values:
 
@@ -96,18 +98,6 @@ bash scripts/cloudflare_tunnel_daemon.sh --install-cloudflared start
 bash scripts/cloudflare_tunnel_daemon.sh status
 ```
 
-## Cloud App Option
-
-```bash
-cd hub/cloudflare
-npm install
-npm test
-npm run typecheck
-```
-
-The Cloud app uses Workers + Hono + Turso. It does not replace local MQTT,
-camera, scheduler, or local filesystem features.
-
 ## Verification Checklist
 
 - `uv run python src/ina_device_hub/serve.py` starts the local hub.
@@ -117,4 +107,10 @@ camera, scheduler, or local filesystem features.
 - Cloudflare setup stops on ambiguous resources.
 - Allowed email add/remove is idempotent.
 - Tunnel status is checked on the device-side origin.
+- The configured `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` pass the Local Hub
+  connection/sync check.
 - Secrets are not printed in logs or final reports.
+
+The shared multi-tenant Cloud Hub and Edge Gateway shipment workflow live under
+`../hub-cloud/`; do not apply those directory/customer DB credentials to this
+Local Hub.

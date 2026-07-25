@@ -1,0 +1,145 @@
+---
+title: 潅水を設定する
+description: 水やりの時刻、時間、分割、水分条件を、画面と図で確認しながら安全に設定します。
+---
+
+import ManualSteps from '../../../components/ManualSteps.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
+
+INASでは「何時に」「何秒間」「土がどのくらい乾いていたら」水を出すかを機器ごとに決めます。最初から長時間動かさず、**人が見ている状態で数秒だけ試す**ところから始めます。
+
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>設定前に用意するもの
+
+<div className="manual-prep-panel">
+  <div>
+    <h3>水を出す前に、行き先と止め方を確認します</h3>
+    <ul>
+      <li>対象の機器が機器一覧に表示されている</li>
+      <li>どの接続口が、どの弁・ポンプ・畝につながるか確認済み</li>
+      <li>手で閉められる弁とポンプの停止方法</li>
+      <li>人が見ている状態で少量の水を流せる時間</li>
+      <li>乾いた土と湿った土で表示される水分の値</li>
+    </ul>
+  </div>
+  <ManualVisual kind="manual-stop" label="潅水設定前に配管の手動弁と停止方法を確認する略図" />
+</div>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>水やりを設定する手順
+
+<ManualSteps
+  label="水やりを安全に設定して試す6つの工程"
+  steps={[
+    {
+      title: '水を止める方法を確認する',
+      description: '画面を操作できない場合でも、手動弁とポンプの電源で止められることを現場で確認します。',
+      visual: 'manual-stop',
+      visualLabel: '配管の手動弁を手で閉めて水を止める略図',
+    },
+    {
+      title: '機器と水の行き先を照合する',
+      description: '対象機器を開き、接続口につながる弁・ポンプと、水が届く畝が現場と一致しているか確認します。',
+      visual: 'output-link',
+      visualLabel: '圃場機器の接続口から弁を通って対象の畝へ水が届く略図',
+    },
+    {
+      title: '時刻と短い水やり時間を設定する',
+      description: '見守れる昼間の時刻を選び、最初は1〜5秒の短い時間で保存します。分けて流す場合は合計時間も確認します。',
+      visual: 'watering-form',
+      visualLabel: '水やり動作設定画面へ実行時刻、秒数、水分条件を入力する略図',
+    },
+    {
+      title: '土の水分に合わせて止める基準を決める',
+      description: '実際に測った乾燥時と湿潤時の値を見て、どの値以上なら水やりを見送るか決めます。',
+      visual: 'moisture-threshold',
+      visualLabel: '土壌水分を測り、乾いているときは水やりし、十分湿っているときは見送る略図',
+    },
+    {
+      title: '保存後、機器が受け取ったことを確認する',
+      description: '保存しただけで終わらせず、機器の画面に次回予定と新しい値が表示されたことを確認します。',
+      visual: 'dashboard',
+      visualLabel: 'INAS画面で機器の設定受信と次回予定を確認する略図',
+    },
+    {
+      title: '人が見ている状態で数秒だけ試す',
+      description: '水を受けられる状態で短く動かし、漏れ、行き先、画面の結果を確認してから少しずつ本番時間へ近づけます。',
+      visual: 'small-water-test',
+      visualLabel: '水を受ける準備をして数秒だけ試験潅水する略図',
+    },
+  ]}
+/>
+
+<figure class="process-map" aria-labelledby="watering-decision-title">
+  <div class="process-map__heading">
+    <strong id="watering-decision-title">水が出るまでの5つの確認</strong>
+    <span>WATERING CHECK</span>
+  </div>
+  <ol class="process-map__steps">
+    <li><strong>設定を受け取る</strong><small>保存した内容が機器へ届く</small><em class="process-map__outcome">未受信なら停止</em></li>
+    <li><strong>現在時刻を確認</strong><small>機器の時計を合わせる</small><em class="process-map__outcome">不明なら停止</em></li>
+    <li><strong>予定時刻を確認</strong><small>設定した時刻になったか</small><em class="process-map__outcome">まだなら待機</em></li>
+    <li><strong>土の水分を確認</strong><small>水やりが必要な乾き具合か</small><em class="process-map__outcome">十分なら見送る</em></li>
+    <li><strong>水を出す</strong><small>対象の接続口を設定時間だけ動かす</small></li>
+  </ol>
+  <figcaption>「保存したのに動かない」ときは、左から順にどこで止まっているかを確認します。</figcaption>
+</figure>
+
+## 基本の潅水
+
+<ManualVisual kind="output-link" label="INASの潅水機器から弁を通り、選んだ畝へ水が届く基本の潅水経路" />
+
+| 画面の項目 | 決めること | 最初の目安 |
+|---|---|---|
+| 水やりする場所 | どの接続口・弁・畝へ水を送るか | 現場のラベルと照合 |
+| 実行時刻 | 何時何分に始めるか | 見守れる昼間 |
+| 水やり時間 | 何秒間、水を出すか | 1〜5秒から |
+| 土の水分条件 | どの値以上なら見送るか | 乾湿を実測してから |
+| 分割潅水 | 水を出す・休むを何回繰り返すか | 最初は無効 |
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/watering-settings.webp" aria-label="水やり動作設定のスクリーンショットをこの場で拡大する">
+    <img src="/images/screenshots/watering-settings.webp" alt="設備接続、潅水条件、センサー条件を順に設定する水やりセットアップ画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>機器詳細の「動作設定」は、「設備をつなぐ」「水やりを決める」「センサーを合わせる」の順に確認します。保存前に現在の水やりルートも照合してください。</figcaption>
+</figure>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>実行時刻と水やり時間
+
+<ManualVisual kind="watering-schedule" label="朝6時30分に20秒間の水やりを実行する予定の略図" />
+
+1つの予定には、開始時刻と水を出す時間を設定します。複数回に分けたい場合は、朝・昼・夕など必要な時刻だけ追加します。最初の試験は、現場で見守れる時刻に1件だけ作ります。
+
+:::caution[保存直後に水が出る設定ではありません]
+設定した時刻と安全条件がそろったときに動きます。すぐに試したい場合も、まず短い試験時間を設定し、現場で水を止められる状態にしてください。
+:::
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>分割潅水
+
+<ManualVisual kind="split-watering" label="10秒水を出して20秒休む動きを3回繰り返す分割潅水の時間図" />
+
+分割潅水は、「水を出す時間」と「休む時間」を繰り返します。たとえば **10秒出す → 20秒休む** を3回にすると、実際に水が出る合計は30秒、最初から最後までは70秒です。
+
+- 水が出る合計: 10秒 × 3回 = **30秒**
+- 途中で休む合計: 20秒 × 2回 = **40秒**
+- 最初から最後まで: **70秒**
+
+:::caution[通常の水やり時間とは足しません]
+分割潅水を有効にしている間は、分割の「出す時間 × 回数」が使われます。通常の水やり時間をさらに足すことはありません。
+:::
+
+## <span className="manual-title-icon manual-title-icon--check" aria-hidden="true"></span>土壌水分センサーで見送る
+
+<ManualVisual kind="moisture-threshold" label="土の水分が基準より低ければ水やりし、高ければ水やりを見送る判断図" />
+
+設定した時刻になっても、土が十分湿っていれば水やりを見送れます。基準は製品の初期値だけで決めず、同じセンサーで乾いた土と十分湿った土を測ってから設定します。
+
+値が急に変わる、ずっと同じ、濡らしても変化しない場合は、自動運転を始めずセンサーの設置と状態を確認してください。
+
+## <span className="manual-title-icon manual-title-icon--check" aria-hidden="true"></span>保存後の確認
+
+1. 「保存して機器へ反映」を押します。
+2. 機器画面で、新しい設定を受け取った表示を確認します。
+3. 次回予定の時刻、水やり時間、水分条件を読み直します。
+4. 人が見ている状態で1〜5秒だけ試します。
+5. 水の行き先と漏れがないことを確認し、実際の流量に合わせて少しずつ延ばします。
+
+設定キーや機器内部の判定を確認する技術担当者は、[設定項目の技術リファレンス](/configure/settings-reference/)を参照してください。

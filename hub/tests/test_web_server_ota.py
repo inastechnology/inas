@@ -409,6 +409,18 @@ class WebServerOTATest(unittest.TestCase):
                 "build_id": "2026-07-01T00:00:00Z+abcdef0",
             },
         )
+        self.connection_events = [
+            {
+                "occurred_at": datetime.now(UTC).isoformat(),
+                "event_type": "mqtt_client_connected",
+                "direction": "broker",
+                "device_id": device_id,
+                "topic": "$SYS/broker/log/N",
+                "action": "connect",
+                "payload": {"client_id": device_id, "remote_address": "192.0.2.24:51411"},
+            }
+        ]
+        web_server.list_device_events = lambda *args, **kwargs: self.connection_events if kwargs.get("connection_events_only") else []
 
         response = self.client.get(f"/mqtt-devices/{device_id}")
 
@@ -425,11 +437,11 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn('data-tab-target="tab-monitoring"', html)
         self.assertIn('data-tab-target="tab-config"', html)
         self.assertIn('data-tab-target="tab-firmware"', html)
-        self.assertIn('data-tab-target="tab-diagnostics"', html)
+        self.assertIn('data-tab-target="tab-maintenance"', html)
         self.assertIn(">現在値・履歴</button>", html)
         self.assertIn(">動作設定</button>", html)
         self.assertIn(">機器を更新</button>", html)
-        self.assertIn(">困ったとき</button>", html)
+        self.assertIn(">保守・管理</button>", html)
         self.assertIn("設置場所・関連先", html)
         self.assertNotIn("<h2>設置ビュー</h2>", html)
         self.assertIn("現在の潅水判断", html)
@@ -453,6 +465,15 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("42%", html)
         self.assertIn("次回の通信予定", html)
         self.assertIn("詳しい通信履歴", html)
+        self.assertIn('id="connection-help"', html)
+        self.assertIn('aria-label="困ったときのヘルプを開く"', html)
+        self.assertIn("困ったとき：通信を確認する", html)
+        self.assertIn("Hubが最後に確認", html)
+        self.assertIn("Hubへの接続", html)
+        self.assertIn("Hubへの接続に成功", html)
+        self.assertIn("機器からHubの入口まで通信できました。", html)
+        self.assertIn("通信・接続履歴", html)
+        self.assertIn("管理者向けの技術データ", html)
         self.assertIn("動作設定", html)
         self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings"', html)
         self.assertIn(f'href="/mqtt-devices/{device_id}?tab=settings#watering-rules" aria-label="土壌水分しきい値の設定を変更"', html)
@@ -564,7 +585,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertNotIn("読み取り位置", html)
         self.assertNotIn("読み取り開始位置", html)
         self.assertIn(".sensor-device-card[hidden], .sensor-device-body[hidden], [data-env-sensor-advanced][hidden] { display: none !important; }", html)
-        self.assertIn('const tabAliases = { irrigation: "monitoring", config: "settings", maintenance: "diagnostics" };', html)
+        self.assertIn('const tabAliases = { irrigation: "monitoring", config: "settings", diagnostics: "maintenance" };', html)
 
         charts_response = self.client.get(f"/local/api/mqtt-devices/{device_id}/charts")
         self.assertEqual(charts_response.status_code, 200)

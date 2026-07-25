@@ -4,8 +4,9 @@ import type { KonvaEventObject } from "konva/lib/Node";
 import { ArrowUp } from "lucide-react";
 import { Arrow, Circle, Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 
+import { collaboratorColor, collaboratorLabel, presenceStateLabel } from "./layoutCollaboration";
 import { PRESET_BY_ID } from "./presets";
-import type { FieldLayout, LayoutSpace, Placement, PlacementPreset } from "./types";
+import type { FieldLayout, LayoutCollaborator, LayoutSpace, Placement, PlacementPreset } from "./types";
 
 export const CELL_PX = 34;
 
@@ -15,6 +16,7 @@ interface InstallationCanvasProps {
   selectedId: string | null;
   plantingByPlacementId: Record<string, string>;
   wateringSourceNamesByPlacementId: Record<string, string[]>;
+  collaborators: LayoutCollaborator[];
   zoom: number;
   onZoomChange: (zoom: number) => void;
   onSelect: (id: string | null) => void;
@@ -34,6 +36,7 @@ export function InstallationCanvas({
   selectedId,
   plantingByPlacementId,
   wateringSourceNamesByPlacementId,
+  collaborators,
   zoom,
   onZoomChange,
   onSelect,
@@ -98,6 +101,27 @@ export function InstallationCanvas({
     () => projectConnections(layout, space, selectedId),
     [layout, selectedId, space],
   );
+  const remoteSelections = useMemo(() => {
+    const groups = new Map<string, { placement: Placement; participants: LayoutCollaborator[]; identities: Set<string> }>();
+    collaborators.forEach((participant) => {
+      if (participant.active_space_id !== space.id || !participant.selected_placement_id) return;
+      const placement = space.placements.find((candidate) => candidate.id === participant.selected_placement_id);
+      if (!placement) return;
+      const group = groups.get(placement.id) ?? { placement, participants: [], identities: new Set<string>() };
+      const identity = participant.email || participant.client_id;
+      if (!group.identities.has(identity)) {
+        group.identities.add(identity);
+        group.participants.push(participant);
+      }
+      groups.set(placement.id, group);
+    });
+    return Array.from(groups.values()).flatMap((group) => group.participants.slice(0, 3).map((participant, stackIndex) => ({
+      participant,
+      placement: group.placement,
+      stackIndex,
+      extraCount: stackIndex === 2 ? Math.max(0, group.participants.length - 3) : 0,
+    })));
+  }, [collaborators, space]);
 
   const handleWheel = (event: KonvaEventObject<WheelEvent>) => {
     event.evt.preventDefault();
@@ -212,6 +236,16 @@ export function InstallationCanvas({
                 gridRows={space.grid.rows}
               />
             ))}
+          {remoteSelections.map(({ participant, placement, stackIndex, extraCount }) => (
+            <RemoteSelection
+              key={participant.client_id}
+              participant={participant}
+              placement={placement}
+              stackIndex={stackIndex}
+              extraCount={extraCount}
+              zoom={zoom}
+            />
+          ))}
           <Transformer
             ref={transformerRef}
             rotateEnabled={false}
@@ -241,8 +275,55 @@ export function InstallationCanvas({
       </div>
       <div className="canvas-connection-summary" aria-label="配置物の接続関係">
         {deviceConnections.map((connection) => <span key={connection.key} data-layout-connection data-external={connection.externalLabel ? "true" : "false"}>{connection.ariaLabel}</span>)}
+        {remoteSelections.map(({ participant, placement }) => <span key={`collaborator:${participant.client_id}`}>{participant.email}が{placement.name}を選択中</span>)}
       </div>
     </div>
+  );
+}
+
+function RemoteSelection({
+  participant,
+  placement,
+  stackIndex,
+  extraCount,
+  zoom,
+}: {
+  participant: LayoutCollaborator;
+  placement: Placement;
+  stackIndex: number;
+  extraCount: number;
+  zoom: number;
+}) {
+  const color = collaboratorColor(participant.email || participant.client_id);
+  const x = placement.x * CELL_PX;
+  const y = placement.y * CELL_PX;
+  const width = placement.width * CELL_PX;
+  const height = placement.height * CELL_PX;
+  const labelOffset = 27 + stackIndex * 23;
+  const labelY = y * zoom >= labelOffset ? y - labelOffset / zoom : y + (4 + stackIndex * 23) / zoom;
+  const label = extraCount > 0
+    ? `${collaboratorLabel(participant.email)} · 他${extraCount}人`
+    : `${collaboratorLabel(participant.email)} · ${presenceStateLabel(participant.state)}`;
+  return (
+    <Group listening={false}>
+      <Rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        stroke={color}
+        strokeWidth={3 / zoom}
+        dash={[8 / zoom, 4 / zoom]}
+        cornerRadius={5 / zoom}
+        shadowColor={color}
+        shadowOpacity={0.2}
+        shadowBlur={5 / zoom}
+      />
+      <Group x={x + 4 / zoom} y={labelY} scaleX={1 / zoom} scaleY={1 / zoom}>
+        <Rect width={126} height={21} fill={color} cornerRadius={4} shadowColor="#1b2d24" shadowOpacity={0.18} shadowBlur={4} shadowOffsetY={1} />
+        <Text x={7} y={5} width={112} text={label} fontFamily="system-ui, sans-serif" fontSize={10} fontStyle="bold" fill="#ffffff" ellipsis wrap="none" />
+      </Group>
+    </Group>
   );
 }
 

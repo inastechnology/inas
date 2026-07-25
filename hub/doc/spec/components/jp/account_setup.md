@@ -2,7 +2,7 @@
 
 目的
 
-本ドキュメントは、ina-device-hub を本番運用または現場で稼働させる前に準備すべき外部アカウントと、その最小限のセットアップ手順をまとめたものです。特に Turso（データベース）、Instagram（画像公開等で利用する場合）、S3 互換ストレージ、MQTT ブローカーについて扱います。
+本ドキュメントは、ina-device-hub を本番運用または現場で稼働させる前に準備すべき外部アカウントと、その最小限のセットアップ手順をまとめたものです。Turso、Instagram、S3互換ストレージ、MQTT brokerについて扱います。
 
 対象読者
 
@@ -10,13 +10,13 @@
 
 前提
 
-- 本リポジトリの `src/ina_device_hub/setting.py` は環境変数から多数の設定を読み込みます。未設定時にプロセスが終了する項目があるため、本ドキュメントにある最小必須項目をセットしてください。
+- 本リポジトリの `src/ina_device_hub/setting.py` は環境変数から設定を読み込みます。`.default.env`を基準にし、利用する機能の項目を設定してください。
 
-必須アカウントと目的（最小セット）
+必須アカウントと目的
 
-- Turso（または互換の SQLite/クラウド DB） — 端末の計測データやメタ情報の永続化。
+- Turso（または互換のSQLite/cloud DB）— Local Hubの計測データやメタ情報を永続化。
 - S3 互換ストレージ（AWS S3 / DigitalOcean Spaces / MinIO 等） — 画像や timelapse の保存。
-- MQTT ブローカー（自前 Mosquitto / HiveMQ Cloud 等） — デバイスとハブのメッセージ交換。
+- MQTT ブローカー（自前Mosquitto / managed broker等）— デバイスとHubのメッセージ交換。
 
 オプション（利用する場合）
 
@@ -27,22 +27,14 @@
 
 ## 1) Turso（libsql）アカウントの準備
 
- 公式: [Turso](https://turso.tech/)
-
-1. Turso にサインアップしてプロジェクトを作成する（または既存 DB を用意）。
-2. データベースの接続情報（sync URL / database URL）と認証トークン（auth token）を取得する。
-   - 取得方法は Turso のコンソールで「Database」→「Connection」から確認できます。
-3. ローカルで接続を試す（任意）: turso CLI や libsql の接続サンプルを実行して認証が通るか確認。
-
-環境変数（`setting.py` に対応）
-
-- TURSO_DATABASE_URL — Turso の sync URL（例: [https://db.turso.example](https://db.turso.example)）
-- TURSO_AUTH_TOKEN — Turso の認証トークン
-- LOCAL_STORAGE_BASE_DIR / LOCAL_DB_PATH は `setting.py` で既定値が使われますが、変更する場合は環境変数で上書きまたは設定ファイルに記載します。
+1. Tursoにサインアップし、このLocal Hub用DBを作成する。
+2. DB接続URLとdatabase-scoped auth tokenを取得する。
+3. `.env`の`TURSO_DATABASE_URL`と`TURSO_AUTH_TOKEN`へ設定する。
 
 検証
 
-- ina-device-hub を起動する前に小さな Python スクリプトで libsql.connect(db_path, sync_url=..., auth_token=...) が成功するか検証してください。
+- `uv run ina-hub check`でlocal replica作成、接続、同期を確認する。
+- このcredentialをCloud Hub、Edge Gateway、別顧客のHubと共有しない。
 
 ---
 
@@ -128,7 +120,7 @@
 
 ## 5) 環境変数リスト（まとめ）
 
-最低限セットすることを推奨する環境変数（`setting.py` の読み取りに基づく）：
+最低限設定する環境変数（`setting.py` の読み取りに基づく）：
 
 - TURSO_DATABASE_URL
 - TURSO_AUTH_TOKEN
@@ -158,7 +150,7 @@
 
 1. 環境変数を `.env` に記載（プロジェクトルートに置く）
 2. 仮想環境を作り依存をインストール（`requirements.lock` を参照）
-3. 小さな接続テストスクリプトで Turso / S3 / MQTT の接続を確認
+3. `uv run ina-hub check`で端末内DB / S3 / MQTTの接続を確認
 4. ina-device-hub を立ち上げ（`serve.run()` など）し、ログにエラーが出ないか確認
 5. MQTT にダミーメッセージを publish して、DataProcessor の処理と S3 へのアップロードが行われるか確認
 
@@ -166,7 +158,7 @@
 
 ## 7) 参考リンク
 
-- Turso: [https://turso.tech/](https://turso.tech/)
+- Turso（任意の既存replicaだけ）: [https://turso.tech/](https://turso.tech/)
 - Instagram Graph API: [https://developers.facebook.com/docs/instagram-api](https://developers.facebook.com/docs/instagram-api)
 - AWS S3: [https://aws.amazon.com/s3/](https://aws.amazon.com/s3/)
 - DigitalOcean Spaces: [https://www.digitalocean.com/products/spaces/](https://www.digitalocean.com/products/spaces/)
@@ -184,7 +176,5 @@
   - ファイアウォール／VPC 設定、エンドポイント URL の誤りを確認する。
 - アップロード失敗（S3）
   - バケットポリシー、キー名のエンコーディング、ContentType を確認する。
-
-
 
 

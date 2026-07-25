@@ -1,5 +1,6 @@
 import threading
 
+from ina_edge_runtime.mqtt_topics import parse_mqtt_message
 from paho.mqtt import client as mqtt_client
 
 from ina_device_hub.device_event_log import append_mqtt_hub_event, append_mqtt_message_event
@@ -113,47 +114,7 @@ class HubMQTTClient:
         return result
 
     def _parse_message(self, topic: str, payload):
-        parts = [part for part in topic.split("/") if part]
-
-        if len(parts) == 3 and parts[0] == "farm" and parts[2] == "telemetry":
-            return {
-                "message_type": "sensor_data",
-                "topic": topic,
-                "device_id": parts[1],
-                "kind": "telemetry",
-                "payload": payload,
-                "seqId": None,
-            }
-
-        if len(parts) >= 3 and parts[0] == "sensor":
-            return {
-                "message_type": "sensor_data",
-                "topic": topic,
-                "device_id": parts[1],
-                "kind": parts[2],
-                "payload": payload,
-                "seqId": parts[3] if len(parts) > 3 else None,
-            }
-
-        if len(parts) >= 4 and parts[1] == "kinds":
-            return {
-                "message_type": "device_config",
-                "topic": topic,
-                "device_id": parts[0],
-                "category": parts[2],
-                "action": parts[3],
-                "payload": payload,
-            }
-
-        if len(parts) >= 4 and parts[0] == "$SYS" and parts[1] == "broker" and parts[2] == "log":
-            return {
-                "message_type": "mqtt_broker_log",
-                "topic": topic,
-                "kind": parts[3],
-                "payload": payload,
-            }
-
-        return {"message_type": "unknown", "topic": topic, "payload": payload}
+        return parse_mqtt_message(topic, payload)
 
     def subscribe(self, topic: str):
         self._subscriptions.add(topic)

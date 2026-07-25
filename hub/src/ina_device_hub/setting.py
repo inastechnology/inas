@@ -53,7 +53,8 @@ HUB_BACKUP_RETENTION = _int_env("HUB_BACKUP_RETENTION", 14)
 if not os.path.exists(WORK_DIR):
     os.makedirs(WORK_DIR)
 
-# Turso settings
+# Turso settings. These belong to this Local Hub installation; Cloud Hub
+# tenant routing and credentials are managed separately under hub-cloud.
 try:
     TURSO_DATABASE_URL = os.environ["TURSO_DATABASE_URL"]
     TURSO_AUTH_TOKEN = os.environ["TURSO_AUTH_TOKEN"]
@@ -198,6 +199,8 @@ def get_device_id():
 
 # Default settings
 DEFAULT_SETTINGS = {
+    # Legacy object-key namespace retained for stored-path compatibility. A
+    # Local Hub never accepts this value as a tenant/database routing choice.
     "tenant_id": "00000000-0000-0000-0000-000000000000",
     "device_id": get_device_id(),
     "device_name": DEVICE_NAME,

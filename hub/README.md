@@ -19,7 +19,7 @@ Cross-project specification:
 - Serve device runtime configuration through MQTT request/reply/push flows.
 - Store images, audio, firmware artifacts, and logs locally or in
   S3-compatible storage.
-- Integrate with Turso/libSQL.
+- Integrate with the Local Hub installation's configured Turso/libSQL replica.
 - Generate timelapse content and schedule periodic jobs.
 - Publish Instagram Reels from timelapse output when configured.
 - Serve a local Flask-based admin UI.
@@ -66,11 +66,47 @@ http://127.0.0.1:39251/fields/demo-strawberry-field/calendar
 http://127.0.0.1:39251/inas-app
 ```
 
-Capture a reusable 16:9 advertising demo video from the running demo server:
+Capture the current 16:9 product tour from the running demo server. The Japanese
+and English editions share one scene plan, while their explanatory telops are
+rendered independently:
 
 ```bash
-HUB_URL=http://127.0.0.1:39251 npm --prefix admin-ui run capture:demo-video
+HUB_URL=http://127.0.0.1:39251 npm --prefix admin-ui run capture:demo-video:ja
+HUB_URL=http://127.0.0.1:39251 npm --prefix admin-ui run capture:demo-video:en
 ```
+
+Both commands write a silent master and an exact scene timeline under
+`/tmp/inas-demo-video/`. The shared script and narration copy live in
+`admin-ui/scripts/demo-video/tour.json`. The English capture opens the real
+`?lang=en` Hub mode, so the field dashboard, work board and review flow, and
+irrigation pages are English in addition to the telops and narration. These
+surfaces expose a `JA / EN` selector; Japanese remains the default.
+
+With the fresh demo server running, verify that all four English tour pages and
+the manager-review dialog contain no visible Japanese text before capture:
+
+```bash
+HUB_URL=http://127.0.0.1:39251 npm --prefix admin-ui run smoke:demo-english-ui
+```
+
+The finished LP media uses a wordless BGM generated with ComfyUI ACE-Step 1.5
+and local Windows SAPI voices. With ComfyUI listening on port 8188, generate the
+fixed-seed music bed and then render both editions:
+
+```bash
+python admin-ui/scripts/demo-video/generate_comfy_bgm.py
+python admin-ui/scripts/demo-video/render_demo_media.py --locale ja --update-compatibility
+python admin-ui/scripts/demo-video/render_demo_media.py --locale en
+```
+
+The default BGM path is `/tmp/inas-demo-video/inas-demo-bgm.flac`. When ComfyUI
+runs as a Windows process and is not reachable from WSL localhost, run the BGM
+script with ComfyUI's embedded Windows Python and pass an output path visible
+from WSL; then supply that file with `--bgm` to both render commands. Rendering
+requires `ffmpeg`, `ffprobe`, PowerShell, and the `Microsoft Haruka Desktop` and
+`Microsoft Zira Desktop` voices. It writes `demo-ja.mp4`, `demo-en.mp4`, their
+posters, and WebVTT captions into `../lp/assets/`. The compatibility flag also
+refreshes the legacy Japanese `demo.mp4` and `demo-poster.jpg` files.
 
 The demo provides 13 bindable WTR, WRS, FGT, ENV, SOI, PAR, and camera devices, plus
 irrigation history, soil moisture charts, wake history, and device detail
@@ -85,6 +121,18 @@ the same screen. The demo always uses the local libSQL file under
 `HUB_DEMO_WORK_DIR` and does not inherit the production Turso URL from `.env`.
 Set `HUB_DEMO_AI_TEXT_ANALYZE_API_KEY` only when an external calendar-generation
 call is intentionally required. The real admin UI remains `/mqtt-devices`.
+
+The installation layout also exposes Hub-local live collaboration. Editors of
+the same field see active users, tabs, edit state, and remote selections. The
+browser uses a short HTTP sync loop so the current Flask/Waitress deployment
+does not need a WebSocket server. Layout JSON remains protected by revision
+checks and three-way merge; presence is temporary process-local metadata and
+never replaces the saved layout. Run the focused two-tab check against the demo
+server with:
+
+```bash
+HUB_URL=http://127.0.0.1:39251 npm --prefix admin-ui run smoke:collaboration
+```
 
 The `/inas-app` route is the public product landing page and doubles as an A4
 print brochure. To refresh its real Hub screenshots, first run `npm run smoke`
@@ -148,7 +196,11 @@ Install and enable Cloudflare Tunnel service support:
 sudo ./scripts/install_service.sh --production --target-dir "$PWD" --enable-cloudflare-tunnel
 ```
 
-Use `--production` only for the first Cloudflare production deployment or an explicit Access/Tunnel reprovision. After pulling a normal update on the server, omit it so the installer validates but does not rewrite the existing MQTT, HTTP, authentication, or Cloudflare settings. See [`doc/jp/OPERATIONS.md`](doc/jp/OPERATIONS.md) for the server pull and rollback procedure.
+Use `--production` only for the first Cloudflare production deployment or an
+explicit Access/Tunnel reprovision. After pulling a normal update, omit it so
+the installer validates but does not rewrite existing MQTT, HTTP,
+authentication, database, or Cloudflare settings. See
+[`doc/jp/OPERATIONS.md`](doc/jp/OPERATIONS.md).
 
 Check service state:
 
@@ -166,23 +218,24 @@ sudo ./scripts/hub_service.sh restart
 ./scripts/hub_service.sh logs
 ```
 
-## Cloudflare Hosted Options
+## Cloudflare deployment modes
 
-INAS has two Cloudflare-related operating modes:
+This Local Hub may be exposed through its optional Cloudflare Access + Tunnel
+configuration. That does not change its existing Turso/libSQL database.
 
-- Tunnel option: run the local hub on the device side and expose it through
-  Cloudflare Access + Tunnel.
-- Cloud app option: run a Cloudflare Workers + Hono + Turso management API/UI
-  foundation. This does not replace all local hub features.
+The separate [`../hub-cloud/`](../hub-cloud/README.md) application serves
+customers who do not operate a Local Hub. It uses one shared Worker/frontend,
+one directory DB, and one dedicated Turso DB per customer. Edge Gateways
+synchronize to it over authenticated HTTPS; they never receive a Turso
+credential.
 
 Related docs:
 
 - [doc/NETWORK_ARCHITECTURE.md](doc/NETWORK_ARCHITECTURE.md)
 - [doc/CLOUDFLARE_HOSTED_OPTION.md](doc/CLOUDFLARE_HOSTED_OPTION.md)
-- [doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md](doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md)
 - [doc/AI_AGENT_ENVIRONMENT_SETUP.md](doc/AI_AGENT_ENVIRONMENT_SETUP.md)
 
-Provision Access, Tunnel, and DNS resources from `.env`:
+Provision Local Hub Access, Tunnel, and DNS resources from its existing `.env`:
 
 ```bash
 bash scripts/cloudflare_hosted_setup.sh --install-cloudflared
@@ -209,15 +262,6 @@ cannot reach the origin. Check:
 
 ```bash
 bash scripts/cloudflare_tunnel_daemon.sh status
-```
-
-## Cloud App Development
-
-```bash
-cd cloudflare
-npm install
-npm test
-npm run typecheck
 ```
 
 ## Field Data And Improvement Loop
@@ -279,7 +323,6 @@ uv run ruff format --check .
 
 - `pyproject.toml`: Python dependencies and tool configuration.
 - `src/ina_device_hub/`: hub implementation.
-- `cloudflare/`: Cloudflare Workers + Hono + Turso cloud app foundation.
 - `doc/`: hub-level design and operations docs.
 - `systemd/inas-device-hub@.service`: systemd template unit.
 - `scripts/install_service.sh`: systemd installer.
@@ -289,7 +332,7 @@ uv run ruff format --check .
 See `src/ina_device_hub/setting.py` and [doc/ENVIRONMENT.md](doc/ENVIRONMENT.md)
 for the full list. Commonly required groups:
 
-- Turso: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
+- Turso/libSQL: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
 - S3-compatible storage: `S3_ENDPOINT_URL`, `S3_BUCKET_NAME`,
   `S3_BUCKET_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
 - MQTT: `MQTT_BROKER_URL`, `MQTT_BROKER_PORT`, `MQTT_BROKER_USERNAME`,
@@ -297,7 +340,7 @@ for the full list. Commonly required groups:
 - Weather recording: `WEATHER_RECORD_ENABLED`,
   `WEATHER_RECORD_INTERVAL_SECONDS`, `WEATHER_PROVIDER`,
   `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_TIMEZONE`
-- Cloudflare hosted option: `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME`,
+- Cloudflare Local Hub option: `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME`,
   `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCOUNT_ID`,
   `CLOUDFLARE_ACCESS_API_TOKEN`
 - OTA firmware URLs: `FIRMWARE_BASE_URL`, `FIRMWARE_HOSTNAME`,
@@ -308,7 +351,40 @@ for the full list. Commonly required groups:
 - Devices publish requests to `/<device_id>/kinds/config/request`.
 - The hub replies on `/<device_id>/kinds/config/reply`.
 - Immediate updates can be published to `/<device_id>/kinds/config/push`.
-- Config is stored in `WORK_DIR/.device_configs.json`.
+- Config business records remain in `WORK_DIR/.device_configs.json`.
+- Effective device runtime config is mirrored into the revisioned local Edge
+  cache at `WORK_DIR/edge-runtime/edge.db`; the Local Hub identity is persisted
+  separately at `WORK_DIR/edge-runtime/identity.json`.
+- A cache failure falls back to the validated JSON record, so a device config
+  reply does not depend on Turso or WAN availability.
+- The same local database provides a durable event outbox. Standalone Local
+  Hubs continue using their existing event logs; parent-bound enqueueing is
+  enabled together with parent Sync enrollment so an unconsumed outbox cannot
+  grow indefinitely.
+
+## Hierarchical Sync
+
+A Local Hub can act as a Sync v1 parent for Edge Gateways or other Local Hubs
+while remaining the MQTT controller for its directly connected devices. It can
+also initiate outbound Sync v1 exchanges to one upstream Local Hub.
+The upstream connection is outside the local MQTT safety loop: cached runtime
+configuration, direct commands, readiness, and field operation continue while
+the WAN or parent is unavailable.
+
+Child enrollment returns a bearer token exactly once:
+
+```text
+POST /local/api/hierarchy/children/enrollments
+POST /local/api/hierarchy/children/<node_id>/revoke
+POST /sync/v1/nodes/<node_id>/exchange
+```
+
+Node Sync authentication is separate from browser and Cloudflare Access
+authentication. Production parent URLs require HTTPS and a node bearer-token
+file; optional mTLS private keys are also read only from absolute private
+files. See
+[the Japanese Sync v1 operations guide](doc/jp/HIERARCHICAL_SYNC.md) for the
+topology, enrollment flow, API list, security boundary, and outage behavior.
 
 ## Farm Telemetry
 

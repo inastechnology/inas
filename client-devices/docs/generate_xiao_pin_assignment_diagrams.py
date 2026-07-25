@@ -48,6 +48,7 @@ TOP_RECTS: dict[str, Rect] = {
     "A0": Rect(2080, 1112, 540, 128),
     "D0": Rect(2680, 1112, 540, 128),
     "GPIO3": Rect(1480, 1424, 540, 128),
+    "A2": Rect(2080, 1424, 540, 128),
     "D2": Rect(2680, 1424, 540, 128),
     "GPIO4": Rect(1480, 1584, 540, 128),
     "D3": Rect(2680, 1584, 540, 128),
@@ -73,15 +74,10 @@ RECTS = TOP_RECTS | BACK_RECTS
 
 ROLES: dict[str, tuple[Role, ...]] = {
     "wtr": (
-        Role(1, "Valve MOSFET", "D2 / GPIO3", "#e11d48", ("D2", "GPIO3")),
-        Role(2, "Pump MOSFET", "D3 / GPIO4", "#2563eb", ("D3", "GPIO4")),
-        Role(3, "Soil moisture ADC", "A5 / D5 / GPIO6", "#16a34a", ("A5", "D5", "GPIO6")),
-        Role(4, "RS485 direction", "D4 / GPIO5", "#f59e0b", ("D4", "GPIO5")),
-        Role(5, "RS485 TX", "D6 / GPIO43", "#7c3aed", ("D6", "GPIO43")),
-        Role(6, "RS485 RX", "D7 / GPIO44", "#0891b2", ("D7", "GPIO44")),
-        Role(7, "12V sensor power MOSFET", "D8 / GPIO7", "#ea580c", ("D8", "GPIO7")),
-        Role(8, "Power input / GND", "VBUS / GND", "#0f766e", ("VBUS", "GND_TOP")),
-        Role(9, "Setup AP", "BOOT / GPIO0", "#525252", ("BOOT", "GPIO0")),
+        Role(1, "Soil moisture ADC", "A2 / D2 / GPIO3", "#16a34a", ("A2", "D2", "GPIO3")),
+        Role(2, "Irrigation output", "D4 / GPIO5", "#2563eb", ("D4", "GPIO5")),
+        Role(3, "Power input / GND", "VBUS / GND", "#0f766e", ("VBUS", "GND_TOP")),
+        Role(4, "Setup AP", "BOOT / GPIO0", "#525252", ("BOOT", "GPIO0")),
     ),
     "env": (
         Role(1, "RS485 direction", "D4 / GPIO5", "#f59e0b", ("D4", "GPIO5")),
@@ -99,7 +95,7 @@ ROLES: dict[str, tuple[Role, ...]] = {
 }
 
 TITLES = {
-    "wtr": "WTR all-in-one watering device",
+    "wtr": "WTR single-channel watering device",
     "env": "ENV RS485 environmental sensor device",
     "soi": "SOI soil moisture sensor device",
 }

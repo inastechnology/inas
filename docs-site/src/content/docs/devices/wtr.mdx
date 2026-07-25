@@ -4,6 +4,8 @@ description: WTRの正しいA2/D2・D4配線、F/W書き込み、setup、起動�
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
+import ManualSteps from '../../../components/ManualSteps.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
 
 WTRは、アナログ土壌水分を測り、1系統の潅水負荷を制御するデバイスです。公開する標準profileのpin contractは次の2信号です。
 
@@ -16,15 +18,73 @@ WTRは、アナログ土壌水分を測り、1系統の潅水負荷を制御す�
 
 WTRの `D4` をRS485 directionへ使わないでください。RS485が必要な構成は[WRS](/devices/wrs/)を選びます。
 
-## 必要なもの
+<figure className="concept-illustration concept-illustration--compact">
+  <a href="/images/illustrations/wtr-hardware.webp" aria-label="WTRの物理構成スケッチを原寸で開く">
+    <img src="/images/illustrations/wtr-hardware.webp" alt="防滴箱内の制御基板と外部ドライバー、1系統の水路、土壌水分プローブを示すWTRのスケッチ" width="1216" height="704" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>WTRは、土壌水分プローブと1系統の潅水を1つの制御箱へまとめる構成です。負荷はGPIOへ直結せず、外部driverを介します。正確な端子は下のpin contractを使用してください。</figcaption>
+</figure>
 
-- Seeed Studio XIAO ESP32S3
-- 3.3V対応のアナログ土壌水分sensor
-- 負荷電圧・電流に合うMOSFET、relay、またはdriver input
-- pumpまたはsolenoid valve
-- 誘導負荷用flyback protection
-- 安定化電源、fuse、端子台、共通GND配線
-- USB data cable、multimeter、圧着工具
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>製作から受入試験までの流れ
+
+<ManualSteps
+  label="WTRを製作して安全に受け入れる6つの工程"
+  steps={[
+    {
+      title: '部品と測定道具をそろえる',
+      description: '制御基板、土壌水分センサー、負荷に合う外部ドライバー、電源、保護部品、測定器を机上へ用意します。',
+      visual: 'self-build',
+      visualLabel: 'パソコン、基板、電子部品、測定工具を作業台へ用意する略図',
+    },
+    {
+      title: '電源を外した状態で配線する',
+      description: '下の端子表を正として配線し、負荷を制御端子へ直結せず、導通、短絡、電圧、極性を測定します。',
+      visual: 'sealed-device',
+      visualLabel: '電源を入れる前に制御箱と配線を測定して確認する略図',
+    },
+    {
+      title: '機器ソフトウェアを書き込む',
+      description: 'ビルド設定を作り、生成物と説明情報を検査してからUSB接続した機器へ書き込みます。',
+      visual: 'hub-install',
+      visualLabel: 'パソコンからUSB接続した圃場機器へソフトウェアを書き込む略図',
+    },
+    {
+      title: '最初の接続情報を保存する',
+      description: '初回設定画面を開き、2.4GHz側のWi-FiとHubの機器通信用接続先を入力して再起動を待ちます。',
+      visual: 'wifi-form',
+      visualLabel: '圃場機器の初期設定画面へWi-Fiと接続情報を入力する略図',
+    },
+    {
+      title: 'Hubへ同じ機器IDで登録する',
+      description: 'Hub画面でWTRを追加し、機器ソフトウェアと同じID、設置場所、接続した負荷を登録して設定受信を確認します。',
+      visual: 'one-device',
+      visualLabel: 'INAS Hubへ最初のWTR機器1台だけを登録する略図',
+    },
+    {
+      title: '人が見ている状態で数秒だけ試す',
+      description: '排水を管理できる状態で起動時潅水を1〜5秒だけ試し、結果を確認した直後に試験設定を無効へ戻します。',
+      visual: 'small-water-test',
+      visualLabel: '水を受ける容器を用意してWTRを数秒だけ試す略図',
+    },
+  ]}
+/>
+
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>製作前に用意するもの
+
+<div className="manual-prep-panel">
+  <div>
+    <h3>部品だけでなく、測定と保護の道具もそろえます</h3>
+    <ul>
+      <li>Seeed Studio XIAO ESP32S3</li>
+      <li>3.3V対応のアナログ土壌水分センサー</li>
+      <li>負荷電圧・電流に合う外部ドライバー</li>
+      <li>ポンプまたは電磁弁と、誘導負荷用の保護部品</li>
+      <li>安定化電源、ヒューズ、端子台、共通GND配線</li>
+      <li>データ通信できるUSBケーブル、テスター、圧着工具</li>
+    </ul>
+  </div>
+  <ManualVisual kind="self-build" label="WTR制御基板、外部ドライバー、電源、測定工具を作業台へ用意する略図" />
+</div>
 
 :::danger[GPIOで負荷を駆動しない]
 `D4` は制御信号です。pumpやvalveを直接つなぎません。必ず外部driverを介し、負荷側の電源を適切に開閉します。
@@ -86,6 +146,13 @@ WTRの `D4` をRS485 directionへ使わないでください。RS485が必要な
 3. 2.4GHz Wi-FiのSSID/passwordを入力します。
 4. MQTT hostにRaspberry PiのDHCP予約IP、portに`1883`、username/passwordにMosquittoで作成した値を入力します。
 5. 保存し、deviceが再起動するのを待ちます。
+
+<figure className="product-screenshot product-screenshot--narrow">
+  <a href="/images/screenshots/device-first-setup.webp" aria-label="WTR初期設定画面のスクリーンショットを原寸で開く">
+    <img src="/images/screenshots/device-first-setup.webp" alt="WTRのsetup APでWi-FiとMQTT brokerを入力する初期設定フォーム" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>初回起動時のsetup APです。「Connection settings are not configured yet.」と表示されたら、このフォームへ2.4GHz Wi-FiとMQTTの接続情報を入力します。</figcaption>
+</figure>
 
 設定済みdeviceでsetup APを開くときは、F/W起動後の受付時間内にBOOTを押し続けます。hardware RESETを押したままBOOTを保持するとROM bootloaderへ入るため、F/Wが起動してから操作してください。
 

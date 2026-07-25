@@ -1,0 +1,81 @@
+---
+title: 弊社提供機器のセットアップ
+description: セットアップ済みのINAS Hubと圃場の機器を、3つの手順で使い始めます。
+---
+
+import ManualVisual from '../../../components/ManualVisual.astro';
+
+:::note[準備中]
+弊社提供のHub・機器は現在仕様を検討中です。販売開始時に、実際の同梱品と画面に合わせて内容を確定します。
+:::
+
+<section className="setup-flyer" aria-labelledby="provided-setup-title">
+  <header className="setup-flyer__hero">
+    <div>
+      <span className="setup-flyer__eyebrow">QUICK SETUP · 3 STEPS</span>
+      <h2 id="provided-setup-title">箱を開けたら、1台ずつつなぐだけ</h2>
+      <p>Wi-Fiルーターや家電と同じように、内部の仕組みを設定せず使い始められる形を予定しています。</p>
+    </div>
+    <ManualVisual kind="package" label="INAS Hub、圃場の機器、付属品、確認票が入った箱の略図" compact={true} />
+  </header>
+
+  <div className="setup-flyer__kit" aria-label="箱に入っているもの">
+    <strong>箱の中</strong>
+    <span>INAS Hub</span>
+    <span>圃場の機器</span>
+    <span>電源・付属品</span>
+    <span>専用アドレスの案内</span>
+  </div>
+
+  <ol className="setup-flyer__steps">
+    <li>
+      <span className="setup-flyer__number">1</span>
+      <div>
+        <small>CHECK</small>
+        <h3>箱の中を確認</h3>
+        <p>不足・破損がないか、案内票と照合します。</p>
+      </div>
+      <ManualVisual kind="package" label="箱の同梱品と案内票を確認する略図" compact={true} />
+    </li>
+    <li>
+      <span className="setup-flyer__number">2</span>
+      <div>
+        <small>CONNECT</small>
+        <h3>Hubをつなぐ</h3>
+        <p>ルーターの近くで電源を入れ、普段使うWi-Fiを選びます。</p>
+      </div>
+      <ManualVisual kind="hub-power" label="ルーターの近くでINAS Hubへ電源を接続する略図" compact={true} />
+    </li>
+    <li>
+      <span className="setup-flyer__number">3</span>
+      <div>
+        <small>ONE BY ONE</small>
+        <h3>機器を1台つなぐ</h3>
+        <p>最初の1台だけ電源を入れ、画面に出るまで待ちます。</p>
+      </div>
+      <ManualVisual kind="one-device" label="最初の圃場機器1台だけをINAS Hubへ接続する略図" compact={true} />
+    </li>
+  </ol>
+
+  <div className="setup-flyer__success">
+    <div>
+      <span className="setup-flyer__success-mark" aria-hidden="true">✓</span>
+      <h3>機器一覧に表示されたら完了</h3>
+      <p>新しい機器のカードが1件増えれば接続成功です。確認できてから、残りも1台ずつつなぎます。</p>
+    </div>
+    <figure className="product-screenshot">
+      <a href="/images/screenshots/device-catalog.webp" aria-label="接続済み機器が表示された機器一覧をこの場で拡大する">
+        <img src="/images/screenshots/device-catalog.webp" alt="複数のデモ機器がカードで並び、状態と最終受信を確認できるINASの機器一覧" loading="lazy" decoding="async" />
+      </a>
+      <figcaption>この画面に最初の1台が表示されれば、接続できています。</figcaption>
+    </figure>
+  </div>
+
+  <footer className="setup-flyer__footer">
+    <strong>異常・破損・漏水がある</strong>
+    <span>電源と水を止め、使用を続けずサポートへ連絡します。</span>
+    <a href="/start/safety/">安全上の注意を見る →</a>
+  </footer>
+</section>
+
+手元で確認してから実際の設置場所へ移動します。移動後に表示されなくなった場合は、まず[Wi-Fiの確認手順](/start/network/)を試してください。

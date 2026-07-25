@@ -1,0 +1,149 @@
+---
+title: 圃場とデバイス
+description: 圃場を作り、Local HubまたはEdge Gatewayへ機器を接続して自動認識させます。
+---
+
+import ManualSteps from '../../../components/ManualSteps.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
+import DeviceConnectionGuide from '../../../components/DeviceConnectionGuide.astro';
+
+最初に圃場の場所を作り、そのあと圃場の機器をネットワークへつなぎます。**機器番号を手入力して登録する作業はありません。** Hubが最初の状態を受け取ると、新しい機器として自動で見つけます。
+
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>画面を開く前に用意するもの
+
+<div className="manual-prep-panel">
+  <div>
+    <h3>現場と画面の名前をそろえてから接続します</h3>
+    <ul>
+      <li>圃場名、所在地、作物・品種</li>
+      <li>区画、ハウス、畝の呼び方と位置関係</li>
+      <li>Local HubまたはEdge Gatewayへつながるネットワーク</li>
+      <li>最初に電源を入れる機器1台</li>
+      <li>各接続口につながる弁・ポンプ・畝のラベル</li>
+    </ul>
+  </div>
+  <ManualVisual kind="field-layout" label="現場の畝、設備、機器の位置関係をINAS画面へ写す略図" />
+</div>
+
+## 圃場の階層
+
+<figure class="hierarchy-map" aria-labelledby="field-hierarchy-title">
+  <div class="hierarchy-map__heading">
+    <strong id="field-hierarchy-title">現場と画面でそろえる階層</strong>
+    <span>FIELD STRUCTURE</span>
+  </div>
+  <div class="hierarchy-map__root">圃場<small>管理の起点</small></div>
+  <div class="hierarchy-map__branches">
+    <div class="hierarchy-map__branch">
+      <strong>区画</strong><small>ハウス・区域など</small>
+      <div class="hierarchy-map__items"><span>畝・ベッド</span><span>設置ポイント</span></div>
+    </div>
+    <div class="hierarchy-map__branch">
+      <strong>直接配置</strong><small>小規模な構成</small>
+      <div class="hierarchy-map__items"><span>機器</span><span>センサー</span></div>
+    </div>
+    <div class="hierarchy-map__branch">
+      <strong>共通設備</strong><small>圃場全体に属するもの</small>
+      <div class="hierarchy-map__items"><span>設備</span><span>接続先</span></div>
+    </div>
+  </div>
+  <figcaption>現場を必要以上に細分化せず、「測定値・作業・水の行き先」を同じ場所へたどれる粒度にします。</figcaption>
+</figure>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>圃場を作り、機器をつなぐ手順
+
+<ManualSteps
+  label="圃場を作り、機器を自動認識させる6つの工程"
+  steps={[
+    {
+      title: '圃場の基本情報を登録する',
+      description: '圃場名、所在地、作物・品種を入力し、現場で使う呼び方と画面の表示名をそろえます。',
+      visual: 'field-form',
+      visualLabel: 'INAS画面の圃場追加フォームへ圃場名、所在地、作物を入力する略図',
+    },
+    {
+      title: '区画と畝を現場どおりに配置する',
+      description: '必要な区画と畝だけを作り、設置ビューで現場と同じ位置関係になるよう配置します。',
+      visual: 'field-layout',
+      visualLabel: 'INASの設置ビューへ畝と設備を現場どおりに配置する略図',
+    },
+    {
+      title: '受け取り役を先につなぐ',
+      description: '同じ場所ならLocal Hub、離れた場所ならEdge Gatewayを起動し、親Hubから利用できる状態にします。',
+      visual: 'hub-power',
+      visualLabel: 'ネットワークの近くでLocal HubまたはEdge Gatewayへ電源を接続する略図',
+    },
+    {
+      title: '最初の機器1台へ電源を入れる',
+      description: '受け取り役と同じネットワークへつなぎ、そのまま待ちます。機器番号を画面へ入力する必要はありません。',
+      visual: 'one-device',
+      visualLabel: '最初の圃場機器1台だけへ電源を入れてHubの自動認識を待つ略図',
+    },
+    {
+      title: '機器一覧に表示されたことを確認する',
+      description: '機器一覧へ新しい機器が表示されれば接続成功です。最初は確認待ちとして表示される場合があります。',
+      visual: 'dashboard',
+      visualLabel: 'INASの機器一覧に自動認識された圃場機器が表示される略図',
+    },
+    {
+      title: '承認し、名前・場所・行き先を決める',
+      description: '現物を確認してから承認し、分かりやすい名前、置いた圃場・畝、接続口につながる弁やポンプを設定します。',
+      visual: 'output-link',
+      visualLabel: '自動認識された機器へ設置場所と水の行き先を設定する略図',
+    },
+  ]}
+/>
+
+すべての階層を使う必要はありません。小規模なら圃場へ直接機器を置き、複数のハウスや畝がある場合だけ分割します。
+
+## 圃場を作る
+
+1. 「圃場」を開き、新規作成します。
+2. 表示名、所在地、時刻の地域を確認します。
+3. 作物・品種・栽培方法を登録します。
+4. 必要な区画・畝を作ります。
+5. 設置ビューで現場に近い位置へ配置します。
+
+<figure class="product-screenshot product-screenshot--wide">
+  <a href="/images/screenshots/field-installation-layout.webp" aria-label="圃場の設置ビューのスクリーンショットをこの場で拡大する">
+    <img src="/images/screenshots/field-installation-layout.webp" alt="ハウス内の畝、点滴潅水、センサー、カメラを配置した圃場の設置ビュー" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>左の配置パレットから畝や設備を置き、現場と同じ位置関係と接続先を画面上へ再現します。</figcaption>
+</figure>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>機器を接続して自動認識させる
+
+<DeviceConnectionGuide />
+
+Local Hubへ直接つなぐ場合も、Edge Gatewayを経由する場合も、利用者が新規登録画面で機器番号を入力することはありません。接続した機器が最初の状態を送ると、受け取り役が見つけて一覧へ反映します。
+
+:::note[最初は「確認待ち」でも正常です]
+知らない機器が勝手に運転を始めないよう、自動認識された直後は確認待ちになる場合があります。現物の機器番号と設置場所を確認してから承認してください。
+:::
+
+## 承認後にそろえる3つの情報
+
+| 画面で設定すること | 例 | 目的 |
+|---|---|---|
+| 分かりやすい名前 | 育苗ハウス潅水機 | 一覧から現物を見つけやすくする |
+| 設置場所 | 第1圃場 / ハウスA / 畝2 | 測定値と作業を同じ場所へ結び付ける |
+| 水やりの行き先 | 接続口1 → ハウスA東側 | 画面表示と実際の配管を一致させる |
+
+:::caution[現場のラベルを基準にします]
+筐体、接続口、画面の名前をそろえてください。「どの線がどの畝へ水を送るか」を、現場と画面の両方から追える状態にします。
+:::
+
+## <span className="manual-title-icon manual-title-icon--check" aria-hidden="true"></span>接続できたことを確認する
+
+**機器一覧に新しい機器が表示されれば、接続成功です。** この時点で「接続」と「自動認識」は完了しています。名前や設置場所は、そのあと落ち着いて設定できます。
+
+<figure class="product-screenshot product-screenshot--wide">
+  <a href="/images/screenshots/device-catalog.webp" aria-label="デモ機器が表示された機器一覧のスクリーンショットをこの場で拡大する">
+    <img src="/images/screenshots/device-catalog.webp" alt="デモ潅水機、土壌センサー、ハウス環境センサーが並び、状態と最終受信を確認できるINASの機器一覧" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>このように機器のカードが1件増えれば成功です。まず名前と状態を確認し、対象カードを開いて承認・設置場所・接続先を設定します。</figcaption>
+</figure>
+
+表示されない場合は、複数の機器を同時に触らず、最初の1台だけで電源、利用するネットワーク、Local HubまたはEdge Gatewayの状態を順に確認します。
+
+次に[潅水設定](/configure/watering/)または各機器のセンサー設定を行います。

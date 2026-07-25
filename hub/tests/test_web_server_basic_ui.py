@@ -25,6 +25,7 @@ os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 os.environ["HUB_AUTH_MODE"] = "local"
 
 from ina_device_hub import web_server  # noqa: E402
+from ina_device_hub.field_layout_collaboration_service import FieldLayoutCollaborationService  # noqa: E402
 from ina_device_hub.field_layout_repository import FieldLayoutRepository  # noqa: E402
 from ina_device_hub.field_repository import FieldRepository  # noqa: E402
 from ina_device_hub.plant_calendar_generation_task import PlantCalendarGenerationTask  # noqa: E402
@@ -258,6 +259,9 @@ class WebServerBasicUITest(unittest.TestCase):
         self.field_layout_repository.save()
         self.original_field_layout_repository = web_server.field_layout_repository
         web_server.field_layout_repository = lambda: self.field_layout_repository
+        self.field_layout_collaboration_service = FieldLayoutCollaborationService()
+        self.original_field_layout_collaboration_service = web_server.field_layout_collaboration_service
+        web_server.field_layout_collaboration_service = lambda: self.field_layout_collaboration_service
         self.plant_management_repository = PlantManagementRepository()
         self.plant_management_repository.repository_path = os.path.join(self.tmp_dir.name, ".plant_management.json")
         self.plant_management_repository.data = {
@@ -302,6 +306,7 @@ class WebServerBasicUITest(unittest.TestCase):
         web_server.timelapse_media_service = self.original_timelapse_media_service
         web_server.field_repository = self.original_field_repository
         web_server.field_layout_repository = self.original_field_layout_repository
+        web_server.field_layout_collaboration_service = self.original_field_layout_collaboration_service
         web_server.plant_management_repository = self.original_plant_management_repository
         web_server.ai_content_service = self.original_ai_content_service
         web_server.plant_calendar_generation_task = self.original_plant_calendar_generation_task
@@ -1186,6 +1191,88 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(stale.get_json()["code"], "revision_conflict")
         self.assertEqual(stale.get_json()["current"]["revision"], 1)
         self.assertEqual(stale.get_json()["current"]["updated_by"], "local-user@ina.local")
+
+    def test_field_layout_collaboration_tracks_verified_users_and_tabs(self):
+        field = self.field_repository.upsert(None, {"name": "共同編集テスト圃場"})
+        path = f"/local/api/fields/{field['id']}/layout/collaboration"
+        headers = {"Cf-Access-Authenticated-User-Email": "worker@example.com"}
+
+        first = self.client.post(
+            path,
+            headers=headers,
+            json={
+                "client_id": "tab-worker-0001",
+                "actor_email": "forged@example.com",
+                "active_space_id": "space-root",
+                "selected_placement_id": "ridge-1",
+                "state": "editing",
+            },
+        )
+        second = self.client.post(
+            path,
+            json={
+                "client_id": "tab-local-0002",
+                "active_space_id": "space-root",
+                "selected_placement_id": "",
+                "state": "viewing",
+            },
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.headers["Cache-Control"], "no-store")
+        self.assertEqual(first.get_json()["participants"][0]["email"], "worker@example.com")
+        self.assertNotIn("forged@example.com", json.dumps(first.get_json()))
+        self.assertEqual(second.status_code, 200)
+        participants = {item["client_id"]: item for item in second.get_json()["participants"]}
+        self.assertEqual(set(participants), {"tab-worker-0001", "tab-local-0002"})
+        self.assertTrue(participants["tab-local-0002"]["is_current"])
+        self.assertFalse(participants["tab-worker-0001"]["is_current"])
+        self.assertEqual(participants["tab-worker-0001"]["selected_placement_id"], "ridge-1")
+
+    def test_field_layout_collaboration_rejects_invalid_presence_and_supports_leave(self):
+        field = self.field_repository.upsert(None, {"name": "退出テスト圃場"})
+        path = f"/local/api/fields/{field['id']}/layout/collaboration"
+
+        invalid = self.client.post(path, json={"client_id": "short", "state": "typing"})
+        joined = self.client.post(path, json={"client_id": "tab-local-0003", "state": "viewing"})
+        forged_leave = self.client.post(
+            path,
+            headers={"Cf-Access-Authenticated-User-Email": "other@example.com"},
+            json={"client_id": "tab-local-0003", "leave": True},
+        )
+        left = self.client.post(path, json={"client_id": "tab-local-0003", "leave": True})
+
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(joined.status_code, 200)
+        self.assertEqual(len(joined.get_json()["participants"]), 1)
+        self.assertEqual(len(forged_leave.get_json()["participants"]), 1)
+        self.assertEqual(left.status_code, 200)
+        self.assertEqual(left.get_json()["participants"], [])
+
+        oversized = self.client.post(
+            path,
+            json={"client_id": "tab-local-0005", "state": "viewing", "padding": "x" * 9_000},
+        )
+        self.assertEqual(oversized.status_code, 413)
+
+    def test_field_layout_collaboration_reports_latest_saved_revision(self):
+        field = self.field_repository.upsert(None, {"name": "更新通知テスト圃場"})
+        layout = self.client.get(f"/local/api/fields/{field['id']}/layout").get_json()
+
+        saved = self.client.put(
+            f"/local/api/fields/{field['id']}/layout",
+            headers={"Cf-Access-Authenticated-User-Email": "editor@example.com"},
+            json=layout,
+        )
+        collaboration = self.client.post(
+            f"/local/api/fields/{field['id']}/layout/collaboration",
+            json={"client_id": "tab-local-0004", "state": "viewing"},
+        )
+
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(collaboration.status_code, 200)
+        self.assertEqual(collaboration.get_json()["layout"]["revision"], 1)
+        self.assertEqual(collaboration.get_json()["layout"]["updated_by"], "editor@example.com")
 
     def test_layout_device_list_groups_unassigned_devices_and_hides_other_field_assignments(self):
         first_field = self.field_repository.upsert(None, {"name": "第1圃場"})

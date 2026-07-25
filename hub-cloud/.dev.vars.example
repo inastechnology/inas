@@ -1,0 +1,13 @@
+CLOUD_HUB_PUBLIC_ORIGIN=http://localhost:8787
+CLOUDFLARE_ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+CLOUDFLARE_ACCESS_POLICY_AUD=
+DIRECTORY_TURSO_DATABASE_URL=libsql://inas-cloud-directory-your-org.turso.io
+DIRECTORY_TURSO_AUTH_TOKEN=
+TENANT_CREDENTIAL_MASTER_KEY=
+DISCORD_SECURITY_WEBHOOK_URL=
+
+# Factory/provisioning scripts only. Do not configure TURSO_PLATFORM_TOKEN as a
+# Worker secret.
+TURSO_ORG=
+TURSO_GROUP=default
+TURSO_PLATFORM_TOKEN=

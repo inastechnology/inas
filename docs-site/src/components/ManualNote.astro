@@ -1,0 +1,32 @@
+---
+import ManualVisual from "./ManualVisual.astro";
+
+interface Props {
+  id: string;
+  title: string;
+  tone: "caution" | "trouble" | "info" | "safe";
+  visual: string;
+  visualLabel: string;
+  eyebrow?: string;
+}
+
+const { id, title, tone, visual, visualLabel, eyebrow } = Astro.props;
+const toneLabels = {
+  caution: "注意すること",
+  trouble: "困ったとき",
+  info: "技術情報",
+  safe: "安全の確認",
+};
+---
+
+<section class:list={["manual-note", `manual-note--${tone}`]} aria-labelledby={id}>
+  <div class="manual-note__body">
+    <p class="manual-note__eyebrow">
+      <span aria-hidden="true"></span>
+      {eyebrow ?? toneLabels[tone]}
+    </p>
+    <h2 id={id}>{title}</h2>
+    <div class="manual-note__content"><slot /></div>
+  </div>
+  <ManualVisual kind={visual} label={visualLabel} compact />
+</section>

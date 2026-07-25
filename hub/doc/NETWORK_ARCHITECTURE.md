@@ -4,10 +4,11 @@ Japanese version:
 
 - [jp/NETWORK_ARCHITECTURE.md](jp/NETWORK_ARCHITECTURE.md)
 
-The current Tunnel operating model does not host the hub UI on Cloudflare
-Workers. Cloudflare Access and Cloudflare Tunnel act as the authenticated entry
-point, and traffic is forwarded to the local hub HTTP server running on the
-device-side site.
+This document describes only the optional remote-entry path for an existing
+Local Hub. Cloudflare Access and Cloudflare Tunnel forward traffic to that
+Local Hub HTTP server and do not change its Turso/libSQL configuration. The
+separate shared Cloud Hub/Edge path is documented under
+[`../../hub-cloud/`](../../hub-cloud/README.md).
 
 For the current cross-project diagram, see:
 
@@ -17,7 +18,8 @@ For the current cross-project diagram, see:
 ## Paths
 
 - UI/API path: administrator browser -> Cloudflare Access -> Cloudflare Tunnel
-  -> local hub `http://localhost:39151`.
+  at the configured `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME` -> Local Hub
+  `http://127.0.0.1:39151`.
 - MQTT path: local hub and devices exchange status, config, irrigation control,
   and OTA offer/status through the MQTT broker.
 - OTA binary path: devices download `firmware.bin` from the local hub HTTP
@@ -35,5 +37,5 @@ For the current cross-project diagram, see:
   They are not used for current OTA firmware download URLs.
 - Current firmware accepts only `http://` OTA download URLs. HTTPS OTA requires
   device-side certificate validation first.
-- Cloudflare Workers are a separate Cloud app option. They are not required for
-  the Tunnel path.
+- Every Local Hub Tunnel and Access application remains scoped to that Local
+  Hub and is not reused as Cloud Hub tenant routing.

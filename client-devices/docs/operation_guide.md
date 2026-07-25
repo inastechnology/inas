@@ -20,7 +20,7 @@ This guide explains routine operation after installation.
 | Device kind | Calibration |
 |---|---|
 | `SOI` | Capture dry and wet references, or manually set `dry_raw` and `wet_raw` |
-| `WTR` | Calibrate analog soil moisture if used; calibrate RS485 values through env calibration when enabled |
+| `WTR` | Calibrate analog soil moisture on `A2/D2`; use WRS or ENV for RS485 sensors |
 | `WRS` | Calibrate RS485 soil/PAR/irradiance values; analog soil input is normally unused |
 | `ENV` | Calibrate PAR, EC, pH, and other RS485 values against known references |
 

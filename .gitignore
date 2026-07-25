@@ -31,6 +31,8 @@ compile_commands.json
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.ruff_cache/
+.npm-cache/
 .venv/
 .venv-platformio/
 .platformio-core/
@@ -41,8 +43,8 @@ node_modules/
 coverage/
 .wrangler/
 lp/dist/
-hub/cloudflare/.dev.vars
-hub/cloudflare/.generated/
+hub-cloud/.dev.vars
+hub-cloud/.generated/
 
 # Editor and IDE state
 **/.vscode/.browse.c_cpp.db*

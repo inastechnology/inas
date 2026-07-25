@@ -1,0 +1,114 @@
+---
+title: 更新とバックアップ
+description: Hubを安全に更新し、設定・データ・F/Wをバックアップする手順です。
+---
+
+import ManualSteps from '../../../components/ManualSteps.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
+
+通常更新では、既存の `.env`、MQTT、HTTP、Cloudflare設定、Runtime Configを保持します。更新前に状態を保存し、更新後にhealth checkを行います。
+
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>更新前に準備すること
+
+<div className="manual-prep-panel">
+  <div>
+    <h3>戻せる状態を作ってから更新します</h3>
+    <ul>
+      <li>現在のHub画面と準備状態が正常</li>
+      <li>接続中の機器数と直近の異常を記録済み</li>
+      <li>設定と作業データを含むバックアップを作成済み</li>
+      <li>バックアップをHub本体とは別の安全な場所へ保管</li>
+      <li>更新後に圃場と機器を確認できる担当者がいる</li>
+    </ul>
+  </div>
+  <ManualVisual kind="backup" label="INAS Hubの設定と作業データを別の保管場所へバックアップする略図" />
+</div>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>更新の流れ
+
+<ManualSteps
+  label="INAS Hubを安全に更新する4つの工程"
+  steps={[
+    {
+      title: '更新前の正常な状態を記録する',
+      description: '現在の版、サービス状態、準備状態、接続中の機器数、直近の異常、更新対象を記録します。',
+      visual: 'dashboard',
+      visualLabel: '更新前のINAS画面と機器接続が正常な状態を記録する略図',
+    },
+    {
+      title: '設定と作業データを退避する',
+      description: '移行スクリプトで一覧を確認してから、作業データを含むアーカイブを作り、Hubとは別の場所へ保存します。',
+      visual: 'backup',
+      visualLabel: 'INAS Hubから別の保管場所へバックアップを書き出す略図',
+    },
+    {
+      title: 'プログラムを更新して再導入する',
+      description: '最新のプログラムと付属モジュールを取得し、既存設定を保つ通常モードでインストーラーを実行します。',
+      visual: 'hub-install',
+      visualLabel: '更新したプログラムを既存のINAS Hubへ安全に導入する略図',
+    },
+    {
+      title: '画面と機器が元の状態へ戻ったか確認する',
+      description: 'サービスと準備状態だけでなく、圃場、登録機器、配信済み設定が保持されていることを画面から確認します。',
+      visual: 'dashboard',
+      visualLabel: '更新後のINAS画面に圃場と登録機器が保持された略図',
+    },
+  ]}
+/>
+
+## 更新前
+
+```bash
+cd hub
+bash scripts/migrate_local_files.sh list
+bash scripts/migrate_local_files.sh export-zip /tmp/ina-hub-backup.zip --include-work-dir
+```
+
+次を記録します。
+
+- 現在のGit commit
+- Hub serviceの状態
+- `/readyz` の応答
+- 接続中デバイス数
+- 直近のMQTT error
+- F/W targetが設定されたデバイス
+
+## 更新する
+
+リポジトリを更新した後、production flagを付けずにinstallerを再実行します。
+
+```bash
+git pull --ff-only
+git submodule update --init --recursive
+cd hub
+sudo ./scripts/install_service.sh
+```
+
+installerは既存設定を検査し、backup、unit更新、Hub再起動、`/readyz`確認を行います。
+
+## 更新後
+
+```bash
+systemctl status inas-device-hub@main
+curl --fail http://127.0.0.1:39151/readyz
+./scripts/hub_service.sh logs
+```
+
+画面から圃場、登録デバイス、Runtime Configが保持されていることも確認します。
+
+## バックアップから戻す
+
+復元先と内容を確認してから実行します。`--overwrite` は既存ファイルを置き換えるため、先に別のbackupを取ってください。
+
+```bash
+bash scripts/migrate_local_files.sh import-zip \
+  /tmp/ina-hub-backup.zip \
+  --include-work-dir \
+  --overwrite
+```
+
+復元後はHubを再起動し、`/readyz` とデバイス接続を確認します。
+
+:::tip[バックアップの保管]
+backup archiveはHub本体とは別のstorageへ保存し、権限を制限します。`.env`やtokenが含まれる可能性があるため、公開bucketへ置きません。
+:::

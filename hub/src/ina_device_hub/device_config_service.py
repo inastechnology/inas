@@ -14,15 +14,17 @@ from ina_device_hub.device_definition_registry import project_runtime_config
 from ina_device_hub.device_event_log import append_device_event
 from ina_device_hub.discord_notification_service import discord_notification_service
 from ina_device_hub.general_log import logger
+from ina_device_hub.local_edge_runtime import local_edge_runtime
 from ina_device_hub.sensor_measurement_repository import safe_record_status_measurements
 from ina_device_hub.setting import setting
 
 
 class DeviceConfigService:
-    def __init__(self, repository=None, notification_service=None, event_log_dispatcher=None):
+    def __init__(self, repository=None, notification_service=None, event_log_dispatcher=None, runtime_config_cache=None):
         self.repository = repository or device_config_repository()
         self.notification_service = notification_service or discord_notification_service()
         self.event_log_dispatcher = event_log_dispatcher or _dispatch_event_log
+        self.runtime_config_cache = runtime_config_cache
         self.mqtt_client = None
 
     def attach_mqtt_client(self, mqtt_client):
@@ -213,7 +215,9 @@ class DeviceConfigService:
         return result
 
     def update_config(self, device_id: str, config: dict):
-        return self.repository.upsert(device_id, config)
+        record = self.repository.upsert(device_id, config)
+        self._cache_effective_runtime_config(record)
+        return record
 
     def record_config_request(self, device_id: str):
         is_new_device = self.repository.get(device_id) is None
@@ -225,6 +229,7 @@ class DeviceConfigService:
     def record_status(self, device_id: str, status: dict):
         is_new_device = self.repository.get(device_id) is None
         record = self.repository.record_status(device_id, status)
+        self._cache_effective_runtime_config(record)
         if is_new_device:
             self._notify_new_device(device_id, record, "status", payload=status)
         _log_device_status(device_id, record["last_status_at"], status)
@@ -244,25 +249,67 @@ class DeviceConfigService:
         return self.repository.update_metadata(device_id, metadata)
 
     def set_state(self, device_id: str, state: str, approved_by: str | None = None):
-        return self.repository.set_state(device_id, state, approved_by=approved_by)
+        record = self.repository.set_state(device_id, state, approved_by=approved_by)
+        self._cache_effective_runtime_config(record)
+        return record
 
     def list_statuses(self, device_id: str, limit: int = 100):
         return self.repository.list_statuses(device_id, limit=limit)
 
     def _config_for_reply(self, device_id: str):
         record = self.repository.record_config_request(device_id, self.default_config())
+        return self._cache_effective_runtime_config(record)
+
+    def _effective_runtime_config(self, record: dict):
         if record["state"] == "active" and record.get("config"):
             stored = validate_device_config(record["config"])
             return project_runtime_config(record.get("device_kind"), stored)
         return project_runtime_config(record.get("device_kind"), self.default_config())
+
+    def _cache_effective_runtime_config(self, record: dict):
+        parent_authority, parent_config = self._parent_runtime_config(record)
+        if parent_authority:
+            return parent_config
+        config = self._effective_runtime_config(record)
+        if self.runtime_config_cache is None:
+            return config
+        device_id = record["device_id"]
+        try:
+            resource = self.runtime_config_cache.cache_runtime_config(
+                device_id,
+                config,
+                updated_at=record.get("updated_at"),
+            )
+            if isinstance(resource.payload, dict):
+                return resource.payload
+        except Exception:
+            # The existing JSON record remains the migration source of truth.
+            # A cache repair must never delay the firmware's short reply window.
+            logger.exception("Failed to refresh local runtime config cache for device_id=%s", device_id)
+        return config
+
+    def _parent_runtime_config(self, record: dict) -> tuple[bool, dict | None]:
+        if self.runtime_config_cache is None:
+            return False, None
+        authority_check = getattr(self.runtime_config_cache, "is_parent_runtime_config_authoritative", None)
+        config_reader = getattr(self.runtime_config_cache, "get_runtime_config", None)
+        if not callable(authority_check) or not callable(config_reader) or not authority_check(record["device_id"]):
+            return False, None
+        cached = config_reader(record["device_id"])
+        if isinstance(cached, dict):
+            return True, cached
+        return True, project_runtime_config(record.get("device_kind"), self.default_config())
 
     def publish_config(self, device_id: str, action: str, config: dict | None = None, retain: bool = False, record_event: bool = True):
         if self.mqtt_client is None:
             raise RuntimeError("mqtt client is not attached")
 
         record = self.get_record(device_id)
-        stored_config = validate_device_config(config or record.get("config") or self.default_config())
-        config = project_runtime_config(record.get("device_kind"), stored_config)
+        if config is None:
+            config = self._cache_effective_runtime_config(record)
+        else:
+            stored_config = validate_device_config(config)
+            config = project_runtime_config(record.get("device_kind"), stored_config)
         topic = f"/{device_id}/kinds/config/{action}"
         payload = json.dumps(config, ensure_ascii=True, separators=(",", ":"))
         result = self.mqtt_client.publish(topic, payload, qos=0, retain=retain)
@@ -451,4 +498,4 @@ def _log_device_status(device_id: str, received_at: str, status: dict):
 
 @lru_cache(maxsize=1)
 def device_config_service():
-    return DeviceConfigService()
+    return DeviceConfigService(runtime_config_cache=local_edge_runtime())

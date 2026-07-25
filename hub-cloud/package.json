@@ -1,0 +1,41 @@
+{
+  "name": "inas-hub-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "tsx scripts/security-preflight.ts --check-remote-secrets && wrangler deploy",
+    "security:check": "tsx scripts/security-preflight.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "directory:bootstrap": "tsx scripts/bootstrap-directory.ts",
+    "directory:protect": "tsx scripts/protect-directory.ts",
+    "directory:recovery-drill": "tsx scripts/recovery-drill.ts",
+    "access:separate": "tsx scripts/separate-access-groups.ts",
+    "regression:tenant": "tsx scripts/tenant-regression.ts",
+    "migrate:directory": "tsx scripts/migrate-directory.ts",
+    "tenant:provision": "tsx scripts/provision-tenant.ts",
+    "gateway:kit": "tsx scripts/kit-edge-gateway.ts",
+    "gateway:credential": "tsx scripts/manage-node-credential.ts",
+    "membership:manage": "tsx scripts/manage-membership.ts"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.15",
+    "@nuintun/qrcode": "^5.0.3",
+    "@tursodatabase/api": "^2.0.5",
+    "hono": "^4.12.31",
+    "jose": "^6.2.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260723.1",
+    "@types/node": "^24.10.0",
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.113.0"
+  },
+  "overrides": {
+    "sharp": "0.35.0"
+  }
+}

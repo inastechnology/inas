@@ -5,6 +5,21 @@ description: Hubからdeviceへ送るRuntime Configの保存・配信・確認�
 
 Runtime Configは、登録deviceごとの運用設定です。Device Definitionが送信可能なkeyを宣言し、Hubが保存・配信し、F/Wが検証して適用します。
 
+<figure class="process-map" aria-labelledby="runtime-config-lifecycle-title">
+  <div class="process-map__heading">
+    <strong id="runtime-config-lifecycle-title">Runtime Configのライフサイクル</strong>
+    <span>Stored → Active</span>
+  </div>
+  <ol class="process-map__steps">
+    <li><strong>Hubに保存</strong><small>deviceごとの運用設定を保持する</small></li>
+    <li><strong>配信を開始</strong><small>requestへのreply、またはpushを送る</small></li>
+    <li><strong>deviceが受信</strong><small>MQTT topicとpayloadを受け取る</small></li>
+    <li><strong>検証・永続化</strong><small>schema確認後にLittleFSへ保存する</small></li>
+    <li><strong>active値を報告</strong><small>statusで受信結果と適用値を返す</small></li>
+  </ol>
+  <figcaption>「保存済み」と「実機で有効」は別の状態です。右端まで確認して作業完了とします。</figcaption>
+</figure>
+
 ## 通信
 
 | 方向 | topic | 用途 |
@@ -63,6 +78,13 @@ PUT /local/api/device-configs/<device_id>?push=true
 6. statusで `config_received` とactive設定を報告する。
 
 Hub画面の保存成功は1だけを示します。作業完了は5–6まで確認した時点です。
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/watering-settings.webp" aria-label="Runtime Configを編集する動作設定画面を原寸で開く">
+    <img src="/images/screenshots/watering-settings.webp" alt="潅水機の接続先、閾値、予約を編集するRuntime Configの動作設定画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>通常はJSONを直接編集せず、機器詳細の「動作設定」から保存します。保存後に、同じ機器の状態で受信済みの値まで確認してください。</figcaption>
+</figure>
 
 ## offline時
 

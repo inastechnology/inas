@@ -41,6 +41,16 @@ const TIMING_SORT_ORDER: Record<ActionTimingState, number> = { overdue: 0, due: 
 const PRIORITY_SORT_ORDER: Record<PlantCalendarAction["priority"], number> = { required: 0, should: 1, recommended: 2, optional: 3 };
 const QUESTION_HISTORY_PAGE_SIZE = 5;
 
+function initialCalendarQueryState() {
+  if (typeof window === "undefined") return { workspace: "work" as const, openAiReview: false };
+  const query = new URLSearchParams(window.location.search);
+  const openAiReview = query.get("review") === "ai";
+  return {
+    workspace: query.get("view") === "crop" || openAiReview ? "crop" as const : "work" as const,
+    openAiReview,
+  };
+}
+
 interface MemberTaskSummary {
   email: string;
   approvedCount: number;
@@ -113,6 +123,8 @@ export function PlantCalendarDrawer({
   const generationLockTasks = bundle.generation_tasks.filter((task) => task.status === "queued" || task.status === "running");
   const generationLockActive = generationLockTasks.length > 0;
   const calendarMutationBusy = busy || generationLockActive;
+  const initialQueryState = useRef(initialCalendarQueryState());
+  const initialAiReviewRequested = useRef(initialQueryState.current.openAiReview);
   const [question, setQuestion] = useState("");
   const [questionHistory, setQuestionHistory] = useState<PlantQuestionRecord[]>([]);
   const [questionHistoryTotal, setQuestionHistoryTotal] = useState(0);
@@ -130,7 +142,7 @@ export function PlantCalendarDrawer({
   const [regenerationDecisions, setRegenerationDecisions] = useState<Record<string, RegenerationDecision>>({});
   const [regenerationReviewOpen, setRegenerationReviewOpen] = useState(false);
   const [activeRegenerationProposalId, setActiveRegenerationProposalId] = useState<string | null>(null);
-  const [workspace, setWorkspace] = useState<"work" | "crop">("work");
+  const [workspace, setWorkspace] = useState<"work" | "crop">(initialQueryState.current.workspace);
   const [workScopePlantingId, setWorkScopePlantingId] = useState("all");
   const [assignmentScope, setAssignmentScope] = useState<AssignmentScope>("recommended");
   const [workDate, setWorkDate] = useState("");
@@ -249,8 +261,13 @@ export function PlantCalendarDrawer({
     setRegenerationDecisions((current) => Object.fromEntries(
       Object.entries(current).filter(([proposalId]) => pendingProposalIds.has(proposalId)),
     ));
-    setRegenerationReviewOpen(false);
-    setActiveRegenerationProposalId(null);
+    const requestedProposal = initialAiReviewRequested.current ? pendingRegenerationProposals[0] : null;
+    setRegenerationReviewOpen(Boolean(requestedProposal));
+    setActiveRegenerationProposalId(requestedProposal?.id ?? null);
+    if (requestedProposal) {
+      setWorkspace("crop");
+      initialAiReviewRequested.current = false;
+    }
     // The joined key changes only when the review task or its pending proposal set changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generationTask?.id, pendingRegenerationProposalKey]);
@@ -1019,7 +1036,7 @@ export function PlantCalendarDrawer({
                 <section className="calendar-action-detail-dialog" role="dialog" aria-modal="true" aria-labelledby={`calendar-action-detail-title-${selectedAction.id}`}>
                   <header>
                     <div><span>管理作業の詳細</span><h2 id={`calendar-action-detail-title-${selectedAction.id}`}>{selectedAction.title}</h2></div>
-                    <button type="button" className="icon-button labeled-icon-button" onClick={closeAction} aria-label="作業詳細を閉じる" title="閉じる"><X size={19} /><span>閉じる</span></button>
+                    <button type="button" className="icon-button labeled-icon-button" data-calendar-dialog-close onClick={closeAction} aria-label="作業詳細を閉じる" title="閉じる"><X size={19} /><span>閉じる</span></button>
                   </header>
                   <div className="calendar-action-detail-body">
                     <CalendarActionCard
@@ -1171,8 +1188,10 @@ function MemberTaskCompletionSummary({ summaries, selectedScope, teamView, onSel
                 <span className={`member-achievement-icon ${summary.approvedCount > 0 ? "achieved" : ""}`}><Trophy size={18} /></span>
                 <span className="member-achievement-copy"><small>現在の称号</small><em>{achievement.currentTitle}</em></span>
                 <strong>{teamView ? summary.email : "自分の完遂記録"}</strong>
-                <span className="member-task-count"><b>{summary.approvedCount}</b>件 完遂</span>
-                <span className={`member-task-count ${summary.pendingCount > 0 ? "pending" : "quiet"}`}><b>{summary.pendingCount}</b>件 確認待ち</span>
+                <span className="member-task-counts">
+                  <span className="member-task-count"><b>{summary.approvedCount}</b>件 完遂</span>
+                  <span className={`member-task-count ${summary.pendingCount > 0 ? "pending" : "quiet"}`}><b>{summary.pendingCount}</b>件 確認待ち</span>
+                </span>
                 <span className="member-achievement-progress" aria-label={achievement.nextLabel}>
                   <i><i style={{ width: `${achievement.progressPercent}%` }} /></i>
                   <small>{achievement.nextLabel}</small>

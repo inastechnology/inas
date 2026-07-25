@@ -236,8 +236,15 @@ try {
   assert.equal(await page.$eval('#runtime-config-form button[type="submit"]', (button) => button.disabled), false, "changed runtime config must be saveable");
   assert.equal(await page.$eval("#save-push-runtime-config", (button) => button.disabled), false, "changed config on an active device must be saveable and sendable");
 
-  await page.click('.tab-button[data-tab-key="diagnostics"]');
-  await assertSelectedTab("diagnostics");
+  await page.click('.tab-button[data-tab-key="maintenance"]');
+  await assertSelectedTab("maintenance");
+  assert.equal(await page.$eval("#connection-help", (details) => details.open), false, "troubleshooting help must be closed initially");
+  await page.click("#connection-help > summary");
+  assert.equal(await page.$eval("#connection-help", (details) => details.open), true, "the ? button must open troubleshooting help");
+  assert.match(await page.$eval("#connection-help", (details) => details.innerText || ""), /困ったとき：通信を確認する/);
+  assert.match(await page.$eval("#connection-help", (details) => details.innerText || ""), /Hubが最後に確認/);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.$eval("#connection-help", (details) => details.open), false, "Escape must close troubleshooting help");
   assert(await page.$('[data-state-action="disable"]'));
   assert.equal(await page.$('[data-state-action="approve"]'), null, "an active device must not offer approval");
   assert.equal(await page.$('[data-state-action="retire"]'), null, "an active device must be stopped before retirement");
@@ -256,12 +263,12 @@ try {
   assert(await page.$('img[src$="/firmware-care.png"]'), "firmware flow must include its visual guide");
   await page.screenshot({ path: "/tmp/ina-device-wtr-firmware.png", fullPage: true });
 
-  await page.goto(`${baseUrl}/mqtt-devices/INADS-DEMO-WTR-003?tab=diagnostics`, { waitUntil: "networkidle0" });
-  await assertSelectedTab("diagnostics");
+  await page.goto(`${baseUrl}/mqtt-devices/INADS-DEMO-WTR-003?tab=maintenance`, { waitUntil: "networkidle0" });
+  await assertSelectedTab("maintenance");
   assert(await page.$('[data-state-action="approve"]'));
   assert(await page.$('[data-state-action="retire"]'));
   assert.equal(await page.$('[data-state-action="disable"]'), null, "a pending device cannot be stopped before approval");
-  await page.screenshot({ path: "/tmp/ina-device-pending-diagnostics.png", fullPage: true });
+  await page.screenshot({ path: "/tmp/ina-device-pending-maintenance.png", fullPage: true });
   await page.click('.tab-button[data-tab-key="settings"]');
   assert.equal(await page.$eval("#save-push-runtime-config", (button) => button.disabled), true, "a pending device cannot receive runtime config");
   assert.match(await page.$eval("#device-push-disabled", (notice) => notice.textContent || ""), /承認待ち/);
@@ -374,7 +381,7 @@ try {
       "/tmp/ina-device-wtr-settings-mobile.png",
       "/tmp/ina-device-calibration-guide.png",
       "/tmp/ina-device-wtr-firmware.png",
-      "/tmp/ina-device-pending-diagnostics.png",
+      "/tmp/ina-device-pending-maintenance.png",
       "/tmp/ina-device-env-monitoring.png",
       "/tmp/ina-device-env-sensor-workbench.png",
       "/tmp/ina-device-env-calibration-summary.png",

@@ -189,7 +189,7 @@ class DiscordNotificationServiceTest(unittest.TestCase):
         )
 
         card = payload["embeds"][0]
-        self.assertEqual(card["url"], "https://hub.example.com/mqtt-devices/device-1?tab=diagnostics")
+        self.assertEqual(card["url"], "https://hub.example.com/mqtt-devices/device-1?tab=maintenance")
         self.assertIn("電源、通信環境", card["description"])
         self.assertNotIn("topic:", str(payload))
 

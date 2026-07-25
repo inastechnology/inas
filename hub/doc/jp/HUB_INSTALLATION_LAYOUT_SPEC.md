@@ -27,6 +27,7 @@
 | 中央 | Konva.js によるグリッド Canvas |
 | 右 | 選択した配置物、定植情報、または現在の空間のプロパティ |
 | 上部 | 圃場へ戻る、階層パンくず、栽培カレンダー、Undo/Redo、Zoom、保存状態、保存 |
+| Canvas上部 | 共同編集の接続状態、利用者数・画面数、参加者一覧 |
 | 右ドロワー | 作物別の管理作業、優先度、時期、作業記録、質問 |
 
 狭い画面では、配置パレット、Canvas、プロパティを縦方向へ並べる。配置パレットは横スクロールにする。
@@ -73,6 +74,10 @@ Canvas の右上には常に方位マークを表示する。方位マークは�
 - `Delete` で選択配置を削除する。子空間を持つ配置を削除した場合は配下の空間も削除する。
 - `Ctrl/Cmd + S` で保存、`Ctrl/Cmd + Z` で Undo、`Ctrl/Cmd + Shift + Z` で Redo する。
 - 未保存状態でページを離れる場合はブラウザの離脱確認を出す。
+- 同じ圃場を開いている利用者、画面数、`閲覧中 / 編集中 / 保存中 / 競合を確認中` をCanvas上部に表示する。複数タブはpresence上では別clientとして管理し、一覧ではemail単位にまとめて画面数を示す。
+- 別利用者が選択中の配置物は、emailから決めた色の破線枠と名前ラベルで表示する。同じ利用者の複数画面が同じ配置物を選んだ場合は重複表示しない。同じ配置物のラベルは最大3件とし、それ以上は人数へ集約する。
+- 別画面の保存を検出した場合、未編集なら最新版へ追従する。未保存変更がある場合は三者比較し、変更項目が重ならなければ入力を保持したまま自動統合する。同じ項目が変更された場合だけ競合ダイアログを表示する。
+- 共同編集同期が失敗してもCanvas編集と手動保存を止めない。再接続後にrevisionで追従し、最終的な上書き防止はPUTの楽観ロックで保証する。
 - 圃場詳細や機器詳細から `?space=<space_id>&placement=<placement_id>` 付きで開かれた場合は、指定配置物を含む空間へ移動してその配置物を選択し、右プロパティを直ちに表示する。
 - 定植可能な培地を保存後に選択し、作物、品種、作物区分、果樹の場合の樹齢、定植日、株数、培地に合う栽培方式、用土・培地、日当たりを登録する。用土・培地と日当たりは選択式とし、圃場地域は重複入力せず圃場の所在地から取得する。
 - AI計画生成ボタンは必須項目と配置保存がすべて満たされた場合だけ有効化する。無効時は不足項目をボタン直前に列挙し、サーバもLLM呼び出し前に同じ条件を検証する。
@@ -125,11 +130,14 @@ Canvas の右上には常に方位マークを表示する。方位マークは�
 |---|---|---|
 | GET | `/local/api/fields/<field_id>/layout` | レイアウト取得。未保存時は既定レイアウトを返す |
 | PUT | `/local/api/fields/<field_id>/layout` | レイアウト全体を保存 |
+| POST | `/local/api/fields/<field_id>/layout/collaboration` | presenceを更新し、参加者と最新layout metadataを取得。`leave: true`で退出 |
 | GET | `/local/api/fields/<field_id>/layout/devices` | 紐付け候補デバイスと MOSFET SW を取得 |
 | GET | `/local/api/fields/<field_id>/plantings` | 定植、カレンダー、生成タスク、サジェスト、作業記録を取得 |
 | POST | `/local/api/fields/<field_id>/plantings` | 保存済み配置へ定植し、カレンダー生成タスクを登録して HTTP 202 を返す |
 
 PUT は `revision` による楽観ロックを行う。保存済み revision と送信 revision が異なる場合は HTTP 409 を返す。
+
+共同編集APIはlayout本体を返さず、`revision`、`updated_by`、`updated_at` と期限付きpresenceだけを返す。actor emailはbodyから受け取らず、Hubが検証した現在利用者から設定する。応答は`Cache-Control: no-store`とし、presenceは永続化しない。
 
 現行の永続化先は Hub の work directory にある `.field_layouts.json` とする。圃場の生育条件を保存する `.fields.json` とは分離する。多圃場・多拠点運用へ移行する際のDB境界と索引は [HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md](HUB_FIELD_RESOURCE_HIERARCHY_SPEC.md) に従う。
 
@@ -143,6 +151,7 @@ PUT は `revision` による楽観ロックを行う。保存済み revision と
 | ビルド | Vite |
 | API/HTML配信 | Flask |
 | 永続化 | `FieldLayoutRepository` |
+| 共同編集room | `FieldLayoutCollaborationService`。Hubプロセス内の一時状態 |
 
 フロントエンドソースは `hub/admin-ui` に置く。`npm run build` で `hub/src/ina_device_hub/static/admin-layout` に静的アセットを生成する。
 
@@ -155,7 +164,8 @@ PUT は `revision` による楽観ロックを行う。保存済み revision と
 - 複数選択、グループ化、コピー貼り付け。
 - GPS、航空写真、地図座標との連携。
 - ユーザー定義プリセット。
-- 複数ユーザーのリアルタイム共同編集。
+- キーストローク単位のリアルタイム同期、CRDT、hard lock。
+- 複数Hubプロセス・複数Hubノード間で共有するpresence。水平分割時は外部room基盤へ移す。
 
 重なりは、ハウス内に設備を重ねて表現する用途があるため、初版では許可する。
 
@@ -180,3 +190,5 @@ PUT は `revision` による楽観ロックを行う。保存済み revision と
 9. カレンダー生成、作業記録、質問回答を画面から実行する。
 10. API から階層、方位、配置、デバイス紐付け、定植、目標、カレンダー、作業記録を再取得する。
 11. デスクトップ、モバイル、カレンダードロワーのスクリーンショットを取得する。
+
+`hub/admin-ui/scripts/layout-collaboration-smoke.mjs` は2画面を同時に開き、参加者・画面数、遠隔選択、非重複変更の自動統合、統合後の保存、モバイル参加者一覧を確認する。期限切れ、退出、認証email、同一項目の競合分岐はPython unit/API testと三者マージtestで確認する。

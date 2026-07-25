@@ -18,6 +18,14 @@ Do not commit real secrets. Do not print `.env` secret values in logs.
 | `LOCAL_STORAGE_BASE_DIR` | Local storage path for media and generated outputs |
 | `HUB_HTTP_PORT` | Local hub HTTP port. Default is `39151` |
 
+For an Internet-reachable production Hub, use `HUB_AUTH_MODE=cloudflare_access`.
+`CLOUDFLARE_ACCESS_TEAM_DOMAIN` must be the exact HTTPS
+`*.cloudflareaccess.com` team origin, and
+`CLOUDFLARE_ACCESS_POLICY_AUD` must be the protected application's audience.
+The Hub verifies the JWT signature, issuer, audience, application-token type,
+subject, and `nbf`/`iat`/`exp` lifetime. Do not configure an Access Bypass
+policy for Hub application or management paths.
+
 ## MQTT
 
 | Variable | Purpose |
@@ -27,12 +35,37 @@ Do not commit real secrets. Do not print `.env` secret values in logs.
 | `MQTT_BROKER_USERNAME` | MQTT username |
 | `MQTT_BROKER_PASSWORD` | MQTT password |
 
+## Hierarchical Parent Sync
+
+Leave `HUB_SYNC_PARENT_BASE_URL` empty for a standalone Local Hub.
+
+| Variable | Purpose |
+|---|---|
+| `HUB_SYNC_PARENT_BASE_URL` | Upstream Local Hub base URL. HTTPS is required outside explicit loopback development |
+| `HUB_SYNC_PARENT_TOKEN_FILE` | Absolute path to the mode-`0600` node bearer-token file |
+| `HUB_SYNC_PARENT_CA_FILE` | Optional absolute path to a custom TLS CA bundle |
+| `HUB_SYNC_PARENT_CLIENT_CERT_FILE` | Optional absolute path to an additional mTLS client certificate; it does not replace the node bearer token |
+| `HUB_SYNC_PARENT_CLIENT_KEY_FILE` | Optional absolute path to its mode-`0600` private key; configure together with the certificate |
+| `HUB_SYNC_PARENT_TIMEOUT_SECONDS` | Connect/exchange timeout from 1 to 25 seconds. Default is `20` |
+| `HUB_SYNC_PARENT_ALLOW_INSECURE_LOOPBACK` | Development-only HTTP opt-in for `localhost`, `127.0.0.1`, or `::1` |
+
+Do not put credentials in the parent URL or directly in `.env`. The bearer and
+private-key paths must be regular, non-symlink files unreadable by group/other;
+the bearer must have the canonical `inas_sync_v1_` token shape. A configured
+parent does not affect local MQTT readiness. Parent-bound event emission starts
+only after the first valid authenticated exchange succeeds.
+
 ## Turso
 
 | Variable | Purpose |
 |---|---|
-| `TURSO_DATABASE_URL` | Turso/libSQL database URL |
-| `TURSO_AUTH_TOKEN` | Turso auth token |
+| `TURSO_DATABASE_URL` | This Local Hub installation's Turso/libSQL database URL |
+| `TURSO_AUTH_TOKEN` | This Local Hub installation's Turso auth token |
+| `TURSO_SYNC_INTERVAL` | Local replica sync interval in seconds |
+
+These credentials remain owned by this Local Hub. They are unrelated to the
+Cloud Hub directory/customer databases and must not be copied to an Edge
+Gateway.
 
 ## S3-Compatible Storage
 
@@ -89,7 +122,7 @@ Current firmware expects `http://` OTA URLs.
 | `CLOUDFLARE_ACCESS_TEAM_DOMAIN` | Access team domain |
 | `CLOUDFLARE_ACCESS_POLICY_AUD` | Access audience tag |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
-| `CLOUDFLARE_ACCESS_API_TOKEN` | Provisioning token for local scripts only |
+| `CLOUDFLARE_ACCESS_API_TOKEN` | Factory provisioning token passed only through process environment or hidden input; blank on the shipped appliance |
 | `CLOUDFLARE_ACCESS_ALLOWED_EMAILS` | Initial allowed email list |
 | `CLOUDFLARE_ACCESS_GROUP_ID` | Access group ID |
 | `CLOUDFLARE_ACCESS_APP_ID` | Access application ID |

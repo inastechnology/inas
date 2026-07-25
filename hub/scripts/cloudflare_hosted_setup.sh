@@ -86,6 +86,6 @@ fi
 
 echo "Cloudflare hosted setup complete."
 echo "For systemd-managed tunnel startup, install services with:"
-echo "  sudo scripts/install_service.sh --production --target-dir \"$REPO_ROOT\" --enable-cloudflare-tunnel"
+echo "  sudo scripts/install_service.sh --target-dir \"$REPO_ROOT\" --enable-cloudflare-tunnel"
 echo "For foreground tunnel startup, run:"
 echo "  bash scripts/cloudflare_tunnel_start.sh"

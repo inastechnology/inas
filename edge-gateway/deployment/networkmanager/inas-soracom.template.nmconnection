@@ -1,0 +1,20 @@
+# Optional SORACOM WAN template. Render APN/user/password from the approved SIM
+# profile during provisioning; do not commit per-SIM material.
+[connection]
+id=inas-soracom
+type=gsm
+autoconnect=true
+autoconnect-priority=50
+
+[gsm]
+apn=@@SORACOM_APN@@
+username=@@SORACOM_USERNAME@@
+password=@@SORACOM_PASSWORD@@
+
+[ipv4]
+method=auto
+route-metric=600
+never-default=false
+
+[ipv6]
+method=disabled

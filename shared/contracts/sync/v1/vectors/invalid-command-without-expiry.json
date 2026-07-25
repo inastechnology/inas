@@ -1,0 +1,23 @@
+{
+  "protocol_version": "1.0",
+  "correlation_request_id": "523e4567-e89b-42d3-a456-426614174100",
+  "server_time": "2026-07-23T02:15:01Z",
+  "next_cursor": null,
+  "ack_event_ids": [],
+  "ack_command_result_ids": [],
+  "desired_resources": [],
+  "commands": [
+    {
+      "command_id": "523e4567-e89b-42d3-a456-426614174101",
+      "idempotency_key": "missing-expiry",
+      "command_type": "device.action",
+      "target_node_id": "INAEG-123e4567-e89b-42d3-a456-426614174001",
+      "issued_at": "2026-07-23T02:15:00Z",
+      "payload": {
+        "action": "water"
+      }
+    }
+  ],
+  "next_poll_seconds": 15
+}
+

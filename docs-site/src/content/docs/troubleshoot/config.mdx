@@ -1,74 +1,64 @@
 ---
 title: 設定が反映されない
-description: Hubへの保存、MQTT request/reply、device解析・保存を順に確認します。
+description: Hubでの保存、機器への受け渡し、実際の動作を画面から順に確認します。
 ---
 
+import { Aside } from '@astrojs/starlight/components';
 import CommunityCta from '../../../components/CommunityCta.astro';
 
-Hub画面に値が保存されていても、deviceが受信・検証・適用するまでは動作が変わりません。設定の経路を4段階に分けます。
+Hubで設定を保存した直後に、機器の動作が変わるとは限りません。機器が次に通信し、設定を受け取ってから動作へ反映します。
 
-## 1. Hubへ保存されたか
+## Hub画面で確認する
 
-- 正しいdevice IDのdetailを開いている。
-- 保存後に画面を再読込して値が残る。
-- 権限errorやconflictが表示されていない。
-- Runtime ConfigのJSONがDevice Definitionのsend keysに合う。
+1. 「機器一覧」から対象の機器を開きます。
+2. 「動作設定」で、保存した値が画面に残っていることを確認します。
+3. 「概要」を開き、「動作確認」の「設定の受信」を確認します。
+4. 「確認待ち」の場合は、同じ画面の「次回起動」まで待ちます。
 
-## 2. deviceが要求したか
+<figure className="product-screenshot">
+  <a href="/images/screenshots/watering-operation-check.webp" aria-label="機器の概要と動作確認画面を原寸で開く">
+    <img src="/images/screenshots/watering-operation-check.webp" alt="機器の現在の判断と、通信、設定受信、時刻、出力先を表示する概要画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>「概要」の「動作確認」は、通信、設定の受信、時刻合わせ、出力先を順に表示します。「設定の受信」が確認待ちなら、設定を何度も保存せず次回起動を待ちます。</figcaption>
+</figure>
 
-deviceは各wake後に次へrequestをpublishします。
+## 表示ごとの判断
 
-```text
-/<device_id>/kinds/config/request
-```
+### 保存した値が画面から消える
 
-Hubは次へreplyします。
+Hubへの保存が完了していません。画面にエラーが出ていないか確認し、対象の機器を開き直してから、1項目だけ変更して保存します。
 
-```text
-/<device_id>/kinds/config/reply
-```
+**確認する理由:** 機器へ送る前に、Hubが変更内容を保持できている必要があるためです。
 
-即時更新に対応する場合は次のpushも使います。
+### 「機器と通信」が未取得
 
-```text
-/<device_id>/kinds/config/push
-```
+設定の問題より先に、機器の通信を復旧します。[デバイスがオフライン](/troubleshoot/device-offline/)の手順を確認してください。
 
-broker logまたはsubscriberで、IDを含むtopicとpayload sizeを確認します。
+**確認する理由:** 通信できない機器は、新しい設定を受け取れないためです。
 
-## 3. replyを受信したか
+### 「設定の受信」が確認待ち
 
-- MQTT接続がreply待機中に維持されている。
-- topicのdevice IDが完全一致する。
-- ACLがreply topicのsubscribeを許可する。
-- F/WのMQTT bufferがpayloadを収容できるversionである。
-- `config_received=true` がstatusに出る。
+「次回起動」に時刻が表示されていれば、その時刻まで待ちます。機器を安全に再起動できる場合は、一度だけ再起動してから画面を更新します。
 
-古いWTR F/Wには、512 bytesを超えるMQTT messageを破棄する版があります。HubのRuntime Configが約1.5KBになる構成では受信できません。修正版F/Wへ更新してください。
+**確認する理由:** 省電力機器は、休止中にはHubから設定を受け取れないためです。
 
-## 4. configが有効か
+### 「設定の受信」が受信済み
 
-F/WはJSONと各値を検証します。代表的な無効条件:
+設定は機器まで届いています。それでも動作が変わらない場合は、現在値、予約時刻、しきい値、出力先の順に確認します。
 
-- `schedules` がarrayでない。
-- hourが0–23、minuteが0–59の範囲外。
-- durationが0以下、channel maskが0。
-- WTRでunsupported channelを指定。
-- 分割潅水のON時間またはrepeatが0。
-- soil calibrationで `dry_raw <= wet_raw`。
+**確認する理由:** ここから先は通信ではなく、動作条件または接続した設備の問題に切り替わるためです。
 
-serial logの `Ignoring invalid ...` と `Runtime config must include ...` を確認します。
+## 反映を確認する
 
-## timeoutについて
+1. 保存した値をスクリーンショットで残します。
+2. 「設定の受信」が「受信済み」になるまで待ちます。
+3. 「現在の判断」に表示される予約やしきい値が変わったことを確認します。
+4. 次の起動後も同じ値が表示されることを確認します。
 
-Wi-Fi接続後、MQTT接続とAPI/config replyには追加時間が必要です。現在の共通F/Wはconfig受信を15秒待ちます。5秒程度で電源を切ったりresetしたりせず、1 cycleの完了を待ってstatusを確認してください。
+<Aside type="caution" title="短時間に保存や再起動を繰り返さない">
+機器はWi-Fiへ接続したあと、設定を受け取って保存するまで少し時間がかかります。数秒ごとに電源を切ったり、複数の値を続けて変更したりせず、1回の通信が完了するまで待ってください。
+</Aside>
 
-## 復旧の確認
-
-1. Hubに保存した値を控えます。
-2. deviceを安全に再起動します。
-3. `config_received=true` を確認します。
-4. statusに反映されたthreshold・pattern・scheduleを照合します。
-5. 次のwakeでも保存configが有効か確認します。
+管理担当者が受信データを調査する場合は、機器の「保守・管理」にある「管理者向けの技術データ」と[機器設定の技術資料](/reference/runtime-config/)を参照してください。
 
 <CommunityCta />

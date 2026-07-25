@@ -2,6 +2,7 @@ import base64
 import json
 import os
 import re
+import threading
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Any
@@ -18,6 +19,8 @@ MQTT_CONNECTION_EVENT_TYPES = {
     "mqtt_hub_connected",
     "mqtt_hub_connect_failed",
 }
+_event_sink_lock = threading.RLock()
+_event_sinks = []
 
 
 def append_device_event(
@@ -55,16 +58,41 @@ def append_device_event(
         event.update(_status_derived_fields(occurred_at, normalized_payload))
 
     try:
-        _append_device_event_to_turso(event)
+        _append_device_event_to_database(event)
     except BaseException:
-        logger.exception("Failed to append device event log to Turso")
+        logger.exception("Failed to append device event log to the Hub database")
 
     try:
         _append_device_event_to_jsonl(event)
     except Exception:
         logger.exception("Failed to append device event log fallback")
 
+    _dispatch_event_sinks(event)
     return event
+
+
+def register_device_event_sink(sink) -> None:
+    if not callable(sink):
+        raise ValueError("device event sink must be callable")
+    with _event_sink_lock:
+        if sink not in _event_sinks:
+            _event_sinks.append(sink)
+
+
+def unregister_device_event_sink(sink) -> None:
+    with _event_sink_lock:
+        if sink in _event_sinks:
+            _event_sinks.remove(sink)
+
+
+def _dispatch_event_sinks(event: dict) -> None:
+    with _event_sink_lock:
+        sinks = tuple(_event_sinks)
+    for sink in sinks:
+        try:
+            sink(dict(event))
+        except Exception:
+            logger.exception("Device event sink failed")
 
 
 def append_mqtt_hub_event(event_type: str, direction: str, *, topic: str, payload: Any = None, mqtt_rc: int | None = None):
@@ -126,7 +154,7 @@ def list_device_events(
     connection_events_only: bool = False,
 ):
     try:
-        return _fetch_device_events_from_turso(
+        return _fetch_device_events_from_database(
             limit=limit,
             device_id=device_id,
             event_type=event_type,
@@ -134,7 +162,7 @@ def list_device_events(
             connection_events_only=connection_events_only,
         )
     except BaseException:
-        logger.exception("Failed to fetch device event logs from Turso; using JSONL fallback")
+        logger.exception("Failed to fetch device event logs from the Hub database; using JSONL fallback")
         return _fetch_device_events_from_jsonl(
             limit=limit,
             device_id=device_id,
@@ -144,7 +172,7 @@ def list_device_events(
         )
 
 
-def _append_device_event_to_turso(event: dict):
+def _append_device_event_to_database(event: dict):
     _device_event_db_connector().insert_device_event(event)
 
 
@@ -153,7 +181,7 @@ def _append_device_event_to_jsonl(event: dict):
         file.write(json.dumps(event, ensure_ascii=True, separators=(",", ":")) + "\n")
 
 
-def _fetch_device_events_from_turso(
+def _fetch_device_events_from_database(
     *,
     limit: int = 100,
     device_id: str | None = None,

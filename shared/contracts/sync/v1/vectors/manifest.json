@@ -1,0 +1,37 @@
+[
+  {
+    "file": "valid-edge-request.json",
+    "definition": "syncRequest",
+    "valid": true
+  },
+  {
+    "file": "valid-local-hub-request.json",
+    "definition": "syncRequest",
+    "valid": true
+  },
+  {
+    "file": "valid-response.json",
+    "definition": "syncResponse",
+    "valid": true
+  },
+  {
+    "file": "invalid-node-prefix.json",
+    "definition": "syncRequest",
+    "valid": false
+  },
+  {
+    "file": "invalid-command-without-expiry.json",
+    "definition": "syncResponse",
+    "valid": false
+  },
+  {
+    "file": "invalid-desired-revision.json",
+    "definition": "syncResponse",
+    "valid": false
+  },
+  {
+    "file": "invalid-tenant-override.json",
+    "definition": "syncRequest",
+    "valid": false
+  }
+]

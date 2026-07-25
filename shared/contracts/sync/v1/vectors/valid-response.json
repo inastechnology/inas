@@ -1,0 +1,43 @@
+{
+  "protocol_version": "1.0",
+  "correlation_request_id": "123e4567-e89b-42d3-a456-426614174100",
+  "server_time": "2026-07-23T02:15:01Z",
+  "next_cursor": "opaque-parent-cursor-2",
+  "ack_event_ids": ["123e4567-e89b-42d3-a456-426614174101"],
+  "ack_command_result_ids": [],
+  "desired_resources": [
+    {
+      "resource_type": "device.runtime_config",
+      "resource_id": "INADS-123e4567-e89b-42d3-a456-426614174000",
+      "target_node_id": "INAEG-123e4567-e89b-42d3-a456-426614174001",
+      "revision": 3,
+      "operation": "upsert",
+      "content_sha256": "abe1c0cd212962e7675f210b3c3c04accf650a026c36dc6949d5e8fcbe119a9d",
+      "updated_at": "2026-07-23T02:14:00Z",
+      "payload": {
+        "moisture_threshold": 42,
+        "schedules": [
+          {
+            "hour": 6,
+            "minute": 30,
+            "duration_sec": 10,
+            "channel_mask": 1
+          }
+        ]
+      }
+    }
+  ],
+  "commands": [
+    {
+      "command_id": "323e4567-e89b-42d3-a456-426614174101",
+      "idempotency_key": "operator-request-20260723-1",
+      "command_type": "device.runtime_config_push",
+      "target_node_id": "INAEG-123e4567-e89b-42d3-a456-426614174001",
+      "device_id": "INADS-123e4567-e89b-42d3-a456-426614174000",
+      "issued_at": "2026-07-23T02:15:00Z",
+      "expires_at": "2026-07-23T02:20:00Z",
+      "payload": {}
+    }
+  ],
+  "next_poll_seconds": 15
+}

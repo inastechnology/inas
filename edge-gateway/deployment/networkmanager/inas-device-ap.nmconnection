@@ -1,0 +1,31 @@
+# Template only. Replace @@DEVICE_AP_SSID@@ and @@DEVICE_AP_PSK@@ during secure
+# provisioning, write as mode 0600, then import with nmcli connection load.
+[connection]
+id=inas-device-ap
+type=wifi
+interface-name=wlan0
+autoconnect=true
+autoconnect-priority=100
+
+[wifi]
+mode=ap
+ssid=@@DEVICE_AP_SSID@@
+band=bg
+channel=6
+ap-isolation=1
+
+[wifi-security]
+key-mgmt=wpa-psk
+proto=rsn
+pairwise=ccmp
+group=ccmp
+psk=@@DEVICE_AP_PSK@@
+
+[ipv4]
+method=manual
+addresses=192.168.50.1/24
+never-default=true
+may-fail=false
+
+[ipv6]
+method=disabled

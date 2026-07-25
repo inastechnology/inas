@@ -40,24 +40,26 @@ uv sync --locked
 uv run ina-hub install
 ```
 
-3. 本番デプロイ先ホストでCloudflare Access/Tunnelを構築し、本番条件を非対話で確認
+3. Local HubのAccess/Tunnelを使う場合は構築し、本番条件を確認
 
 ```bash
 bash scripts/cloudflare_hosted_setup.sh --install-cloudflared
 uv run ina-hub check --production
 ```
 
-`check --production` は`.env`権限、HTTP公開条件、Access JWT設定、Turso、R2、既存MQTT設定での実接続を確認する。1項目でも失敗した状態でデプロイしない。
+`check --production` は`.env`権限、HTTP公開条件、Access JWT設定、Turso、
+R2、既存MQTT設定を確認する。1項目でも失敗した状態でデプロイしない。
 
 開発PCや確認用PCの`.env`を本番値へ変更して、このチェックを通す運用にはしない。本番値はデプロイ先ホストの`.env`へ構成する。
 
-4. 初回だけ本番モードでsystemdへデプロイ
+4. systemdへデプロイ
 
 ```bash
 sudo ./scripts/install_service.sh --production --enable-cloudflare-tunnel --target-dir "$PWD"
 ```
 
-`--production`は初回構築またはAccess/Tunnelを明示的に再構成するときだけ使う。Access/Tunnelを冪等にprovisionし、本番条件を検査する。通常の`git pull`更新では付けず、既存`.env`と外部接続設定を維持する。
+`--production`は初回構築またはAccess/Tunnelを明示的に再構成するときだけ使う。
+通常の`git pull`更新では付けず、既存`.env`と外部接続設定を維持する。
 
 スクリプトは`uv.lock`どおりの依存同期、Turso/R2/MQTT接続確認、状態バックアップ、unit更新、Hub再起動、`/readyz`確認を順に行う。接続確認までは稼働中プロセスを停止しない。
 
@@ -102,7 +104,7 @@ curl --fail http://127.0.0.1:39151/readyz
 chmod 600 /path/to/ina-device-hub/.env
 ```
 
-- 必須キー（抜粋、詳細は `src/ina_device_hub/setting.py` を参照）:
+- 必須キー（詳細は `src/ina_device_hub/setting.py` を参照）:
   - `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`
   - `S3_ENDPOINT_URL`, `S3_BUCKET_NAME`, `S3_BUCKET_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
   - `MQTT_BROKER_URL`, `MQTT_BROKER_PORT`, `MQTT_BROKER_USERNAME`, `MQTT_BROKER_PASSWORD`
@@ -143,7 +145,9 @@ curl --fail http://127.0.0.1:39151/readyz
 
 Turso
 
-`ina.db`はTurso local replicaであり、個人設定・センサー計測・イベントの正本はTurso側に置く。Tursoのバックアップ/exportと復元手順も別途定期実行し、少なくとも四半期ごとに復元試験を行う。
+`ina.db`はLocal HubのTurso local replicaである。Tursoのbackup/exportと復元手順を
+定期実行し、少なくとも四半期ごとに復元試験を行う。このLocal Hub DBはCloud Hub
+のdirectory DBや顧客専用DBと共有しない。
 
 オブジェクトストレージ（R2/S3互換）
 
@@ -222,7 +226,7 @@ curl --fail http://127.0.0.1:39151/readyz
 journalctl -u inas-device-hub@main --since '-10 minutes' --no-pager
 ```
 
-確認項目は、MQTT接続成功、既存deviceのtelemetry受信、runtime config応答、F/W URL到達、圃場一覧・主要画面、Turso/R2書き込みである。
+確認項目は、MQTT接続成功、既存deviceのtelemetry受信、runtime config応答、F/W URL到達、圃場一覧・主要画面、端末内DB/R2書き込みである。任意のremote replicaがある場合だけ同期も確認する。
 
 ロールバック
 

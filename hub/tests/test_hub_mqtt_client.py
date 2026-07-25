@@ -80,6 +80,17 @@ class HubMQTTClientTest(unittest.TestCase):
             ),
         )
 
+    @patch("ina_device_hub.hub_mqtt_client.parse_mqtt_message")
+    def test_topic_parsing_delegates_to_the_shared_edge_runtime(self, parser):
+        expected = {"message_type": "device_config", "sentinel": object()}
+        parser.return_value = expected
+        payload = b'{"request":"config"}'
+
+        parsed = HubMQTTClient(MagicMock())._parse_message("/INADS-device/kinds/config/request", payload)
+
+        self.assertIs(parsed, expected)
+        parser.assert_called_once_with("/INADS-device/kinds/config/request", payload)
+
     @patch("ina_device_hub.hub_mqtt_client.setting")
     @patch("ina_device_hub.hub_mqtt_client.mqtt_client.Client")
     def test_existing_username_password_are_forwarded_without_transport_changes(self, client_factory, setting_factory):

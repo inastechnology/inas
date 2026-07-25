@@ -35,10 +35,13 @@ sudo ./scripts/install_service.sh --user mysvcuser --target-dir /opt/ina-device-
 Enable Cloudflare Tunnel service support:
 
 ```bash
-sudo ./scripts/install_service.sh --production --target-dir "$PWD" --enable-cloudflare-tunnel
+sudo ./scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
 ```
 
-Use `--production` only for the initial Cloudflare production deployment or an explicit reprovision. Omit it after a normal server-side `git pull`; upgrade mode validates the existing external connections, backs up state, updates the unit, restarts the Hub, and verifies `/readyz` without rewriting `.env` or MQTT settings.
+Use `--production` for the first Local Hub Access/Tunnel setup or an explicit
+reprovision. Omit it after a normal server-side `git pull`; upgrade mode
+validates the existing Turso/R2/MQTT connections, backs up state, updates the
+unit, restarts the Hub, and verifies `/readyz` without rewriting `.env`.
 
 Check:
 
@@ -58,7 +61,7 @@ sudo ./scripts/hub_service.sh restart
 
 ## Cloudflare Tunnel
 
-Provision:
+Provision from the Local Hub's existing `.env`:
 
 ```bash
 bash scripts/cloudflare_hosted_setup.sh --install-cloudflared

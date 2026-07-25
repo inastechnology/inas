@@ -1,0 +1,21 @@
+# The service account consumes all field traffic and publishes only the
+# device-facing config/OTA topics.
+user ina-edge-gateway
+topic read #
+topic read $SYS/broker/log/#
+topic write /+/kinds/config/+
+topic write /+/kinds/ota/+
+
+# Every physical device authenticates with its immutable INADS ID as username.
+# Mosquitto substitutes %u with that authenticated username.
+pattern write farm/%u/telemetry
+pattern write sensor/%u/#
+pattern write /%u/kinds/config/request
+pattern write /%u/kinds/agri/immediate
+pattern write /%u/kinds/debug/log
+pattern write /%u/kinds/ota/request
+pattern write /%u/kinds/ota/status
+pattern read /%u/kinds/config/reply
+pattern read /%u/kinds/config/push
+pattern read /%u/kinds/ota/reply
+pattern read /%u/kinds/ota/offer

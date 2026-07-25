@@ -16,6 +16,7 @@ const mimeTypes = new Map([
   [".png", "image/png"],
   [".jpg", "image/jpeg"],
   [".mp4", "video/mp4"],
+  [".vtt", "text/vtt; charset=utf-8"],
 ]);
 const receivedLeads = [];
 
@@ -96,6 +97,7 @@ try {
   assert.equal(response.status(), 200);
   assert.equal(await desktop.$eval("h1", (element) => element.textContent.replace(/\s+/g, " ").trim()), "畑に行く前に、今日やることがわかる。");
   assert.equal(await desktop.$eval(".survey-strip span", (element) => element.textContent.trim()), "開発中");
+  assert.equal(await desktop.$eval('[data-track="docs_header"]', (element) => element.href), "https://docs.inas-technologies.com/");
   assert.equal(await desktop.$eval('[data-audience="farmer"]', (element) => element.getAttribute("aria-selected")), "true");
   assert.equal(await desktop.$eval('[name="role"]', (element) => element.value), "farmer");
   assert.equal(await desktop.$eval(".hero-visual picture img", (image) => image.complete && image.naturalWidth > 100), true);
@@ -108,6 +110,16 @@ try {
   await desktop.click('[data-track="hero_video"]');
   await desktop.waitForSelector("[data-video-dialog][open]");
   assert.equal(await desktop.$eval("[data-video-dialog]", (element) => element.open), true);
+  assert.equal(await desktop.$eval("[data-demo-video]", (element) => element.dataset.language), "ja");
+  assert.equal(await desktop.$eval("[data-video-source]", (element) => element.getAttribute("src")), "assets/demo-ja.mp4");
+  assert.deepEqual(await desktop.$$eval("track[kind=captions]", (tracks) => tracks.map((trackItem) => trackItem.srclang)), ["ja", "en"]);
+  await desktop.click('[data-video-locale="en"]');
+  assert.equal(await desktop.$eval("[data-demo-video]", (element) => element.dataset.language), "en");
+  assert.equal(await desktop.$eval("[data-video-source]", (element) => element.getAttribute("src")), "assets/demo-en.mp4");
+  assert.equal(await desktop.$eval("[data-video-title]", (element) => element.textContent.trim()), "Field operations in about one minute");
+  assert.equal(await desktop.$eval('[data-video-locale="en"]', (element) => element.getAttribute("aria-pressed")), "true");
+  await desktop.click('[data-video-locale="ja"]');
+  assert.equal(await desktop.$eval("[data-video-source]", (element) => element.getAttribute("src")), "assets/demo-ja.mp4");
   await desktop.click("[data-close-video]");
   await desktop.waitForFunction(() => !document.querySelector("[data-video-dialog]").open);
 
@@ -127,6 +139,8 @@ try {
   await desktop.click('.interest-form button[type="submit"]');
   await desktop.waitForFunction(() => document.querySelector("[data-form-status]").textContent.includes("受付先が未設定"));
   assert.equal(receivedLeads.length, 0, "unconfigured preview must not send personal data");
+  await desktop.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await new Promise((resolve) => setTimeout(resolve, 80));
   const desktopPath = path.join(lpRoot, "artifacts/inas-demand-lp-desktop.png");
   await desktop.screenshot({ path: desktopPath, fullPage: true });
 

@@ -21,5 +21,6 @@
 
 ## 注意点
 
-- `save_to_cloud`/`fetch_from_cloud_as_bytes` はバケット名を `setting().get('storage_bucket')` から取得する。マルチテナント対応は TODO コメントあり。
+- `save_to_cloud`/`fetch_from_cloud_as_bytes` は、このLocal Hub専用に設定したバケット名を `setting().get('storage_bucket')` から取得する。顧客間のruntime routingは行わない。
+- object key先頭の旧`tenant_id`値は既存object pathとの互換namespaceとして固定維持するもので、共有bucket内のテナント選択入力には使わない。
 - ローカルへの保存はファイルシステム上のパスを生成して直接書き込む。アクセス権やディスク容量に注意。

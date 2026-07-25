@@ -75,6 +75,11 @@ try {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...concurrentLayout, name: "別画面で更新された設置ビュー" }),
   });
+  await page.waitForFunction(
+    () => document.querySelector(".collaboration-notice")?.textContent?.includes("自動統合"),
+    { timeout: 8_000 },
+  );
+  assert.match(await page.$eval(".collaboration-presence", (element) => element.className), /online/);
 
   await clickPreset(page, "センサー");
   const sensorDeviceSelect = ".device-binding-section .searchable-select";
@@ -122,15 +127,9 @@ try {
   await page.screenshot({ path: "/tmp/ina-layout-device-binding.png" });
 
   await page.click(".save-button");
-  await page.waitForSelector(".layout-conflict-dialog");
-  consumeExpectedConflict(browserErrors, "installation layout");
-  assert.match(await page.$eval(".merge-success", (element) => element.textContent || ""), /自動統合/);
-  await page.screenshot({ path: "/tmp/ina-layout-concurrent-merge.png" });
-  await page.click(".layout-conflict-dialog footer .primary");
-  await page.waitForSelector(".layout-conflict-dialog", { hidden: true });
-  assert.match(await page.$eval(".save-state", (element) => element.textContent || ""), /未保存/);
-  await page.click(".save-button");
   await page.waitForFunction(() => document.querySelector(".save-state")?.textContent?.includes("保存済み"));
+  assert.equal(await page.$(".layout-conflict-dialog"), null, "non-overlapping concurrent updates must merge without a dialog");
+  await page.screenshot({ path: "/tmp/ina-layout-concurrent-merge.png" });
   await page.click(".breadcrumbs button:first-child");
   await page.waitForFunction(() => document.querySelectorAll(".breadcrumbs button").length === 1);
 
@@ -169,6 +168,7 @@ try {
   await page.screenshot({ path: "/tmp/ina-plant-calendar-desktop.png" });
 
   const completedCountBefore = Number(await page.$eval('[data-kanban-status="completed"] > header strong', (count) => count.textContent || "0"));
+  const awaitingReviewCountBefore = Number(await page.$eval('[data-kanban-status="awaiting_review"] > header strong', (count) => count.textContent || "0"));
   const inProgressCountBefore = await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length);
   await page.click('[data-kanban-status="planned"] .calendar-kanban-card');
   await page.waitForSelector(".calendar-action-detail-dialog .calendar-action.planned");
@@ -180,9 +180,14 @@ try {
   await page.click(".work-record-dialog .work-rating label:nth-child(4)");
   await page.screenshot({ path: "/tmp/ina-plant-work-record-desktop.png" });
   await page.click('.work-record-dialog .work-record-form button[type="submit"]');
+  await page.waitForFunction((before) => Number(document.querySelector('[data-kanban-status="awaiting_review"] > header strong')?.textContent || "0") > before, {}, awaitingReviewCountBefore);
+  await page.waitForSelector(".calendar-action-detail-dialog .manager-review-panel .review-approve-button");
+  assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), inProgressCountBefore, "submitted work must leave the in-progress column");
+  await page.screenshot({ path: "/tmp/ina-plant-work-review-desktop.png" });
+  await page.click(".calendar-action-detail-dialog .review-approve-button");
   await page.waitForFunction((before) => Number(document.querySelector('[data-kanban-status="completed"] > header strong')?.textContent || "0") > before, {}, completedCountBefore);
   await page.waitForSelector(".calendar-action-detail-dialog .completed-badge");
-  assert.equal(await page.$$("[data-kanban-status='in_progress'] .calendar-kanban-card").then((items) => items.length), inProgressCountBefore, "completed work must leave the in-progress column");
+  assert.equal(Number(await page.$eval('[data-kanban-status="awaiting_review"] > header strong', (count) => count.textContent || "0")), awaitingReviewCountBefore, "approved work must leave the awaiting-review column");
   await page.click(".calendar-action-detail-dialog > header .icon-button");
 
   const skippedCountBefore = Number(await page.$eval('[data-kanban-status="completed"] > header strong', (count) => count.textContent || "0"));
@@ -288,7 +293,11 @@ try {
     "the saved soil-moisture target must retain either the AI suggestion or the editable beginner default",
   );
   assert(blueberryCalendar?.actions.length > 0, "plant calendar must contain actions");
-  assert(blueberryCalendar.actions.some((action) => action.status === "completed"), "work completion must be stored");
+  const approvedWorkLog = plantBundle.work_logs.find((log) => log.planting_id === blueberry.id && log.review_status === "approved");
+  assert(approvedWorkLog, "approved work log must be stored after manager review");
+  const approvedAction = blueberryCalendar.actions.find((action) => action.id === approvedWorkLog.action_id);
+  assert.equal(approvedAction?.status, "completed", "manager approval must complete the submitted action");
+  assert.equal(approvedAction?.completion?.review_status, "approved", "calendar completion must retain its approval state");
   assert(blueberryCalendar.actions.some((action) => action.status === "skipped" && action.skip_decision), "skip decision must be stored");
   assert(plantBundle.work_logs.some((log) => log.planting_id === blueberry.id), "work log must be stored");
 
@@ -382,7 +391,7 @@ try {
         calendarActions: blueberryCalendar.actions.length,
         workLogs: plantBundle.work_logs.filter((log) => log.planting_id === blueberry.id).length,
         desktopZoom,
-        screenshots: ["/tmp/ina-layout-north-settings.png", "/tmp/ina-layout-device-candidates.png", "/tmp/ina-layout-device-binding.png", "/tmp/ina-layout-concurrent-merge.png", "/tmp/ina-layout-desktop.png", "/tmp/ina-layout-mobile.png", "/tmp/ina-plant-calendar-desktop.png", "/tmp/ina-plant-work-record-desktop.png", "/tmp/ina-plant-skip-decision-desktop.png", "/tmp/ina-cultivation-chat-pagination.png"],
+        screenshots: ["/tmp/ina-layout-north-settings.png", "/tmp/ina-layout-device-candidates.png", "/tmp/ina-layout-device-binding.png", "/tmp/ina-layout-concurrent-merge.png", "/tmp/ina-layout-desktop.png", "/tmp/ina-layout-mobile.png", "/tmp/ina-plant-calendar-desktop.png", "/tmp/ina-plant-work-record-desktop.png", "/tmp/ina-plant-work-review-desktop.png", "/tmp/ina-plant-skip-decision-desktop.png", "/tmp/ina-cultivation-chat-pagination.png"],
       },
       null,
       2,

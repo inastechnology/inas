@@ -64,7 +64,7 @@ local hub は通常の `uv run python src/ina_device_hub/serve.py` と同じ条�
 
 - `WORK_DIR` が書き込み可能。
 - `LOCAL_STORAGE_BASE_DIR` が書き込み可能。
-- `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` が有効。
+- `TURSO_DATABASE_URL`と`TURSO_AUTH_TOKEN`がこのLocal Hub用として有効である。
 - `S3_*` が有効。
 - `MQTT_BROKER_URL` / `MQTT_BROKER_PORT` に到達できる。
 - `TIMELAPSE_INTERVAL` など `setting.py` が必須として読む値が設定されている。
@@ -80,14 +80,16 @@ env \
 
 MQTT broker が起動していない環境でもHTTPプロセスは起動し、再接続を継続する。この間は`/healthz`が200、`/readyz`が503になる。MQTT停止はCloudflare設定とは別問題として扱う。
 
-## Cloudflare hosted option の env
+## Cloudflare Tunnelの低レベルenv
 
-最低限、ユーザーが `.env` に設定する値:
+最低限、`.env` に保存する非secret値:
 
 - `CLOUDFLARE_ACCOUNT_ID`
-- `CLOUDFLARE_ACCESS_API_TOKEN`
 - `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME`
 - `CLOUDFLARE_ACCESS_ALLOWED_EMAILS`
+
+`CLOUDFLARE_ACCESS_API_TOKEN`は低レベルprovisioning実行時のprocess環境だけで
+渡し、出荷機器の`.env`へ保存しない。
 
 script が生成・補完する値:
 
@@ -114,7 +116,7 @@ Cloudflare DNS record 作成 API の accepted permission は `DNS Write`。`chec
 
 ## Cloudflare setup 手順
 
-Cloudflare hosted option は次の一括 script を優先する。
+Local Hubを手動保守する場合は次の一括scriptを使用できる。
 
 ```bash
 cd hub
@@ -156,7 +158,7 @@ Cloudflare hosted setup 後、hub と tunnel の systemd unit を配置して有
 
 ```bash
 cd hub
-sudo scripts/install_service.sh --production --target-dir "$PWD" --enable-cloudflare-tunnel
+sudo scripts/install_service.sh --target-dir "$PWD" --enable-cloudflare-tunnel
 ```
 
 この script は以下を行う。
@@ -310,7 +312,7 @@ git diff --check
 Cloudflare 外形確認:
 
 ```bash
-bash scripts/cloudflare_hosted_setup.sh --install-cloudflared
+python3 scripts/cloudflare_access_setup.py audit
 python3 scripts/cloudflare_tunnel_setup.py check
 curl -I --max-time 15 "https://<CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME>"
 ```
@@ -322,7 +324,7 @@ curl -I --max-time 15 "https://<CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME>"
 - 同名 Cloudflare resource が複数存在する。
 - Cloudflare resource を削除・統合する必要がある。
 - `.env` の secret 値が不足していて、Agent から取得できない。
-- local hub の MQTT / S3 / Turso 接続先が不明または停止している。
+- local hub の端末内DB / MQTT / S3接続が失敗する。任意のremote Turso replicaを設定した既存導入先では、その接続が不明または停止している。
 
 ## 完了報告で伝えること
 

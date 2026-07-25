@@ -100,6 +100,22 @@ Content-Type: application/json
 
 統合結果は即時確定せず「未保存」としてCanvasへ戻し、利用者が内容を確認してから再保存する。409には`updated_by`、`updated_at`、`revision`を含め、誰のどの版と競合したかを表示する。
 
+### 6.1 設置ビューのライブpresence
+
+保存競合が起きる前に相手の存在を伝えるため、Hubは`field_id`単位の一時roomを持つ。roomは次だけを保持し、layout本文や未保存入力は保持しない。
+
+- タブごとのランダムな`client_id`。
+- Hubが認証情報から確定したemail。
+- 開いている空間、選択中の配置物。
+- `viewing`、`editing`、`saving`、`conflict`の状態。
+- 最終heartbeatと、最新版layoutのrevision・更新者・更新日時。
+
+ブラウザは表示中に約2秒、非表示時に約8秒間隔で短いHTTP同期を行う。30秒heartbeatがない参加者は期限切れとする。通信失敗時は「再接続中」と表示するだけで入力や保存を無効化しない。
+
+最新版revisionを検出したクライアントは既存GETでlayoutを取得する。未編集なら置換し、未保存変更があれば`base / local / server`の三者比較を行う。非重複変更は自動統合し、同一項目だけを競合ダイアログへ送る。保存直前に競合した場合も同じ処理を使い、非重複なら1回だけ自動再保存する。
+
+presenceは現在の単一Hubプロセス内だけで共有する補助UXであり、永続化・排他・正本ではない。Hub再起動、通信断、複数プロセスでは消失または分断してよい。正しさは従来どおりrepositoryのファイルロック、revision、409で保証する。将来WebSocketや外部room coordinatorへ移す場合も、このpresence snapshot契約と保存APIは維持する。
+
 ## 7. 現行JSON repositoryの排他
 
 設置ビュー、圃場・記録、栽培計画、デバイス設定は同一Hubホスト上の複数スレッド・複数プロセスを考慮し、共通JSON repository I/O層で次を実施する。設置ビューはこれにrevision競合検出を加える。
@@ -128,4 +144,7 @@ Tursoのlocal replica初期同期とschema準備はHTTP受付前の `initialize_
 - 409応答に最新版、更新者、revisionが含まれる。
 - 重ならない配置変更は自動統合できる。
 - 同じ項目の変更は採用する版を利用者が選べる。
+- 共同編集bodyに別emailを指定しても、presenceには認証済みemailだけが記録される。
+- 同じ圃場の複数タブは別clientとして保持され、別圃場とは混ざらず、期限切れと退出で除去される。
+- 2画面で参加者と遠隔選択が表示され、非重複の未保存変更を保ったまま相手の保存を自動統合できる。
 - 管理者以外は`/settings`、AI接続確認、legacyを含む機器状態・runtime config・OTA/F/W更新APIへアクセスできない。

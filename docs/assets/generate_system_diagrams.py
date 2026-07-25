@@ -8,6 +8,8 @@ from xml.sax.saxutils import escape
 
 ROOT = Path(__file__).resolve().parent
 DRAWIO = ROOT / "inas_system_diagrams.drawio"
+JP_ROOT = ROOT.parent / "jp" / "assets"
+JP_DRAWIO = JP_ROOT / "inas_system_diagrams.drawio"
 
 
 @dataclass(frozen=True)
@@ -50,34 +52,38 @@ PAGES: tuple[Page, ...] = (
         title="INAS System Architecture",
         svg_file="inas_system_architecture.svg",
         boxes=(
-            Box("admin", 80, 120, 220, 120, "Administrator\nBrowser / CLI", "#e0f2fe", "#0284c7"),
-            Box("access", 390, 80, 230, 90, "Cloudflare Access\nAuth + allowed email", "#ede9fe", "#7c3aed"),
-            Box("tunnel", 390, 210, 230, 90, "Cloudflare Tunnel\nlocal hub entry", "#f3e8ff", "#9333ea"),
-            Box("worker", 390, 360, 230, 100, "Cloud app option\nWorkers + Hono\ninitial scope", "#faf5ff", "#a855f7"),
-            Box("hub", 720, 140, 300, 230, "local hub\nFlask UI/API\nMQTT client\nOTA HTTP delivery\nscheduler / storage", "#dcfce7", "#16a34a"),
-            Box("mqtt", 1130, 160, 220, 100, "MQTT broker\ncontrol/status topics", "#fef3c7", "#d97706"),
-            Box("devices", 1080, 360, 320, 180, "Devices\nWTR: watering\nWRS: RS485 watering\nSOI: soil moisture\nENV: RS485 environment", "#fee2e2", "#dc2626"),
-            Box("turso", 720, 520, 220, 110, "Turso / libSQL\nshared DB", "#e2e8f0", "#475569"),
-            Box("storage", 980, 640, 220, 110, "Local / S3 storage\nimages, audio,\nartifacts", "#e2e8f0", "#475569"),
-            Box("external", 1220, 650, 260, 110, "External data\nweather, research\nfuture image diagnosis", "#f8fafc", "#64748b"),
+            Box("admin", 60, 130, 220, 110, "Administrator\nBrowser / CLI", "#e0f2fe", "#0284c7"),
+            Box("access", 340, 90, 230, 90, "Cloudflare Access\nshared API policy", "#ede9fe", "#7c3aed"),
+            Box("cloud", 660, 70, 300, 180, "Cloud Hub\nshared Worker + UI\nmembership / node routing\nHTTPS Sync v1", "#dbeafe", "#2563eb"),
+            Box("directory", 1040, 70, 220, 110, "Directory Turso\nmembership + nodes\nencrypted DB tokens", "#f3e8ff", "#9333ea"),
+            Box("tenant_db", 1320, 70, 220, 120, "Dedicated Turso DB\none per customer\nA / B / ...", "#e2e8f0", "#475569"),
+            Box("edge", 660, 350, 300, 150, "Edge Gateway(s)\nlocal MQTT + cache\noutbox / offline control", "#ecfccb", "#65a30d"),
+            Box("field_mqtt", 1050, 360, 220, 100, "Field MQTT broker\ncontrol/status topics", "#fef3c7", "#d97706"),
+            Box("field_devices", 1330, 340, 220, 140, "Field devices\nWTR / WRS\nSOI / ENV / FGT", "#fee2e2", "#dc2626"),
+            Box("local_hub", 340, 590, 300, 180, "Local Hub\nexisting Flask UI/API\nMQTT + direct control\nchild Sync server", "#dcfce7", "#16a34a"),
+            Box("local_db", 730, 650, 230, 110, "Local Hub\nTurso/libSQL\nexisting configuration", "#e2e8f0", "#475569"),
+            Box("local_mqtt", 1040, 610, 230, 100, "Local MQTT broker\ncontrol/status topics", "#fef3c7", "#d97706"),
+            Box("direct_devices", 1330, 590, 220, 140, "Direct devices\nWTR / WRS\nSOI / ENV / FGT", "#fee2e2", "#dc2626"),
         ),
         arrows=(
-            Arrow("admin", "access", "HTTPS admin entry", "#0284c7"),
-            Arrow("access", "tunnel", "Tunnel option", "#7c3aed"),
-            Arrow("tunnel", "hub", "http://localhost:39151", "#7c3aed"),
-            Arrow("access", "worker", "Cloud app option", "#a855f7"),
-            Arrow("worker", "turso", "management API read/write", "#a855f7"),
-            Arrow("hub", "mqtt", "publish / subscribe", "#d97706"),
-            Arrow("mqtt", "devices", "status / config / OTA offer", "#d97706"),
-            Arrow("devices", "hub", "firmware.bin HTTP download", "#16a34a"),
-            Arrow("hub", "turso", "state/event sync", "#475569"),
-            Arrow("hub", "storage", "images/firmware/logs", "#475569"),
-            Arrow("hub", "external", "weather/external fetch", "#64748b"),
+            Arrow("admin", "access", "HTTPS", "#0284c7"),
+            Arrow("access", "cloud", "verified JWT", "#7c3aed"),
+            Arrow("cloud", "directory", "resolve principal", "#9333ea"),
+            Arrow("directory", "tenant_db", "scoped credential", "#475569"),
+            Arrow("cloud", "tenant_db", "customer data", "#2563eb"),
+            Arrow("edge", "cloud", "one parent option", "#65a30d"),
+            Arrow("edge", "field_mqtt", "publish / subscribe", "#d97706"),
+            Arrow("field_mqtt", "field_devices", "local MQTT", "#d97706"),
+            Arrow("admin", "local_hub", "LAN / optional Tunnel", "#16a34a"),
+            Arrow("edge", "local_hub", "alternative parent", "#65a30d"),
+            Arrow("local_hub", "local_db", "existing DB", "#475569"),
+            Arrow("local_hub", "local_mqtt", "publish / subscribe", "#d97706"),
+            Arrow("local_mqtt", "direct_devices", "local MQTT", "#d97706"),
         ),
         notes=(
-            "Cloudflare Workers start as a Turso-backed management API/UI, not as a full local hub replacement.",
-            "The Tunnel connector runs on the device side and exposes the local hub through Cloudflare Access.",
-            "OTA firmware binaries are delivered by the hub HTTP endpoint, not over MQTT.",
+            "Cloud Hub uses one shared Worker and one dedicated Turso DB per customer; request data never selects a DB.",
+            "Local Hub keeps its existing independent Turso/libSQL configuration and directly controls local devices.",
+            "Each Edge Gateway chooses one parent. MQTT and safety-critical control stay on the field LAN during outages.",
         ),
     ),
     Page(
@@ -178,6 +184,47 @@ PAGES: tuple[Page, ...] = (
             "URLs are generated from FIRMWARE_BASE_URL / FIRMWARE_HOSTNAME / HOSTNAME, not a fixed hub.local name.",
             "Enable HTTPS only after device-side certificate validation is implemented.",
         ),
+    ),
+)
+
+JP_ARCHITECTURE_PAGE = Page(
+    id="system_architecture",
+    name="全体構成",
+    title="INAS 全体構成",
+    svg_file="inas_system_architecture.svg",
+    boxes=(
+        Box("admin", 60, 130, 220, 110, "管理者\nBrowser / CLI", "#e0f2fe", "#0284c7"),
+        Box("access", 340, 90, 230, 90, "Cloudflare Access\n共有API policy", "#ede9fe", "#7c3aed"),
+        Box("cloud", 660, 70, 300, 180, "Cloud Hub\n共有Worker + UI\nmembership / node解決\nHTTPS Sync v1", "#dbeafe", "#2563eb"),
+        Box("directory", 1040, 70, 220, 110, "Directory Turso\nmembership + node\n暗号化DB token", "#f3e8ff", "#9333ea"),
+        Box("tenant_db", 1320, 70, 220, 120, "顧客専用Turso DB\n顧客ごとに1つ\nA / B / ...", "#e2e8f0", "#475569"),
+        Box("edge", 660, 350, 300, 150, "Edge Gateway\nlocal MQTT + cache\noutbox / offline制御", "#ecfccb", "#65a30d"),
+        Box("field_mqtt", 1050, 360, 220, 100, "圃場MQTT broker\n制御・status topic", "#fef3c7", "#d97706"),
+        Box("field_devices", 1330, 340, 220, 140, "圃場device\nWTR / WRS\nSOI / ENV / FGT", "#fee2e2", "#dc2626"),
+        Box("local_hub", 340, 590, 300, 180, "Local Hub\n現行Flask UI/API\nMQTT + 直結制御\n子Sync server", "#dcfce7", "#16a34a"),
+        Box("local_db", 730, 650, 230, 110, "Local Hub\nTurso/libSQL\n現行構成を維持", "#e2e8f0", "#475569"),
+        Box("local_mqtt", 1040, 610, 230, 100, "Local MQTT broker\n制御・status topic", "#fef3c7", "#d97706"),
+        Box("direct_devices", 1330, 590, 220, 140, "直結device\nWTR / WRS\nSOI / ENV / FGT", "#fee2e2", "#dc2626"),
+    ),
+    arrows=(
+        Arrow("admin", "access", "HTTPS", "#0284c7"),
+        Arrow("access", "cloud", "検証済みJWT", "#7c3aed"),
+        Arrow("cloud", "directory", "認証主体を解決", "#9333ea"),
+        Arrow("directory", "tenant_db", "scoped credential", "#475569"),
+        Arrow("cloud", "tenant_db", "顧客data", "#2563eb"),
+        Arrow("edge", "cloud", "親の選択肢", "#65a30d"),
+        Arrow("edge", "field_mqtt", "publish / subscribe", "#d97706"),
+        Arrow("field_mqtt", "field_devices", "local MQTT", "#d97706"),
+        Arrow("admin", "local_hub", "LAN / 任意Tunnel", "#16a34a"),
+        Arrow("edge", "local_hub", "別の親選択肢", "#65a30d"),
+        Arrow("local_hub", "local_db", "現行DB", "#475569"),
+        Arrow("local_hub", "local_mqtt", "publish / subscribe", "#d97706"),
+        Arrow("local_mqtt", "direct_devices", "local MQTT", "#d97706"),
+    ),
+    notes=(
+        "Cloud Hubは共有Worker 1つと顧客ごとの専用Turso DBを使い、request値でDBを選ばない。",
+        "Local Hubは現行の独立Turso/libSQL構成と直結device制御を維持する。",
+        "Edge Gatewayの親は1つだけ。障害中もMQTTと安全制御は圃場LAN内で継続する。",
     ),
 )
 
@@ -357,6 +404,20 @@ def main() -> None:
     for page in PAGES:
         (ROOT / page.svg_file).write_text(build_svg(page), encoding="utf-8")
     DRAWIO.write_text(build_drawio(), encoding="utf-8")
+    JP_ROOT.mkdir(parents=True, exist_ok=True)
+    (JP_ROOT / JP_ARCHITECTURE_PAGE.svg_file).write_text(build_svg(JP_ARCHITECTURE_PAGE), encoding="utf-8")
+    if JP_DRAWIO.exists():
+        current = JP_DRAWIO.read_text(encoding="utf-8")
+        start_marker = '<diagram id="system_architecture"'
+        start = current.find(start_marker)
+        end = current.find("</diagram>", start)
+        if start < 0 or end < 0:
+            raise RuntimeError(f"system_architecture diagram is missing from {JP_DRAWIO}")
+        replacement = (
+            f'<diagram id="{JP_ARCHITECTURE_PAGE.id}" name="{escape(JP_ARCHITECTURE_PAGE.name)}">'
+            f"{build_mx_page(JP_ARCHITECTURE_PAGE)}</diagram>"
+        )
+        JP_DRAWIO.write_text(current[:start] + replacement + current[end + len("</diagram>") :], encoding="utf-8")
 
 
 if __name__ == "__main__":

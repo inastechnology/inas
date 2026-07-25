@@ -63,9 +63,11 @@ orchestration. Reusable boundaries belong to common layers.
 - Connectors/adapters should isolate external systems. The core hub behavior
   should remain understandable without reading Cloudflare, S3, Instagram, or
   weather-provider code.
-- The local hub operating model remains the default. Cloudflare Tunnel and
-  Cloud app features are adapters around that model unless explicitly specified
-  otherwise.
+- Local Hub and Cloud Hub are separate product applications over shared
+  contracts. Local Hub keeps its existing per-installation Turso/libSQL and
+  direct MQTT control. Cloud Hub may use a directory adapter plus one dedicated
+  Turso DB per customer, but caller input must never choose a DB. Do not import
+  Cloud multi-tenant routing or credentials into Local Hub or Edge Runtime.
 
 ## Device Firmware Rules
 

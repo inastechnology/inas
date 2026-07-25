@@ -23,5 +23,5 @@
 
 ## 注意点
 
-- `.env` に必須の環境変数（TURSO_DATABASE_URL 等）が未設定だとプロセスが exit する実装がある。デプロイ環境での env 管理が必須。
+- `.env`の必須環境変数（`TURSO_DATABASE_URL`、`TURSO_AUTH_TOKEN`等）が未設定だとprocessを停止する。Local Hubごとのenv管理が必須。
 - `SETTING_FILE_PATH` のデフォルトは `~/.ina-device-hub/config.json`。複数インスタンス運用時は競合やパスの上書きに注意すること。

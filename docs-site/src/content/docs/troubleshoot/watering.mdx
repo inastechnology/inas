@@ -1,70 +1,78 @@
 ---
 title: 潅水されない
-description: WTR/WRSでoutputが開始しない原因を、statusと実配線から切り分けます。
+description: Hub画面の現在の判断から、水が出ない理由を順に確認します。
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 import CommunityCta from '../../../components/CommunityCta.astro';
 
-潅水不実行は、設定保存、config受信、時刻・schedule判定、土壌水分判定、output配線のいずれかで止まっています。次の順で確認します。
+水が出ないときは、設定を変更する前にHubが表示している「現在の潅水判断」を確認します。通信、予約条件、出力先、水路の順に見ると、止まっている場所を切り分けられます。
 
-## statusで停止位置を探す
+## 「概要」を開く
 
-| status | 期待値 | falseのとき |
-|---|---|---|
-| `network_connected` | `true` | [offlineを切り分ける](/troubleshoot/device-offline/) |
-| `runtime_config_valid` | `true` | config JSONとschemaを確認 |
-| `config_received` | `true` | [config経路を確認](/troubleshoot/config/) |
-| `time_synced` | `true` | NTP host、UDP 123、timezoneを確認 |
-| `watering_due` | due時に `true` | schedule、時刻、実行済み判定を確認 |
-| `watering_started` | 開始時に `true` | threshold、mask、output HALを確認 |
+1. Hubの「機器一覧」から対象の水やり機を開きます。
+2. 「概要」を選びます。
+3. 「現在の潅水判断」と「動作確認」を画面の上から確認します。
 
-## schedule潅水
+<figure className="product-screenshot">
+  <a href="/images/screenshots/watering-operation-check.webp" aria-label="潅水機の現在の判断と動作確認画面を原寸で開く">
+    <img src="/images/screenshots/watering-operation-check.webp" alt="次の潅水、土壌水分しきい値、現在の土壌水分、現在の潅水状態を表示する潅水機の概要画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>最初に「次の潅水」「土壌水分しきい値」「現在の土壌水分」「現在の潅水状態」を読みます。その下の「動作確認」で、通信から出力先までを順に確認します。</figcaption>
+</figure>
 
-1. deviceの現在時刻と `timezone_offset_sec` を確認します。
-2. scheduleのhour/minuteがlocal時刻として正しいか確認します。
-3. due時刻から遅れすぎ、grace window外になっていないか確認します。
-4. 同じscheduleをすでに実行済みとして記録していないか確認します。
-5. OTAを試行したwakeではscheduleをskipするため、次cycleを確認します。
-6. `force_watering=false` の場合、soil moistureがthreshold未満か確認します。
+## 画面で確認する内容と理由
 
-## 起動時潅水試験
+### 次の潅水
 
-次をすべて満たす必要があります。
+期待する予約時刻と一致しているか確認します。違う場合は「設定を変更」から予約を見直します。
 
-- cold bootまたはresetである。deep-sleep wakeではない。
-- fresh MQTT Runtime Configを受信し `config_received=true`。
-- `startup_watering_test.enabled=true`。
-- そのcycleでOTA updateを試行していない。
-- durationが1–30秒。
-- WTRのchannelは `1`。
+**確認する理由:** 機器が認識している次回時刻が違えば、待っても期待した時刻には動かないためです。
 
-結果は次の2つで判定します。
+### 現在の土壌水分としきい値
 
-- `startup_watering_test_requested=true`: 条件を満たし、試験を要求した。
-- `startup_watering_test_started=true`: output開始に成功した。
+現在の土壌水分がしきい値より高い場合は、土が十分湿っていると判断して潅水を見送ることがあります。
 
-`requested=false` ならconfig・wake種別・OTAを調べます。`requested=true / started=false` ならoutput制御とH/Wを調べます。
+**確認する理由:** 予約時刻になっても、安全条件や水分条件によって水を出さない動作は正常だからです。
 
-## WTRの実配線
+### 現在の潅水状態
 
-<Aside type="danger" title="現在のWTR pin contract">
-土壌水分は `A2 / D2 / GPIO3`、潅水出力は `D4 / GPIO5` です。古い資料の `A5/D5`、valve `D2`、pump `D3` を使わないでください。
+「待機中」「潅水中」など、最後に受信した状態を確認します。表示が古い場合は、先に[デバイスがオフライン](/troubleshoot/device-offline/)を確認します。
+
+**確認する理由:** 古い状態のままでは、現在の機器判断と画面表示が一致しないためです。
+
+### 動作確認
+
+「機器と通信」「設定の受信」「時刻合わせ」「出力先」を左から順に見ます。
+
+- 機器と通信が未取得: 通信を復旧します。
+- 設定の受信が確認待ち: 次回起動まで待ちます。
+- 時刻合わせが確認待ち: 予約時刻を判断できないため、次回通信を待ちます。
+- 出力先が0系統: 「動作設定」でポンプやバルブの接続先を設定します。
+
+**確認する理由:** 最初に確認待ちになる項目より後の設備を調べても、原因を解決できないためです。
+
+## Hub画面が正常な場合
+
+画面上の4項目が正常なら、実際の設備を安全に確認します。
+
+1. 手動弁が閉じていない。
+2. タンクに水があり、吸い込み口やフィルターが詰まっていない。
+3. ポンプまたはバルブの電源が入っている。
+4. ホースの折れ、外れ、凍結、漏れがない。
+5. 機器とポンプ・バルブの接続が抜けていない。
+
+<Aside type="danger" title="通電中の配線作業はしない">
+配線の差し直しや電圧測定が必要な場合は、設備の電源を切り、施工・保守を担当する人へ依頼してください。水がかかった機器には触れないでください。
 </Aside>
 
-1. 負荷を外し、D4とGNDのcontrol signalを測定します。
-2. 起動試験中だけD4がactiveになるか確認します。
-3. driver入力と共通GNDを確認します。
-4. driverの電源、fuse、flyback protectionを確認します。
-5. driver outputで負荷電圧が切り替わるか確認します。
-6. pump/valveの単体動作、配管詰まり、手動弁を確認します。
+## 復旧したことを確認する
 
-GPIOが動いて負荷が動かない場合はH/W側です。GPIO自体が動かない場合はF/W version、device kind、pin contractを確認します。
+- 「現在の潅水状態」が新しい時刻の情報へ更新された。
+- 試験後にポンプまたはバルブが動き、実際に水が流れた。
+- 次回起動後も「動作確認」の4項目が正常に表示された。
+- 試験のために変更した予約や強制動作を通常の設定へ戻した。
 
-## 分割潅水
-
-分割有効時はscheduleの `duration_sec` を使わず、`on_sec × repeat_count` が合計ON時間です。`on_sec=0` または `repeat_count=0` のpatternは無効として無視されます。
-
-調査後は起動時潅水、`force_watering`、debug logを通常値へ戻します。
+管理担当者が機器内部の判断を調査する場合は、「保守・管理」の「管理者向けの技術データ」と[機器の技術資料](/devices/wtr/)を参照してください。
 
 <CommunityCta />

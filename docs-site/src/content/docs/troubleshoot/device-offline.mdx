@@ -1,67 +1,86 @@
 ---
 title: デバイスがオフライン
-description: 電源、Wi-Fi、MQTT、Hub受信を順番に切り分けます。
+description: Hub画面の最終確認、接続記録、次回通信予定を順に確認します。
 ---
 
+import { Aside } from '@astrojs/starlight/components';
 import CommunityCta from '../../../components/CommunityCta.astro';
 
-最終受信が更新されない場合は、電源 → Wi-Fi → MQTT → Hub subscribeの順に確認します。後段から設定を変えても、前段が失敗していると復旧しません。
+まずHub画面で、機器がどこまで通信できたかを確認します。コマンドや通信トピックを調べる必要はありません。
 
-## 1. 電源とboot
+## Hub画面を開く
 
-- XIAOの入力電圧を測定します。
-- 異常発熱、reset反復、brownout logがないか確認します。
-- USB serial logが出るか確認します。
-- battery deviceは電圧と極性を確認します。
+1. Hubの「機器一覧」を開きます。
+2. オフラインになっている機器を選びます。
+3. 「保守・管理」タブを開きます。
+4. 見出しの右にある「？」を押し、表示された案内を左から順に確認します。
 
-bootしない場合はnetwork設定を変更せず、配線と電源を直します。
+<figure className="product-screenshot">
+  <a href="/images/screenshots/device-diagnostics.webp" aria-label="機器の通信確認画面を原寸で開く">
+    <img src="/images/screenshots/device-diagnostics.webp" alt="保守・管理タブの疑問符から、Hubが最後に機器を確認した時刻、Hubへの接続、次回通信予定を表示した画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>「保守・管理」の「？」を押すと、Hubが実際に確認できた3項目を順に表示します。最初に「未取得」または「記録なし」になる場所が、次に確認する場所です。</figcaption>
+</figure>
 
-## 2. setup APの理由
+## 1. 「Hubが最後に確認」を見る
 
-setup APが起動している場合、`http://192.168.4.1/` の画面に表示される開始理由を確認します。
+ここには、Hubが機器から状態を受け取った時刻が表示されます。
 
-- settings missing: Wi-Fi/MQTT未設定
-- BOOT button request: 手動でsetupを要求
-- Wi-Fi failure: SSID/password/電波/2.4GHzを確認
-- MQTT failure: broker/port/credential/firewallを確認
+- 時刻が最近まで更新されている: その時刻までは、機器の電源、Wi-Fi、Hubへの接続が成功しています。
+- 時刻が古い: 表示時刻より後に、電源が切れた、Wi-Fiが届かなくなった、または機器が休止した可能性があります。
+- 「未取得」: Hubはこの機器から一度も状態を受け取っていません。電源と初期設定から確認します。
 
-保存済みRuntime Configがあるdeep-sleep deviceは、一時的なnetwork failureでもsetup APへ入らず、保存scheduleで継続する場合があります。cold bootではRTC時刻を信頼しないため、offlineのまま予定潅水しません。
+**確認する理由:** 最後に成功した時刻を起点にすると、正常だった設定をむやみに変更せずに済みます。
 
-## 3. Wi-Fi
+## 2. 「Hubへの接続」を見る
 
-- deviceが2.4GHz SSIDへ接続できる。
-- AP isolationがHub/MQTTとの通信を遮断していない。
-- DHCP leaseまたは固定割当が存在する。
-- RSSIが極端に低くない。
-- DNS名を使う場合はdeviceから解決できる。
+「接続を確認」と表示されていれば、機器は少なくとも一度Hubの入口まで到達しています。「保守・管理」の「通信・接続履歴」で、成功した時刻と、その後に接続を終了した時刻を確認できます。
 
-## 4. MQTT
+「Hubとの接続を終了」は、必ずしも故障ではありません。電池や省電力で動く機器は、状態を送ったあと次の起動まで通信を休みます。
 
-- broker hostとportが正しい。
-- username/passwordとACLが正しい。
-- device IDのtopicへpublish/subscribeできる。
-- broker logに認証拒否や接続反復がない。
-- TLS必須brokerへ非TLS設定で接続していない。
+**確認する理由:** Wi-Fiへの接続と、Hubが機器を受け入れたことは別の段階です。接続成功の記録があれば、Wi-Fi名やHubの接続先はその時点では正しかったと判断できます。
 
-## 5. Hub
+## 3. 「次回の通信予定」を見る
 
-Hub側でserviceとMQTT接続を確認します。
+省電力機器では、次に起動して状態を送る予定時刻が表示されます。その時刻を過ぎるまでは、接続終了の記録だけを見て異常と判断しません。
 
-```bash
-cd hub
-./scripts/hub_service.sh status
-./scripts/hub_service.sh logs
-curl --fail http://127.0.0.1:39151/readyz
-```
+- 予定時刻より前: 機器が休止中の可能性があります。そのまま待ちます。
+- 予定時刻を過ぎても最終確認が更新されない: 機器の電源とWi-Fiの電波を確認します。
+- 「未取得」: まだ状態を受信していないか、常時接続する機器です。
 
-同じbrokerに他のdeviceが接続できるなら、対象deviceのcredential・ACL・Wi-Fiを優先して調べます。すべてofflineならbrokerまたはHub側を優先します。
+**確認する理由:** 正常な省電力動作と、本当の通信停止を見分けるためです。
 
-## 復旧の確認
+## 接続記録がない場合
 
-- `network_connected=true`
-- Hubの最終受信時刻が現在へ更新
-- config requestがpublishされる
-- config replyを受信
-- statusが1 cycle以上継続して届く
+機器の初期設定画面を開き、画面上部に表示される開始理由を確認します。
+
+<figure className="product-screenshot product-screenshot--narrow">
+  <a href="/images/screenshots/device-wifi-recovery.webp" aria-label="Wi-Fi接続失敗時の初期設定画面を原寸で開く">
+    <img src="/images/screenshots/device-wifi-recovery.webp" alt="Wi-Fiへの接続に失敗した理由と、入力済みのWi-Fi名を表示する機器の初期設定画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>開始理由がWi-Fi失敗なら、表示されているWi-Fi名、パスワード、2.4GHz対応、設置場所の電波を確認します。入力内容を変える前に、理由をスクリーンショットで残してください。</figcaption>
+</figure>
+
+次の順に1項目ずつ確認します。
+
+1. 機器の電源が入り、異常な発熱や再起動の繰り返しがない。
+2. 初期設定画面に、使用するWi-Fi名が表示されている。
+3. 機器をHubと同じ場所へ近づけて起動すると接続できる。
+4. Hubの「保守・管理」にある「通信・接続履歴」に、接続成功の記録が追加される。
+5. 「Hubが最後に確認」の時刻が更新される。
+
+<Aside type="caution" title="一度に複数の設定を変えない">
+Wi-Fi名、パスワード、設置場所を同時に変えると、どの変更で直ったのか分からなくなります。現在の画面を撮影し、1項目ずつ変更してください。
+</Aside>
+
+## 復旧したことを確認する
+
+次の3点がそろえば、Hubまでの通信は復旧しています。
+
+- 「Hubが最後に確認」が現在時刻付近へ更新された。
+- 「通信・接続履歴」に新しい成功記録が追加された。
+- 次回の通信後も最終確認が更新された。
+
+管理担当者がさらに調査する場合は、[ネットワークの技術資料](/technical/networking/)を参照してください。一般ユーザーが通信トピックやサーバーのログを確認する必要はありません。
 
 <CommunityCta />

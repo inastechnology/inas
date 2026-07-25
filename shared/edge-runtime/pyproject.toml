@@ -1,0 +1,32 @@
+[project]
+name = "ina-edge-runtime"
+version = "0.1.0"
+description = "Storage-independent runtime primitives shared by INAS Local Hub and Edge Gateway"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.10.0",
+    "ruff>=0.9.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ina_edge_runtime"]
+
+[tool.ruff]
+line-length = 160
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["A", "B", "E", "F", "I", "N", "PL", "UP", "W"]
+ignore = ["E501", "PLR0913"]
+
+[tool.ruff.format]
+quote-style = "double"
+line-ending = "auto"
+

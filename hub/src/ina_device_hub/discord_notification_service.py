@@ -361,7 +361,7 @@ def format_new_device_notification(device_id: str, record: dict, source: str, pa
 
 def format_health_alert_notification(alert_type: str, device_id: str, record: dict, details: dict, *, base_url=""):
     title, instruction, tab, emoji, color = {
-        "device_offline": ("機器の接続を確認してください", "電源、通信環境、最終接続時刻を確認します。", "diagnostics", "📡", 0xC44D42),
+        "device_offline": ("機器の接続を確認してください", "電源、通信環境、最終接続時刻を確認します。", "maintenance", "📡", 0xC44D42),
         "watering_missing": ("水やり状況を確認してください", "タンク、ポンプ、配管と直近の水やり記録を確認します。", "overview", "💧", 0x397B8F),
         "soil_calibration_suggested": (
             "土の水分表示を調整できます",
@@ -370,7 +370,7 @@ def format_health_alert_notification(alert_type: str, device_id: str, record: di
             "🌱",
             0xD18B22,
         ),
-    }.get(alert_type, ("機器の確認が必要です", "機器の状態を確認してください。", "diagnostics", "⚠️", 0xC44D42))
+    }.get(alert_type, ("機器の確認が必要です", "機器の状態を確認してください。", "maintenance", "⚠️", 0xC44D42))
     url = _device_url(base_url, device_id, tab)
     description = instruction
     if url:

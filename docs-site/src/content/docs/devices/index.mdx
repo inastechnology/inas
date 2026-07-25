@@ -28,6 +28,13 @@ import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
   </Card>
 </CardGrid>
 
+<figure className="product-screenshot">
+  <a href="/images/screenshots/device-catalog.webp" aria-label="Hubの機器一覧のスクリーンショットを原寸で開く">
+    <img src="/images/screenshots/device-catalog.webp" alt="潅水機、環境センサー、オフライン機器の状態が入ったHubの機器一覧" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>登録後の「機器一覧」では、機器の種類、設置先、通信状態、次に確認する内容をカードごとに比較できます。</figcaption>
+</figure>
+
 ## 選び方
 
 | 必要な機能 | 選ぶkind |
@@ -42,6 +49,21 @@ WTRの `D4` は潅水出力です。WRS/ENVでは `D4` をRS485 directionに使�
 </Aside>
 
 ## 共通の製作フロー
+
+<figure className="process-map" aria-labelledby="device-build-flow-title">
+  <div className="process-map__heading">
+    <strong id="device-build-flow-title">1台を安全に完成させる順序</strong>
+    <span>Build Flow</span>
+  </div>
+  <ol className="process-map__steps">
+    <li><strong>kindを確定</strong><small>pin contractと部品表を固定する</small></li>
+    <li><strong>無通電で配線</strong><small>continuity、short、極性を検査する</small></li>
+    <li><strong>F/Wを書込</strong><small>正しいprofileでbuild・uploadする</small></li>
+    <li><strong>Hubへ接続</strong><small>Wi-Fi、MQTT、device IDを一致させる</small></li>
+    <li><strong>受入・封止</strong><small>機能試験、label、筐体を確認する</small></li>
+  </ol>
+  <figcaption>実負荷は最後に接続します。前段の検査に失敗した場合は通電せず、配線へ戻ります。</figcaption>
+</figure>
 
 1. device kindを確定し、そのページのpin contractを印刷します。
 2. 電源を外した状態で結線します。

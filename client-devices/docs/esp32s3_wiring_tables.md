@@ -43,20 +43,16 @@ the Seeed XIAO ESP32S3. For board image previews, see
 
 ## WTR
 
-All-in-one watering device. WTR controls irrigation and can also read analog
-soil moisture and optional RS485 sensors.
+WTR provides analog soil moisture and one irrigation output. Use WRS when
+RS485 sensors or two irrigation outputs are required.
 
 | XIAO pin | GPIO | Connect to | External terminal | Wire | Inspection |
 |---|---:|---|---|---|---|
 | `VBUS` | - | 5V DC/DC output | Power `5V_OUT` | Orange 22-24 AWG | 4.75-5.25V at XIAO before plugging in |
-| `GND` | - | Device ground | Power `GND` | Black 20-24 AWG | Continuity to 12V negative and RS485 GND |
-| `D2` | `GPIO3` | Valve MOSFET gate | Valve output channel 1 | Blue 24-26 AWG | Gate changes when valve command is active |
-| `D3` | `GPIO4` | Pump MOSFET gate | Pump output | Blue 24-26 AWG | Pump output follows active valve channel |
-| `A5` / `D5` | `GPIO6` | Analog soil moisture signal | Soil analog `SIG` | White 24-26 AWG | ADC changes between dry and wet reference |
-| `D4` | `GPIO5` | RS485 transceiver DE and RE | Internal RS485 driver | Gray 24-26 AWG | Direction pin toggles during Modbus TX |
-| `D6` | `GPIO43` | RS485 transceiver DI | Internal RS485 TX | Blue 24-26 AWG | UART TX visible during request |
-| `D7` | `GPIO44` | RS485 transceiver RO | Internal RS485 RX | White 24-26 AWG | UART RX visible during response |
-| `D8` | `GPIO7` | 12V sensor power MOSFET gate | RS485 sensor power switch | Blue 24-26 AWG | Switched 12V appears only during sensor read |
+| `GND` | - | Device ground | Power `GND` | Black 20-24 AWG | Continuity to the sensor, driver, and supply negative |
+| `3V3` | - | 3.3V soil sensor VCC | Soil `VCC` | Violet 24-26 AWG | Sensor is rated for 3.3V |
+| `A2` / `D2` | `GPIO3` | Analog soil moisture signal | Soil `SIG` | White 24-26 AWG | ADC changes between dry and wet reference |
+| `D4` | `GPIO5` | Irrigation driver input / MOSFET gate | `IRR1` driver | Blue 24-26 AWG | Signal is active only during irrigation |
 | `BOOT` | `GPIO0` | Setup AP button | Enclosure service button | Two-wire signal | Active-low, no short to 3.3V |
 | `USER_LED` | `GPIO21` | Board LED | Internal only | - | Firmware status LED works |
 
@@ -66,12 +62,8 @@ External terminals:
 |---|---|---|
 | `12V_IN+` | 12V supply positive | Fuse before board if possible |
 | `12V_IN-` | 12V supply negative | Common ground |
-| `VALVE+` / `VALVE-` | Solenoid valve or valve driver | Match voltage and current rating |
-| `PUMP+` / `PUMP-` | Pump or pump relay/MOSFET output | Do not exceed MOSFET rating |
-| `RS485_A` / `RS485_B` | Sensor bus A/B | Swap A/B if all Modbus reads time out |
-| `RS485_GND` | Sensor bus ground | Required for stable field wiring |
-| `SENSOR_12V_SW+` | Switched sensor 12V | Sensor power branch only |
-| `SOIL_SIG` / `SOIL_3V3` / `SOIL_GND` | Analog soil moisture sensor | Optional when RS485 soil sensor is used |
+| `IRR1+` / `IRR1-` | Pump, solenoid valve, or external driver | Verify voltage/current rating and flyback protection |
+| `SOIL_SIG` / `SOIL_3V3` / `SOIL_GND` | 3.3V analog soil moisture sensor | Signal connects to `A2/D2` |
 
 ### WTR Low-Voltage Hardware Profile
 
@@ -84,13 +76,13 @@ contract.
 |---|---:|---|---|---|---|
 | `BAT+` or `VBUS` | - | Approved battery or regulated input | Power input | Red/Orange 22-24 AWG | Voltage within XIAO input limits |
 | `GND` | - | Device ground | `GND` terminal | Black 22-24 AWG | Common with sensor and output GND |
-| `D2` | `GPIO3` | WTR valve/irrigation enable MOSFET gate | `IRR1` or driver enable | Blue 24-26 AWG | Gate changes when WTR irrigation channel is active |
-| `D3` | `GPIO4` | WTR pump/output MOSFET gate | `IRR2` or pump output | Blue 24-26 AWG | Output follows WTR watering behavior |
-| `A5` / `D5` | `GPIO6` | Analog soil moisture signal | Soil analog `SIG` | White 24-26 AWG | ADC changes between dry and wet reference |
+| `3V3` | - | 3.3V soil sensor VCC | Soil `VCC` | Violet 24-26 AWG | Sensor is rated for 3.3V |
+| `A2` / `D2` | `GPIO3` | Analog soil moisture signal | Soil analog `SIG` | White 24-26 AWG | ADC changes between dry and wet reference |
+| `D4` | `GPIO5` | Irrigation driver input / MOSFET gate | `IRR1` or driver enable | Blue 24-26 AWG | Signal is active only during irrigation |
 
-Leave RS485 and `D8` sensor power unpopulated if the low-voltage profile does
-not use RS485 sensors. Do not move the analog soil sensor to `A0`; that is the
-SOI pin contract, not WTR.
+Do not use WTR `D4` for RS485 direction. Use WRS or ENV when RS485 sensors are
+required. Do not move the analog soil sensor to `A0`; that is the SOI pin
+contract, not WTR.
 
 ## WRS
 

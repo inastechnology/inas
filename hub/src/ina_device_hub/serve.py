@@ -2,6 +2,7 @@ from ina_device_hub import web_server
 from ina_device_hub.data_processor import DataProcessor
 from ina_device_hub.device_config_service import device_config_service
 from ina_device_hub.health_monitor_task import health_monitor_task
+from ina_device_hub.hierarchy_service import hierarchy_service
 from ina_device_hub.hub_mqtt_client import DEFAULT_SUBSCRIPTION_TOPICS, HubMQTTClient
 from ina_device_hub.instagram_post_task import instagram_post_task
 from ina_device_hub.ota_update_service import ota_update_service
@@ -20,9 +21,11 @@ def run():
     hub_mqtt_client.add_message_handler(ota_update_service().handle_mqtt_message)
     device_config_service().attach_mqtt_client(hub_mqtt_client)
     ota_update_service().attach_mqtt_client(hub_mqtt_client)
+    hierarchy_service().attach_mqtt_client(hub_mqtt_client)
     for topic in DEFAULT_SUBSCRIPTION_TOPICS:
         hub_mqtt_client.subscribe(topic)
     web_server.register_readiness_check("mqtt", hub_mqtt_client.is_connected)
+    hierarchy_service().start()
 
     # メッセージ処理用のワーカースレッドを開始
     data_processor.start()

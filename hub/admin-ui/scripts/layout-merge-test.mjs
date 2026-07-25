@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { mergeLayouts } from "../src/layoutMerge.ts";
+import { mergeLayouts, reconcileRemoteLayout } from "../src/layoutMerge.ts";
 
 const base = {
   schema_version: 3,
@@ -57,5 +57,17 @@ assert.equal(conflict.conflictPaths.length, 1);
 assert.match(conflict.conflictPaths[0], /配置 pot-a.*名前/);
 assert.equal(conflict.localPreferred.spaces[0].placements[0].name, "自分の鉢名");
 assert.equal(conflict.serverPreferred.spaces[0].placements[0].name, "相手の鉢名");
+
+const cleanRemote = reconcileRemoteLayout(base, base, serverSeparate, false);
+assert.equal(cleanRemote.kind, "replace");
+assert.equal(cleanRemote.kind !== "unchanged" && cleanRemote.kind !== "conflict" ? cleanRemote.layout.name : "", "サーバー名");
+
+const autoMergedRemote = reconcileRemoteLayout(base, localSeparate, serverSeparate, true);
+assert.equal(autoMergedRemote.kind, "merge");
+assert.equal(autoMergedRemote.kind !== "unchanged" && autoMergedRemote.kind !== "conflict" ? autoMergedRemote.layout.spaces[0].north_angle_deg : 0, 45);
+
+const conflictingRemote = reconcileRemoteLayout(base, localConflict, serverConflict, true);
+assert.equal(conflictingRemote.kind, "conflict");
+assert.equal(conflictingRemote.kind === "conflict" ? conflictingRemote.conflict.conflictPaths.length : 0, 1);
 
 process.stdout.write("layout merge tests passed\n");

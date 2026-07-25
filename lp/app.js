@@ -46,7 +46,7 @@
     if (typeof window.fbq === "function") window.fbq("trackCustom", name, safeDetails);
   };
 
-  const publicLinkKeys = { official: "officialSiteUrl", github: "githubUrl", instagram: "instagramUrl", privacy: "privacyUrl" };
+  const publicLinkKeys = { official: "officialSiteUrl", docs: "docsUrl", github: "githubUrl", instagram: "instagramUrl", privacy: "privacyUrl" };
   document.querySelectorAll("[data-config-link]").forEach((link) => {
     const key = publicLinkKeys[link.dataset.configLink];
     if (config[key]) link.href = config[key];
@@ -82,7 +82,63 @@
 
   const dialog = document.querySelector("[data-video-dialog]");
   const video = document.querySelector("[data-demo-video]");
+  const videoSource = document.querySelector("[data-video-source]");
+  const videoTitle = document.querySelector("[data-video-title]");
+  const videoDescription = document.querySelector("[data-video-description]");
+  const videoLocaleButtons = [...document.querySelectorAll("[data-video-locale]")];
+  const videoVariants = {
+    ja: {
+      source: "assets/demo-ja.mp4",
+      poster: "assets/demo-ja-poster.jpg",
+      title: "約1分で見る、圃場運営の流れ",
+      description: "圃場の状態確認、作業の提出と承認、栽培計画、省電力な潅水予約を現在のデモ環境で紹介します。",
+    },
+    en: {
+      source: "assets/demo-en.mp4",
+      poster: "assets/demo-en-poster.jpg",
+      title: "Field operations in about one minute",
+      description: "A current demo of field status, worker submission and manager review, crop planning, and power-efficient irrigation scheduling.",
+    },
+  };
+  let selectedVideoLocale = "ja";
+  const playedVideoLocales = new Set();
   let videoTrigger = null;
+  const selectVideoLocale = (locale, { emit = true } = {}) => {
+    const variant = videoVariants[locale];
+    if (!variant || !video || !videoSource) return;
+    const captionsVisible = [...video.textTracks].some((trackItem) => trackItem.mode === "showing");
+    video.pause();
+    selectedVideoLocale = locale;
+    video.dataset.language = locale;
+    videoSource.setAttribute("src", variant.source);
+    video.poster = variant.poster;
+    if (videoTitle) videoTitle.textContent = variant.title;
+    if (videoDescription) {
+      videoDescription.textContent = variant.description;
+      videoDescription.lang = locale;
+    }
+    videoLocaleButtons.forEach((button) => {
+      const selected = button.dataset.videoLocale === locale;
+      button.setAttribute("aria-pressed", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
+    video.load();
+    [...video.textTracks].forEach((trackItem) => {
+      trackItem.mode = captionsVisible && trackItem.language === locale ? "showing" : "disabled";
+    });
+    if (emit) track("video_language_select", { video_language: locale });
+  };
+  videoLocaleButtons.forEach((button, index) => {
+    button.addEventListener("click", () => selectVideoLocale(button.dataset.videoLocale));
+    button.addEventListener("keydown", (event) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+      event.preventDefault();
+      const offset = event.key === "ArrowRight" ? 1 : -1;
+      const next = videoLocaleButtons[(index + offset + videoLocaleButtons.length) % videoLocaleButtons.length];
+      selectVideoLocale(next.dataset.videoLocale);
+      next.focus();
+    });
+  });
   const closeVideo = () => {
     if (!(dialog instanceof HTMLDialogElement)) return;
     video?.pause();
@@ -94,13 +150,17 @@
     videoTrigger = button;
     dialog.showModal();
     dialog.querySelector("[data-close-video]")?.focus();
-    track("video_open", { placement: button.dataset.track || "unknown" });
+    track("video_open", { placement: button.dataset.track || "unknown", video_language: selectedVideoLocale });
   }));
   document.querySelector("[data-close-video]")?.addEventListener("click", closeVideo);
   dialog?.addEventListener("click", (event) => { if (event.target === dialog) closeVideo(); });
   dialog?.addEventListener("close", () => video?.pause());
-  video?.addEventListener("play", () => track("video_play"), { once: true });
-  video?.addEventListener("ended", () => track("video_complete"));
+  video?.addEventListener("play", () => {
+    if (playedVideoLocales.has(selectedVideoLocale)) return;
+    playedVideoLocales.add(selectedVideoLocale);
+    track("video_play", { video_language: selectedVideoLocale });
+  });
+  video?.addEventListener("ended", () => track("video_complete", { video_language: selectedVideoLocale }));
 
   const audienceButtons = [...document.querySelectorAll("[data-audience]")];
   const roleSelect = document.querySelector("[data-role-select]");

@@ -1,0 +1,81 @@
+---
+title: 技術構成と責務
+description: Local Hub、Edge Gateway、圃場デバイス、外部サービスの配置、責務、通信境界を技術者向けに整理します。
+---
+
+import SystemArchitecture from '../../../components/SystemArchitecture.astro';
+import CommunicationRoutes from '../../../components/CommunicationRoutes.astro';
+import SystemComponents from '../../../components/SystemComponents.astro';
+
+:::caution[技術者向け]
+このページは、INASを自己構築する担当者、ネットワーク管理者、デバイス開発者向けです。提供機器を通常利用する場合は読む必要がありません。一般的な使い方は[INASのしくみ](/start/overview/)を参照してください。
+:::
+
+INASは、圃場の観測、栽培計画、作業記録、潅水をひとつにつなぐオープンソースのスマート栽培基盤です。中心になる **Local Hub** が画面と設定を管理し、離れた圃場では **Edge Gateway** がデバイス通信を受け取って1つの親Hubへ同期します。
+
+<SystemArchitecture />
+
+## 何がどこで動くか
+
+| 構成要素 | 実行・設置場所 | 役割 | 誰が設定するか |
+|---|---|---|---|
+| Raspberry Pi OS | 圃場・事務所のRaspberry Pi | Local Hubを常時動かすOS | 自己構築では技術担当者 |
+| Local Hub | Raspberry Pi上のsystemd service | 画面、圃場・作業・デバイス設定、データ処理、F/W配信 | 技術担当者 |
+| Edge Gateway | 離れた圃場のRaspberry Pi | ローカルMQTT受信、キャッシュ、outbox、親HubへのHTTPS同期 | 技術担当者 |
+| Mosquitto | Local HubまたはEdge Gatewayと同じPi | デバイスとのMQTT broker | 技術担当者 |
+| Avahi / mDNS | Local Hubと同じPi | `<hub名>.local`をLAN内で名前解決 | OS hostnameから生成 |
+| cloudflared | Local Hubと同じPi | 外部の利用者がLocal Hub管理画面/APIを見るための任意Tunnel | Cloudflare利用時に技術担当者 |
+| WTR / WRS / SOI / ENV | 圃場の制御盤・sensor筐体 | 測定、潅水、状態送信 | 自己構築では技術担当者が製作・設定 |
+| Cloudflare Access | Cloudflare上 | 外部からLocal Hub画面へ入る利用者を認証 | Cloudflare管理者 |
+| Turso / R2 | cloud service | database、画像・F/Wなどの保存 | Hubの`.env`で接続 |
+| Web browser | 利用者のPC・phone | Hub UIを操作 | URLへアクセスするだけ |
+
+:::tip[最初に区別する境界]
+Raspberry Piは**サーバー**、ESP32S3は**圃場デバイス**、Cloudflare Accessは**人が外部からLocal Hub画面へ入る入口**です。デバイスやEdge GatewayがCloudflare Accessへloginする構成ではありません。
+:::
+
+## 3つの通信経路
+
+<CommunicationRoutes />
+
+:::caution[現行デバイスのmDNS]
+Local Hubは`<hub名>.local`で見えますが、現行デバイスF/WはMQTT hostを通常DNSで解決し、明示的なmDNS queryを行いません。自己構築ルートでは、デバイスのMQTTとOTAにLocal HubのDHCP予約IPを使います。`<顧客ID>.local`をデバイスにも設定する方式は、弊社提供品の準備中仕様です。
+:::
+
+## システムを構成するもの
+
+<SystemComponents />
+
+| 構成 | 役割 | 必須 |
+|---|---|---|
+| Raspberry Pi | Local HubとMosquittoを常時実行 | 必須 |
+| Local Hub | Web画面、圃場・作業・デバイス設定、データ処理、F/W配信 | 必須 |
+| MQTT broker | HubまたはGatewayとデバイス間の状態・設定・OTA通知 | デバイス利用時 |
+| Edge Gateway | 離れた圃場でデバイス通信を受信し、1つの親Hubへ同期 | 拠点を分ける場合 |
+| WTR / WRS | 潅水出力と土壌水分・RS485センサー | 潅水時 |
+| SOI / ENV | 土壌水分または環境センサー | 任意 |
+| Cloudflare Access / Tunnel | 外部の利用者がLocal Hub管理画面/APIを安全に開く入口 | 任意 |
+
+## デバイス起動時の情報と制御
+
+1. デバイスが起動し、Wi-FiとMQTTへ接続します。
+2. デバイスがLocal HubまたはEdge Gatewayへ状態を送り、最新のRuntime Configを要求します。
+3. 初めて見たdevice IDなら受け取り側が自動認識し、確認待ちの機器として扱います。
+4. HubまたはGatewayが機種と割り当てに合う設定を返します。
+5. デバイスは測定や潅水を実行し、結果を送ります。
+6. Edge Gateway配下の場合、イベントはoutboxから1つの親HubへHTTPS同期されます。
+7. F/W更新が予約されている場合、デバイスはLAN内のHTTP endpointからバイナリを取得します。
+
+:::note[cloudflaredの役割]
+Local Hubの`cloudflared`は、管理画面とAPIを外部から閲覧・操作するためだけの任意入口です。デバイスMQTT、Edge Gateway同期、Runtime Config配信、デバイスOTAの経路には入りません。
+:::
+
+## 用語を区別する
+
+- **Device Definition**: F/Wが持つ機能をHubへ伝える静的な定義。
+- **Runtime Config**: 個々のデバイスへHubが送る設定。
+- **Hub Extension**: Hubへ任意機能を追加するパッケージ。
+
+これらは別の仕組みです。たとえば「WTRの潅水時間を5秒にする」はRuntime Configであり、Device DefinitionやExtensionの変更ではありません。
+
+次は[通信・ネットワークの技術詳細](/technical/networking/)で、名前解決、ポート、制約を確認します。

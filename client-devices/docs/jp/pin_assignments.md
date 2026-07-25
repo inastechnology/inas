@@ -34,26 +34,20 @@ SVG previews:
 
 ## WTR
 
-水やり全部入りデバイス。潅水制御、土壌水分 ADC、RS485 センサー、RS485 センサー用電源 MOSFET を持つ。H/W profile によって電源電圧や負荷定格が変わっても、WTR の pin contract は維持する。
+アナログ土壌水分と 1 系統の潅水出力を持つデバイス。H/W profile によって電源電圧や負荷定格が変わっても、WTR の pin contract は維持する。RS485 と 2 系統出力が必要な場合は WRS を使う。
 
 ![WTR pin assignment](xiao_esp32s3_pin_assignment_wtr.svg)
 
 | 用途 | XIAO pin | GPIO | 備考 |
 |---|---|---:|---|
-| バルブ MOSFET | `D2` | `GPIO3` | 潅水系統 1 |
-| ポンプ MOSFET | `D3` | `GPIO4` | バルブ系統が ON の時に自動 ON |
-| 土壌水分 ADC | `A5` / `D5` | `GPIO6` | 既存の `A2/D2` 重複を避ける |
-| RS485 DE/RE | `D4` | `GPIO5` | 送受信方向制御 |
-| RS485 TX | `D6` | `GPIO43` | UART1 TX |
-| RS485 RX | `D7` | `GPIO44` | UART1 RX |
-| 12V センサー電源 MOSFET | `D8` | `GPIO7` | RS485 センサーへ向かう 12V 分岐だけを切る |
+| 土壌水分 ADC | `A2` / `D2` | `GPIO3` | アナログ土壌水分 signal |
+| 潅水 output | `D4` | `GPIO5` | 外部 MOSFET、relay、driver input を制御 |
 | 5V input | `VBUS` | - | 12V -> 5V DCDC 後に入力 |
-| GND | `GND` | - | 12V 系、RS485、ESP32S3 の GND を共通化 |
+| 3.3V sensor power | `3V3` | - | 3.3V 対応 soil sensor だけを接続 |
+| GND | `GND` | - | sensor、driver、ESP32S3 の GND を共通化 |
 | 設定 AP | `BOOT` | `GPIO0` | active-low |
 
-`D8` の後段に ESP32S3 本体電源を置かない。`D8` で切る対象は RS485 センサーの 12V 分岐だけ。
-
-低電圧 WTR H/W profile でも、analog soil moisture は `A5/D5`、灌水出力は `D2`/`D3` の WTR pin contract を使う。電圧や MOSFET 定格の違いだけで sensor を `A0` へ移したり、別 device kind を作ったりしない。
+低電圧 WTR H/W profile でも、analog soil moisture は `A2/D2`、潅水出力は `D4` の WTR pin contract を使う。pump や valve を GPIO へ直結せず、負荷定格に合う外部 driver と flyback protection を使う。WTR の `D4` を RS485 direction として配線しない。
 
 ## ENV
 
@@ -72,7 +66,7 @@ SVG previews:
 
 ## WRS
 
-RS485 前提の水やり全部入りデバイス。WRS は WTR の灌水出力と RS485 pin assignment を流用し、RS485 土壌/PAR/日射センサーを主フィードバック経路として扱う。WTR の図を WRS にも適用できるが、アナログ土壌水分 ADC は未使用または診断用予約としてよい。
+RS485 前提の水やり全部入りデバイス。WRS は `D2/D3` の 2 系統潅水出力と `D4/D6/D7` の RS485 pin assignment を持ち、RS485 土壌/PAR/日射センサーを主フィードバック経路として扱う。WTR とは異なる pin contract であり、アナログ土壌水分 ADC は未使用または診断用予約としてよい。
 
 追加センサーは同じ RS485 bus に接続する。未接続センサーは Modbus timeout、CRC error、無応答によって検出し、`*_ok=false` として報告する。センサー追加のたびに XIAO の pin assignment を増やさない。
 

@@ -1,0 +1,35 @@
+{
+  "protocol_version": "1.0",
+  "request_id": "123e4567-e89b-42d3-a456-426614174100",
+  "node_id": "INAEG-123e4567-e89b-42d3-a456-426614174001",
+  "node_type": "edge_gateway",
+  "sent_at": "2026-07-23T02:15:00Z",
+  "cursor": null,
+  "events": [
+    {
+      "event_id": "123e4567-e89b-42d3-a456-426614174101",
+      "origin_node_id": "INAEG-123e4567-e89b-42d3-a456-426614174001",
+      "sequence": 1,
+      "schema_version": 1,
+      "event_type": "device.status",
+      "occurred_at": "2026-07-23T02:14:58Z",
+      "device_id": "INADS-123e4567-e89b-42d3-a456-426614174000",
+      "payload": {
+        "device_kind": "WTR",
+        "soil_moisture_percent": 41.5
+      }
+    }
+  ],
+  "command_results": [],
+  "health": {
+    "status": "ok",
+    "software_version": "0.1.0",
+    "hardware_profile_id": "egw-cm4-cellular-r1",
+    "outbox_depth": 1,
+    "mqtt_connected": true,
+    "storage_total_bytes": 32000000000,
+    "storage_free_bytes": 24000000000,
+    "capabilities": ["cellular", "device_ota", "mqtt", "ntp", "wifi_ap"]
+  }
+}
+

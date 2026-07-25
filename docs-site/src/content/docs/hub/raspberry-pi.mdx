@@ -1,0 +1,200 @@
+---
+title: Raspberry Piを準備する
+description: Raspberry Pi OS、hostname、mDNS、固定IP、Mosquittoを準備してHubを導入できる状態にします。
+---
+
+import ManualSteps from '../../../components/ManualSteps.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
+
+このページのコマンドは、すべて **Hubとして使うRaspberry Pi上** で実行します。機器がまだない場合は、先に[機器を選んで購入する](/start/hardware/)へ戻ってください。
+
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>作業前に用意するもの
+
+<div className="manual-prep-panel">
+  <div>
+    <h3>机の上で、書き込みから接続確認まで行います</h3>
+    <ul>
+      <li>Raspberry Pi本体、記録カード、安定した電源</li>
+      <li>記録カードを書き込める別のパソコン</li>
+      <li>ルーターへつなぐLANケーブル</li>
+      <li>管理用の利用者名と強いパスワード</li>
+      <li>ルーターの管理画面を開ける環境</li>
+    </ul>
+  </div>
+  <ManualVisual kind="raspberry-setup" label="パソコンで記録カードへ基本ソフトウェアを書き込みRaspberry Piへ挿す略図" />
+</div>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>このページで行う作業
+
+<ManualSteps
+  label="Raspberry PiをHubとして準備する6つの工程"
+  steps={[
+    {
+      title: '記録カードへ基本ソフトウェアを書き込む',
+      description: '別のパソコンでRaspberry Pi Imagerを使い、名前、管理用アカウント、時刻、接続方法を設定して書き込みます。',
+      visual: 'raspberry-setup',
+      visualLabel: 'パソコンから記録カードを経由してRaspberry Piを準備する略図',
+    },
+    {
+      title: 'ルーターにつないで起動する',
+      description: '最初は有線でルーターの近くへ置き、別のパソコンから接続して基本ソフトウェアを更新します。',
+      visual: 'hub-power',
+      visualLabel: 'ルーターの近くでRaspberry Piへ電源と通信線を接続する略図',
+    },
+    {
+      title: 'このHubだけの名前を確認する',
+      description: '同じ場所の別機器と重ならない固有名を付け、管理用パソコンからその名前で到達できることを確認します。',
+      visual: 'wifi-kit',
+      visualLabel: 'ルーター、Hub、管理用パソコンが同じネットワークにつながる略図',
+    },
+    {
+      title: 'ルーターで同じ接続先を保つ',
+      description: 'ルーターの管理画面でRaspberry Piを識別し、再起動後も同じ接続先になるように設定します。',
+      visual: 'wifi-form',
+      visualLabel: 'ルーターの設定画面でRaspberry Piの接続先を登録する略図',
+    },
+    {
+      title: 'Hubに必要な道具を入れる',
+      description: 'コマンドで管理道具とメッセージ受け渡し用サービスを導入し、自動起動するようにします。',
+      visual: 'self-build',
+      visualLabel: 'パソコンのコマンド画面からRaspberry Piへ必要なソフトウェアを入れる略図',
+    },
+    {
+      title: '2つの画面で送受信を試す',
+      description: '受信待ちと送信を別々に実行し、認証した状態で短いテストメッセージが届くことを確認します。',
+      visual: 'hub-install',
+      visualLabel: '管理用パソコンからHubのサービスが動作していることを確認する略図',
+    },
+  ]}
+/>
+
+## 1. Raspberry Pi OSを書き込む
+
+別のPCでRaspberry Pi Imagerを使い、**Raspberry Pi OS Lite 64-bit** の最新安定版を書き込みます。Imagerの事前設定で次を指定します。
+
+- [ ] 固有のhostname。例: `farm-a01`
+- [ ] 管理用usernameと強いpassword、またはSSH公開鍵
+- [ ] timezoneとkeyboard layout
+- [ ] Wi‑Fiを使う場合だけSSID、password、国コード
+- [ ] SSHを有効化
+
+同じLANで同じhostnameを重複させないでください。Hubは画面なしで常時稼働させるため、Desktop版ではなくLite版を推奨します。
+
+## 2. 起動してOSを更新する
+
+Raspberry Piを有線LANへ接続して起動し、別PCからSSHで入ります。
+
+```bash
+ssh <ユーザー名>@farm-a01.local
+sudo apt update
+sudo apt full-upgrade
+sudo reboot
+```
+
+再起動後にもう一度SSH接続します。
+
+## 3. hostnameとmDNSを確認する
+
+```bash
+hostnamectl
+getent hosts farm-a01.local
+```
+
+変更が必要な場合は次を実行し、再起動します。`farm-a01`は自分で決めた値へ置き換えます。
+
+```bash
+sudo hostnamectl set-hostname farm-a01
+sudo reboot
+```
+
+Raspberry Pi OSではAvahiがhostnameに`.local`を付けたmDNS名を提供します。別PCから`ping farm-a01.local`または`ssh`で到達できることを確認します。
+
+## 4. DHCP予約を設定する
+
+ルーターの管理画面で、Raspberry PiのEthernet MAC addressへ同じIPを割り当てるDHCP予約を作ります。OSへ手入力する固定IPより、ルーター側の予約を推奨します。
+
+```bash
+ip link show eth0
+hostname -I
+```
+
+予約後に再起動し、同じIPとmDNS名で到達できることを確認します。
+
+## 5. OSパッケージを入れる
+
+```bash
+sudo apt install git curl mosquitto mosquitto-clients avahi-daemon ffmpeg
+sudo systemctl enable --now avahi-daemon
+```
+
+Python依存関係は`uv`で管理します。[uv公式インストール手順](https://docs.astral.sh/uv/getting-started/installation/)に従って、Hubを動かす一般ユーザーへインストールしてください。
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+一度logout/loginし、確認します。
+
+```bash
+uv --version
+git --version
+ffmpeg -version
+```
+
+## 6. MQTT brokerを設定する
+
+デバイスとHubが接続するMosquittoを、同じRaspberry Piで動かします。まずpasswordを作成します。
+
+```bash
+sudo mosquitto_passwd -c /etc/mosquitto/passwd inas-device
+sudo chown root:mosquitto /etc/mosquitto/passwd
+sudo chmod 640 /etc/mosquitto/passwd
+```
+
+`/etc/mosquitto/conf.d/inas.conf`をroot権限で作成し、次を保存します。
+
+```text
+listener 1883 0.0.0.0
+allow_anonymous false
+password_file /etc/mosquitto/passwd
+
+connection_messages true
+log_dest topic
+```
+
+```bash
+sudo systemctl enable --now mosquitto
+sudo systemctl restart mosquitto
+systemctl status mosquitto --no-pager
+```
+
+passwordをshell historyへ書かず、2つのterminalからpublish/subscribeを確認します。
+
+それぞれのterminalでpasswordを非表示入力してから実行します。passwordの文字列自体はshell historyへ残りません。
+
+```bash
+read -rsp 'MQTT password: ' MQTT_TEST_PASSWORD
+mosquitto_sub -h localhost -p 1883 -u inas-device -P "$MQTT_TEST_PASSWORD" -t 'inas/setup-test'
+```
+
+```bash
+read -rsp 'MQTT password: ' MQTT_TEST_PASSWORD
+mosquitto_pub -h localhost -p 1883 -u inas-device -P "$MQTT_TEST_PASSWORD" -t 'inas/setup-test' -m 'ok'
+unset MQTT_TEST_PASSWORD
+```
+
+確認後、MQTT username/passwordをpassword managerへ保存します。同じ値をHubの`.env`と各デバイスのsetup APへ入力します。
+
+:::danger[MQTTをInternetへ公開しない]
+ルーターでTCP 1883をport forwardしないでください。MQTTは平文TCPのため、信頼できる圃場LANだけから到達可能にします。
+:::
+
+## 完了条件
+
+- Raspberry Piへ`<hub名>.local`でSSH接続でき、DHCP予約IPを記録済み
+- DHCP予約後もIPが変わらない
+- `uv`、`git`、`ffmpeg`を実行できる
+- Mosquittoが`active (running)`で、認証付きpublish/subscribeに成功する
+- ルーターに1883・39151のInternet向けport forwardがない
+
+ここまで終わったら[Hubをインストール](/hub/install/)へ進みます。

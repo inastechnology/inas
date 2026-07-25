@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inas.example/contracts/sync/v1/sync.schema.json",
+  "title": "INAS Parent/Child Sync Protocol v1",
+  "oneOf": [
+    { "$ref": "#/$defs/syncRequest" },
+    { "$ref": "#/$defs/syncResponse" }
+  ],
+  "$defs": {
+    "uuidV4": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "deviceId": {
+      "type": "string",
+      "pattern": "^INADS-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "nodeId": {
+      "type": "string",
+      "pattern": "^(INAEG|INALH)-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nodeIdentity": {
+      "type": "object",
+      "required": ["node_id", "node_type"],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/nodeId" },
+        "node_type": {
+          "type": "string",
+          "enum": ["edge_gateway", "local_hub"]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "node_type": { "const": "edge_gateway" } },
+            "required": ["node_type"]
+          },
+          "then": {
+            "properties": {
+              "node_id": {
+                "type": "string",
+                "pattern": "^INAEG-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "node_type": { "const": "local_hub" } },
+            "required": ["node_type"]
+          },
+          "then": {
+            "properties": {
+              "node_id": {
+                "type": "string",
+                "pattern": "^INALH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "origin_node_id", "sequence", "schema_version", "event_type", "occurred_at", "payload"],
+      "properties": {
+        "event_id": { "$ref": "#/$defs/uuidV4" },
+        "origin_node_id": { "$ref": "#/$defs/nodeId" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "schema_version": { "type": "integer", "minimum": 1 },
+        "event_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "device_id": { "$ref": "#/$defs/deviceId" },
+        "payload": {}
+      }
+    },
+    "commandResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result_id", "command_id", "origin_node_id", "status", "occurred_at"],
+      "properties": {
+        "result_id": { "$ref": "#/$defs/uuidV4" },
+        "command_id": { "$ref": "#/$defs/uuidV4" },
+        "origin_node_id": { "$ref": "#/$defs/nodeId" },
+        "status": {
+          "type": "string",
+          "enum": ["accepted", "running", "succeeded", "failed", "expired", "rejected"]
+        },
+        "occurred_at": { "type": "string", "format": "date-time" },
+        "error_code": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "payload": {}
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "software_version", "outbox_depth", "mqtt_connected", "storage_free_bytes", "capabilities"],
+      "properties": {
+        "status": { "type": "string", "enum": ["ok", "degraded", "critical"] },
+        "software_version": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "hardware_profile_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "maxLength": 100
+        },
+        "outbox_depth": { "type": "integer", "minimum": 0 },
+        "mqtt_connected": { "type": "boolean" },
+        "storage_total_bytes": { "type": "integer", "minimum": 0 },
+        "storage_free_bytes": { "type": "integer", "minimum": 0 },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]*$",
+            "maxLength": 100
+          }
+        },
+        "details": {
+          "type": "object",
+          "maxProperties": 50,
+          "additionalProperties": true
+        }
+      }
+    },
+    "desiredResource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_type", "resource_id", "target_node_id", "revision", "operation", "content_sha256", "updated_at", "payload"],
+      "properties": {
+        "resource_type": {
+          "type": "string",
+          "enum": ["device.runtime_config", "device.assignment", "device.firmware_target", "node.policy"]
+        },
+        "resource_id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "target_node_id": { "$ref": "#/$defs/nodeId" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "operation": { "type": "string", "enum": ["upsert", "delete"] },
+        "content_sha256": { "$ref": "#/$defs/sha256" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "payload": {}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "operation": { "const": "delete" } },
+            "required": ["operation"]
+          },
+          "then": { "properties": { "payload": { "type": "null" } } }
+        },
+        {
+          "if": {
+            "properties": { "operation": { "const": "upsert" } },
+            "required": ["operation"]
+          },
+          "then": { "properties": { "payload": { "type": "object" } } }
+        }
+      ]
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command_id", "idempotency_key", "command_type", "target_node_id", "issued_at", "expires_at", "payload"],
+      "properties": {
+        "command_id": { "$ref": "#/$defs/uuidV4" },
+        "idempotency_key": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "command_type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        },
+        "target_node_id": { "$ref": "#/$defs/nodeId" },
+        "device_id": { "$ref": "#/$defs/deviceId" },
+        "issued_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "payload": { "type": "object" }
+      }
+    },
+    "syncRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol_version", "request_id", "node_id", "node_type", "sent_at", "cursor", "events", "command_results", "health"],
+      "properties": {
+        "protocol_version": { "const": "1.0" },
+        "request_id": { "$ref": "#/$defs/uuidV4" },
+        "node_id": { "$ref": "#/$defs/nodeId" },
+        "node_type": { "type": "string", "enum": ["edge_gateway", "local_hub"] },
+        "sent_at": { "type": "string", "format": "date-time" },
+        "cursor": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 1000 },
+            { "type": "null" }
+          ]
+        },
+        "events": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/event" }
+        },
+        "command_results": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/commandResult" }
+        },
+        "health": { "$ref": "#/$defs/health" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "node_type": { "const": "edge_gateway" } },
+            "required": ["node_type"]
+          },
+          "then": {
+            "properties": {
+              "node_id": {
+                "type": "string",
+                "pattern": "^INAEG-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "node_type": { "const": "local_hub" } },
+            "required": ["node_type"]
+          },
+          "then": {
+            "properties": {
+              "node_id": {
+                "type": "string",
+                "pattern": "^INALH-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "syncResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol_version", "correlation_request_id", "server_time", "next_cursor", "ack_event_ids", "ack_command_result_ids", "desired_resources", "commands", "next_poll_seconds"],
+      "properties": {
+        "protocol_version": { "const": "1.0" },
+        "correlation_request_id": { "$ref": "#/$defs/uuidV4" },
+        "server_time": { "type": "string", "format": "date-time" },
+        "next_cursor": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 1000 },
+            { "type": "null" }
+          ]
+        },
+        "ack_event_ids": {
+          "type": "array",
+          "maxItems": 500,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/uuidV4" }
+        },
+        "ack_command_result_ids": {
+          "type": "array",
+          "maxItems": 200,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/uuidV4" }
+        },
+        "desired_resources": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/desiredResource" }
+        },
+        "commands": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/command" }
+        },
+        "next_poll_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }
+      }
+    }
+  }
+}
+

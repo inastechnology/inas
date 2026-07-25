@@ -1,0 +1,35 @@
+<figure class="system-components" aria-labelledby="system-components-title">
+  <div class="diagram-heading">
+    <span>PHYSICAL COMPONENTS</span>
+    <h3 id="system-components-title">現場・Local Hub・外部サービスの配置</h3>
+    <p>点線のcloudflared経路は、外部から管理画面を見る場合だけ追加します。</p>
+  </div>
+  <div class="system-components__map">
+    <section class="system-components__zone system-components__zone--field" aria-label="圃場に置く機器">
+      <small>圃場</small>
+      <strong>WTR / WRS / SOI / ENV</strong>
+      <span>計測・弁やポンプの制御</span>
+    </section>
+    <div class="system-components__link"><b>Wi‑Fi / MQTT</b><i aria-hidden="true">↔</i></div>
+    <section class="system-components__zone system-components__zone--hub" aria-label="Local Hubで動くもの">
+      <small>Raspberry Pi</small>
+      <strong>Local Hub</strong>
+      <div class="system-components__inside">
+        <span>Web画面 / API</span>
+        <span>Mosquitto</span>
+        <span>F/W配信</span>
+        <span>cloudflared <em>任意</em></span>
+      </div>
+    </section>
+    <div class="system-components__link system-components__link--cloud"><b>HTTPS</b><i aria-hidden="true">↗</i></div>
+    <section class="system-components__zone system-components__zone--cloud" aria-label="外部で動くサービス">
+      <small>外部サービス</small>
+      <strong>Cloudflare / Turso / R2</strong>
+      <span>画面の入口・データ保存</span>
+    </section>
+    <div class="system-components__remote">
+      <span>外出先の利用者</span><i aria-hidden="true">→</i><span>Cloudflare</span><i aria-hidden="true">⇢</i><span>Local Hubの管理画面</span>
+    </div>
+  </div>
+  <figcaption>cloudflaredは圃場機器の通信には入りません。Local Hubの管理画面を外部から閲覧・操作するための任意の入口です。</figcaption>
+</figure>

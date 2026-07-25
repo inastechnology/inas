@@ -1,0 +1,22 @@
+{
+  "protocol_version": "1.0",
+  "correlation_request_id": "623e4567-e89b-42d3-a456-426614174100",
+  "server_time": "2026-07-23T02:15:01Z",
+  "next_cursor": null,
+  "ack_event_ids": [],
+  "ack_command_result_ids": [],
+  "desired_resources": [
+    {
+      "resource_type": "node.policy",
+      "resource_id": "INAEG-123e4567-e89b-42d3-a456-426614174001",
+      "target_node_id": "INAEG-123e4567-e89b-42d3-a456-426614174001",
+      "revision": 0,
+      "operation": "upsert",
+      "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_at": "2026-07-23T02:14:00Z",
+      "payload": {}
+    }
+  ],
+  "commands": [],
+  "next_poll_seconds": 60
+}

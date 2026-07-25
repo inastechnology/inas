@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc --noEmit && vite build",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:collaboration": "node scripts/layout-collaboration-smoke.mjs",
     "smoke:fields": "node scripts/fields-smoke.mjs",
     "smoke:field-detail": "node scripts/field-detail-smoke.mjs",
     "smoke:device-detail": "node scripts/device-detail-smoke.mjs",
@@ -17,6 +18,13 @@
     "smoke:marketing": "node scripts/marketing-smoke.mjs",
     "capture:marketing": "node scripts/marketing-capture.mjs",
     "capture:demo-video": "node scripts/capture-demo-video.mjs",
+    "capture:demo-video:ja": "DEMO_VIDEO_LOCALE=ja node scripts/capture-demo-video.mjs",
+    "capture:demo-video:en": "DEMO_VIDEO_LOCALE=en node scripts/capture-demo-video.mjs",
+    "smoke:demo-english-ui": "node scripts/demo-video/verify-english-ui.mjs",
+    "smoke:demo-layout": "node scripts/demo-video/verify-layout.mjs",
+    "generate:demo-bgm": "python scripts/demo-video/generate_comfy_bgm.py",
+    "render:demo-video:ja": "python scripts/demo-video/render_demo_media.py --locale ja --update-compatibility",
+    "render:demo-video:en": "python scripts/demo-video/render_demo_media.py --locale en",
     "test:merge": "node --experimental-strip-types scripts/layout-merge-test.mjs",
     "typecheck": "tsc --noEmit"
   },

@@ -170,7 +170,7 @@
     </header>
     <main class="settings-shell">
       <aside class="settings-sidebar">
-        <label class="settings-search">設定を検索<input id="settings-search" type="search" autocomplete="off" placeholder="AI、通知、Turso..." aria-controls="settings-content"></label>
+        <label class="settings-search">設定を検索<input id="settings-search" type="search" autocomplete="off" placeholder="AI、通知、端末内DB..." aria-controls="settings-content"></label>
         <nav class="settings-nav" aria-label="設定カテゴリ">
           <a href="#ai" data-settings-nav="ai">AI</a>
           <a href="#notifications" data-settings-nav="notifications">通知</a>
@@ -357,10 +357,10 @@
           </form>
         </section>
 
-        <section class="settings-section" id="system" data-settings-section="system" data-search="システム 環境 env Turso R2 S3 MQTT APIキー 初期設定 接続">
+        <section class="settings-section" id="system" data-settings-section="system" data-search="システム 環境 env 端末内DB libSQL Turso R2 S3 MQTT APIキー 初期設定 接続">
           <div class="section-heading"><div><h2>システム</h2><p>起動・接続設定の登録状態を確認します。</p></div></div>
           <div class="setting-list">
-            <div class="setting-row" data-setting-row data-search="env 環境 Turso R2 S3 MQTT APIキー 接続 設定状態">
+            <div class="setting-row" data-setting-row data-search="env 環境 端末内DB libSQL Turso R2 S3 MQTT APIキー 接続 設定状態">
               <div class="setting-label with-help"><span>接続設定</span><details class="context-help"><summary aria-label="接続設定の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>秘密情報を保護します</strong><p>この画面では登録状態だけを確認できます。接続先や秘密値そのものは表示しません。</p></div></details></div>
               <div class="setting-control"><div class="environment-grid">{% for item in infrastructure %}<div class="environment-item"><span>{{ item.label }}</span><span class="status{% if not item.configured %} missing{% endif %}">{% if item.configured %}設定済み{% else %}未設定{% endif %}</span></div>{% endfor %}</div></div>
             </div>

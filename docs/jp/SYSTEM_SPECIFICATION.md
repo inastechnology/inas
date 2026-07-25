@@ -35,19 +35,27 @@ hub の汎用即時制御は WTR/WRS の灌水を対象とする。FGT firmware 
 | FGT | 液肥作成・潅水デバイス。原水、A/B液、攪拌、潅水、水洗浄をデバイス内の安全状態機械で順番に制御する |
 | SOI | 18650 バッテリー前提の土壌水分専用ノード |
 | ENV | 12V 電源前提の RS485 環境センサーデバイス |
-| Turso/libSQL | Cloud app 版や同期境界で使う共有 DB |
+| Local Hub Turso/libSQL | 現行Local Hubごとの業務DB/local replica。Cloud Hubのdirectory・顧客DBとは共有しない |
 | ローカル/S3 ストレージ | 画像、音声、firmware artifact、ログなどの保存先 |
-| Cloudflare Access + Tunnel | local hub を認可付きで外部から操作する入口 |
-| Cloudflare Workers + Hono | Cloud app 版の HTTP API/UI。local hub の全機能を置き換えない |
+| Cloud Hub Worker | 1つの共有Cloudflare Worker/frontend。認証後に顧客専用DBへrouteする |
+| Cloud directory Turso DB | tenant状態、Access membership、Edge node、暗号化した顧客DB credentialだけを持つ |
+| 顧客Turso DB | Cloud Hubの顧客ごとに1つ割り当てる専用DB |
+| Edge Gateway | 現場MQTT broker、Wi-Fi AP、config cache、outbox、HTTPS Sync。Turso credentialは持たない |
+| Cloudflare Access + Tunnel | AccessはCloud Hub browser APIを保護する。TunnelはLocal Hubへ遠隔接続する任意optionとして残る |
 
-基本運用は local hub である。Cloudflare Tunnel 版は、デバイス側で起動している local hub を Cloudflare Access 越しに公開する。Workers 版は Turso を境界にした hosted 管理 API/UI から始め、MQTT 常時購読、カメラ、ffmpeg、ローカルファイル処理は local hub に残す。
+Hub applicationはLocal HubとCloud Hubを分離する。現行Local Hubは直結deviceを
+制御し、子Edge Gatewayも集約でき、従来のTurso/libSQL構成を維持する。Cloud Hubは
+`hub.inas-technologies.com`の1つの共有Workerであり、directory DBで認証主体を
+解決した後、その顧客専用Turso DBだけを開く。Edge GatewayはLocal Hubまたは
+Cloud Hubのどちらか一方を親にする。MQTTと安全制御は圃場LAN内に残り、WANや親の
+停止中も継続する。
 
 関連仕様:
 
 - [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md)
 - [hub/doc/jp/NETWORK_ARCHITECTURE.md](../../hub/doc/jp/NETWORK_ARCHITECTURE.md)
 - [hub/doc/jp/CLOUDFLARE_HOSTED_OPTION.md](../../hub/doc/jp/CLOUDFLARE_HOSTED_OPTION.md)
-- [hub/doc/jp/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md](../../hub/doc/jp/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md)
+- [hub-cloud/README.md](../../hub-cloud/README.md)
 
 ## 観測から制御まで
 
@@ -161,20 +169,25 @@ firmware upload/register API は、upload 時に size と sha256 を自動計算
 
 ## 認証認可
 
-Cloudflare hosted option の入口は Cloudflare Access とする。許可 email は Access rule group を source of truth とし、スクリプトから追加・削除する。
+Cloud Hubのbrowser APIはCloudflare Access assertionの署名、issuer、audience、
+emailを検証し、要求された公開tenant IDに対するactive membershipも確認する。
+Edge Syncは別のone-time node bearerを使い、directoryにはsalt付きdigestだけを
+保存する。どちらのrequestもDB URL、DB token、内部tenant IDを指定できない。
 
-Cloud app 版では、Worker 側でも `Cf-Access-Jwt-Assertion` を検証し、`issuer`、`audience`、`email` を確認する。アプリ内権限は Turso の `admin_users` で `reader`、`operator`、`admin` を扱う。
-
-`CLOUDFLARE_ACCESS_API_TOKEN` は resource 作成スクリプト用の secret であり、Worker には渡さない。`.env` は環境の source of truth だが、secret をログやドキュメントへ出力しない。
+Local HubのAccess/TunnelはCloud Hubと独立し、現行の認証構成を維持する。
+Cloudflare管理token、Turso Platform token、directory/顧客DB credentialをEdge
+Gatewayの設定やQR codeへ入れてはならない。
 
 ## 運用前提
 
 local hub:
 
 - 既定 HTTP port は `39151`。
-- Tunnel 版の `CLOUDFLARE_TUNNEL_ORIGIN_URL` 既定は `http://localhost:39151`。
-- Tunnel はデバイス側で起動する。
-- Cloudflare Error 1033 は、DNS/Access ではなく Tunnel connector 停止をまず疑う。
+- `CLOUDFLARE_TUNNEL_ORIGIN_URL`の既定は`http://127.0.0.1:39151`。
+- 任意のLocal Hub TunnelはLocal Hub側で起動する。
+- Cloud Hubは1つのWorker custom domainを使い、公開URLは
+  `/t/<random公開tenant ID>/`とする。
+- Cloud Hubの顧客ごとに専用Turso DBを1つ割り当て、Workerは顧客ごとに作らない。
 
 開発:
 
@@ -193,7 +206,8 @@ local hub:
 4. 測定値なら `sensor_measurement_definitions` と `sensor_measurements` に載せる。
 5. アクションなら、提案、承認、実行、評価の履歴を残す。
 6. UI は営農者向けサマリを先に出し、raw JSON は詳細へ置く。
-7. Cloudflare hosted option は local hub を壊さず、Turso を境界に段階的に追加する。
+7. Local HubのDBと直結制御境界を維持する。Cloud Hubでは認証済みmembershipまたは
+   nodeをdirectoryで解決し、その顧客専用DBだけへrouteする。
 
 ## 関連ドキュメント
 
@@ -203,3 +217,4 @@ local hub:
 - [hub/doc/jp/AI_AGENT_ENVIRONMENT_SETUP.md](../../hub/doc/jp/AI_AGENT_ENVIRONMENT_SETUP.md)
 - [hub/doc/jp/ENVIRONMENT.md](../../hub/doc/jp/ENVIRONMENT.md)
 - [hub/doc/jp/OPERATIONS.md](../../hub/doc/jp/OPERATIONS.md)
+- [hub-cloud/docs/SECURITY.md](../../hub-cloud/docs/SECURITY.md)

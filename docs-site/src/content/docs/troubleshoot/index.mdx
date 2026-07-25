@@ -5,41 +5,56 @@ description: INAS Hubとデバイスの症状から、確認するページへ�
 
 import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
 import CommunityCta from '../../../components/CommunityCta.astro';
+import ManualNote from '../../../components/ManualNote.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
 
-まず「Hub」「network」「config」「device動作」のどこまで成功しているかを分けます。設定を何度も変える前に、発生時刻と現在値を記録してください。
+まずHub画面で、最後に正常だった場所を確認します。設定を何度も変える前に、発生時刻と現在の画面を記録してください。
+
+<ManualNote
+  id="troubleshooting-first-rule"
+  title="設定を変える前に、どこまで成功しているかを分けます"
+  tone="trouble"
+  visual="troubleshoot"
+  visualLabel="電源、接続、入力内容、設置距離を順番に切り分ける略図"
+>
+  電源、Hubが最後に確認した時刻、設定の受信、実際の動作の順に確認します。一度に複数の設定を変えると原因が分からなくなるため、現在の画面を撮影してから1項目ずつ調べます。
+</ManualNote>
+
+## <span className="manual-title-icon manual-title-icon--trouble" aria-hidden="true"></span>症状を選ぶ
 
 <CardGrid>
   <Card title="デバイスがオフライン">
-    最終受信が更新されない、MQTTへ接続できない、setup APに入る。
-    [接続を切り分ける →](/troubleshoot/device-offline/)
+    Hubの最終確認が更新されない、機器が初期設定画面へ戻る。
+    [Hub画面で接続を確認する →](/troubleshoot/device-offline/)
   </Card>
   <Card title="潅水されない">
-    scheduleや起動試験を設定したのに、outputが開始しない。
-    [潅水条件を確認する →](/troubleshoot/watering/)
+    予約した時刻になっても、ポンプやバルブが動かない。
+    [現在の潅水判断を確認する →](/troubleshoot/watering/)
   </Card>
   <Card title="設定が反映されない">
-    Hubには保存されているが、deviceの `config_received` がfalse。
-    [config経路を確認する →](/troubleshoot/config/)
+    Hubには保存されているが、機器の動作が変わらない。
+    [設定の受信を確認する →](/troubleshoot/config/)
   </Card>
-  <Card title="F/Wが更新されない">
-    targetを設定したがversionが変わらない、downloadに失敗する。
-    [OTAを切り分ける →](/operate/firmware/#失敗時の切り分け)
+  <Card title="機器の更新が終わらない">
+    更新予約をしたが、表示されるバージョンが変わらない。
+    [更新状態を確認する →](/operate/firmware/#失敗時の切り分け)
   </Card>
 </CardGrid>
 
-## 最初に記録するもの
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>問い合わせ前に記録するもの
 
-- 発生日時とtimezone
-- device ID、device kind、F/W version
-- HubのGit revisionまたはversion
-- 最終受信時刻
-- `network_connected`、`config_received`、`time_synced`
+- 発生日時
+- 機器の表示名と機器番号
+- Hubの「概要」と、「保守・管理」で「？」を開いた画面のスクリーンショット
+- 「Hubが最後に確認」に表示された時刻
 - 期待した動作と実際の動作
 - 直前に変更した設定
-- 可能ならserial logとHub event
+- エラーメッセージが表示された場合は、その全文
+
+<ManualVisual kind="troubleshoot" label="発生時刻、機器ID、最終受信、変更前後の値を記録して問題を順に切り分ける略図" />
 
 <Aside type="caution" title="共有しないもの">
-Wi-Fi password、MQTT password、Cloudflare Access secret、API token、個人email、private hostnameをスクリーンショットやDiscordへ載せないでください。
+Wi-Fiのパスワード、各種の秘密鍵やトークン、個人のメールアドレスをスクリーンショットやDiscordへ載せないでください。
 </Aside>
 
 <CommunityCta />

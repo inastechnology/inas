@@ -38,7 +38,11 @@
 - service は orchestration と domain decision を持つ。
 - repository は data persistence と query を担当し、UI wording や transport detail を持たない。
 - connector/adapter は外部 system を隔離する。Cloudflare、S3、Instagram、weather-provider code を読まなくても core hub behavior が理解できるようにする。
-- local hub operating model を既定にする。Cloudflare Tunnel と Cloud app は、明示的に別仕様としない限り、その model の adapter として扱う。
+- Local HubとCloud Hubを、shared contract上の別product applicationとして分離する。
+  Local Hubは現行のinstallation別Turso/libSQLと直結MQTT制御を維持する。Cloud Hub
+  はdirectory adapterと顧客ごとの専用Turso DBを持てるが、caller入力でDBを
+  選ばせない。Cloudのmulti-tenant routing/credentialをLocal HubやEdge Runtimeへ
+  importしない。
 
 ## Device Firmware ルール
 

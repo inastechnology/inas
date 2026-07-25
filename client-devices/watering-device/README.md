@@ -7,23 +7,18 @@ A simple sensor device that can be used to measure temperature, tds, and more. T
 - Measure voltage
 - Measure temperature
 - Measure TDS (Total Dissolved Solids)
-- Optional all-in-one WTR mode with RS485 Modbus sensors for PAR and soil
-  moisture/temperature/EC/pH/NPK readings
-- Optional 12V RS485 sensor power switch controlled by a MOSFET so external
-  sensors are not kept energized while the device sleeps
+- Analog soil moisture on `A2`/`D2` and one irrigation output on `D4`
 
 ## Hardware
 
 - ESP32S3 Sense
-- Watering valve and pump outputs remain controlled by the watering output HAL.
-- RS485 sensors use the shared Modbus HAL. The default WTR build uses UART1,
-  TX GPIO 43, RX GPIO 44, and DE GPIO 5.
-- RS485 sensor power is treated as a separate 12V switch. The default build
-  drives `APP_SENSOR_12V_POWER_PIN=D8`, active-high, and waits 800 ms after
-  enabling the 12V rail before reading Modbus registers.
-- The MOSFET should switch only the 12V branch that feeds RS485 sensors. Do not
-  place the ESP32S3 supply behind this switch; keep the board powered through
-  the normal 12V -> 5V buck/DCDC path.
+- The soil moisture signal is `A2`/`D2` (`GPIO3`).
+- The irrigation control signal is `D4` (`GPIO5`) and must drive an external
+  MOSFET, relay, or driver input. Never connect a pump or valve directly to a
+  GPIO.
+- The public single-channel WTR hardware profile does not provide RS485.
+  Use WRS or ENV for RS485 sensors; those device kinds use a different pin
+  contract.
 
 ## Setup
 

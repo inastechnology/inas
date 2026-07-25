@@ -1,0 +1,135 @@
+---
+title: 使うWi-Fiを準備する
+description: INAS Hubと圃場の機器をつなぐWi-Fiについて、準備、注意点、接続手順を図で説明します。
+---
+
+import ManualNote from '../../../components/ManualNote.astro';
+import ManualSteps from '../../../components/ManualSteps.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
+
+INASの接続は、Wi-Fiルーターや家電の初期設定と同じ考え方です。**設置場所で使っているWi-Fiの名前とパスワード**を用意し、最初はHubと圃場の機器をルーターの近くで接続します。
+
+<figure className="concept-illustration concept-illustration--compact">
+  <a href="/images/illustrations/network-layout.webp" aria-label="Hubと圃場の機器を同じWi-Fiにつなぐ配置スケッチをこのページ内で拡大する">
+    <img src="/images/illustrations/network-layout.webp" alt="Wi-Fiルーターの近くにINAS Hubとパソコンがあり、ハウス内の機器へ無線が届く様子を示すスケッチ" width="1216" height="704" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>最初はパソコン、INAS Hub、圃場の機器をルーターの近くへ置きます。画像を押すと、このページ内で拡大できます。</figcaption>
+</figure>
+
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>事前に用意するもの
+
+<div className="manual-prep-panel">
+  <div>
+    <h3>設定を始める前に、5つを手元へ置きます</h3>
+    <ul>
+      <li>設置場所で使うWi-Fiの名前</li>
+      <li>そのWi-Fiのパスワード</li>
+      <li>INAS Hubと付属の電源</li>
+      <li>設定に使うパソコンまたはスマートフォン</li>
+      <li>出荷案内に記載されたINASのアドレス</li>
+    </ul>
+  </div>
+  <ManualVisual kind="wifi-kit" label="Wi-Fiルーター、INAS Hub、パソコン、圃場の機器を手元へ用意した略図" />
+</div>
+
+Wi-Fiの名前は、スマートフォンやパソコンで接続先を選ぶ画面に表示されるものです。ルーター本体のラベルに記載されている場合もあります。
+
+<ManualNote
+  id="wifi-band-note"
+  title="「2.4GHz」と表示される方を使います"
+  tone="caution"
+  visual="wifi-band"
+  visualLabel="Wi-Fi一覧でfarm-wifi-2Gに丸、farm-wifi-5Gにバツを付けた略図"
+>
+  一般的なWi-Fiルーターには「2.4GHz」と「5GHz」の2種類が表示されることがあります。圃場の機器には、**2.4GHz、2G、2.4Gと書かれた方**を選びます。
+
+  どちらか分からない場合は、ルーターの取扱説明書または管理者へ「2.4GHz側のWi-Fi名」を確認してください。
+</ManualNote>
+
+<ManualNote
+  id="guest-wifi-note"
+  title="来客用Wi-Fiは使いません"
+  tone="caution"
+  visual="wifi-guest"
+  visualLabel="Wi-Fi一覧で通常のfarm-mainに丸、farm-guestにバツを付けた略図"
+>
+  「ゲスト」「来客用」と書かれたWi-Fiは、接続した機器同士が見えないことがあります。INAS Hubと圃場の機器には、**普段使っている通常のWi-Fi**を選びます。
+
+  施設の管理者には「同じWi-FiにつないだINAS Hubと圃場の機器が、互いに通信できる状態にしてください」と伝えます。
+</ManualNote>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>接続手順 — まずルーターの近くで確認します
+
+初回設定は、実際の設置場所ではなく、ルーターの近くで1台ずつ行います。ここがこのページの中心となる手順です。
+
+<ManualSteps
+  label="Wi-Fiへ接続する5つの手順"
+  steps={[
+    {
+      title: 'Hubをルーターの近くへ置き、電源を入れる',
+      description: 'Hub、付属の電源、ルーターを手元へ置きます。電源をつなぎ、起動を示すランプが落ち着くまで待ちます。',
+      visual: 'hub-power',
+      visualLabel: 'Wi-Fiルーターの近くでINAS Hubへ電源を接続する略図',
+      note: 'まだ圃場へ移動しません。',
+    },
+    {
+      title: '案内に沿ってWi-Fi名とパスワードを登録する',
+      description: '設定画面で2.4GHz側の通常Wi-Fiを選び、パスワードを入力して保存します。大文字と小文字を区別します。',
+      visual: 'wifi-form',
+      visualLabel: 'Wi-Fi名とパスワードを入力して保存する設定画面の略図',
+      note: '来客用Wi-Fiを選ばないことを確認します。',
+    },
+    {
+      title: '圃場の機器を1台だけ接続する',
+      description: 'すべてを同時に設定せず、最初の1台へ電源を入れます。Hubと同じWi-Fiを選んで保存し、そのまま待ちます。',
+      visual: 'one-device',
+      visualLabel: 'INAS Hubへ最初の圃場機器1台だけを接続する略図',
+      note: '1台で成功してから残りへ進みます。',
+    },
+    {
+      title: 'INASの画面で「接続済み」を確認する',
+      description: '案内されたINASのアドレスを開き、接続した機器が表示され、最終受信が更新されていることを確認します。',
+      visual: 'dashboard',
+      visualLabel: 'INAS画面で圃場の機器が接続済みと表示された略図',
+      note: '表示されるまでは次の機器を追加しません。',
+    },
+    {
+      title: '確認できてから実際の設置場所へ移動する',
+      description: '接続できた機器を圃場へ移し、もう一度INASの画面を確認します。移動後だけ表示されない場合は電波の届き方を見直します。',
+      visual: 'move-field',
+      visualLabel: 'ルーターの近くで確認した機器をハウスへ移動する略図',
+      note: '遠い場所ではルーターの位置や中継機を検討します。',
+    },
+  ]}
+/>
+
+<ManualNote
+  id="wifi-troubleshooting"
+  title="つながらないとき"
+  tone="trouble"
+  visual="troubleshoot"
+  visualLabel="電源、Wi-Fi、入力内容、距離を虫眼鏡で順番に確認する略図"
+>
+  設定手順とは分けて、次の順番で原因を確認します。
+
+  - Hubとルーターの電源が入っている
+  - Wi-Fi名の選択を間違えていない
+  - パスワードの大文字・小文字が合っている
+  - 圃場の機器が2.4GHz側を選んでいる
+  - 来客用Wi-Fiを選んでいない
+  - ルーターから離れすぎていない
+
+  改善しない場合は、設定画面のメッセージと止まった手順番号を記録してサポートへ連絡してください。Wi-Fiのパスワードは送らないでください。
+</ManualNote>
+
+<ManualNote
+  id="technician-network-note"
+  title="技術担当者が確認する場合"
+  tone="info"
+  visual="hub"
+  visualLabel="INAS Hubを中心に複数の通信先がつながる技術構成の略図"
+>
+  接続先の固定、通信方式、ルーターの詳細設定、複数のネットワークを使う場合の注意点は、[通信・ネットワークの技術詳細](/technical/networking/)にまとめています。一般の利用者が設定する必要はありません。
+</ManualNote>
+
+提供機器を使う場合は[弊社提供機器のセットアップ](/start/provided-hardware/)へ進みます。自分で機器を構築する場合は[技術者向けの全手順](/start/quickstart/)へ進みます。

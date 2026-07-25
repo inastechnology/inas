@@ -1,71 +1,90 @@
 ---
-title: 全体構成を理解する
-description: Raspberry Pi、Hub、MQTT、デバイス、Cloudflareがどこで動き、どの経路で通信するかを理解します。
+title: INASのしくみ
+description: 画面、Hub、圃場の機器がそれぞれ何をするのか、初めて使う人向けに説明します。
 ---
 
-import SystemArchitecture from '../../../components/SystemArchitecture.astro';
+import ManualSteps from '../../../components/ManualSteps.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
 
-INASは、圃場の観測、栽培計画、作業記録、潅水をひとつにつなぐオープンソースのスマート栽培基盤です。中心になる **INAS Hub** が画面と設定を管理し、圃場のデバイスとはMQTTで通信します。
+INASは、畑の様子、栽培の予定、日々の作業、潅水をひとつの画面で確認するための仕組みです。利用するときに覚えるものは、次の3つです。
 
-<SystemArchitecture />
+<figure className="process-map process-map--three" aria-labelledby="plain-overview-title">
+  <div className="process-map__heading">
+    <strong id="plain-overview-title">INASを形づくる3つのもの</strong>
+    <span>見る・まとめる・動かす</span>
+  </div>
+  <ol className="process-map__steps">
+    <li><strong>画面を開く端末</strong><small>パソコンやスマートフォンから、畑の状態と予定を確認します</small></li>
+    <li><strong>INAS Hub</strong><small>畑の情報をまとめ、画面と圃場の機器をつなぐ小さなコンピューターです</small></li>
+    <li><strong>圃場の機器</strong><small>畑の状態を測ったり、設定に合わせて潅水したりします</small></li>
+  </ol>
+  <figcaption>普段操作するのは画面です。Hubと圃場の機器は、電源とWi-Fiにつないだ状態で動き続けます。</figcaption>
+</figure>
 
-## 何がどこで動くか
+## 普段使うのは画面です
 
-| 構成要素 | 実行・設置場所 | 役割 | 誰が設定するか |
-|---|---|---|---|
-| Raspberry Pi OS | 圃場・事務所のRaspberry Pi | Hubを常時動かすOS | 自己調達では利用者 |
-| INAS Hub | Raspberry Pi上のsystemd service | 画面、圃場・作業・デバイス設定、データ処理、F/W配信 | 利用者 |
-| Mosquitto | 同じRaspberry Pi上 | HubとデバイスのMQTT broker | 利用者 |
-| Avahi / mDNS | 同じRaspberry Pi上 | `<hub名>.local`をLAN内で名前解決 | OS hostnameから生成 |
-| cloudflared | 同じRaspberry Pi上 | Cloudflareへ外向きTunnelを維持 | Cloudflare利用時に利用者 |
-| WTR / WRS / SOI / ENV | 圃場の制御盤・sensor筐体 | 測定、潅水、状態送信 | 自己調達では利用者が製作・設定 |
-| Cloudflare Access | Cloudflare上 | Hub画面へ入る利用者を認証 | 利用者のCloudflare account |
-| Turso / R2 | cloud service | database、画像・F/Wなどの保存 | Hubの`.env`で接続 |
-| Web browser | 利用者のPC・phone | Hub UIを操作 | URLへアクセスするだけ |
+パソコンやスマートフォンのブラウザで、案内されたINASのアドレスを開きます。専用アプリのインストールは必要ありません。
 
-:::tip[最初に覚える境界]
-Raspberry Piは**サーバー**、ESP32S3は**圃場デバイス**、Cloudflare Accessは**人が外部からHub画面へ入る入口**です。デバイスがCloudflare Accessへloginする構成ではありません。
+画面では、次のことができます。
+
+- 圃場や作物の状態を見る
+- 今日の作業とこれからの予定を見る
+- 測定結果や潅水の履歴を確認する
+- 圃場の機器が動いているか確認する
+- AIから届いた提案を確認し、採用するか判断する
+
+<ManualVisual kind="user-screen" label="パソコンとスマートフォンでINASの画面を見る略図" />
+
+## Hubは情報をまとめます
+
+INAS Hubは、圃場や事務所に置く小さなコンピューターです。画面で入力した内容を保存し、圃場の機器から届いた状態をまとめます。
+
+提供機器を利用する場合は、必要なソフトウェアを準備した状態でお届けする想定です。電源とWi-Fiをつなげばよく、内部の仕組みを設定する必要はありません。
+
+<ManualVisual kind="hub" label="INAS Hubを中心に画面と圃場の機器がつながる略図" />
+
+## 圃場の機器が測定と潅水を行います
+
+センサーや潅水機器は、Hubと同じWi-Fiを使います。設定が届くと、測定や潅水を行い、その結果をHubへ返します。
+
+最初からすべてを設置する必要はありません。まず1台を手元で接続し、画面に状態が表示されることを確認してから圃場へ設置します。
+
+<ManualVisual kind="field-device" label="圃場の機器が植物を測定し潅水する略図" />
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>使い始めるまで
+
+<ManualSteps
+  label="INASを使い始める4つの手順"
+  steps={[
+    {
+      title: '利用方法を選ぶ',
+      description: '提供機器を利用するか、技術者が自分で機器を構築するかを最初に決めます。',
+      visual: 'package',
+      visualLabel: '提供機器の箱と同梱品を確認する略図',
+    },
+    {
+      title: '使うWi-Fiを確認する',
+      description: '設置場所のWi-Fi名とパスワードを用意し、2.4GHz側の通常Wi-Fiを確認します。',
+      visual: 'wifi-kit',
+      visualLabel: 'Wi-Fiルーター、Hub、パソコン、圃場の機器を用意する略図',
+    },
+    {
+      title: 'Hubと圃場の機器へ電源を入れる',
+      description: '最初はルーターの近くで、Hubと圃場の機器1台だけを接続します。',
+      visual: 'one-device',
+      visualLabel: 'Hubへ最初の圃場機器1台だけを接続する略図',
+    },
+    {
+      title: 'INASの画面で確認する',
+      description: '案内されたアドレスを開き、圃場と機器が表示され、最終受信が更新されることを確認します。',
+      visual: 'dashboard',
+      visualLabel: 'INAS画面で圃場の機器が接続済みと表示された略図',
+    },
+  ]}
+/>
+
+:::tip[通常利用では、難しい設定は不要です]
+提供機器の利用者が用意するのは、基本的に電源、Wi-Fi名、Wi-Fiパスワード、画面を開くパソコンまたはスマートフォンです。
 :::
 
-## 3つの通信経路
-
-1. **人がHubを使う**: browser → Cloudflare Access → Tunnel → Raspberry Pi上のHub。
-2. **Hubとデバイスが通信する**: ESP32S3 → 2.4GHz Wi‑Fi → Raspberry Pi上のMosquitto。状態とRuntime ConfigをMQTTで送受信します。
-3. **デバイスがF/Wを取得する**: ESP32S3 → LAN内HTTP → `http://<Hub予約IP>:39151`。Cloudflare公開URLは使いません。
-
-:::caution[現行デバイスのmDNS]
-Raspberry Piは`<hub名>.local`で見えますが、現行デバイスF/WはMQTT hostを通常DNSで解決し、明示的なmDNS queryを行いません。自己調達ルートでは、デバイスのMQTTとOTAにRaspberry PiのDHCP予約IPを使います。`<顧客ID>.local`をデバイスにも設定する方式は、弊社提供品の準備中仕様です。
-:::
-
-## システムを構成するもの
-
-| 構成 | 役割 | 必須 |
-|---|---|---|
-| Raspberry Pi | Hub、Mosquitto、cloudflared、mDNSを常時実行 | 必須 |
-| INAS Hub | Web画面、圃場・作業・デバイス設定、データ処理、F/W配信 | 必須 |
-| MQTT broker | Hubとデバイス間の状態・設定・OTA通知 | デバイス利用時。通常は同じPi |
-| WTR / WRS | 潅水出力と土壌水分・RS485センサー | 潅水時 |
-| SOI / ENV | 土壌水分または環境センサー | 任意 |
-| Cloudflare Access / Tunnel | Hubへ外部から安全にアクセスする入口 | 任意・推奨 |
-
-## デバイス起動時の情報と制御
-
-1. デバイスが起動し、Wi-FiとMQTTへ接続します。
-2. デバイスがHubへ状態を送り、最新のRuntime Configを要求します。
-3. Hubが機種と登録内容に合う設定を返します。
-4. デバイスは測定や潅水を実行し、結果をHubへ送ります。
-5. F/W更新が予約されている場合、デバイスはHubのHTTP endpointからバイナリを取得します。
-
-:::note[Cloudflareの役割]
-Cloudflare AccessとTunnelは、管理画面とAPIを公開する認証付き入口です。現在のデバイスOTAは、圃場LANから到達できるHubの `http://` URLを使います。
-:::
-
-## 用語を区別する
-
-- **Device Definition**: F/Wが持つ機能をHubへ伝える静的な定義。
-- **Runtime Config**: 個々の登録デバイスへHubが送る設定。
-- **Hub Extension**: Hubへ任意機能を追加するパッケージ。
-
-これらは別の仕組みです。たとえば「WTRの潅水時間を5秒にする」はRuntime Configであり、Device DefinitionやExtensionの変更ではありません。
-
-全体を理解したら[導入ルートを選びます](/start/choose-path/)。現在実行できるのは、機器を自分で購入・構築する自己調達ルートです。
+内部の構成、通信方式、自己構築時の注意点を確認する場合だけ、[技術構成と責務](/technical/architecture/)を参照してください。

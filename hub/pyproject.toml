@@ -6,6 +6,7 @@ authors = [
     { name = "Polonity", email = "hiken.pc@gmail.com" }
 ]
 dependencies = [
+    "ina-edge-runtime",
     "paho-mqtt>=2.1.0",
     "dotenv>=0.9.9",
     "libsql>=0.1.11",
@@ -28,12 +29,23 @@ dev = [
     "ruff>=0.9.6",
 ]
 
+[tool.uv.sources]
+ina-edge-runtime = { path = "shared/edge-runtime", editable = true }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "README.md",
+    "pyproject.toml",
+    "shared/edge-runtime",
+    "src",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ina_device_hub"]

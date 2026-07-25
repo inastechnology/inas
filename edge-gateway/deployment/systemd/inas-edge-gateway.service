@@ -1,0 +1,52 @@
+[Unit]
+Description=INAS Edge Gateway
+Wants=network-online.target mosquitto.service chrony.service dnsmasq.service
+After=network-online.target mosquitto.service chrony.service dnsmasq.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=inas-edge
+Group=inas-edge
+WorkingDirectory=/opt/inas/edge-gateway
+ExecStart=/opt/inas/edge-gateway/.venv/bin/ina-edge-gateway run --config /etc/inas/edge-gateway.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=35
+WatchdogSec=60
+UMask=0077
+
+StateDirectory=inas
+StateDirectoryMode=0700
+RuntimeDirectory=inas-edge-gateway
+RuntimeDirectoryMode=0700
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+ReadOnlyPaths=/etc/inas
+ReadWritePaths=/var/lib/inas
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+{
+  "protocol_version": "1.0",
+  "request_id": "423e4567-e89b-42d3-a456-426614174100",
+  "node_id": "INALH-123e4567-e89b-42d3-a456-426614174002",
+  "node_type": "edge_gateway",
+  "sent_at": "2026-07-23T02:15:00Z",
+  "cursor": null,
+  "events": [],
+  "command_results": [],
+  "health": {
+    "status": "ok",
+    "software_version": "0.1.0",
+    "outbox_depth": 0,
+    "mqtt_connected": true,
+    "storage_free_bytes": 24000000000,
+    "capabilities": ["mqtt"]
+  }
+}
+

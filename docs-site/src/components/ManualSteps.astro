@@ -1,0 +1,32 @@
+---
+import ManualVisual from "./ManualVisual.astro";
+
+interface Step {
+  title: string;
+  description: string;
+  visual: string;
+  visualLabel: string;
+  note?: string;
+}
+
+interface Props {
+  steps: Step[];
+  label: string;
+}
+
+const { steps, label } = Astro.props;
+---
+
+<ol class="manual-steps" aria-label={label}>
+  {steps.map((step, index) => (
+    <li class="manual-step">
+      <ManualVisual kind={step.visual} label={step.visualLabel} compact />
+      <div class="manual-step__body">
+        <span class="manual-step__number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+        <h3>{step.title}</h3>
+        <p>{step.description}</p>
+        {step.note && <small>{step.note}</small>}
+      </div>
+    </li>
+  ))}
+</ol>

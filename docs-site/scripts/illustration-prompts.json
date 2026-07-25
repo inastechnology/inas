@@ -1,0 +1,137 @@
+{
+  "generator": "Krea-2 through local ComfyUI",
+  "width": 1216,
+  "height": 704,
+  "steps": 28,
+  "common_style": "Text-free hand-drawn Japanese documentation illustration on off-white paper, dark forest-green ink, subtle pencil texture, muted sage and pale-lime flat watercolor, blank unmarked surfaces, balanced whitespace.",
+  "common_negative": "text, letters, numbers, words, captions, labels, callouts, typography, logo, watermark, poster, infographic, photorealistic, glossy 3D, dark background, clutter, blueprint, UI, people, unsafe wiring",
+  "editorial_scene_presets": {
+    "airy": {
+      "style": "Text-free hand-drawn Japanese picture-book illustration on off-white paper, dark forest-green ink lines, subtle graphite texture, muted sage and pale-lime watercolor washes, restrained warm sun yellow, gentle imperfect contours, simple believable human figures, airy balanced composition, calm editorial documentation design, completely blank unmarked surfaces.",
+      "negative": "text, letters, numbers, words, captions, labels, callouts, speech bubbles, typography, logo, watermark, poster, infographic, comic panels, photorealistic, glossy 3D, anime, cartoon mascot, fantasy magic, utopia, futuristic city, robots, drone swarm, dark horror, clutter, dramatic faces, extra limbs, malformed hands, unsafe wiring, readable notebook, readable screen"
+    },
+    "full_frame": {
+      "style": "One single full-frame image only, illustration fills the canvas from edge to edge with no page layout, no border, no text area and no blank side column. Text-free hand-drawn Japanese editorial picture-book art on off-white paper, dark forest-green ink lines, subtle graphite texture, muted sage and pale-lime watercolor washes, restrained warm sun yellow, gentle imperfect contours, simple believable human figures, calm documentation design, completely blank unmarked object surfaces.",
+      "negative": "text, letters, numbers, words, captions, labels, callouts, speech bubbles, handwriting, typography, logo, watermark, book page, storybook page, written paragraph, blank text column, split layout, poster, infographic, comic panels, photorealistic, glossy 3D, anime, cartoon mascot, fantasy magic, utopia, futuristic city, robots, drone swarm, dark horror, clutter, dramatic faces, extra limbs, malformed hands, unsafe wiring, readable notebook, readable screen"
+    }
+  },
+  "illustrations": [
+    {
+      "file": "hardware-overview.webp",
+      "seed": 8024011,
+      "cfg": 3.3,
+      "subject": "Catalog-style still life with a Raspberry Pi-class Hub, SSD, USB-C power, UPS and router on the left; plain ESP32-class controller, soil probe, external driver, valve, hose and terminal block on the right."
+    },
+    {
+      "file": "site-readiness.webp",
+      "seed": 8024021,
+      "cfg": 3.3,
+      "subject": "Small greenhouse with a dry elevated utility cabinet containing Hub, router and UPS; a wireless field node; water tank, manual valve and irrigation pipe kept physically separate."
+    },
+    {
+      "file": "network-layout.webp",
+      "seed": 8024031,
+      "cfg": 3.3,
+      "subject": "Physical LAN scene with a router, Raspberry Pi-class Hub and laptop indoors, and two wireless field nodes visible in a nearby greenhouse."
+    },
+    {
+      "file": "wtr-hardware.webp",
+      "seed": 8024042,
+      "cfg": 3.2,
+      "subject": "Single-channel irrigation still life with an open weatherproof controller enclosure, separate driver, low-voltage supply, one valve or drip line and one analog soil-moisture probe."
+    },
+    {
+      "file": "wrs-hardware.webp",
+      "seed": 8024051,
+      "cfg": 3.2,
+      "subject": "Dual-channel irrigation and industrial sensor still life with an open controller enclosure, two driver paths, RS485 transceiver, two water lines and a rugged field probe."
+    },
+    {
+      "file": "sensor-hardware.webp",
+      "seed": 8024061,
+      "cfg": 3.2,
+      "subject": "Two separate sensor-node groups: battery-powered analog soil node on the left and 12-volt RS485 industrial environmental node on the right, with no irrigation equipment."
+    },
+    {
+      "file": "electrical-water-safety.webp",
+      "seed": 8024071,
+      "cfg": 3.2,
+      "subject": "Elevated splash-resistant electrical enclosure with cable glands and drip loops, physically separated from a pipe, solenoid valve, accessible manual shutoff and catch basin."
+    },
+    {
+      "file": "why-inas-explorer.webp",
+      "seed": 8024091,
+      "cfg": 3.2,
+      "preset": "airy",
+      "subject": "A quiet morning scene at the threshold of a small farm workshop and greenhouse. A practical farmer-builder sits at a simple wooden workbench with a blank open notebook, hand tools, a seed tray, coiled cable and one small weatherproof controller, then looks toward living crop rows outside, ready to test, observe and learn. The person feels like an explorer beginning a long inquiry, not a shopper and not a heroic inventor. First light enters from the field; unfinished work and useful objects feel honest and approachable."
+    },
+    {
+      "file": "why-inas-real-work.webp",
+      "seed": 8024102,
+      "cfg": 3.2,
+      "preset": "full_frame",
+      "subject": "Inside a working greenhouse during slanting rain, one farmer kneels in wet soil in the foreground, wipes mud from a soil probe, checks one worn cable and reaches toward an accessible manual irrigation valve. Crop rows, hose, a small plain controller enclosure and a few thorny weeds surround the task. The farmer watches the plants while troubleshooting. The scene is honest and demanding but not catastrophic: weather, mud, maintenance and patient work show that automation is a field tool rather than magic."
+    },
+    {
+      "file": "why-inas-field-listening.webp",
+      "seed": 8024093,
+      "cfg": 3.2,
+      "preset": "airy",
+      "subject": "Two people work as equals inside crop rows: an experienced grower holds and examines soil and leaves while a maker kneels beside them, listening and inspecting a small field sensor and open weatherproof enclosure. A completely blank notebook lies between them with simple hand tools. Both face the plants and the actual equipment rather than directing from an office. The atmosphere is patient, collaborative and grounded in field evidence."
+    },
+    {
+      "file": "why-inas-next-generation.webp",
+      "seed": 8024104,
+      "cfg": 3.2,
+      "preset": "full_frame",
+      "subject": "At soft sunrise across a believable working field, an adult farmer and a child occupy the foreground and carefully plant one young seedling together between established crop rows. An older farmer quietly tends another row in the middle distance. A modest irrigation hose, tiny field sensor and simple greenhouse sit naturally in the background without dominating. The scene suggests practical knowledge and food production carried across generations, hopeful but not idealized."
+    },
+    {
+      "file": "why-inas-open-tools.webp",
+      "seed": 8024105,
+      "cfg": 3.2,
+      "preset": "full_frame",
+      "subject": "At a farm workbench beside an open greenhouse, two people repair a simple weatherproof field controller together in the center of the scene. Its enclosure is open and understandable, with replaceable modules and ordinary fasteners. A multimeter, screwdrivers, one worn spare part and a completely blank observation notebook lie nearby; an accessible manual irrigation shutoff valve is visible beside the bench. The living field continues behind them. The scene conveys honesty about failures, safety, documentation, sharing and the ability to repair."
+    },
+    {
+      "file": "safety-story-dry-hub.webp",
+      "seed": 8024121,
+      "cfg": 3.2,
+      "width": 832,
+      "height": 624,
+      "steps": 28,
+      "preset": "full_frame",
+      "subject": "A practical farmer safely places a plain compact Hub and power supply on a high dry greenhouse utility shelf, clearly above and separated from irrigation plumbing."
+    },
+    {
+      "file": "safety-story-manual-stop.webp",
+      "seed": 8024122,
+      "cfg": 3.2,
+      "width": 832,
+      "height": 624,
+      "steps": 28,
+      "preset": "full_frame",
+      "subject": "A practical farmer grips and closes an accessible red-handled manual shutoff valve beside irrigation plumbing, with no computer required."
+    },
+    {
+      "file": "safety-story-short-test.webp",
+      "seed": 8024133,
+      "cfg": 3.2,
+      "width": 832,
+      "height": 624,
+      "steps": 28,
+      "preset": "full_frame",
+      "subject": "A practical farmer remains present during a short supervised drip-irrigation test, with a catch bucket and close inspection of one hose joint."
+    },
+    {
+      "file": "safety-story-emergency-stop.webp",
+      "seed": 8024144,
+      "cfg": 3.3,
+      "width": 832,
+      "height": 624,
+      "steps": 30,
+      "preset": "full_frame",
+      "subject": "A practical farmer calmly presses a safe red power disconnect and closes a red manual water valve after detecting an abnormal condition."
+    }
+  ]
+}

@@ -1,9 +1,13 @@
 ---
-title: 設定項目リファレンス
-description: Hub・WTR Runtime Config・潅水・診断の主要設定項目を目的別に説明します。
+title: 機器設定キー
+description: WTR Runtime Config、潅水、診断の内部キーと制約を技術担当者向けに説明します。
 ---
 
-画面に表示される項目はDevice Definitionと権限によって変わります。ここではWTRを中心に、日常的に使う設定をまとめます。
+:::caution[技術者向け]
+このページは機器F/WとHubの設定配信を調査する担当者向けです。画面に表示される一般向けの設定は[画面の設定ガイド](/configure/settings/)を参照してください。
+:::
+
+画面に表示される項目はDevice Definitionと権限によって変わります。ここではWTRを中心に、Hubから機器へ配信する内部キーをまとめます。
 
 ## 時刻とwake
 

@@ -1,0 +1,96 @@
+---
+title: 画面の設定ガイド
+description: INAS Hubの実際の画面を見ながら、一般利用者が変更する設定を1項目ずつ説明します。
+---
+
+import ManualVisual from '../../../components/ManualVisual.astro';
+
+設定は「自分の見やすさ」「圃場と機器」「水やり」の3か所に分かれています。どの画面の値を変えるか迷ったら、まず次の図で影響する範囲を確認してください。
+
+<div className="settings-scope-map" aria-label="設定が影響する範囲">
+  <article>
+    <span aria-hidden="true">☺</span>
+    <h2>個人設定</h2>
+    <p>文字・日時・説明の詳しさ</p>
+    <small>自分の表示だけ変わる</small>
+  </article>
+  <article>
+    <span aria-hidden="true">田</span>
+    <h2>圃場・機器</h2>
+    <p>名前・場所・設備の行き先</p>
+    <small>現場との対応が変わる</small>
+  </article>
+  <article>
+    <span aria-hidden="true">◉</span>
+    <h2>動作設定</h2>
+    <p>水やりの時刻・時間・条件</p>
+    <small>実際の機器の動きが変わる</small>
+  </article>
+</div>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>個人設定
+
+圃場一覧右上の「個人設定」を開きます。ここで変えた内容はログイン中の自分にだけ適用され、圃場や機器の動作は変わりません。
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/user-preferences.webp" aria-label="INAS Hubの個人設定画面をこの場で拡大する">
+    <img src="/images/screenshots/user-preferences.webp" alt="タイムゾーン、日付形式、文字の大きさ、画面の見分けやすさ、栽培アドバイスの詳しさを設定する個人設定画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>検索欄に「文字」「時刻」などを入れると、該当する項目だけを表示できます。</figcaption>
+</figure>
+
+<div className="setting-explain-list">
+  <article><b>1</b><div><h3>タイムゾーン</h3><p>カレンダーと記録時刻を表示する地域です。日本で使う場合は「Asia/Tokyo」を選びます。</p></div></article>
+  <article><b>2</b><div><h3>日付形式</h3><p>日付の見せ方だけを選びます。記録される内容や予定日は変わりません。</p></div></article>
+  <article><b>3</b><div><h3>文字の大きさ</h3><p>標準・大・特大から選びます。選択中にこの画面で見え方を確認できます。</p></div></article>
+  <article><b>4</b><div><h3>画面の見分けやすさ</h3><p>屋外や日なたで薄い文字が読みにくい場合は「くっきり」を選びます。</p></div></article>
+  <article><b>5</b><div><h3>栽培アドバイスの詳しさ</h3><p>初心者は手順を詳しく、標準は必要事項を簡潔に、プロは数値と判断根拠を優先して表示します。</p></div></article>
+</div>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>圃場と機器の設定
+
+圃場の名前・区画・畝は「圃場」、機器の名前・設置場所・水の行き先は「機器」から変更します。機器番号を入力して新規登録するのではなく、接続して自動認識された機器を開いて設定します。
+
+<div className="setting-path-visual">
+  <ManualVisual kind="field-layout" label="圃場の設置ビューで畝と機器の位置を設定する略図" compact={true} />
+  <span aria-hidden="true">→</span>
+  <ManualVisual kind="output-link" label="機器の接続口と実際の弁や畝を結び付ける略図" compact={true} />
+</div>
+
+| 設定する場所 | 主な項目 | 確認する現物 |
+|---|---|---|
+| 圃場の基本情報 | 圃場名、所在地、作物・品種 | 現場で使う呼び方 |
+| 設置ビュー | 区画、畝、機器、設備の位置 | 実際の位置関係 |
+| 機器の概要 | 表示名、設置する圃場・畝 | 本体の機器番号 |
+| 水やりルート | 接続口、弁・ポンプ、水が届く畝 | 配線・配管のラベル |
+
+詳しい接続順は[圃場とデバイス](/configure/fields-devices/)を参照してください。
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>機器の「動作設定」
+
+機器一覧から対象の潅水機器を開き、「動作設定」を選びます。ここは**実際の水やりに影響する設定**です。保存前に、機器名と水の行き先をもう一度確認してください。
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/watering-settings.webp" aria-label="潅水機器の動作設定画面をこの場で拡大する">
+    <img src="/images/screenshots/watering-settings.webp" alt="現在の水やりルート、潅水予約、水分条件、分割潅水を設定する潅水機器の動作設定画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>上から「行き先」「時刻と時間」「土の水分」「分割」の順に確認すると、設定漏れを防げます。</figcaption>
+</figure>
+
+<div className="setting-explain-list">
+  <article><b>1</b><div><h3>現在の水やりルート</h3><p>どの接続口から、どの弁・ポンプを通り、どの畝へ水が届くかを設定します。</p></div></article>
+  <article><b>2</b><div><h3>潅水予約</h3><p>水やりを始める時刻と、水を出す秒数を決めます。最初は見守れる時刻に1〜5秒で試します。</p></div></article>
+  <article><b>3</b><div><h3>土の水分条件</h3><p>指定した値以上に湿っているとき、水やりを見送るための基準です。乾いた土と湿った土を実測して決めます。</p></div></article>
+  <article><b>4</b><div><h3>分割潅水</h3><p>「水を出す」「休む」を何回繰り返すか決めます。有効中は通常の水やり秒数へ加算されません。</p></div></article>
+  <article><b>5</b><div><h3>保存して機器へ反映</h3><p>保存後、機器が新しい内容を受け取った表示と次回予定を確認して、短時間の試験を行います。</p></div></article>
+</div>
+
+<ManualVisual kind="watering-schedule" label="水やりの実行時刻と秒数を決め、機器へ反映して確認する略図" />
+
+:::caution[設定しただけで現場確認を終えません]
+水やりに関わる値を変えたら、人が見ている状態で短く試し、水の行き先、漏れ、停止方法を確認します。
+:::
+
+## 管理者だけが変更する設定
+
+AI、通知、外部サービス、Hub本体の接続状態は「アプリ設定」にあります。通常の作業者が変更する必要はありません。管理者向けの全項目は[アプリ設定の技術ガイド](/technical/app-settings/)へ分けています。

@@ -67,6 +67,24 @@ export interface FieldLayout {
   updated_by: string;
 }
 
+export type LayoutPresenceState = "viewing" | "editing" | "saving" | "conflict";
+
+export interface LayoutCollaborator {
+  client_id: string;
+  email: string;
+  active_space_id: string;
+  selected_placement_id: string;
+  state: LayoutPresenceState;
+  last_seen_at: string;
+  is_current: boolean;
+}
+
+export interface LayoutCollaborationSnapshot {
+  field_id: string;
+  layout: Pick<FieldLayout, "revision" | "updated_at" | "updated_by">;
+  participants: LayoutCollaborator[];
+}
+
 export interface DeviceResource {
   resource_type: BindingResourceType;
   resource_id: string;

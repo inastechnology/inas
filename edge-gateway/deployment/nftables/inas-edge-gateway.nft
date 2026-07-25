@@ -1,0 +1,19 @@
+table inet inas_edge_gateway {
+    chain device_input {
+        type filter hook input priority filter; policy accept;
+
+        iifname "wlan0" ct state established,related accept
+        iifname "wlan0" udp dport { 53, 67, 123 } accept
+        iifname "wlan0" tcp dport { 53, 1883, 39152 } accept
+        iifname "wlan0" drop
+    }
+
+    chain device_forward {
+        type filter hook forward priority filter; policy accept;
+
+        # Field devices never use the Gateway as an Internet router. This also
+        # blocks lateral forwarding if AP isolation is accidentally disabled.
+        iifname "wlan0" drop
+        oifname "wlan0" drop
+    }
+}

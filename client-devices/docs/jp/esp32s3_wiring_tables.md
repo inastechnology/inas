@@ -29,19 +29,15 @@
 
 ## WTR
 
-水やり全部入りデバイス。WTR は灌水制御、analog 土壌水分、任意の RS485 センサーを扱う。
+アナログ土壌水分と 1 系統の潅水出力を扱うデバイス。RS485 と 2 系統出力が必要な場合は WRS を使う。
 
 | XIAO pin | GPIO | 接続先 | 外部端子 | 線材 | 検査 |
 |---|---:|---|---|---|---|
 | `VBUS` | - | 5V DCDC output | Power `5V_OUT` | 橙 22-24 AWG | XIAO 接続前に 4.75-5.25V |
-| `GND` | - | device GND | Power `GND` | 黒 20-24 AWG | 12V negative、RS485 GND と導通 |
-| `D2` | `GPIO3` | valve MOSFET gate | Valve output channel 1 | 青 24-26 AWG | valve command 時に gate が変化 |
-| `D3` | `GPIO4` | pump MOSFET gate | Pump output | 青 24-26 AWG | valve active 中に pump output が ON |
-| `A5` / `D5` | `GPIO6` | analog soil moisture signal | Soil analog `SIG` | 白 24-26 AWG | 乾湿基準で ADC が変化 |
-| `D4` | `GPIO5` | RS485 transceiver DE/RE | internal RS485 driver | 灰 24-26 AWG | Modbus TX 時に direction pin が変化 |
-| `D6` | `GPIO43` | RS485 transceiver DI | internal RS485 TX | 青 24-26 AWG | request 時に UART TX が出る |
-| `D7` | `GPIO44` | RS485 transceiver RO | internal RS485 RX | 白 24-26 AWG | response 時に UART RX が入る |
-| `D8` | `GPIO7` | 12V sensor power MOSFET gate | RS485 sensor power switch | 青 24-26 AWG | sensor read 中だけ switched 12V が出る |
+| `GND` | - | device GND | Power `GND` | 黒 20-24 AWG | sensor、driver、supply negative と導通 |
+| `3V3` | - | 3.3V soil sensor VCC | Soil `VCC` | 紫 24-26 AWG | sensor 定格が 3.3V |
+| `A2` / `D2` | `GPIO3` | analog soil moisture signal | Soil `SIG` | 白 24-26 AWG | 乾湿基準で ADC が変化 |
+| `D4` | `GPIO5` | irrigation driver input / MOSFET gate | `IRR1` driver | 青 24-26 AWG | 潅水中だけ signal が active |
 | `BOOT` | `GPIO0` | setup AP button | enclosure service button | 2 線 signal | active-low、3.3V へ短絡なし |
 | `USER_LED` | `GPIO21` | board LED | internal only | - | firmware status LED が動作 |
 
@@ -51,12 +47,8 @@
 |---|---|---|
 | `12V_IN+` | 12V supply positive | 可能なら device 前段に fuse |
 | `12V_IN-` | 12V supply negative | common ground |
-| `VALVE+` / `VALVE-` | solenoid valve または valve driver | 電圧・電流定格を合わせる |
-| `PUMP+` / `PUMP-` | pump または pump relay/MOSFET output | MOSFET 定格を超えない |
-| `RS485_A` / `RS485_B` | sensor bus A/B | 全センサー無応答なら A/B を疑う |
-| `RS485_GND` | sensor bus ground | 圃場配線の安定化に必須 |
-| `SENSOR_12V_SW+` | switched sensor 12V | sensor branch のみ |
-| `SOIL_SIG` / `SOIL_3V3` / `SOIL_GND` | analog soil moisture sensor | RS485 土壌センサー利用時は任意 |
+| `IRR1+` / `IRR1-` | pump、solenoid valve、または外部 driver | 電圧・電流定格と flyback protection を確認 |
+| `SOIL_SIG` / `SOIL_3V3` / `SOIL_GND` | 3.3V analog soil moisture sensor | signal は `A2/D2` |
 
 ### WTR 低電圧 H/W profile
 
@@ -66,11 +58,11 @@ device の責務が WTR のまま、小型低電圧 pump、valve driver input、
 |---|---:|---|---|---|---|
 | `BAT+` または `VBUS` | - | 承認済み battery または regulated input | power input | 赤/橙 22-24 AWG | XIAO の入力範囲内 |
 | `GND` | - | device ground | `GND` terminal | 黒 22-24 AWG | sensor/output GND と共通 |
-| `D2` | `GPIO3` | WTR valve/irrigation enable MOSFET gate | `IRR1` または driver enable | 青 24-26 AWG | WTR irrigation channel active 時に gate が変化 |
-| `D3` | `GPIO4` | WTR pump/output MOSFET gate | `IRR2` または pump output | 青 24-26 AWG | WTR watering behavior に追従 |
-| `A5` / `D5` | `GPIO6` | analog soil moisture signal | Soil analog `SIG` | 白 24-26 AWG | 乾湿基準で ADC が変化 |
+| `3V3` | - | 3.3V soil sensor VCC | Soil `VCC` | 紫 24-26 AWG | sensor 定格が 3.3V |
+| `A2` / `D2` | `GPIO3` | analog soil moisture signal | Soil analog `SIG` | 白 24-26 AWG | 乾湿基準で ADC が変化 |
+| `D4` | `GPIO5` | irrigation driver input / MOSFET gate | `IRR1` または driver enable | 青 24-26 AWG | 潅水中だけ signal が active |
 
-低電圧 profile で RS485 sensor を使わない場合、RS485 と `D8` sensor power は未実装でよい。analog soil sensor を `A0` へ移さない。`A0` は SOI の pin contract であり、WTR ではない。
+WTR の `D4` を RS485 direction として使わない。RS485 sensor が必要な場合は WRS または ENV を使う。analog soil sensor を `A0` へ移さない。`A0` は SOI の pin contract であり、WTR ではない。
 
 ## WRS
 

@@ -6,8 +6,10 @@
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
     "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
     "check": "ASTRO_TELEMETRY_DISABLED=1 astro check && ASTRO_TELEMETRY_DISABLED=1 astro build && node scripts/check-content.mjs",
+    "capture:product-screenshots": "node scripts/capture-product-screenshots.mjs",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "smoke": "node scripts/smoke.mjs",
+    "smoke:manual": "node scripts/manual-visual-smoke.mjs",
     "deploy": "npm run check && npx --yes wrangler@4.112.0 deploy"
   },
   "dependencies": {

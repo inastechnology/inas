@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="ja">
+<html lang="{{ ui_locale }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ field.name }} - INA Field</title>
     <link rel="stylesheet" href="/static/searchable-select.css">
+    <script defer src="/static/ui-locale.js"></script>
     <style>
       :root { color-scheme: light; --ink: #1d2721; --muted: #68756d; --line: #d5ddd7; --surface: #fff; --green: #226b52; --good: #22734f; --warn: #ad6413; --danger: #ad3e36; }
       * { box-sizing: border-box; }
@@ -70,24 +71,23 @@
       .manual-overview .primary-button { align-self: stretch; }
       .task-count { min-width: 34px; padding: 4px 7px; border-radius: 999px; color: #155f50; background: #e3f1eb; font-size: 11px; font-weight: 800; text-align: center; }
       .task-list { display: grid; gap: 8px; }
-      .candidate { display: grid; gap: 7px; padding: 11px; border: 1px solid #d8dfda; border-left: 4px solid var(--warn); border-radius: 6px; }
+      .candidate { display: grid; min-width: 0; gap: 7px; padding: 11px; overflow: hidden; border: 1px solid #d8dfda; border-left: 4px solid var(--warn); border-radius: 6px; }
       .candidate.observation { border-left-color: #66776b; }
       .candidate.calendar-task { border-left-color: #2b7a62; color: inherit; background: #fbfdfb; text-decoration: none; cursor: pointer; }
       .candidate.calendar-task:hover, .candidate.calendar-task:focus-visible { border-color: #55907b; outline: 2px solid #dbeae3; outline-offset: 1px; text-decoration: none; transform: translateY(-1px); }
       .candidate.calendar-task.overdue { border-left-color: var(--danger); background: #fffafa; }
       .candidate.calendar-task.upcoming { border-left-color: #b28a2e; }
-      .calendar-task-layout { display: grid; grid-template-columns: 136px minmax(0, 1fr); align-items: start; gap: 12px; }
+      .calendar-task-layout { display: grid; grid-template-columns: 136px minmax(0, 1fr); min-width: 0; align-items: start; gap: 12px; }
       .calendar-task-layout.no-illustration { grid-template-columns: 1fr; }
       .calendar-task-illustration { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid #d3dbd5; border-radius: 5px; background: #eef2ef; }
       .calendar-task-copy { display: grid; min-width: 0; gap: 7px; }
-      .candidate-top { display: flex; align-items: center; gap: 6px; }
-      .candidate-top .tag:last-child { margin-left: auto; }
+      .candidate-top { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 5px 6px; }
       .candidate p { margin: 0; color: #48564e; font-size: 11px; line-height: 1.5; }
       .task-window { color: #66736b; font-size: 11px; font-weight: 700; }
       .task-open { justify-self: start; color: #17614f; font-size: 12px; font-weight: 800; text-decoration: none; }
       .task-open:hover { text-decoration: underline; }
       .task-divider { margin: 3px 0; color: #78847d; font-size: 10px; font-weight: 800; text-transform: uppercase; }
-      .tag { padding: 2px 5px; border-radius: 4px; color: #34604e; background: #eaf3ee; font-size: 9px; font-weight: 750; }
+      .tag { max-width: 100%; padding: 2px 5px; overflow-wrap: anywhere; border-radius: 4px; color: #34604e; background: #eaf3ee; font-size: 9px; font-weight: 750; }
       .tag.warn { color: #8b4811; background: #fff0de; }
       .candidate form { display: grid; gap: 6px; padding-top: 7px; border-top: 1px solid #e1e5e2; }
       textarea, input, select { width: 100%; min-height: 36px; padding: 7px 8px; border: 1px solid #bdc8c0; border-radius: 5px; color: var(--ink); background: #fff; }

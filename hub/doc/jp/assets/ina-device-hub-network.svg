@@ -47,7 +47,7 @@
   <path d="M85 255 L245 255 L265 275 L265 300 L85 300 Z" class="doc" fill="#ffffff" stroke="#999999"/>
   <path d="M245 255 L245 275 L265 275" class="doc" fill="none" stroke="#999999"/>
   <text x="175" y="279" text-anchor="middle" class="box-title">公開 URL</text>
-  <text x="175" y="296" text-anchor="middle" class="small">https://hub.inas-technologies.com</text>
+  <text x="175" y="296" text-anchor="middle" class="small">hub-&lt;public-id&gt;.inas-technologies.com</text>
 
   <rect x="360" y="100" width="395" height="210" class="container" fill="#fff0e6" stroke="#d79b00"/>
   <text x="382" y="128" class="section">Cloudflare</text>
@@ -113,8 +113,8 @@
   <text x="1282" y="128" class="section">外部サービス</text>
   <path d="M1298 170 C1298 150 1428 150 1428 170 L1428 232 C1428 252 1298 252 1298 232 Z" fill="#e1d5e7" stroke="#9673a6" stroke-width="2"/>
   <path d="M1298 170 C1298 190 1428 190 1428 170" fill="none" stroke="#9673a6" stroke-width="2"/>
-  <text x="1363" y="196" text-anchor="middle" class="box-title">Turso</text>
-  <text x="1363" y="217" text-anchor="middle" class="small">device/config data</text>
+  <text x="1363" y="196" text-anchor="middle" class="box-title">Turso replica</text>
+  <text x="1363" y="217" text-anchor="middle" class="small">既存導入先のみ・任意</text>
   <path d="M1298 320 C1298 300 1428 300 1428 320 L1428 382 C1428 402 1298 402 1298 382 Z" fill="#e1d5e7" stroke="#9673a6" stroke-width="2"/>
   <path d="M1298 320 C1298 340 1428 340 1428 320" fill="none" stroke="#9673a6" stroke-width="2"/>
   <text x="1363" y="342" text-anchor="middle" class="box-title">R2 / S3</text>

@@ -28,6 +28,12 @@ cross-project specifications and architecture policy.
 - [AGENTIC_AGRICULTURE_VISION.md](AGENTIC_AGRICULTURE_VISION.md): product
   philosophy for evidence-backed, bounded, rail-independent cooperation between
   growers, fixed equipment, services, and future robots.
+- [EDGE_GATEWAY_HARDWARE_AND_IDENTITY.md](EDGE_GATEWAY_HARDWARE_AND_IDENTITY.md):
+  identity namespace, secure enrollment boundary, and Raspberry Pi/Compute
+  Module appliance profiles for Edge Gateway and Local Hub nodes.
+- [../hub-cloud/README.md](../hub-cloud/README.md): shared Cloud Hub frontend,
+  authenticated tenant routing, one dedicated Turso DB per customer, and
+  factory provisioning.
 - [jp/](jp/): Japanese versions of the same level of documentation.
 - [assets/inas_system_diagrams.drawio](assets/inas_system_diagrams.drawio):
   draw.io source for the system architecture, data/control flow, field placement

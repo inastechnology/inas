@@ -57,7 +57,7 @@ class StorageConnector:
         """
         Saves the file to cloud storage.
         Automatically generates the file path based on the file key and UTC.
-        e.g.) {tenant_id}/{file_key}/{yyyymmdd}/{yyyymmdd_hhmmss}.jpg
+        e.g.) {legacy_namespace}/{file_key}/{yyyymmdd}/{yyyymmdd_hhmmss}.jpg
         """
         file_path = self.get_file_path(file_key)
         return self.save_bytes_to_cloud(file_path, file_bytes, content_type)
@@ -97,7 +97,6 @@ class StorageConnector:
         return file_path
 
     def _put_object(self, client, bucket_name, file_path, file_bytes, content_type):
-        # TODO: [Multi-tenancy] Generate the bucket name from tenant_id.
         client.put_object(
             Bucket=bucket_name,
             Key=file_path,
@@ -129,7 +128,6 @@ class StorageConnector:
 
     def fetch_from_cloud_as_bytes(self, file_full_key):
         try:
-            # TODO: [Multi-tenancy] Generate the bucket name from tenant_id.
             response = self.s3.get_object(
                 Bucket=setting().get("storage_bucket").get("bucket_name"),
                 Key=file_full_key,

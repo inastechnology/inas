@@ -5,9 +5,13 @@
 この文書のコマンド例は、特記がない限り `hub/` ディレクトリで実行します。
 
 ina-device-hub は、MQTT で受信したセンサーデータやカメラ画像を集約し、ローカル／クラウドへ保存・連携する
-軽量な IoT ハブです（Turso / S3 互換ストレージ対応、Flask による簡易 Web 表示、タイムラプス等）。
+軽量な IoT ハブです（Turso/libSQL、S3互換ストレージ対応、Flask による簡易 Web 表示、タイムラプス等）。
 
 hub と client device を横断した全体仕様は [../../../docs/jp/SYSTEM_SPECIFICATION.md](../../../docs/jp/SYSTEM_SPECIFICATION.md) を参照してください。Cloudflare、デバイス種別、圃場データ、OTA の関係を図付きでまとめています。
+
+Local Hubを親・子の両方として動かし、Edge Gatewayや下位Local Hubを集約する
+構成、one-time credential、Sync v1 API、上位停止時の動作は
+[Local Hub階層Sync v1運用](HIERARCHICAL_SYNC.md)を参照してください。
 
 栽培カレンダーの施肥履歴、一般・独自肥料カタログ、土壌検査、施肥後の降雨・潅水、残効信頼度、初心者向けサジェストの実装方針は [施肥計画・肥料サジェスト実装方針](HUB_FERTILIZATION_RECOMMENDATION_POLICY.md) を参照してください。
 
@@ -19,7 +23,7 @@ hub と client device を横断した全体仕様は [../../../docs/jp/SYSTEM_SP
 - `farm/{device_id}/telemetry` テレメトリの受信と保存
 - デバイスごとの設定配信（MQTT request/reply/push）
 - 画像／音声のローカル保存と S3 互換ストレージへのアップロード
-- ローカル DB（Turso/libsql）との統合
+- Local Hubごとに設定したTurso/libSQL replicaとの統合
 - タイムラプス生成・スケジューリング（APScheduler）
 - タイムラプス画像からの mp4 生成と Instagram Reel 自動投稿
 - 簡易 Web 表示（Flask）
@@ -74,7 +78,9 @@ sudo ./scripts/install_service.sh --user mysvcuser --target-dir /opt/ina-device-
 sudo ./scripts/install_service.sh --production --target-dir "$PWD" --enable-cloudflare-tunnel
 ```
 
-`--production`は初回のCloudflare本番構築または明示的な再構成時だけ使います。サーバで`git pull`した後の通常更新は`sudo ./scripts/install_service.sh --target-dir "$PWD"`とし、既存のMQTT・HTTP・認証・Cloudflare設定を維持します。詳細は[運用ガイド](OPERATIONS.md)を参照してください。
+`--production`は初回のCloudflare本番構築または明示的な再構成時だけ使います。
+通常更新では付けず、既存のMQTT・HTTP・認証・Turso・Cloudflare設定を維持します。
+詳細は[運用ガイド](OPERATIONS.md)を参照してください。
 
 サービス確認
 
@@ -93,10 +99,12 @@ sudo ./scripts/hub_service.sh restart
 ./scripts/hub_service.sh logs
 ```
 
-Cloudflare hosted option は 2 種類あります。
-
-- Tunnel 版: デバイス側で local hub を起動し、Cloudflare Access + Tunnel で公開します。
-- Cloud app 版: Cloudflare Workers + Hono + Turso で管理 API / UI を動かします。実装方針と現在の範囲は [CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md](CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md) を参照してください。
+このLocal Hubは任意でCloudflare Access + Tunnelを遠隔入口にできますが、従来の
+Turso/libSQL構成は変えません。Local Hubを運用しない顧客向けには、別実装の
+[`hub-cloud`](../../../hub-cloud/README.md)を用意します。Cloud Hubは共有Worker
+1つ、directory DB 1つ、顧客ごとの専用Turso DB 1つで構成し、Edge Gatewayから
+認証付きHTTPS Syncを受けます。詳細は
+[CLOUDFLARE_HOSTED_OPTION.md](CLOUDFLARE_HOSTED_OPTION.md)を参照してください。
 
 Tunnel 版のネットワーク構成図は [NETWORK_ARCHITECTURE.md](NETWORK_ARCHITECTURE.md) を参照してください。
 
@@ -104,7 +112,7 @@ hub の管理 UI は、TOPで圃場を検索・選択し、選択後に圃場の
 
 定植単位の年間計画、作業期間、優先度、防除対象、作業実績、LLM呼び出し条件、FAMIC/WAGRIを使う農薬検索方針は [HUB_PLANT_MANAGEMENT_CALENDAR_SPEC.md](HUB_PLANT_MANAGEMENT_CALENDAR_SPEC.md) にまとめています。
 
-Hub全体のAI・システム設定は管理者用 `/settings`、タイムゾーンと日付形式はemail単位の `/preferences` に分離しています。個人設定の正本はTursoです。Hubは日本語固定とし、翻訳はブラウザ機能を使用します。設置ビューはrevisionによる楽観ロックと三者比較を行い、同時編集時に変更を無言で上書きしません。詳細は [HUB_CONFIGURATION_MANAGEMENT.md](HUB_CONFIGURATION_MANAGEMENT.md) と [HUB_USER_SETTINGS_AND_CONCURRENT_EDITING.md](HUB_USER_SETTINGS_AND_CONCURRENT_EDITING.md) を参照してください。
+Hub全体のAI・システム設定は管理者用 `/settings`、タイムゾーンと日付形式はemail単位の `/preferences` に分離しています。個人設定の正本はLocal HubのTurso/libSQLです。Hubは日本語固定とし、翻訳はブラウザ機能を使用します。設置ビューはrevisionによる楽観ロックと三者比較を行い、同時編集時に変更を無言で上書きしません。詳細は [HUB_CONFIGURATION_MANAGEMENT.md](HUB_CONFIGURATION_MANAGEMENT.md) と [HUB_USER_SETTINGS_AND_CONCURRENT_EDITING.md](HUB_USER_SETTINGS_AND_CONCURRENT_EDITING.md) を参照してください。
 
 圃場一覧では `＋ 圃場を追加` のモーダルから、名前、都道府県、市区町村、設置環境など圃場自体の基本情報だけを登録します。作物、品種、作物区分、樹齢、栽培方式、土壌・培地、目標レンジ、栽培カレンダーは圃場属性ではなく、設置ビュー上の培地に登録した定植単位で管理します。圃場詳細は `概要`、`環境・設備`、`栽培`、`記録`、`設定` のタブで分け、初期表示では現在の圃場状態と `次の判断候補` を先に表示します。土壌水分、EC、pH、湿度、PAR は現在値と作物目標の範囲をレンジグラフで比較し、目標内、下限未満、上限超過、目標未設定を区別します。時系列グラフは `環境・設備` で圃場全体から空間別へ整理し、`栽培` では作物情報、年間カレンダー、直近10件の経過を確認します。`記録` タブはデバイス0台でも使用でき、潅水時間、EC、pH、作物状態など必要な項目だけを検索して追加します。同日のデバイス値がある場合は複数デバイス・複数時刻を自動表示し、月間カレンダーから手入力、5段階絵文字評価、R2画像とともに振り返れます。詳細は [HUB_DEVICE_FREE_FIELD_RECORDING_SPEC.md](HUB_DEVICE_FREE_FIELD_RECORDING_SPEC.md) を参照してください。これらを前提条件として、hub は最新センサー値との差から灌水・液肥・噴霧などの判断候補を作ります。判断候補は将来、植物管理カレンダー、画像・気象判断、設備保守、定期作業を統合した圃場 TODO リストへ発展させます。現時点で hub から制御できるのは WTR/WRS の灌水のみで、液肥と噴霧は将来デバイス向けの候補として記録します。改善ループの仕様は [AGRI_IMPROVEMENT_LOOP.md](AGRI_IMPROVEMENT_LOOP.md) を参照してください。
 
@@ -116,7 +124,7 @@ python scripts/run_admin_demo_server.py
 
 起動後に `http://127.0.0.1:39251/demo/mqtt-devices` を開きます。一覧カードで灌水・土壌水分・次回起床のサマリを確認し、カードを選ぶと水やり機詳細へ遷移します。詳細では Plotly で灌水推移と土壌水分推移を確認でき、表示期間は直近3日、2週間、1か月、全期間、カスタムから選べます。新しいデモ保存先には、1号ハウス、3本の畝、イチゴ「紅ほっぺ」36株、12か月分の作業、作業中・完了・見送りの例、施肥履歴を重複なく初期投入します。年間栽培カレンダーは `http://127.0.0.1:39251/fields/demo-strawberry-field/calendar` で確認できます。確認サーバは `.env` の実Turso URLを継承せず、`HUB_DEMO_WORK_DIR` 配下のローカルlibSQLだけを使用します。デモページ上の操作は実データへ保存されません。実データの管理画面は通常通り `/mqtt-devices` です。
 
-Tunnel 版を使う場合は、`.env` に固定したい Cloudflare account / hostname、許可 email、ユーザー側で発行した `CLOUDFLARE_ACCESS_API_TOKEN` を設定してから、次のスクリプトを実行します。
+Local Hubの既存`.env`からTunnelを構築する場合は、次のscriptを使用できます。
 
 AI Agent に環境構築や Cloudflare hosted option のセットアップを依頼する場合は、先に [AI_AGENT_ENVIRONMENT_SETUP.md](AI_AGENT_ENVIRONMENT_SETUP.md) を読ませてください。`.env` を正として扱うこと、secret を出力しないこと、Cloudflare resource を idempotent script で作成・再利用することを前提にしています。
 
@@ -130,16 +138,7 @@ bash scripts/cloudflare_hosted_up.sh --install-cloudflared
 
 setup は再実行可能です。`.env` に保存済みの ID を優先して既存 resource を再利用し、同名 resource が複数ある場合や、同じ hostname に別用途の DNS record がある場合は自動上書きせず停止します。
 
-`cloudflare_hosted_up.sh` は `.venv` の固定依存とWaitressでlocal hubを起動します。`WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` が書き込み可能で、MQTT brokerなど `.env` の接続先へ到達できる必要があります。`/readyz` が制限時間内にMQTT接続を含む準備完了を返さなければTunnelを開始しません。Tunnelはデバイス側で起動するため、Worker cloud appの確認と混同しないでください。
-
-Cloud app 版の開発確認:
-
-```bash
-cd cloudflare
-npm install
-npm test
-npm run typecheck
-```
+`cloudflare_hosted_up.sh` は `.venv` の固定依存とWaitressでlocal hubを起動します。`WORK_DIR` / `LOCAL_STORAGE_BASE_DIR` が書き込み可能で、MQTT brokerなど `.env` の接続先へ到達できる必要があります。`/readyz` が制限時間内にMQTT接続を含む準備完了を返さなければTunnelを開始しません。
 
 許可 email の追加・削除、tunnel 単体起動は次で行います。
 
@@ -214,9 +213,8 @@ uv run ruff format --check .
 - `data/plant_calendar_evaluation_cases.json` — AI栽培計画の代表評価ケース
 - `scripts/evaluate_plant_calendars.py` — 栽培計画の安全性・作業負荷・具体性・年間網羅性を採点（`--live` で保存済みAI設定を使用）
 - `doc/AI_AGENT_ENVIRONMENT_SETUP.md` — AI Agent 向け環境構築・Cloudflare setup 手順
-- `doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` — Cloudflare Workers cloud app の実装方針
 - `doc/CLOUDFLARE_HOSTED_OPTION.md` — Cloudflare hosted option の実装方針
-- `cloudflare/` — Cloudflare Workers + Hono + Turso の cloud app 実装
+- `../../../hub-cloud/` — 共有Cloud Hub frontend/backendとEdge Gateway出荷tool
 - `systemd/inas-device-hub@.service` — systemd テンプレートユニット
 - `scripts/install_service.sh` — systemd インストールスクリプト
 

@@ -1,0 +1,80 @@
+---
+title: アプリ設定の技術ガイド
+description: INAS Hubのアプリ設定を、実画面とともにカテゴリ・項目ごとに説明します。
+---
+
+:::caution[管理者・技術担当者向け]
+このページはHub全体のAI、通知、外部サービス、基盤接続を管理する人向けです。日々の表示や潅水を変える場合は[一般向けの画面設定ガイド](/configure/settings/)を参照してください。
+:::
+
+「アプリ設定」はHub全体へ影響します。秘密値は保存後に再表示せず、基盤の接続情報は画面では登録状態だけを示します。
+
+## AI
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/app-settings-ai.webp" aria-label="アプリ設定のAIカテゴリをこの場で拡大する">
+    <img src="/images/screenshots/app-settings-ai.webp" alt="AI機能、テキスト栽培計画、画像解析、モデル、APIキーを設定するアプリ設定画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>テキスト用と画像用は別々のモデル・APIキーを持ちます。秘密値は変更時だけ入力します。</figcaption>
+</figure>
+
+| 項目 | 役割 | 運用上の注意 |
+|---|---|---|
+| AI機能 | Hub全体のAI機能を有効・無効にする | 接続確認後に有効化 |
+| テキスト・栽培計画 | 栽培カレンダー、目標範囲、質問回答に使うモデル | モデル名とAPIキーを対で設定 |
+| 画像解析 | 植物画像と定点観察を解析するモデル | テキスト用と分離可能 |
+| 栽培情報を自動で調べる | 計画作成前に公的資料を検索する | 利用料と出典を確認 |
+| AI栽培計画プロンプト | 管理者の追加指示や入力形式を調整する | 固定の安全条件より優先されない |
+| 接続を確認 | 保存済みモデルとキーで疎通を試す | キーとモデルの保存後に実行 |
+
+## 通知
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/app-settings-notifications.webp" aria-label="アプリ設定の通知カテゴリをこの場で拡大する">
+    <img src="/images/screenshots/app-settings-notifications.webp" alt="Discord通知の準備、全通知、栽培作業、機器の確認を設定する画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>全通知のスイッチを切っても、種類ごとの選択内容は残ります。</figcaption>
+</figure>
+
+| 項目 | 役割 | 推奨 |
+|---|---|---|
+| 通知の準備 | 送信先と通知から開くURLの登録状態を確認 | 両方が設定済みか確認 |
+| すべてのDiscord通知 | Discordへの送信だけを一時停止・再開 | 保守中の一時停止に使用 |
+| Operations APIのセキュリティ | Hubまで到達した認証拒否を通知 | 管理環境では有効 |
+| 今日の栽培作業 | 日次作業、新規作業、開始前・期間中の通知 | 作業者の運用に合わせる |
+| 機器の確認 | 新規機器、長時間未接続、潅水未確認、校正候補 | 通常は有効 |
+| 詳しい通信通知 | 問題調査中の通信ログ | 通知量が多いため常用しない |
+
+## Instagram
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/app-settings-instagram.webp" aria-label="アプリ設定のInstagramカテゴリをこの場で拡大する">
+    <img src="/images/screenshots/app-settings-instagram.webp" alt="投稿開始時刻、投稿元カメラ、植物位置の補足、投稿アカウントを設定する画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>定点カメラからの自動投稿を使う場合だけ設定します。</figcaption>
+</figure>
+
+| 項目 | 役割 |
+|---|---|
+| 投稿処理開始時刻 | 1日の自動投稿処理を始める時刻 |
+| 投稿元カメラ | 投稿画像に使う登録済みカメラ |
+| 植物位置の補足 | 画像内の対象作物と除外領域を解析へ伝える |
+| 投稿アカウント | APIで取得したユーザー名と最終取得状態 |
+| 接続確認・再取得 | 認証情報を使ってアカウント情報を更新 |
+
+## システム
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/app-settings-system.webp" aria-label="アプリ設定のシステムカテゴリをこの場で拡大する">
+    <img src="/images/screenshots/app-settings-system.webp" alt="データベース、保存先、MQTTの登録状態、初期設定コマンド、追加機能を確認する画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>秘密情報そのものではなく、接続先ごとの「設定済み／未設定」だけを表示します。</figcaption>
+</figure>
+
+| 項目 | 役割 | 変更場所 |
+|---|---|---|
+| 接続設定 | 端末内DB・外部DB・保存先・MQTTの登録状態 | この画面は確認のみ |
+| 初期設定・再設定 | 基盤接続情報と秘密値を登録し直す | Local Hub本体のコマンド |
+| 追加機能 | Extensionの内容・監査結果を確認して管理 | 追加機能の管理画面 |
+
+基盤のポートや通信境界は[技術構成と責務](/technical/architecture/)、個々の機器へ送る内部キーは[設定項目リファレンス](/configure/settings-reference/)を参照してください。

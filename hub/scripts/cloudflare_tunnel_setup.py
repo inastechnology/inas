@@ -304,7 +304,7 @@ def upsert_dns_record(api: CloudflareAPI, zone_id: str, hostname: str, tunnel_id
 
 
 def write_token_file(env_file: Path, token: str) -> Path:
-    token_file = repo_root() / ".data" / "cloudflare" / "tunnel-token"
+    token_file = env_file.parent / ".data" / "cloudflare" / "tunnel-token"
     token_file.parent.mkdir(parents=True, exist_ok=True)
     token_file.write_text(token + "\n", encoding="utf-8")
     token_file.chmod(stat.S_IRUSR | stat.S_IWUSR)

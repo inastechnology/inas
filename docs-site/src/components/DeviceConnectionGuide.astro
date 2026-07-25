@@ -1,0 +1,61 @@
+<section class="connection-guide" aria-labelledby="connection-guide-title">
+  <header class="connection-guide__header">
+    <span>DEVICE CONNECTION</span>
+    <h2 id="connection-guide-title">機器番号を入力して「登録」する必要はありません</h2>
+    <p>圃場の機器が、受け取り役の機器へ最初の状態を送ると、INASが自動で見つけます。</p>
+  </header>
+
+  <div class="connection-guide__common">
+    <div class="connection-guide__common-copy">
+      <small>どちらの構成でも共通</small>
+      <strong>電源を入れる → 同じネットワークにつなぐ → 機器一覧を開く</strong>
+    </div>
+    <div class="connection-flow" aria-label="圃場の機器をネットワークへつなぐとINASの機器一覧に表示される共通の流れ">
+      <span class="connection-node connection-node--device"><b aria-hidden="true">▣</b>圃場の機器</span>
+      <i aria-hidden="true">→</i>
+      <span class="connection-node connection-node--network"><b aria-hidden="true">⌁</b>同じネットワーク</span>
+      <i aria-hidden="true">→</i>
+      <span class="connection-node connection-node--screen"><b aria-hidden="true">✓</b>機器一覧に表示</span>
+    </div>
+  </div>
+
+  <div class="connection-guide__scenarios">
+    <article>
+      <span class="connection-guide__badge">パターン A</span>
+      <h3>Local Hubへ直接つなぐ</h3>
+      <p>Hubと圃場の機器が同じ場所にある、基本の構成です。</p>
+      <div class="connection-flow connection-flow--scenario" aria-label="圃場の機器からLocal Hubを通って機器一覧へ表示される流れ">
+        <span class="connection-node connection-node--device">圃場の機器</span>
+        <i aria-hidden="true">→</i>
+        <span class="connection-node connection-node--hub">Local Hub</span>
+        <i aria-hidden="true">→</i>
+        <span class="connection-node connection-node--screen">機器一覧</span>
+      </div>
+      <ul>
+        <li>最初は1台だけ電源を入れます。</li>
+        <li>Hubが受信すると自動で一覧へ加わります。</li>
+      </ul>
+    </article>
+
+    <article>
+      <span class="connection-guide__badge">パターン B</span>
+      <h3>Edge Gatewayを経由する</h3>
+      <p>離れた圃場の受け取り役としてGatewayを置く構成です。</p>
+      <div class="connection-flow connection-flow--scenario connection-flow--long" aria-label="圃場の機器からEdge Gatewayと親Hubを通って機器一覧へ表示される流れ">
+        <span class="connection-node connection-node--device">圃場の機器</span>
+        <i aria-hidden="true">→</i>
+        <span class="connection-node connection-node--gateway">Edge Gateway</span>
+        <i aria-hidden="true">→</i>
+        <span class="connection-node connection-node--hub">親Hub</span>
+        <i aria-hidden="true">→</i>
+        <span class="connection-node connection-node--screen">機器一覧</span>
+      </div>
+      <ul>
+        <li>機器は近くのGatewayへつなぎます。</li>
+        <li>Gatewayが受け取った状態を親Hubへ同期します。</li>
+      </ul>
+    </article>
+  </div>
+
+  <p class="connection-guide__result"><strong>接続成功の目印</strong> 機器一覧に新しい機器が表示されれば、接続と自動認識は完了です。次に承認・名前・設置場所を設定します。</p>
+</section>

@@ -6,12 +6,12 @@ hero:
   title: |-
     畑とシステムを、
     ひとつずつつなぐ。
-  tagline: 機器の選定・購入から、Raspberry Pi Hub、ネットワーク、H/W結線、運用まで。実際の導入順に進める公式ガイドです。
+  tagline: 使い始め方、Wi-Fiへの接続、日々の確認まで。初めての方にも分かる言葉で進める公式ガイドです。
   actions:
-    - text: 機器を選んで購入する
-      link: /start/hardware/
+    - text: 利用方法を選ぶ
+      link: /start/choose-path/
       variant: primary
-    - text: 全体構成を見る
+    - text: INASのしくみを見る
       link: /start/overview/
       variant: secondary
 ---
@@ -19,44 +19,58 @@ hero:
 import { Card, CardGrid, Aside } from '@astrojs/starlight/components';
 import CommunityCta from '../../components/CommunityCta.astro';
 
+<section class="manifesto-preview" aria-labelledby="manifesto-title">
+  <div class="manifesto-preview-heading">
+    <p>WHO THIS IS FOR</p>
+    <h2 id="manifesto-title">ここまで読み進めたあなたへ。</h2>
+  </div>
+  <p class="manifesto-preview-lead">
+    あなたは、農をただ省力化する道具を探しているだけではないはずです。気候と人口が変わっても食糧生産を続けられる、新しい農の形を自分の圃場から探究する人だと、私たちは考えています。
+  </p>
+  <p>
+    自動化は、いばらの道です。野良仕事の厳しさを消す魔法ではありません。それでも今から省力化と環境への適応を試し、子どもたちの時代にも安定した食糧生産を支えられる基盤を残すために、INASはあります。
+  </p>
+  <a href="/start/why-inas/">INASをつくる理由と、私たちの姿勢を読む <span aria-hidden="true">→</span></a>
+</section>
+
 <div class="quick-paths">
-  <a class="quick-path" href="/start/hardware/">
-    <div><small>BUY FIRST</small><strong>これから機器を購入する</strong></div>
-    <span>Raspberry Piの最低目安・推奨構成と購入品を確認。</span>
-  </a>
-  <a class="quick-path" href="/start/quickstart/">
-    <div><small>SELF-BUILD</small><strong>自己調達でセットアップする</strong></div>
-    <span>購入、OS、MQTT、Hub、デバイスを順番に構築。</span>
+  <a class="quick-path" href="/operate/daily/">
+    <div><small>DAILY OPERATION</small><strong>今日の圃場を確認する</strong></div>
+    <span>機器、環境値、作業、水やりを日々の画面から確認。</span>
   </a>
   <a class="quick-path" href="/start/provided-hardware/">
-    <div><small>COMING SOON</small><strong>弊社提供機器を利用する</strong></div>
-    <span>完成品の仕様と正式セットアップ手順は準備中です。</span>
+    <div><small>COMING SOON</small><strong>提供機器を利用する</strong></div>
+    <span>電源とWi-Fiにつないで使い始める予定の流れ。</span>
+  </a>
+  <a class="quick-path" href="/configure/settings/">
+    <div><small>SCREEN GUIDE</small><strong>画面の設定を確認する</strong></div>
+    <span>実際の画面を見ながら、設定値を1項目ずつ確認。</span>
   </a>
 </div>
 
-## 自己調達での導入順
+## 通常の使い始め方
 
 <ol class="journey" aria-label="INASの導入手順">
-  <li>構成を理解</li>
-  <li>選定・購入</li>
-  <li>LANを設計</li>
-  <li>PiとHubを構築</li>
-  <li>デバイスを製作</li>
-  <li>接続・受入試験</li>
+  <li>利用方法を選ぶ</li>
+  <li>Wi-Fiを確認</li>
+  <li>Hubを接続</li>
+  <li>機器を1台接続</li>
+  <li>画面で確認</li>
+  <li>圃場へ設置</li>
 </ol>
 
 <CardGrid>
-  <Card title="1. 機器を選定する">
-    Raspberry Pi、電源、ストレージ、冷却、LAN、最初のデバイスを、購入前に確定します。
+  <Card title="1. Wi-Fiを準備する">
+    ルーターや家電と同じように、設置場所のWi-Fi名とパスワードを確認します。
   </Card>
-  <Card title="2. Raspberry Pi Hubを作る">
-    OS、mDNS、Mosquitto、Hub、Cloudflare Tunnelがどこで動くかを分けて構築します。
+  <Card title="2. Hubを接続する">
+    電源を入れ、画面の案内に沿って普段使っているWi-Fiへ接続します。
   </Card>
-  <Card title="3. デバイスを作って接続する">
-    WTR・WRS・SOI・ENVの部品、配線、F/W、Wi‑Fi/MQTT、受入試験を確認します。
+  <Card title="3. 圃場の機器を接続する">
+    最初はルーターの近くで1台だけ接続し、機器一覧へ自動で表示されることを確認します。
   </Card>
-  <Card title="4. 運用を開始する">
-    圃場への関連付け、潅水設定、F/W更新、日々の確認と問題の切り分けを行います。
+  <Card title="4. 圃場で使い始める">
+    接続確認後に設置場所へ移し、測定結果と潅水の状態を画面で確認します。
   </Card>
 </CardGrid>
 
@@ -66,12 +80,11 @@ import CommunityCta from '../../components/CommunityCta.astro';
 
 ## まず読むページ
 
-- 何がどこで動くか知りたい: [全体構成を理解する](/start/overview/)
-- これから機器を購入する: [機器を選んで購入する](/start/hardware/)
-- 自己調達の手順を最初から見る: [自己調達セットアップの全手順](/start/quickstart/)
-- Raspberry Piを購入済み: [Raspberry Piを準備する](/hub/raspberry-pi/)
-- 潅水デバイスを作りたい: [WTR 潅水デバイス](/devices/wtr/)
-- 弊社提供機器を検討している: [提供予定と準備状況](/start/provided-hardware/)
+- 初めて使う: [INASのしくみ](/start/overview/)
+- どの方法で始めるか迷っている: [利用方法を選ぶ](/start/choose-path/)
+- Wi-Fiの準備をしたい: [使うWi-Fiを準備する](/start/network/)
+- 提供機器を検討している: [提供予定と準備状況](/start/provided-hardware/)
+- 自分で機器を構築したい: [技術者向けの全手順](/start/quickstart/)
 
 <CommunityCta
   title="INASを使う人・つくる人とつながる"

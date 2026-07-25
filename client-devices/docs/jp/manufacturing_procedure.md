@@ -47,7 +47,7 @@
 
 | device kind | 必須検査 |
 |---|---|
-| `WTR` | boot、status publish、analog soil moisture 読み取り、valve/pump output、enabled RS485 sensor 読み取り |
+| `WTR` | boot、status publish、`A2/D2` analog soil moisture 読み取り、`D4` 潅水 output |
 | `WRS` | boot、status publish、灌水 1 系 / 2 系 output、RS485 soil/PAR/日射 sensor 読み取り、未接続 sensor の `*_ok=false` |
 | `ENV` | boot、status publish、configured RS485 sensor の読み取り、未接続 sensor の `*_ok=false` |
 | `SOI` | boot、analog soil moisture 読み取り、sleep、再 wake、calibration config 反映 |

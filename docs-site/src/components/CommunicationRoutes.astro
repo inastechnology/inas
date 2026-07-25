@@ -1,0 +1,28 @@
+<figure class="communication-routes" aria-labelledby="communication-routes-title">
+  <div class="diagram-heading">
+    <span>THREE ROUTES</span>
+    <h3 id="communication-routes-title">目的が違う3つの通信経路</h3>
+    <p>同じHubを使いますが、人の画面、機器の制御、ソフトウェア取得は別の経路です。</p>
+  </div>
+  <ol>
+    <li>
+      <span class="communication-routes__number">1</span>
+      <div class="communication-routes__copy"><strong>人が管理画面を見る</strong><small>外出先からLocal Hubを操作</small></div>
+      <div class="communication-routes__flow"><b>ブラウザ</b><i>→</i><b>Cloudflare</b><i>→</i><b>Local Hub画面</b></div>
+      <em>cloudflaredを使うのはこの経路だけ</em>
+    </li>
+    <li>
+      <span class="communication-routes__number">2</span>
+      <div class="communication-routes__copy"><strong>Hubと圃場機器が通信する</strong><small>状態・計測値・動作設定</small></div>
+      <div class="communication-routes__flow"><b>圃場機器</b><i>↔</i><b>Wi‑Fi</b><i>↔</i><b>MQTT broker</b><i>↔</i><b>Hub</b></div>
+      <em>圃場内のLANで完結</em>
+    </li>
+    <li>
+      <span class="communication-routes__number">3</span>
+      <div class="communication-routes__copy"><strong>機器がF/Wを取得する</strong><small>更新用バイナリをダウンロード</small></div>
+      <div class="communication-routes__flow"><b>圃場機器</b><i>→</i><b>LAN内HTTP</b><i>→</i><b>Local Hub</b></div>
+      <em>公開URLは使わない</em>
+    </li>
+  </ol>
+  <figcaption>通信障害を調べるときは、まず「どの経路の問題か」を切り分けます。</figcaption>
+</figure>

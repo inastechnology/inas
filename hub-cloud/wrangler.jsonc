@@ -1,0 +1,62 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "inas-hub-cloud",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-23",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "routes": [
+    {
+      "pattern": "cloud-hub.inas-technologies.com",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/sync/*", "/healthz"]
+  },
+  "ratelimits": [
+    {
+      "name": "SYNC_NODE_RATE_LIMITER",
+      "namespace_id": "7319022",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    },
+    {
+      "name": "SYNC_IP_RATE_LIMITER",
+      "namespace_id": "7319023",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    },
+    {
+      "name": "SECURITY_ALERT_RATE_LIMITER",
+      "namespace_id": "7319024",
+      "simple": {
+        "limit": 1,
+        "period": 60
+      }
+    }
+  ],
+  "secrets": {
+    "required": [
+      "DIRECTORY_TURSO_AUTH_TOKEN",
+      "TENANT_CREDENTIAL_MASTER_KEY",
+      "DISCORD_SECURITY_WEBHOOK_URL"
+    ]
+  },
+  "vars": {
+    "CLOUD_HUB_PUBLIC_ORIGIN": "https://cloud-hub.inas-technologies.com",
+    "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "https://athena-polonity.cloudflareaccess.com",
+    "CLOUDFLARE_ACCESS_POLICY_AUD": "a8af90b14c8ca94699c1350d855d7b1b3ab73ae3beccb6115d7ad7f085a8cfe0",
+    "DIRECTORY_TURSO_DATABASE_URL": "libsql://inas-cloud-directory-polonity.aws-ap-northeast-1.turso.io"
+  }
+}

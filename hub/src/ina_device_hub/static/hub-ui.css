@@ -364,3 +364,47 @@ body.a11y-contrast-high [aria-disabled="true"] {
     width: 100%;
   }
 }
+
+/* Query-selected UI language. Japanese remains the default; English is available with ?lang=en. */
+.hub-shell .ina-locale-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 36px;
+  padding: 3px;
+  border: 1px solid var(--hub-line, #c9d4cc);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 2px 8px rgba(22, 53, 38, .08);
+  white-space: nowrap;
+}
+.hub-shell .ina-locale-switcher a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  min-height: 30px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #3e5d4d;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  text-decoration: none;
+}
+.hub-shell .ina-locale-switcher a[aria-current="true"] {
+  color: #fff;
+  background: #226b52;
+}
+.hub-field-calendar .calendar-header .ina-locale-switcher {
+  margin-left: auto;
+}
+.hub-device-maintenance .topbar .ina-locale-switcher {
+  margin-left: auto;
+}
+@media (max-width: 700px) {
+  .hub-shell .ina-locale-switcher a {
+    min-width: 38px;
+    padding-inline: 7px;
+  }
+}

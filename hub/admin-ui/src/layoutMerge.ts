@@ -6,6 +6,18 @@ interface MergeResult {
   conflictPaths: string[];
 }
 
+export interface LayoutConflictResolution {
+  server: FieldLayout;
+  localPreferred: FieldLayout;
+  serverPreferred: FieldLayout;
+  conflictPaths: string[];
+}
+
+export type RemoteLayoutReconciliation =
+  | { kind: "unchanged" }
+  | { kind: "replace" | "merge"; layout: FieldLayout; baseLayout: FieldLayout; dirty: boolean }
+  | { kind: "conflict"; conflict: LayoutConflictResolution };
+
 const MISSING = Symbol("missing");
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 type MergeValue = JsonValue | typeof MISSING;
@@ -17,6 +29,39 @@ export function mergeLayouts(base: FieldLayout, local: FieldLayout, server: Fiel
     localPreferred: finalize(localResult.value, server),
     serverPreferred: finalize(serverResult.value, server),
     conflictPaths: Array.from(new Set(localResult.conflicts)),
+  };
+}
+
+export function reconcileRemoteLayout(
+  baseLayout: FieldLayout,
+  localLayout: FieldLayout,
+  serverLayout: FieldLayout,
+  dirty: boolean,
+): RemoteLayoutReconciliation {
+  if (serverLayout.revision <= baseLayout.revision) return { kind: "unchanged" };
+  if (!dirty) {
+    return {
+      kind: "replace",
+      layout: structuredClone(serverLayout),
+      baseLayout: structuredClone(serverLayout),
+      dirty: false,
+    };
+  }
+
+  const merged = mergeLayouts(baseLayout, localLayout, serverLayout);
+  if (merged.conflictPaths.length > 0) {
+    return {
+      kind: "conflict",
+      conflict: { server: structuredClone(serverLayout), ...merged },
+    };
+  }
+
+  const mergedDirty = JSON.stringify(merged.localPreferred) !== JSON.stringify(serverLayout);
+  return {
+    kind: mergedDirty ? "merge" : "replace",
+    layout: merged.localPreferred,
+    baseLayout: structuredClone(serverLayout),
+    dirty: mergedDirty,
   };
 }
 

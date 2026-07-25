@@ -5,6 +5,21 @@ description: F/Wをbuild・検査・Hubへ登録し、次回起動で安全にOT
 
 OTAでは、MQTTは「どのversionへ更新するか」という通知に使い、`firmware.bin` 本体はHubのHTTP endpointから配信します。
 
+<figure class="process-map" aria-labelledby="ota-flow-title">
+  <div class="process-map__heading">
+    <strong id="ota-flow-title">安全に広げるOTA更新</strong>
+    <span>Build → Verify</span>
+  </div>
+  <ol class="process-map__steps">
+    <li><strong>build・検査</strong><small>manifest、kind、binaryを確認する</small></li>
+    <li><strong>Hubへ登録</strong><small>size、SHA-256、配信URLを照合する</small></li>
+    <li><strong>少数へ指定</strong><small>まず現場外の1台へtargetを設定する</small></li>
+    <li><strong>次回wakeで更新</strong><small>offer、HTTP取得、検証、再起動を待つ</small></li>
+    <li><strong>statusで確認</strong><small>versionと機能を確認してから対象を広げる</small></li>
+  </ol>
+  <figcaption>artifactを登録しただけでは完了しません。更新後のstatusと実機能を確認して初めて次のdeviceへ広げます。</figcaption>
+</figure>
+
 ## 更新の流れ
 
 1. device projectでF/Wをbuildします。
@@ -37,6 +52,13 @@ HubのF/W管理画面、またはCloudflare Accessで保護されたOperations A
 - file sizeとSHA-256が表示される。
 - download URLへ対象deviceのLANから到達できる。
 - URLが現在のF/Wで対応する `http://` である。
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/firmware-update.webp" aria-label="機器ソフトウェア更新画面のスクリーンショットを原寸で開く">
+    <img src="/images/screenshots/firmware-update.webp" alt="現在のバージョン、firmware.bin登録、更新予約を表示した機器ソフトウェア更新画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>機器詳細の「機器を更新」で、現在のversion、登録するartifact、対象機器へ適用するversion、更新履歴を一画面で照合します。</figcaption>
+</figure>
 
 ## 次回起動で更新する
 

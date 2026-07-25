@@ -111,7 +111,7 @@ TOP と圃場一覧の検索条件は `q`、`prefecture`、`environment_type`、
 - `q` または導入コードを必須にする。
 - `field_id`、`assignment_state`、`device_kind`で絞り込む。
 - 最大件数を50件程度に制限する。
-- 他テナントのデバイスは検索結果に含めない。
+- 指定圃場または認証利用者の権限範囲外のデバイスは検索結果に含めない。
 - 割当操作は revision または一意制約で二重割当を防ぐ。
 
 ## 6. 永続化の移行
@@ -122,7 +122,7 @@ TOP と圃場一覧の検索条件は `q`、`prefecture`、`environment_type`、
 
 | テーブル | 主な列 |
 |---|---|
-| `fields` | `id`, `tenant_id`, `name`, `prefecture`, `municipality`, `environment_type`, `updated_at` |
+| `fields` | `id`, `name`, `prefecture`, `municipality`, `environment_type`, `updated_at` |
 | `layout_spaces` | `id`, `field_id`, `parent_placement_id`, `space_type`, `name`, `revision` |
 | `placements` | `id`, `field_id`, `space_id`, `preset`, `name`, 座標・寸法 |
 | `device_assignments` | `device_id`, `field_id`, `placement_id`, `resource_type`, `resource_id` |
@@ -132,9 +132,9 @@ TOP と圃場一覧の検索条件は `q`、`prefecture`、`environment_type`、
 
 必須索引:
 
-- `fields(tenant_id, name, id)`
-- `fields(tenant_id, prefecture, municipality, id)`
-- `fields(tenant_id, environment_type, id)`
+- `fields(name, id)`
+- `fields(prefecture, municipality, id)`
+- `fields(environment_type, id)`
 - `layout_spaces(field_id, parent_placement_id)`
 - `placements(field_id, space_id, z, id)`
 - `device_assignments(field_id, device_id)`
@@ -152,7 +152,7 @@ TOP用の配置件数、定植件数、注意件数を各カード表示時に�
 - テレメトリ履歴は期間、集約粒度、件数上限を必須にする。
 - 設置ビューは現行上限の50空間、各空間500配置を維持する。上限超過時は圃場分割または空間単位APIへ移行する。
 - ブラウザへ全レイアウトを送る方式が重くなった場合、`space_id`単位で遅延ロードする。
-- 検索結果とID解決には必ず `tenant_id` または利用者の所属範囲を適用する。
+- 検索結果とID解決には必ず圃場範囲と、将来圃場別権限を導入した場合は認証利用者の所属範囲を適用する。顧客分離はLocal Hub機器とDBそのものの分離で保証し、requestの`tenant_id`で切り替えない。
 
 ## 8. 将来のデバイス検索
 

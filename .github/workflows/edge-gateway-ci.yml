@@ -1,0 +1,40 @@
+name: Edge Gateway CI
+
+on:
+  pull_request:
+    paths:
+      - "edge-gateway/**"
+      - "shared/edge-runtime/**"
+      - "shared/contracts/sync/v1/**"
+      - ".github/workflows/edge-gateway-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "edge-gateway/**"
+      - "shared/edge-runtime/**"
+      - "shared/contracts/sync/v1/**"
+      - ".github/workflows/edge-gateway-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: edge-gateway
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.11"
+          working-directory: edge-gateway
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run ruff check src tests scripts
+      - run: uv run ruff format --check src tests scripts
+      - run: TMPDIR=/tmp uv run python -m unittest discover -s tests -p "test_*.py"
+      - run: uv build --out-dir "${RUNNER_TEMP}/edge-gateway-dist"
+      - run: uv export --locked --no-dev --no-emit-project --no-emit-package ina-edge-runtime --format requirements-txt --output-file "${RUNNER_TEMP}/edge-gateway-requirements.txt"
+      - run: uvx pip-audit -r "${RUNNER_TEMP}/edge-gateway-requirements.txt" --disable-pip

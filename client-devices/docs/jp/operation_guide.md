@@ -15,7 +15,7 @@
 | device kind | calibration |
 |---|---|
 | `SOI` | dry/wet reference を capture する。必要なら `dry_raw` と `wet_raw` を手動設定する |
-| `WTR` | analog soil moisture を使う場合は校正する。RS485 値は env calibration で校正する |
+| `WTR` | `A2/D2` の analog soil moisture を校正する。RS485 sensor には WRS または ENV を使う |
 | `WRS` | RS485 soil/PAR/日射値を校正する。analog soil input は通常未使用 |
 | `ENV` | PAR、EC、pH などの RS485 値を既知 reference に合わせて校正する |
 

@@ -1,0 +1,40 @@
+{
+  "protocol_version": "1.0",
+  "request_id": "223e4567-e89b-42d3-a456-426614174100",
+  "node_id": "INALH-123e4567-e89b-42d3-a456-426614174002",
+  "node_type": "local_hub",
+  "sent_at": "2026-07-23T02:16:00Z",
+  "cursor": "opaque-parent-cursor-1",
+  "events": [
+    {
+      "event_id": "223e4567-e89b-42d3-a456-426614174101",
+      "origin_node_id": "INAEG-123e4567-e89b-42d3-a456-426614174001",
+      "sequence": 42,
+      "schema_version": 1,
+      "event_type": "gateway.health",
+      "occurred_at": "2026-07-23T02:15:55Z",
+      "payload": {
+        "status": "ok"
+      }
+    }
+  ],
+  "command_results": [
+    {
+      "result_id": "223e4567-e89b-42d3-a456-426614174102",
+      "command_id": "223e4567-e89b-42d3-a456-426614174103",
+      "origin_node_id": "INAEG-123e4567-e89b-42d3-a456-426614174001",
+      "status": "succeeded",
+      "occurred_at": "2026-07-23T02:15:50Z"
+    }
+  ],
+  "health": {
+    "status": "ok",
+    "software_version": "0.1.0",
+    "hardware_profile_id": "lhb-cm5-standard-r1",
+    "outbox_depth": 2,
+    "mqtt_connected": true,
+    "storage_free_bytes": 48000000000,
+    "capabilities": ["child_sync_server", "local_ui", "mqtt"]
+  }
+}
+

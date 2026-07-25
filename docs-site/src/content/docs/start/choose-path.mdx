@@ -1,0 +1,76 @@
+---
+title: 利用方法を選ぶ
+description: セットアップ済みの提供機器を使う方法と、技術者が自分で構築する方法を図で比較します。
+---
+
+import ManualNote from '../../../components/ManualNote.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
+
+INASを使い始める方法は2つあります。通常利用では提供機器を選び、内部の仕組みを変更したい場合だけ技術者向けの自己構築を選びます。
+
+<div className="route-options">
+  <section className="route-option is-pending">
+    <span className="route-status">準備中</span>
+    <ManualVisual kind="package" label="設定済みのINAS Hubと付属品が入った提供機器の箱の略図" compact />
+    <h2>提供機器を利用する</h2>
+    <p>設定済みのHubと圃場の機器を受け取り、電源とWi-Fiをつないで使い始める方法です。一般の利用者はこちらを選びます。</p>
+    <a href="/start/provided-hardware/">予定している使い始め方を見る →</a>
+  </section>
+  <section className="route-option is-active">
+    <span className="route-status">現在利用可能・技術者向け</span>
+    <ManualVisual kind="self-build" label="パソコン、基板、工具を使って機器を自分で構築する作業台の略図" compact />
+    <h2>自分で機器を構築する</h2>
+    <p>小型コンピューター、電源、記録装置、電子部品を用意し、ソフトウェアの導入と配線を自分で行います。</p>
+    <a href="/start/quickstart/">技術者向けの全手順を見る →</a>
+  </section>
+</div>
+
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>提供機器を利用する場合
+
+<div className="manual-prep-panel">
+  <div>
+    <h3>利用者が用意するもの</h3>
+    <ul>
+      <li>設置場所の電源</li>
+      <li>普段使っているWi-Fiの名前とパスワード</li>
+      <li>画面を開くパソコンまたはスマートフォン</li>
+      <li>Hubと圃場の機器を安全に設置できる場所</li>
+    </ul>
+  </div>
+  <ManualVisual kind="wifi-kit" label="Wi-Fiルーター、Hub、パソコン、圃場の機器を用意する略図" />
+</div>
+
+開始時は、[使うWi-Fiを準備する](/start/network/)を確認し、Hubと圃場の機器を1台ずつ接続します。
+
+<ManualNote
+  id="provided-route-pending"
+  title="提供機器は現在準備中です"
+  tone="info"
+  visual="package"
+  visualLabel="提供予定のHub、付属品、確認票が入った箱の略図"
+>
+  提供機器の販売、保証内容、同梱品、正式なセットアップ画面はまだ公開していません。販売開始時に、実物と一致する手順へ更新します。
+</ManualNote>
+
+## 自分で構築する場合
+
+次の作業を自分で行える技術者が対象です。
+
+- 小型コンピューターへ基本ソフトウェアを導入する
+- コマンドを使ってサービスを設定する
+- ルーターの管理画面を操作する
+- 電子部品を選定し、配線と安全試験を行う
+- 問題発生時に記録を確認して切り分ける
+
+これらに慣れていない場合は、自己判断で配線や設定を進めず、提供機器の準備を待つか、技術者へ相談してください。
+
+## <span className="manual-title-icon manual-title-icon--check" aria-hidden="true"></span>判断の目安
+
+| 希望 | 選ぶ方法 |
+|---|---|
+| 箱から出して案内どおりに使いたい | 提供機器 |
+| 内部の仕組みを意識せず、畑の管理に集中したい | 提供機器 |
+| 自分で部品を選び、機能を変更したい | 自己構築 |
+| ソフトウェアや電子回路の検証をしたい | 自己構築 |
+
+自己構築を選ぶ場合は、最初に[技術構成と責務](/technical/architecture/)を読み、その後[技術者向けの全手順](/start/quickstart/)へ進みます。

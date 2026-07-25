@@ -68,6 +68,10 @@ from ina_device_hub.extension_installation_service import (
 )
 from ina_device_hub.extension_registry import build_device_detail_extensions
 from ina_device_hub.field_calendar_view import build_calendar_todo_items as _build_calendar_todo_items
+from ina_device_hub.field_layout_collaboration_service import (
+    FieldLayoutCollaborationValidationError,
+    field_layout_collaboration_service,
+)
 from ina_device_hub.field_layout_repository import (
     FieldLayoutConflictError,
     FieldLayoutValidationError,
@@ -92,6 +96,7 @@ from ina_device_hub.field_record_media_service import (
 )
 from ina_device_hub.field_repository import FieldValidationError, field_repository
 from ina_device_hub.field_status_dashboard import build_field_status_dashboard as _build_field_status_dashboard
+from ina_device_hub.hierarchy_api import hierarchy_api
 from ina_device_hub.instagram_client import InstagramClient
 from ina_device_hub.instagram_post_task import reload_instagram_post_task_settings
 from ina_device_hub.location_repository import location_repository
@@ -141,12 +146,15 @@ from ina_device_hub.utils import Utils
 
 app = Flask(__name__)
 app.register_blueprint(operations_api)
+app.register_blueprint(hierarchy_api)
 app.config["MAX_CONTENT_LENGTH"] = int((setting().get("http") or {}).get("max_request_bytes", 64 * 1024 * 1024))
 MQTT_ADMIN_STATUS_HISTORY_LIMIT = 2000
 SAFE_HTTP_METHODS = {"GET", "HEAD", "OPTIONS"}
 PUBLIC_HEALTH_PATHS = {"/healthz", "/readyz"}
 PUBLIC_DEVICE_PATH_PREFIXES = ("/firmware/",)
+NODE_SYNC_PATH_PREFIX = "/sync/v1/nodes/"
 ADMIN_PATH_PREFIXES = (
+    "/local/api/hierarchy/",
     "/local/api/settings/",
     "/local/api/extensions/",
     "/local/api/firmware-artifacts",
@@ -186,7 +194,7 @@ FIELD_CATALOG_PAGE_SIZE = 18
 
 @app.before_request
 def authenticate_hub_request():
-    if request.path in PUBLIC_HEALTH_PATHS or request.path.startswith(PUBLIC_DEVICE_PATH_PREFIXES):
+    if request.path in PUBLIC_HEALTH_PATHS or request.path.startswith(PUBLIC_DEVICE_PATH_PREFIXES) or request.path.startswith(NODE_SYNC_PATH_PREFIX):
         return None
     try:
         user = authenticate_request(request)
@@ -220,7 +228,7 @@ def authenticate_hub_request():
 def apply_security_headers(response):
     if (
         request.path.startswith("/settings")
-        or request.path.startswith(("/local/api/settings/", "/local/api/extensions/", "/local/api/cameras", "/cameras"))
+        or request.path.startswith(("/local/api/settings/", "/local/api/extensions/", "/local/api/cameras", "/local/api/hierarchy/", "/sync/v1/", "/cameras"))
         or "/growth-monitoring" in request.path
         or "/camera-growth-assessments" in request.path
     ):
@@ -238,7 +246,7 @@ def apply_security_headers(response):
 
 @app.errorhandler(RequestEntityTooLarge)
 def request_entity_too_large(_error):
-    if request.path.startswith(("/local/api/", "/operations/api/")):
+    if request.path.startswith(("/local/api/", "/operations/api/", "/sync/v1/")):
         return jsonify({"error": "request body is too large"}), 413
     return Response("request body is too large", status=413, mimetype="text/plain")
 
@@ -927,6 +935,7 @@ def _build_mqtt_admin_view(
     selected_ota_statuses,
     *,
     layout_context=None,
+    connection_events=None,
 ):
     now = datetime.now(UTC)
     device_summaries = [
@@ -942,6 +951,7 @@ def _build_mqtt_admin_view(
             selected_ota_statuses,
             now,
             layout_context=layout_context,
+            connection_events=connection_events,
         )
         if selected_device
         else None,
@@ -1109,7 +1119,7 @@ def _build_device_summary(device_id, record, now):
     }
 
 
-def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, *, layout_context=None):
+def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, *, layout_context=None, connection_events=None):
     payload = _latest_status_payload(record)
     config = record.get("config") or {}
     device_kind = record.get("device_kind") or payload.get("device_kind") or ""
@@ -1184,8 +1194,114 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "wake_history": _build_wake_history(statuses),
         "ota_history": _build_ota_history(ota_statuses),
         "readiness_checks": readiness_checks,
+        "connection_diagnostics": _build_device_connection_diagnostics(record, connection_events or [], now),
         "output_settings": output_settings,
         "soil_calibration_calibrated": bool((config.get("soil_calibration") or {}).get("calibrated")),
+    }
+
+
+def _build_device_connection_diagnostics(record, connection_events, now):
+    last_seen_at = record.get("last_seen_at") or record.get("last_status_at")
+    payload = _latest_status_payload(record)
+    last_connected = next(
+        (event for event in connection_events if event.get("event_type") in {"mqtt_client_connected", "connect"} or event.get("action") == "connect"),
+        None,
+    )
+    if last_connected:
+        connection_check = {
+            "value": "接続を確認",
+            "class": "good",
+            "detail": _format_datetime(last_connected.get("occurred_at")),
+            "reason": "この時点で、機器はWi-Fiを通ってHubの入口まで到達しています。",
+        }
+    elif last_seen_at:
+        connection_check = {
+            "value": "通信を確認",
+            "class": "good",
+            "detail": _format_datetime(last_seen_at),
+            "reason": "Hubが機器の状態を受け取っているため、この時点の接続は成功しています。",
+        }
+    else:
+        connection_check = {
+            "value": "記録なし",
+            "class": "warn",
+            "detail": "まだHubへの接続を確認できません",
+            "reason": "機器の電源と初期設定画面を確認し、もう一度接続を試してください。",
+        }
+
+    next_wake = _format_next_wake(record.get("last_status_at"), payload.get("next_sleep_sec"))
+    return {
+        "checks": [
+            {
+                "step": "1",
+                "label": "Hubが最後に確認",
+                "value": _format_age(last_seen_at, now),
+                "class": "good" if last_seen_at else "warn",
+                "detail": _format_datetime(last_seen_at) if last_seen_at else "受信記録はまだありません",
+                "reason": (
+                    "時刻が更新されていれば、電源・Wi-Fi・Hubへの接続はそこまで成功しています。"
+                    if last_seen_at
+                    else "ここが未取得なら、まず機器の電源と初期設定を確認します。"
+                ),
+            },
+            {
+                "step": "2",
+                "label": "Hubへの接続",
+                **connection_check,
+            },
+            {
+                "step": "3",
+                "label": "次回の通信予定",
+                "value": next_wake,
+                "class": "ok" if next_wake != "未取得" else "muted",
+                "detail": _format_duration(payload.get("next_sleep_sec")) if next_wake != "未取得" else "予定を受信していません",
+                "reason": (
+                    "省電力機器は予定時刻まで通信を休みます。切断表示だけで故障とは限りません。"
+                    if next_wake != "未取得"
+                    else "常時接続機器、またはまだ状態を受信していない機器では表示されません。"
+                ),
+            },
+        ],
+        "events": [_format_device_connection_event(event, now) for event in connection_events[:8]],
+    }
+
+
+def _format_device_connection_event(event, now):
+    event_type = str(event.get("event_type") or "")
+    action = str(event.get("action") or "")
+    payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+    reason = str(payload.get("reason") or "")
+    if event_type in {"mqtt_client_connected", "connect"} or action == "connect":
+        label = "Hubへの接続に成功"
+        description = "機器からHubの入口まで通信できました。"
+        event_class = "good"
+    elif action == "disconnect_replaced" or reason == "replaced":
+        label = "同じ機器番号の接続が重複"
+        description = "同じ機器番号を使う機器がほかにないか確認してください。"
+        event_class = "warn"
+    elif action == "disconnect_timeout" or reason == "timeout":
+        label = "通信が途切れて接続を終了"
+        description = "電源やWi-Fiの電波が不安定でないか確認してください。"
+        event_class = "warn"
+    elif event_type in {"mqtt_client_disconnected", "disconnect"} or action.startswith("disconnect"):
+        label = "Hubとの接続を終了"
+        description = "省電力のため休止する機器では、予定どおりの切断です。"
+        event_class = "muted"
+    elif event_type == "mqtt_client_connection_attempt":
+        label = "Hubへ接続を試行"
+        description = "機器からHubの入口へ通信が届きました。接続完了の記録が続くか確認します。"
+        event_class = "ok"
+    else:
+        label = "接続に関する記録"
+        description = "詳しい内容は、下部の管理者向けデータで確認できます。"
+        event_class = "muted"
+    return {
+        "label": label,
+        "description": description,
+        "class": event_class,
+        "occurred_at": str(event.get("occurred_at") or ""),
+        "time": _format_datetime(event.get("occurred_at")),
+        "age": _format_age(event.get("occurred_at"), now),
     }
 
 
@@ -2437,18 +2553,20 @@ def _demo_mqtt_admin_page_data(selected_device_id=None):
     ]
     connection_events = [
         {
-            "occurred_at": ago(12),
-            "event_type": "connect",
-            "direction": "in",
-            "topic": f"ina/devices/{selected_device_id}/connection",
-            "payload": {"client_id": selected_device_id, "result": "accepted"},
+            "occurred_at": ago(10),
+            "event_type": "mqtt_client_disconnected",
+            "direction": "broker",
+            "topic": "$SYS/broker/log/N",
+            "action": "disconnect",
+            "payload": {"client_id": selected_device_id, "reason": "disconnect"},
         },
         {
-            "occurred_at": ago(10),
-            "event_type": "disconnect",
-            "direction": "in",
-            "topic": f"ina/devices/{selected_device_id}/connection",
-            "payload": {"client_id": selected_device_id, "reason": "deep_sleep"},
+            "occurred_at": ago(12),
+            "event_type": "mqtt_client_connected",
+            "direction": "broker",
+            "topic": "$SYS/broker/log/N",
+            "action": "connect",
+            "payload": {"client_id": selected_device_id, "remote_address": "192.0.2.24:51411"},
         },
     ]
     firmware_artifacts = {
@@ -2581,6 +2699,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
         selected_statuses,
         selected_ota_statuses,
         layout_context=layout_context,
+        connection_events=connection_events,
     )
     device_link_prefix = "/demo/mqtt-devices/" if demo_mode else "/mqtt-devices/"
     list_path = "/demo/mqtt-devices" if demo_mode else "/mqtt-devices"
@@ -2590,12 +2709,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
     device_catalog["next_url"] = _mqtt_device_catalog_url(list_path, device_query, int(device_catalog["page"]) + 1) if device_catalog["has_next"] else ""
     template = """
     <!doctype html>
-    <html lang="ja">
+    <html lang="{{ ui_locale }}">
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <title>Hub 管理パネル</title>
         <link rel="stylesheet" href="/static/searchable-select.css">
+        <script defer src="/static/ui-locale.js"></script>
         <style>
           :root {
             --bg: #f1f4f0;
@@ -2648,6 +2768,86 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             border-color: #fde68a;
             background: #fffbeb;
             color: #92400e;
+          }
+          .connection-check-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin: 14px 0 18px;
+          }
+          .connection-check-card {
+            display: grid;
+            align-content: start;
+            gap: 6px;
+            min-height: 184px;
+            border: 1px solid var(--line);
+            border-top: 4px solid #94a3b8;
+            border-radius: 9px;
+            background: #fff;
+            padding: 13px;
+          }
+          .connection-check-card.good { border-top-color: var(--green); background: #f7fcf9; }
+          .connection-check-card.ok { border-top-color: #4f7d69; background: #f8fbf9; }
+          .connection-check-card.warn { border-top-color: #d39a24; background: #fffaf0; }
+          .connection-check-step {
+            display: inline-grid;
+            place-items: center;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #e5efe8;
+            color: #215b42;
+            font-size: 13px;
+            font-weight: 900;
+          }
+          .connection-check-card > span:not(.connection-check-step) { color: var(--muted); font-size: 13px; font-weight: 700; }
+          .connection-check-card > strong { color: #173c2a; font-size: 21px; line-height: 1.25; }
+          .connection-check-card small { color: var(--muted); }
+          .connection-check-card p { margin: 2px 0 0; font-size: 13px; line-height: 1.6; }
+          .connection-timeline { display: grid; gap: 8px; margin-top: 10px; }
+          .connection-event {
+            display: grid;
+            grid-template-columns: 10px minmax(150px, .65fr) minmax(260px, 1.35fr) auto;
+            gap: 10px;
+            align-items: center;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: #fff;
+          }
+          .connection-event-dot { width: 10px; height: 10px; border-radius: 50%; background: #94a3b8; }
+          .connection-event.good .connection-event-dot { background: var(--green); }
+          .connection-event.ok .connection-event-dot { background: #4f7d69; }
+          .connection-event.warn .connection-event-dot { background: #d39a24; }
+          .connection-event strong, .connection-event span { display: block; }
+          .connection-event p { margin: 0; color: var(--muted); font-size: 13px; }
+          .connection-event time { color: var(--muted); font-size: 12px; text-align: right; }
+          .connection-reading-guide { margin: 12px 0 0; padding: 12px 14px; border-left: 4px solid #4f7d69; background: #f5f9f6; }
+          .connection-reading-guide p { margin: 0; }
+          .context-help.left.connection-help .context-help-panel {
+            right: auto;
+            left: 0;
+            width: min(860px, calc(100vw - 48px));
+            max-height: min(680px, calc(100vh - 96px));
+            padding: 18px;
+          }
+          .connection-help-panel > strong { font-size: 17px; }
+          .connection-help-panel > p { margin-top: 7px; }
+          .connection-help-panel .connection-check-grid { margin: 14px 0; }
+          .connection-help-panel .connection-check-card { min-height: 158px; }
+          .connection-help-panel .connection-check-card > strong { font-size: 18px; }
+          .connection-help-next { margin-top: 12px !important; color: var(--muted); }
+          @media (max-width: 520px) {
+            .context-help.left.connection-help .context-help-panel {
+              position: fixed;
+              top: auto;
+              right: 12px;
+              bottom: 12px;
+              left: 12px;
+              width: auto;
+              max-height: min(76vh, 680px);
+              border-width: 2px;
+            }
           }
           .progress-banner {
             position: sticky;
@@ -2880,6 +3080,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             line-height: 1.2;
             opacity: .78;
           }
+          html[lang="en"] .extension-tab-button::after { content: "Add-on"; }
           .extension-overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
           .extension-overview-card {
             border: 1px solid #bed6c6;
@@ -3324,6 +3525,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .firmware-workbench { grid-template-columns: 1fr; }
             .firmware-meta { grid-template-columns: 1fr; }
             .readiness-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .connection-check-grid { grid-template-columns: 1fr; }
+            .connection-check-card { min-height: auto; }
+            .connection-event { grid-template-columns: 10px minmax(0, 1fr); align-items: start; }
+            .connection-event p, .connection-event time { grid-column: 2; text-align: left; }
             .extension-process { grid-template-columns: 1fr; }
             .extension-process-step { min-height: auto; padding-left: 52px; padding-top: 13px; }
             .extension-process-step::before { top: 13px; }
@@ -3515,7 +3720,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <button type="button" class="tab-button" data-tab-key="monitoring" data-tab-target="tab-monitoring" role="tab" aria-controls="tab-monitoring" aria-selected="false" tabindex="-1">現在値・履歴</button>
               <button type="button" class="tab-button" data-tab-key="settings" data-tab-target="tab-config" role="tab" aria-controls="tab-config" aria-selected="false" tabindex="-1">動作設定</button>
               <button type="button" class="tab-button" data-tab-key="firmware" data-tab-target="tab-firmware" role="tab" aria-controls="tab-firmware" aria-selected="false" tabindex="-1">機器を更新</button>
-              <button type="button" class="tab-button" data-tab-key="diagnostics" data-tab-target="tab-diagnostics" role="tab" aria-controls="tab-diagnostics" aria-selected="false" tabindex="-1">困ったとき</button>
+              <button type="button" class="tab-button" data-tab-key="maintenance" data-tab-target="tab-maintenance" role="tab" aria-controls="tab-maintenance" aria-selected="false" tabindex="-1">保守・管理</button>
               {% for extension in selected.ui_extensions %}{% for extension_tab in extension.tabs %}<button type="button" class="tab-button extension-tab-button" data-tab-key="{{ extension_tab.key }}" data-tab-target="{{ extension_tab.dom_id }}" role="tab" aria-controls="{{ extension_tab.dom_id }}" aria-selected="false" tabindex="-1">{{ extension_tab.label }}</button>{% endfor %}{% endfor %}
             </div>
 
@@ -3985,9 +4190,34 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           </section>
             </section>
 
-            <section id="tab-diagnostics" class="tab-panel" role="tabpanel" hidden>
+            <section id="tab-maintenance" class="tab-panel" role="tabpanel" hidden>
           <section class="panel">
-            <div class="context-help-row"><h2>保守・診断</h2><details class="context-help left"><summary aria-label="保守と診断の説明を開く" title="保守と診断について">?</summary><div class="context-help-panel" role="note"><strong>保守と診断について</strong><p>利用停止や開発者向けデータは、必要なときだけ開いてください。</p></div></details></div>
+            <div class="context-help-row">
+              <h2>保守・管理</h2>
+              <details id="connection-help" class="context-help left connection-help">
+                <summary aria-label="困ったときのヘルプを開く" title="困ったとき">?</summary>
+                <div class="context-help-panel connection-help-panel" role="note">
+                  <strong>困ったとき：通信を確認する</strong>
+                  <p>専門用語やコマンドは不要です。上から順に見て、最初に「未取得」または「記録なし」になる場所を探します。</p>
+                  <div class="connection-check-grid">
+                    {% for check in selected.connection_diagnostics.checks %}
+                    <article class="connection-check-card {{ check.class }}">
+                      <span class="connection-check-step" aria-hidden="true">{{ check.step }}</span>
+                      <span>{{ check.label }}</span>
+                      <strong>{{ check.value }}</strong>
+                      <small>{{ check.detail }}</small>
+                      <p>{{ check.reason }}</p>
+                    </article>
+                    {% endfor %}
+                  </div>
+                  <div class="connection-reading-guide">
+                    <p><strong>判断のしかた:</strong> 「Hubが最後に確認」が更新されていれば、その時刻までは電源・Wi-Fi・Hubへの接続が成功しています。「Hubへの接続」だけ記録され、その後の最終確認が更新されない場合は、機器を再起動して次回通信まで待ちます。</p>
+                  </div>
+                  <p class="connection-help-next">実際の成功・切断時刻は、このタブの「通信・接続履歴」を開くと確認できます。</p>
+                </div>
+              </details>
+            </div>
+            <p class="lead">機器の利用状態、接続履歴、管理者向けデータを必要なときだけ確認します。通信で困ったときは「?」を開いてください。</p>
             <details>
               <summary>機器の利用状態を変更</summary>
               <div class="detail-body">
@@ -4027,7 +4257,27 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             </details>
 
             <details>
-              <summary>開発者向けの生データ（Status / OTA / MQTT）</summary>
+              <summary>通信・接続履歴</summary>
+              <div class="detail-body">
+                {% if selected.connection_diagnostics.events %}
+                <div class="connection-timeline">
+                  {% for event in selected.connection_diagnostics.events %}
+                  <article class="connection-event {{ event.class }}">
+                    <span class="connection-event-dot" aria-hidden="true"></span>
+                    <strong>{{ event.label }}</strong>
+                    <p>{{ event.description }}</p>
+                    <time datetime="{{ event.occurred_at }}">{{ event.time }}<span>{{ event.age }}</span></time>
+                  </article>
+                  {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty"><strong>この機器の接続記録はまだありません。</strong><br>「?」の通信ヘルプを開き、電源と初期設定から順に確認してください。</div>
+                {% endif %}
+              </div>
+            </details>
+
+            <details>
+              <summary>管理者向けの技術データ</summary>
               <div class="detail-body">
                 <h3>Status History</h3>
                 <table><thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead><tbody>{% for status in selected_statuses | reverse %}<tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>{% endfor %}</tbody></table>
@@ -4227,7 +4477,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             });
           });
           const requestedTab = new URL(window.location.href).searchParams.get("tab");
-          const tabAliases = { irrigation: "monitoring", config: "settings", maintenance: "diagnostics" };
+          const tabAliases = { irrigation: "monitoring", config: "settings", diagnostics: "maintenance" };
           const requestedKey = tabAliases[requestedTab] || requestedTab || "overview";
           const requestedButton = detailTabButtons.find((button) => button.getAttribute("data-tab-key") === requestedKey);
           if (requestedButton) activateDetailTab(requestedButton.getAttribute("data-tab-target"), false);
@@ -5644,6 +5894,11 @@ def _accessibility_body_class(preferences):
     return f"a11y-font-{font_size.replace('_', '-')} a11y-contrast-{contrast}"
 
 
+def _request_ui_locale():
+    """Return the explicitly requested UI language without changing saved preferences."""
+    return "en" if request.args.get("lang", "").strip().lower() == "en" else "ja"
+
+
 @app.context_processor
 def inject_accessibility_preferences():
     try:
@@ -5651,7 +5906,10 @@ def inject_accessibility_preferences():
         preferences = _current_user_preferences(user.email)
     except AccessAuthenticationError:
         preferences = {"preferences": {"font_size": DEFAULT_FONT_SIZE, "contrast": DEFAULT_CONTRAST_MODE}}
-    return {"accessibility_body_class": _accessibility_body_class(preferences)}
+    return {
+        "accessibility_body_class": _accessibility_body_class(preferences),
+        "ui_locale": _request_ui_locale(),
+    }
 
 
 def _current_plant_advice_profile():
@@ -5906,8 +6164,11 @@ def hub_settings_page():
         "public_base_url": public_notification_url,
         "public_url_configured": bool(public_notification_url),
     }
+    database_settings = setting().get("turso") or {}
+    database_url = str(database_settings.get("database_url") or "local")
+    database_label = "Turso replica" if database_url.startswith(("libsql://", "http://", "https://")) else "端末内DB"
     infrastructure = (
-        {"label": "Turso", "configured": bool((setting().get("turso") or {}).get("database_url") and (setting().get("turso") or {}).get("auth_token"))},
+        {"label": database_label, "configured": bool(database_url)},
         {
             "label": "R2 / S3",
             "configured": bool((setting().get("storage_bucket") or {}).get("endpoint_url") and (setting().get("storage_bucket") or {}).get("bucket_name")),
@@ -6373,7 +6634,51 @@ def update_field_layout_api(field_id):
         ), 409
     except FieldLayoutValidationError as exc:
         return jsonify({"error": str(exc)}), 400
+    field_layout_collaboration_service().publish_layout(field_id, layout)
     return jsonify(layout)
+
+
+@app.route("/local/api/fields/<field_id>/layout/collaboration", methods=["POST"])
+def update_field_layout_collaboration_api(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    if request.content_length is not None and request.content_length > 8 * 1024:
+        return jsonify({"error": "collaboration request body is too large"}), 413
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+
+    try:
+        layout = field_layout_repository().get(field_id, field_name=field.get("name", ""))
+        service = field_layout_collaboration_service()
+        user = current_user_from_request(request)
+        if request_body.get("leave") is True:
+            snapshot = service.leave(
+                field_id,
+                request_body.get("client_id"),
+                actor_email=user.email,
+                layout=layout,
+            )
+        else:
+            snapshot = service.touch(
+                field_id,
+                client_id=request_body.get("client_id"),
+                actor_email=user.email,
+                active_space_id=request_body.get("active_space_id", ""),
+                selected_placement_id=request_body.get("selected_placement_id", ""),
+                state=request_body.get("state", "viewing"),
+                layout=layout,
+            )
+    except FieldLayoutCollaborationValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except FieldLayoutValidationError as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    response = jsonify(snapshot)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return response
 
 
 @app.route("/local/api/fields/<field_id>/layout/devices", methods=["GET"])
@@ -9159,7 +9464,7 @@ def get_camera_image(image_path):
 
 
 def initialize_web_server():
-    """Prepare the local Turso replica before accepting HTTP requests."""
+    """Prepare the on-device database before accepting HTTP requests."""
     global _web_initialized
     if _web_initialized:
         return

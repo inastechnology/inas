@@ -48,23 +48,29 @@ extensions.
 | FGT | Fertilizer mixing and irrigation device. Sequences water, A/B concentrate, mixing, irrigation, and clean-water rinse with local safety interlocks |
 | SOI | Battery-powered soil moisture node |
 | ENV | 12V RS485 environmental sensor hub |
-| Turso/libSQL | Shared database boundary for the Cloud app option and future sync |
+| Local Hub Turso/libSQL | Existing per-installation operational database and local replica; it is not the Cloud Hub directory or a Cloud tenant DB |
 | local/S3 storage | Images, audio, firmware artifacts, logs, and generated outputs |
-| Cloudflare Access + Tunnel | Authenticated remote entry to a local hub running on the device side |
-| Cloudflare Workers + Hono | Cloud app HTTP API/UI foundation. It does not replace every local hub feature |
+| Cloud Hub Worker | One shared Cloudflare Worker/frontend that authenticates users and routes each authorized request to one customer DB |
+| Cloud directory Turso DB | Tenant status, Access memberships, Edge node registry, and encrypted customer DB credentials; no field telemetry |
+| customer Turso DB | One dedicated database per Cloud Hub customer |
+| Edge Gateway | Field-side MQTT broker, Wi-Fi AP, config cache, outbox, and HTTPS Sync client; no Turso credentials |
+| Cloudflare Access + Tunnel | Access protects Cloud Hub browser APIs; Tunnel remains an optional remote entrance for an independently operated Local Hub |
 
-The default operating model is the local hub. The Tunnel option exposes the
-local hub through Cloudflare Access. The Cloud app option starts with
-Workers/Hono APIs backed by Turso. MQTT long-running subscriptions, camera
-streams, ffmpeg, local file handling, and scheduler work remain in the local
-hub.
+INAS therefore has two Hub applications with deliberately separate storage.
+The existing Local Hub directly controls its devices, may aggregate child Edge
+Gateways, and retains its current Turso/libSQL configuration. The Cloud Hub is
+one shared Worker at `hub.inas-technologies.com`; it uses a directory DB only to
+resolve an authenticated principal, then opens that customer's dedicated Turso
+DB. An Edge Gateway chooses exactly one parent, Local Hub or Cloud Hub. MQTT and
+safety-critical operation stay on the field LAN and continue during WAN or
+parent outages.
 
 Related documents:
 
 - [ARCHITECTURE_LAYERING_POLICY.md](ARCHITECTURE_LAYERING_POLICY.md)
 - [hub/doc/NETWORK_ARCHITECTURE.md](../hub/doc/NETWORK_ARCHITECTURE.md)
 - [hub/doc/CLOUDFLARE_HOSTED_OPTION.md](../hub/doc/CLOUDFLARE_HOSTED_OPTION.md)
-- [hub/doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md](../hub/doc/CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md)
+- [hub-cloud/README.md](../hub-cloud/README.md)
 
 ## Data And Control Flow
 
@@ -219,26 +225,27 @@ Related documents:
 
 ## Authentication And Authorization
 
-Cloudflare hosted options use Cloudflare Access at the entry point. The Access
-rule group with allowed email addresses is the source of truth for coarse-grained
-entry authorization, and scripts add or remove email addresses.
+Cloud Hub browser APIs validate the Cloudflare Access assertion issuer,
+audience, signature, and email, then require an active membership for the
+requested public tenant ID. Edge Sync uses a separate one-time node bearer:
+the directory stores only its salted digest and resolves the tenant from the
+registered node. Neither request type may provide a database URL, token, or
+internal tenant ID.
 
-For the Cloud app option, the Worker also validates `Cf-Access-Jwt-Assertion`
-and checks issuer, audience, and email. Application roles are stored in Turso
-`admin_users` as `reader`, `operator`, or `admin`.
-
-`CLOUDFLARE_ACCESS_API_TOKEN` is a secret for provisioning scripts. Do not pass
-it to Workers. `.env` is the environment source of truth, but secrets must not be
-printed in logs or committed to documentation.
+Local Hub Access/Tunnel remains independent and keeps its existing local
+authorization behavior. A Cloudflare, Turso Platform, directory, or customer DB
+credential must never be placed in an Edge Gateway QR code or configuration.
 
 ## Operational Assumptions
 
 - The default local hub HTTP port is `39151`.
 - The Tunnel option defaults `CLOUDFLARE_TUNNEL_ORIGIN_URL` to
-  `http://localhost:39151`.
-- The Tunnel connector runs on the device side.
-- Cloudflare Error 1033 usually means the Tunnel connector is not running or not
-  reachable, not that Workers failed.
+  `http://127.0.0.1:39151`.
+- An optional Local Hub Tunnel connector runs on the Local Hub side.
+- Cloud Hub uses one Worker custom domain and public paths of the form
+  `/t/<random-public-tenant-id>/`.
+- Every Cloud Hub customer has one dedicated Turso DB; Workers are not created
+  per customer.
 - Client firmware is built on Linux or WSL2.
 - PlatformIO projects are split by device kind.
 - Shared client code lives in `client-devices/common/lib/ina-client-common`.
@@ -257,7 +264,9 @@ When adding functionality:
    `sensor_measurements`.
 5. For actions, store proposal, approval, execution, and evaluation history.
 6. Keep the primary UI farmer-facing; move raw JSON to detail screens.
-7. Add Cloudflare hosted features without breaking the local hub operating model.
+7. Preserve the Local Hub's own database and direct-control boundary. In Cloud
+   Hub, resolve the authenticated membership/node through the directory and
+   route only to that customer's dedicated DB.
 
 ## Related Documents
 
@@ -267,3 +276,4 @@ When adding functionality:
 - [hub/doc/AI_AGENT_ENVIRONMENT_SETUP.md](../hub/doc/AI_AGENT_ENVIRONMENT_SETUP.md)
 - [hub/doc/ENVIRONMENT.md](../hub/doc/ENVIRONMENT.md)
 - [hub/doc/OPERATIONS.md](../hub/doc/OPERATIONS.md)
+- [hub-cloud/docs/SECURITY.md](../hub-cloud/docs/SECURITY.md)

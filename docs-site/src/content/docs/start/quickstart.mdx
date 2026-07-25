@@ -1,0 +1,190 @@
+---
+title: 自己調達セットアップの全手順
+description: 機器の購入からRaspberry Pi、Hub、デバイス、Cloudflare Access、圃場設置までを順番に進めます。
+---
+
+import ManualSteps from '../../../components/ManualSteps.astro';
+import ManualVisual from '../../../components/ManualVisual.astro';
+
+:::caution[技術者向け]
+このページは、Raspberry Pi、ルーター、ソフトウェア、電子回路を自分で構築する担当者向けです。提供機器を通常利用する場合は、[弊社提供機器のセットアップ](/start/provided-hardware/)を参照してください。
+:::
+
+このページは自己調達ルートの目次です。上から順に進み、各工程の完了条件を満たしてから次へ移ります。弊社提供機器を利用するルートは[準備中](/start/provided-hardware/)です。
+
+## <span className="manual-title-icon manual-title-icon--prep" aria-hidden="true"></span>着手前の準備
+
+<div className="manual-prep-panel">
+  <div>
+    <h3>途中で止めずに確認できる作業環境を用意します</h3>
+    <ul>
+      <li>Raspberry Pi、記録カード、電源、冷却、通信線</li>
+      <li>電子部品を安全に配線・測定できる机</li>
+      <li>ルーターの管理画面を操作できる権限</li>
+      <li>外部サービスとドメインの管理権限</li>
+      <li>秘密情報を安全に保管する場所</li>
+      <li>圃場へ移す前に少量の水で試験できる場所</li>
+    </ul>
+  </div>
+  <ManualVisual kind="self-build" label="パソコン、Raspberry Pi、基板、工具を安全な作業机へ用意する略図" />
+</div>
+
+## <span className="manual-title-icon manual-title-icon--procedure" aria-hidden="true"></span>自己構築セットアップの全工程
+
+<ManualSteps
+  label="INASを自己構築して圃場へ設置する9つの工程"
+  steps={[
+    {
+      title: '全体構成と責務を確認する',
+      description: '画面、Hub、圃場の機器、外部公開が何を担当するかを確認し、人向けと機器向けの経路を分けて考えます。',
+      visual: 'hub',
+      visualLabel: 'INAS Hubを中心に画面、圃場機器、外部サービスがつながる構成図',
+    },
+    {
+      title: '機器を選び、設置条件を確認する',
+      description: 'Raspberry Pi一式、圃場機器の部品、電源、保護部品を選び、乾燥した設置場所と負荷条件を確認します。',
+      visual: 'self-build',
+      visualLabel: 'パソコン、基板、電子部品、工具を使って機器を選ぶ略図',
+    },
+    {
+      title: '接続に使う情報を決める',
+      description: 'Hubの名前、ルーター内の接続先、2.4GHz側のWi-Fi、機器通信用の認証、外部公開名を記録します。',
+      visual: 'wifi-kit',
+      visualLabel: 'ルーター、Hub、管理用パソコン、圃場機器を同じ場所で接続する略図',
+    },
+    {
+      title: 'Raspberry Piを準備する',
+      description: '記録カードへ基本ソフトウェアを書き込み、ルーターにつないで必要な管理道具と機器通信用サービスを入れます。',
+      visual: 'raspberry-setup',
+      visualLabel: 'パソコンで記録カードへ書き込みRaspberry Piへ挿す略図',
+    },
+    {
+      title: 'INAS Hubをインストールする',
+      description: 'プログラムを取得して接続情報を設定し、手動起動で確認した後に自動起動へ登録します。',
+      visual: 'hub-install',
+      visualLabel: '管理用パソコンからRaspberry PiへINAS Hubをインストールする略図',
+    },
+    {
+      title: '最初の圃場を画面で作る',
+      description: '圃場、区画、畝を現場と同じ順に登録し、再読み込み後も保存されていることを確認します。',
+      visual: 'dashboard',
+      visualLabel: 'INAS画面へ最初の圃場を登録して確認する略図',
+    },
+    {
+      title: '圃場機器を1台だけ作って接続する',
+      description: '電源を外して配線と検査を行い、ソフトウェアを書き込み、Hubと同じ機器IDで登録して設定受信を確認します。',
+      visual: 'one-device',
+      visualLabel: 'INAS Hubへ最初の圃場機器1台だけを接続する略図',
+    },
+    {
+      title: '許可した利用者だけに外部公開する',
+      description: 'Hub内部の動作確認後に本人確認付きの経路を作り、許可済み利用者は開け、未許可利用者は拒否されることを試します。',
+      visual: 'access-ok-ng',
+      visualLabel: '登録済み利用者は開け、未登録利用者は拒否されるOK・NG比較図',
+    },
+    {
+      title: '圃場へ設置し、少量から試験する',
+      description: '停止方法、電波、電源を確認して現地へ移し、人が見ている状態で少量・短時間から水を流して結果を画面で確認します。',
+      visual: 'small-water-test',
+      visualLabel: '圃場で水を受ける準備をして数秒だけ潅水する略図',
+    },
+  ]}
+/>
+
+## 1. 全体構成を理解する
+
+- [技術構成と責務](/technical/architecture/)で、何がRaspberry Pi、ESP32S3、Cloudflare上で動くかを確認します。
+- Hub画面用の外部経路と、デバイス用のLAN内経路を区別します。
+
+**完了条件:** `Cloudflare Accessは人向け、MQTT/OTAはデバイス向け`と説明できる。
+
+## 2. 機器を選んで購入する
+
+- [機器を選んで購入する](/start/hardware/)で暫定最低目安と推奨構成を比較します。
+- [購入前チェックリスト](/start/prerequisites/)で設置場所、電源、電波、負荷定格を確認します。
+- 最初に作るdevice kindと部品表を確定します。
+
+**完了条件:** Raspberry Pi、storage、電源、冷却、LAN、デバイス部品が揃っている。
+
+## 3. ネットワーク情報を決める
+
+- [通信・ネットワークの技術詳細](/technical/networking/)で、Hub hostname、管理PC用mDNS名、デバイス用DHCP予約IP、2.4GHz SSID、MQTT credential、Cloudflare hostnameを決めます。
+- Hub、設定用PC、最初のデバイスを同じLANへ接続できるようにします。
+
+**完了条件:** `<hub名>.local`、Hub予約IP、Cloudflare公開hostnameの違いを記録済み。
+
+## 4. Raspberry Piを準備する
+
+- [Raspberry Piを準備する](/hub/raspberry-pi/)に従い、Raspberry Pi OS Lite 64-bitを入れます。
+- hostname、mDNS、DHCP予約、`uv`、Mosquittoを設定します。
+
+**完了条件:** `<hub名>.local`でSSHでき、認証付きMQTTのpublish/subscribeが成功する。
+
+## 5. INAS Hubをインストールする
+
+- [Hubをインストール](/hub/install/)に従い、Raspberry Pi上でclone、`.env`設定、接続確認、systemd登録を行います。
+- `http://<hub名>.local:39151/readyz`を確認します。
+
+**完了条件:** Hubが再起動後も自動起動し、MQTTを含むreadinessが成功する。
+
+## 6. 最初の圃場を作る
+
+1. 管理者としてログインします。
+2. 「圃場」から新しい圃場を追加します。
+3. 圃場名、所在地、タイムゾーンを確認します。
+4. 必要なら区画や畝を追加します。
+5. ダッシュボードに圃場が表示されることを確認します。
+
+<figure class="product-screenshot">
+  <a href="/images/screenshots/field-catalog.webp" aria-label="圃場一覧のスクリーンショットを原寸で開く">
+    <img src="/images/screenshots/field-catalog.webp" alt="所在地、設置環境、区画数、機器数、作物が入ったHubの圃場一覧" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>「圃場」では、登録した圃場の所在地、設置状況、作物を一覧で確認します。カードを選ぶと圃場の概要へ移動します。</figcaption>
+</figure>
+
+**完了条件:** 再読み込み後も圃場が残り、設定画面を開ける。
+
+## 7. デバイスを1台作って接続する
+
+1. [デバイス一覧](/devices/)からkindを選びます。
+2. 電源を外して配線し、continuityとshortを検査します。
+3. F/Wをbuild・uploadします。
+4. setup APで2.4GHz Wi‑FiとMQTT `<Hub予約IP>:1883`を設定します。
+5. Hubへ同じdevice IDを登録し、`config_received=true`を確認します。
+6. device-specificな受入試験を行います。
+
+<figure class="product-screenshot product-screenshot--narrow">
+  <a href="/images/screenshots/device-first-setup.webp" aria-label="デバイス初期設定画面のスクリーンショットを原寸で開く">
+    <img src="/images/screenshots/device-first-setup.webp" alt="Wi-FiとMQTT接続先を入力するデバイスの初期設定画面" loading="lazy" decoding="async" />
+  </a>
+  <figcaption>setup APの初期設定画面です。Wi-FiとMQTTを同じ画面で登録し、保存後はデバイスの再起動を待ちます。</figcaption>
+</figure>
+
+**完了条件:** Hubに最新状態が表示され、Runtime Config受信と安全な出力試験に成功する。
+
+## 8. Cloudflare Accessで外部公開する
+
+- [Cloudflareで公開](/hub/cloudflare/)に従い、利用者自身のCloudflare accountでAccessとTunnelを構築します。
+- 許可したemailだけがアクセスできることを確認します。
+- ルーターのinbound portは開けません。
+
+**完了条件:** 外部networkから許可ユーザーはloginでき、未許可ユーザーは拒否される。
+
+## 9. 圃場へ設置する
+
+1. 手動遮断と停止手段を確認します。
+2. deviceを設置し、実際の電波強度と電源電圧を確認します。
+3. 少量・短時間から通水します。
+4. 測定、潅水結果、eventをHubで確認します。
+5. 起動時潅水testなどの施工用modeを無効にします。
+
+## 導入後に読む
+
+- 潅水を設定する: [潅水](/configure/watering/)
+- 日々の状態を確認する: [日々の確認](/operate/daily/)
+- F/Wを更新する: [F/W・OTA更新](/operate/firmware/)
+- 問題を切り分ける: [トラブルシューティング](/troubleshoot/)
+
+:::tip[完了条件]
+HubとMosquittoが自動起動し、デバイスがWi‑Fi/MQTTへ再接続し、許可した利用者がCloudflare Access経由で画面を開ければ、初期導入は完了です。
+:::

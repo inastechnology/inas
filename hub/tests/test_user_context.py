@@ -74,6 +74,38 @@ class UserContextTest(unittest.TestCase):
                 with self.assertRaises(user_context.AccessAuthenticationError):
                     user_context.authenticate_request(request)
 
+    def test_access_configuration_accepts_only_cloudflare_https_origin(self):
+        self.assertEqual(
+            user_context._normalized_team_domain("team.cloudflareaccess.com"),
+            "https://team.cloudflareaccess.com",
+        )
+        for value in (
+            "http://team.cloudflareaccess.com",
+            "https://team.cloudflareaccess.com/path",
+            "https://user@team.cloudflareaccess.com",
+            "https://bad..cloudflareaccess.com",
+            "https://example.com",
+        ):
+            self.assertEqual(user_context._normalized_team_domain(value), "")
+
+    def test_access_application_claims_require_type_subject_and_times(self):
+        valid = {
+            "type": "app",
+            "sub": "access-user-123",
+            "iat": 1_000,
+            "nbf": 1_000,
+            "exp": 1_100,
+        }
+        user_context._validate_access_application_claims(valid)
+        for invalid in (
+            {**valid, "type": "org"},
+            {**valid, "sub": ""},
+            {**valid, "exp": 999},
+            {**valid, "nbf": 1_101},
+        ):
+            with self.assertRaises(user_context.AccessAuthenticationError):
+                user_context._validate_access_application_claims(invalid)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -2,7 +2,8 @@
 import copy
 import os
 import sys
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+from html import escape
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,6 +12,150 @@ DEMO_FIELD_ID = "demo-strawberry-field"
 DEMO_FIELD_NAME = "イチゴ実証圃場"
 DEMO_GREENHOUSE_SPACE_ID = "space-demo-greenhouse-1"
 DEMO_PRIMARY_RIDGE_ID = "placement-demo-ridge-1"
+
+DEMO_SETUP_REASONS = {
+    "unconfigured": "Connection settings are not configured yet.",
+    "button": "Setup mode was requested with the BOOT button.",
+    "connection_reset": "Connection settings were cleared with the BOOT button.",
+    "wifi_failure": "Wi-Fi connection failed before reaching the MQTT broker.",
+    "mqtt_failure": "MQTT broker connection failed after Wi-Fi connected.",
+}
+
+
+def _demo_today():
+    configured = os.environ.get("HUB_DEMO_TODAY", "").strip()
+    if not configured:
+        return date.today()
+    try:
+        return date.fromisoformat(configured)
+    except ValueError as exc:
+        raise RuntimeError("HUB_DEMO_TODAY must use YYYY-MM-DD") from exc
+
+
+def _docs_demo_device_setup_page(reason: str, *, populated: bool = False):
+    """Render the setup portal from app_initial_setting.cpp with safe demo values."""
+    reason = reason if reason in DEMO_SETUP_REASONS else "unconfigured"
+    ssid = "INAS-Demo-2G" if populated else ""
+    broker = "192.0.2.10" if populated else ""
+    username = "demo-device" if populated else ""
+    return f"""<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>INA Water Controller Setup</title>
+    <style>
+      body{{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2933}}
+      main{{max-width:520px;margin:0 auto;padding:28px 18px}}
+      h1{{font-size:24px;margin:0 0 8px}}p{{margin:0 0 20px;color:#52606d;line-height:1.5}}
+      form{{background:#fff;border:1px solid #d9e2ec;border-radius:8px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.06)}}
+      label{{display:block;font-weight:600;margin:14px 0 6px}}
+      input{{box-sizing:border-box;width:100%;font:inherit;padding:10px 12px;border:1px solid #bcccdc;border-radius:6px;background:#fff}}
+      input:focus{{outline:2px solid #2f80ed33;border-color:#2f80ed}}
+      .row{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}.hint{{font-size:13px;color:#627d98;margin-top:6px}}
+      .reason{{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px 14px;margin:14px 0 16px;color:#7c2d12}}
+      .reason strong{{display:block;margin-bottom:4px}}.reason code{{font-size:12px;color:#9a3412}}
+      button{{width:100%;margin-top:20px;padding:12px 14px;border:0;border-radius:6px;background:#1f6feb;color:#fff;font-weight:700;font:inherit}}
+      @media(max-width:520px){{.row{{grid-template-columns:1fr}}}}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>INA Water Controller Setup</h1>
+      <p>Wi-Fi and MQTT settings are saved on the device. It will restart after saving.</p>
+      <section class="reason">
+        <strong>AP mode reason</strong>
+        {escape(DEMO_SETUP_REASONS[reason])}<br>
+        <code>{escape(reason)}</code>
+      </section>
+      <form method="post" action="/save">
+        <label for="ssid">Wi-Fi SSID</label>
+        <input id="ssid" name="ssid" required maxlength="255" value="{escape(ssid)}">
+        <label for="password">Wi-Fi Password</label>
+        <input id="password" name="password" type="password" maxlength="255" autocomplete="new-password">
+        <div class="hint">Leave blank to keep the current Wi-Fi password.</div>
+        <label for="mqtt_broker">MQTT Broker</label>
+        <input id="mqtt_broker" name="mqtt_broker" required maxlength="255" value="{escape(broker)}">
+        <div class="row">
+          <div>
+            <label for="mqtt_port">MQTT Port</label>
+            <input id="mqtt_port" name="mqtt_port" type="number" min="1" max="65535" required value="1883">
+          </div>
+          <div>
+            <label for="mqtt_username">MQTT Username</label>
+            <input id="mqtt_username" name="mqtt_username" maxlength="255" value="{escape(username)}">
+          </div>
+        </div>
+        <label for="mqtt_password">MQTT Password</label>
+        <input id="mqtt_password" name="mqtt_password" type="password" maxlength="255" autocomplete="new-password">
+        <div class="hint">Leave blank to keep the current MQTT password. Leave MQTT username and password both blank when authentication is not used.</div>
+        <button type="submit">Save and Restart</button>
+      </form>
+    </main>
+  </body>
+</html>"""
+
+
+def _docs_demo_index_page():
+    links = (
+        ("デバイス初回設定", "/docs-demo/device-setup?reason=unconfigured", "ESP32 setup AP / 未設定"),
+        ("Wi-Fi 接続失敗からの再設定", "/docs-demo/device-setup?reason=wifi_failure&populated=1", "ESP32 setup AP / 再設定"),
+        ("圃場一覧", "/fields", "登録済み圃場"),
+        ("圃場ダッシュボード", f"/fields/{DEMO_FIELD_ID}", "環境値・作業・設置状況"),
+        ("設置ビュー", f"/fields/{DEMO_FIELD_ID}/layout?space={DEMO_GREENHOUSE_SPACE_ID}", "ハウス内の機器配置"),
+        ("機器一覧", "/mqtt-devices", "登録済み機器"),
+        ("潅水機の概要", "/mqtt-devices/INADS-DEMO-WTR-001", "動作確認"),
+        ("潅水設定", "/mqtt-devices/INADS-DEMO-WTR-001?tab=settings", "Runtime Config"),
+        ("機器ソフトウェア更新", "/mqtt-devices/INADS-DEMO-WTR-001?tab=firmware", "F/W・OTA"),
+        ("保守・管理", "/mqtt-devices/INADS-DEMO-WTR-003?tab=maintenance", "承認待ち・接続履歴"),
+        ("圃場の作業", f"/fields/{DEMO_FIELD_ID}/calendar?view=work", "AI提案後の作業ボード"),
+        ("作物別の栽培計画", f"/fields/{DEMO_FIELD_ID}/calendar?view=crop", "栽培基準・施肥・AI計画"),
+        ("AI変更案の比較", f"/fields/{DEMO_FIELD_ID}/calendar?view=crop&review=ai", "現在案とAI案"),
+    )
+    cards = "".join(
+        f'<a class="card" href="{escape(href)}"><strong>{escape(title)}</strong><span>{escape(description)}</span><code>{escape(href)}</code></a>'
+        for title, href, description in links
+    )
+    return f"""<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>INAS documentation demo states</title>
+    <style>
+      *{{box-sizing:border-box}}body{{margin:0;color:#203129;background:#eef3ef;font-family:system-ui,-apple-system,sans-serif}}
+      main{{width:min(1080px,calc(100% - 32px));margin:32px auto 64px}}
+      h1{{margin-bottom:6px;font-size:28px}}p{{margin:0 0 24px;color:#5a6d63}}
+      .notice{{margin:0 0 22px;padding:13px 15px;border:1px solid #9fc6ae;border-radius:8px;color:#20553b;background:#e5f5eb}}
+      .grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}
+      .card{{display:grid;gap:7px;min-height:132px;padding:16px;border:1px solid #c8d4cc;border-radius:9px;color:inherit;background:#fff;text-decoration:none;box-shadow:0 3px 12px #1f44321a}}
+      .card:hover{{border-color:#438263;transform:translateY(-1px)}}.card span{{color:#607168;font-size:14px}}.card code{{margin-top:auto;overflow-wrap:anywhere;color:#2c6a4d;font-size:11px}}
+      @media(max-width:800px){{.grid{{grid-template-columns:1fr}}}}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>ドキュメント撮影用デモ状態</h1>
+      <p>画面を切り替えて、各ガイドに対応する状態を確認できます。</p>
+      <div class="notice"><strong>運用データとは分離されています。</strong> この一覧は <code>run_admin_demo_server.py</code> で起動した一時デモだけに存在します。</div>
+      <div class="grid">{cards}</div>
+    </main>
+  </body>
+</html>"""
+
+
+def _register_docs_demo_routes(app):
+    from flask import request
+
+    def docs_demo_index():
+        return _docs_demo_index_page()
+
+    def docs_demo_device_setup():
+        populated = request.args.get("populated") == "1"
+        return _docs_demo_device_setup_page(request.args.get("reason", ""), populated=populated)
+
+    app.add_url_rule("/docs-demo", endpoint="docs_demo_index", view_func=docs_demo_index, methods=["GET"])
+    app.add_url_rule("/docs-demo/device-setup", endpoint="docs_demo_device_setup", view_func=docs_demo_device_setup, methods=["GET"])
 
 
 def _demo_layout_payload(current: dict):
@@ -463,13 +608,103 @@ def _ensure_demo_cultivation(layout: dict, plant_repository, ai_service, *, toda
     return active
 
 
+def _demo_ai_review_payload(calendar: dict, planting: dict, *, today: date):
+    current_actions = [
+        copy.deepcopy(action)
+        for action in calendar.get("actions", [])
+        if action.get("status") in {"planned", "in_progress"} and str(action.get("window_end") or "") >= today.isoformat()
+    ]
+    planned = next((action for action in current_actions if action.get("status") == "planned"), None)
+    if planned is not None:
+        planned["reason"] = "直近の生育記録と土壌水分が安定しているため、果実の肥大と着色を同じ巡回で確認する提案です。"
+        planned["instructions"] = "代表株を同じ位置から撮影し、果実径、着色、葉色、土壌水分を記録します。異常がなければ現在の潅水条件を維持します。"
+        planned["tags"] = list(dict.fromkeys([*(planned.get("tags") or []), "AI見直し", "定点記録"]))
+        planned["source"] = "ai_replanned"
+
+    current_actions.append(
+        {
+            "action_type": "observation",
+            "title": "果実肥大と着色を定点確認",
+            "priority": "recommended",
+            "window_start": (today + timedelta(days=7)).isoformat(),
+            "window_end": (today + timedelta(days=12)).isoformat(),
+            "timing_label": "次回の圃場巡回時",
+            "reason": "収穫期へ向けて潅水条件を変える前に、果実と株姿の変化を同じ条件で比較するためです。",
+            "instructions": "イチゴ畝Aの代表株3株を撮影し、果実径、着色、葉色を記録します。土壌水分と前回写真も並べて確認します。",
+            "tags": ["AI提案", "果実肥大", "定点観察"],
+            "estimated_minutes": 20,
+            "source": "ai_replanned",
+            "work_plan": {
+                "targets": ["イチゴ畝Aの代表株3株"],
+                "checkpoints": ["同じ撮影位置を使う", "果実径と着色を記録", "土壌水分を併記"],
+                "start_conditions": ["圃場へ安全に立ち入れる"],
+                "skip_conditions": ["強風・豪雨で定点撮影ができない"],
+                "completion_criteria": ["写真と観察値を作業記録へ保存"],
+            },
+        }
+    )
+    return {
+        "actions": current_actions,
+        "growth_targets": copy.deepcopy(planting.get("growth_targets") or {}),
+        "care_profile": copy.deepcopy(calendar.get("care_profile") or {}),
+        "task_rules": copy.deepcopy(calendar.get("task_rules") or []),
+        "generation": {
+            "source": "demo_fixture",
+            "model": "documentation-review",
+            "generated_at": today.isoformat(),
+            "context_snapshot": {"scenario": "documentation"},
+        },
+    }
+
+
+def _ensure_demo_ai_review(plant_repository, planting: dict, *, today: date):
+    if planting is None:
+        return None
+    bundle = plant_repository.field_bundle(DEMO_FIELD_ID)
+    active = next(
+        (
+            task
+            for task in bundle.get("generation_tasks", [])
+            if task.get("planting_id") == planting["id"] and task.get("status") in {"queued", "running", "awaiting_review"}
+        ),
+        None,
+    )
+    if active is not None:
+        return active
+
+    calendar = plant_repository.get_calendar(planting["id"])
+    if not calendar:
+        return None
+    queued = plant_repository.enqueue_calendar_generation(
+        planting["id"],
+        kind="regenerate",
+        start_date=today.isoformat(),
+        planning_notes="収穫期へ向けた定点観察を追加し、現在の作業と比較できる変更案を作るデモです。",
+        mode="review",
+    )
+    claimed = plant_repository.claim_next_calendar_generation()
+    if claimed is None or claimed.get("id") != queued["id"]:
+        raise RuntimeError("documentation demo could not claim its AI review task")
+    result = plant_repository.complete_calendar_generation(
+        claimed["id"],
+        _demo_ai_review_payload(calendar, planting, today=today),
+    )
+    return result["task"]
+
+
 DEMO_LAYOUT_DEVICES = (
     {
         "id": "INADS-DEMO-WTR-001",
         "name": "デモ潅水機1",
         "kind": "WTR",
         "location": "イチゴ実証圃場",
-        "status": {"last_soil_moisture": 42, "watering_started": False},
+        "status": {
+            "last_soil_moisture": 42,
+            "watering_started": False,
+            "next_sleep_sec": 7200,
+            "config_received": True,
+            "time_synced": True,
+        },
         "switches": (
             ("irr1", "潅水1系", "IRR1", 1, "デモ点滴ラインA"),
             ("irr2", "潅水2系", "IRR2", 2, "デモ点滴ラインB"),
@@ -491,7 +726,7 @@ DEMO_LAYOUT_DEVICES = (
         "name": "鉢エリア潅水機",
         "kind": "WTR",
         "location": "未設置",
-        "status": {"last_soil_moisture": 37, "watering_started": False},
+        "status": {"last_soil_moisture": 37, "watering_started": False, "next_sleep_sec": 7200},
         "switches": (
             ("irr1", "潅水1系", "IRR1", 1, "ブルーベリー鉢列"),
             ("irr2", "潅水2系", "IRR2", 2, "果樹鉢列"),
@@ -615,33 +850,124 @@ DEMO_LAYOUT_DEVICES = (
 
 def _prepare_env():
     load_dotenv()
-    # The confirmation demo must remain reachable even when .env is configured
-    # for the Cloudflare Access protected production server.
-    os.environ["HUB_AUTH_MODE"] = "local"
-    os.environ["WORK_DIR"] = os.environ.get("HUB_DEMO_WORK_DIR", "/tmp/ina-device-hub-demo/work")
-    os.environ["LOCAL_STORAGE_BASE_DIR"] = os.environ.get("HUB_DEMO_LOCAL_STORAGE_BASE_DIR", "/tmp/ina-device-hub-demo/storage")
-    # Never inherit the production Turso replica in the UI demo. A non-URL
-    # value makes InaDBConnector use the SQLite file under HUB_DEMO_WORK_DIR.
-    os.environ["TURSO_DATABASE_URL"] = os.environ.get("HUB_DEMO_TURSO_DATABASE_URL", "local-demo")
-    os.environ["TURSO_AUTH_TOKEN"] = os.environ.get("HUB_DEMO_TURSO_AUTH_TOKEN", "local-demo")
-    os.environ.setdefault("S3_ENDPOINT_URL", "demo")
-    os.environ.setdefault("S3_BUCKET_NAME", "demo")
-    os.environ.setdefault("S3_BUCKET_REGION", "auto")
-    os.environ.setdefault("S3_ACCESS_KEY", "demo")
-    os.environ.setdefault("S3_SECRET_KEY", "demo")
-    os.environ.setdefault("MQTT_BROKER_URL", "localhost")
-    os.environ.setdefault("MQTT_BROKER_PORT", "1883")
-    os.environ.setdefault("MQTT_BROKER_USERNAME", "")
-    os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
-    os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
-    os.environ.setdefault("FIRMWARE_BASE_URL", "http://demo-hub.local:39151")
+    # Every connector and credential is replaced after loading .env. A value can
+    # enter the demo only through an explicit HUB_DEMO_* override.
+    demo_work_dir = os.environ.get("HUB_DEMO_WORK_DIR", "/tmp/ina-device-hub-demo/work")
+    defaults = {
+        "HUB_AUTH_MODE": "local",
+        "HUB_LOCAL_USER_EMAIL": "demo-operator@ina.local",
+        "HUB_ADMIN_EMAILS": "",
+        "HUB_OPERATIONS_SERVICE_IDS": "",
+        "HUB_BACKUP_DIR": str(Path(demo_work_dir) / "backups"),
+        "HUB_HTTP_HOST": "127.0.0.1",
+        "HUB_HTTP_PORT": "39151",
+        "HUB_HTTP_SERVER": "flask",
+        "HUB_SYNC_PARENT_ALLOW_INSECURE_LOOPBACK": "false",
+        "HUB_SYNC_PARENT_BASE_URL": "",
+        "HUB_SYNC_PARENT_TOKEN_FILE": "",
+        "HUB_SYNC_PARENT_CA_FILE": "",
+        "HUB_SYNC_PARENT_CLIENT_CERT_FILE": "",
+        "HUB_SYNC_PARENT_CLIENT_KEY_FILE": "",
+        "WORK_DIR": demo_work_dir,
+        "LOCAL_STORAGE_BASE_DIR": "/tmp/ina-device-hub-demo/storage",
+        # A non-URL value makes InaDBConnector use SQLite under WORK_DIR.
+        "TURSO_DATABASE_URL": "local-demo",
+        "TURSO_AUTH_TOKEN": "local-demo",
+        "S3_ENDPOINT_URL": "demo",
+        "S3_BUCKET_NAME": "demo",
+        "S3_BUCKET_REGION": "auto",
+        "S3_ACCESS_KEY": "demo",
+        "S3_SECRET_KEY": "demo",
+        "S3_TMP_ENDPOINT_URL": "",
+        "S3_TMP_BUCKET_NAME": "",
+        "S3_TMP_BUCKET_REGION": "auto",
+        "S3_TMP_ACCESS_KEY": "",
+        "S3_TMP_SECRET_KEY": "",
+        "S3_TMP_BASE_URL": "",
+        "MQTT_BROKER_URL": "localhost",
+        "MQTT_BROKER_PORT": "1883",
+        "MQTT_BROKER_USERNAME": "",
+        "MQTT_BROKER_PASSWORD": "",
+        "TIMELAPSE_INTERVAL": "600",
+        "SENSOR_SAVE_IMAGE": "false",
+        "SENSOR_SAVE_AUDIO": "false",
+        "FIRMWARE_BASE_URL": "http://demo-hub.local:39151",
+        "FIRMWARE_HOSTNAME": "demo-hub.local",
+        "DEVICE_CONFIG_DEFAULT_NTP_SERVER": "192.0.2.10",
+        "DEVICE_CONFIG_DEFAULT_TIMEZONE_OFFSET_SEC": "32400",
+        "DEVICE_CONFIG_DEFAULT_MOISTURE_THRESHOLD": "35",
+        "INSTAGRAM_USER_ID": "",
+        "INSTAGRAM_ACCESS_TOKEN": "",
+        "INSTAGRAM_SENSOR_ID": "",
+        "INSTAGRAM_CAMERA_ID": "",
+        "INSTAGRAM_ADMIN_USERNAME": "",
+        "INSTAGRAM_PLANT_POSITION_PROMPT": "",
+        "INSTAGRAM_WEATHER_FORECAST_URL": "https://www.data.jma.go.jp/developer/xml/feed/regular.xml",
+        "INSTAGRAM_WEATHER_AREA_NAME": "長野県",
+        "INSTAGRAM_WEATHER_OFFICE_NAME": "ドキュメント用",
+        "INSTAGRAM_WEATHER_FORECAST_TITLE": "デモ天気予報",
+        "SWITCHBOT_BASE_URL": "https://api.switch-bot.com/v1.1",
+        "SWITCHBOT_OPEN_TOKEN": "",
+        "SWITCHBOT_SECRET_KEY": "",
+        "SWITCHBOT_PLUG_MINI_DEVICE_ID": "",
+        "AI_ENABLED": "false",
+        "AI_IMAGE_ANALYZE_API_KEY": "",
+        "AI_IMAGE_ANALYZE_BASE_URL": "",
+        "AI_IMAGE_ANALYZE_MODEL": "",
+        "AI_TEXT_ANALYZE_API_KEY": "",
+        "AI_TEXT_ANALYZE_BASE_URL": "",
+        "AI_TEXT_ANALYZE_MODEL": "",
+        "AI_PLANT_CALENDAR_WEB_KNOWLEDGE_ENABLED": "false",
+        "DISCORD_ENABLED": "false",
+        "DISCORD_WEBHOOK_URL": "",
+        "DISCORD_NOTIFY_MQTT_ACTIVITY": "false",
+        "DISCORD_NOTIFY_OPERATIONS_SECURITY_ALERTS": "false",
+        "DISCORD_NOTIFY_NEW_DEVICE": "false",
+        "DISCORD_NOTIFY_DEVICE_OFFLINE": "false",
+        "DISCORD_NOTIFY_WATERING_MISSING": "false",
+        "DISCORD_NOTIFY_SOIL_CALIBRATION_SUGGESTED": "false",
+        "DISCORD_NOTIFY_PLANT_TASKS": "false",
+        "DISCORD_PLANT_TASK_NOTIFY_NEW": "false",
+        "DISCORD_PLANT_TASK_NOTIFY_ON_START_DAY": "false",
+        "DISCORD_PLANT_TASK_NOTIFY_DURING_WINDOW": "false",
+        "WEATHER_RECORD_ENABLED": "false",
+        "WEATHER_PROVIDER": "open_meteo",
+        "WEATHER_LATITUDE": "36.0",
+        "WEATHER_LONGITUDE": "138.0",
+        "WEATHER_TIMEZONE": "Asia/Tokyo",
+        "WEATHER_OPEN_METEO_ARCHIVE_URL": "https://archive-api.open-meteo.com/v1/archive",
+        "WEATHER_FORECAST_URL": "https://www.data.jma.go.jp/developer/xml/feed/regular.xml",
+        "WEATHER_AREA_NAME": "長野県",
+        "WEATHER_OFFICE_NAME": "ドキュメント用",
+        "WEATHER_FORECAST_TITLE": "デモ天気予報",
+        "HEALTH_MONITOR_ENABLED": "false",
+        "CLOUDFLARE_ACCOUNT_ID": "",
+        "CLOUDFLARE_ACCESS_API_TOKEN": "",
+        "CLOUDFLARE_ACCESS_ALLOWED_EMAILS": "",
+        "CLOUDFLARE_ACCESS_ALLOWED_EMAIL_DOMAINS": "",
+        "CLOUDFLARE_ACCESS_APP_ID": "",
+        "CLOUDFLARE_ACCESS_APP_NAME": "",
+        "CLOUDFLARE_ACCESS_GROUP_ID": "",
+        "CLOUDFLARE_ACCESS_GROUP_NAME": "",
+        "CLOUDFLARE_ACCESS_POLICY_ID": "",
+        "CLOUDFLARE_ACCESS_POLICY_NAME": "",
+        "CLOUDFLARE_ACCESS_TEAM_DOMAIN": "",
+        "CLOUDFLARE_ACCESS_POLICY_AUD": "",
+        "CLOUDFLARE_TUNNEL_ID": "",
+        "CLOUDFLARE_TUNNEL_NAME": "",
+        "CLOUDFLARE_TUNNEL_HOSTNAME": "",
+        "CLOUDFLARE_TUNNEL_ORIGIN_URL": "",
+        "CLOUDFLARE_TUNNEL_DNS_RECORD_ID": "",
+        "CLOUDFLARE_TUNNEL_TOKEN_FILE": "",
+        "CLOUDFLARE_ZONE_ID": "",
+        "CLOUDFLARE_ZONE_NAME": "",
+    }
+    for name, default in defaults.items():
+        os.environ[name] = os.environ.get(f"HUB_DEMO_{name}", default)
     os.environ["CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME"] = os.environ.get(
         "HUB_DEMO_PUBLIC_HOSTNAME",
         "hub-demo.inas-technologies.com",
     )
-    os.environ["AI_ENABLED"] = "false"
-    os.environ["AI_IMAGE_ANALYZE_API_KEY"] = os.environ.get("HUB_DEMO_AI_IMAGE_ANALYZE_API_KEY", "")
-    os.environ["AI_TEXT_ANALYZE_API_KEY"] = os.environ.get("HUB_DEMO_AI_TEXT_ANALYZE_API_KEY", "")
 
 
 def _seed_demo_device_state(config_service, device_id: str, desired_state: str):
@@ -663,6 +989,29 @@ def _seed_demo_device_state(config_service, device_id: str, desired_state: str):
     repository.save()
 
 
+def _seed_demo_connection_history(event_writer, *, now=None):
+    now = now or datetime.now(UTC)
+    device_id = "INADS-DEMO-WTR-003"
+    event_writer(
+        "mqtt_client_connected",
+        "broker",
+        device_id,
+        topic="$SYS/broker/log/N",
+        action="connect",
+        occurred_at=(now - timedelta(minutes=12)).isoformat(),
+        payload={"client_id": device_id, "remote_address": "192.0.2.24:51411"},
+    )
+    event_writer(
+        "mqtt_client_disconnected",
+        "broker",
+        device_id,
+        topic="$SYS/broker/log/N",
+        action="disconnect",
+        occurred_at=(now - timedelta(minutes=10)).isoformat(),
+        payload={"client_id": device_id, "reason": "disconnect"},
+    )
+
+
 def main():
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root / "src"))
@@ -670,6 +1019,7 @@ def main():
 
     from ina_device_hub.ai_content_service import ai_content_service
     from ina_device_hub.device_config_service import device_config_service
+    from ina_device_hub.device_event_log import append_device_event
     from ina_device_hub.field_layout_repository import field_layout_repository
     from ina_device_hub.field_repository import field_repository
     from ina_device_hub.plant_calendar_generation_task import plant_calendar_generation_task
@@ -696,6 +1046,10 @@ def main():
     )
 
     config_service = device_config_service()
+    # Legacy human-readable demo IDs are intentionally not sync identities.
+    # The documentation demo is local-only, so it must not populate or consult
+    # the hierarchical runtime-config cache.
+    config_service.runtime_config_cache = None
     for index, device in enumerate(DEMO_LAYOUT_DEVICES, start=1):
         device_id = device["id"]
         config_service.get_record(device_id)
@@ -743,7 +1097,8 @@ def main():
     layout = _ensure_demo_layout(layout_repository)
     plant_repository = plant_management_repository()
     content_service = ai_content_service()
-    _ensure_demo_cultivation(layout, plant_repository, content_service, today=date.today())
+    demo_today = _demo_today()
+    demo_planting = _ensure_demo_cultivation(layout, plant_repository, content_service, today=demo_today)
     for planting in plant_repository.field_bundle(DEMO_FIELD_ID)["plantings"]:
         calendar = plant_repository.get_calendar(planting["id"])
         if planting.get("status") != "active" or not calendar or calendar.get("task_rules"):
@@ -762,12 +1117,17 @@ def main():
             care_profile=generated["care_profile"],
             task_rules=generated["task_rules"],
         )
+    if os.environ.get("HUB_DEMO_SCENARIO", "").strip().lower() == "documentation":
+        _ensure_demo_ai_review(plant_repository, demo_planting, today=demo_today)
+        _seed_demo_connection_history(append_device_event)
 
     host = os.environ.get("HUB_DEMO_HOST", "127.0.0.1")
     port = int(os.environ.get("HUB_DEMO_PORT", "39251"))
+    _register_docs_demo_routes(app)
     initialize_web_server()
     plant_calendar_generation_task().start()
     plant_task_notification_task().start()
+    print(f"Documentation demo states: http://{host}:{port}/docs-demo")
     print(f"Field selector: http://{host}:{port}/")
     print(f"Admin UI demo: http://{host}:{port}/demo/mqtt-devices")
     print(f"Cultivation calendar: http://{host}:{port}/fields/{DEMO_FIELD_ID}/calendar")

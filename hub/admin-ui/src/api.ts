@@ -1,4 +1,4 @@
-import type { FieldLayout, LayoutDevice, PlantActionCompletionPayload, PlantActionMutationPayload, PlantActionReviewPayload, PlantActionSkipPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
+import type { FieldLayout, LayoutCollaborationSnapshot, LayoutDevice, LayoutPresenceState, PlantActionCompletionPayload, PlantActionMutationPayload, PlantActionReviewPayload, PlantActionSkipPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
 
 export interface SearchPage<Item> {
   items: Item[];
@@ -47,6 +47,28 @@ export function saveLayout(fieldId: string, layout: FieldLayout): Promise<FieldL
   return requestJson(`/local/api/fields/${encodeURIComponent(fieldId)}/layout`, {
     method: "PUT",
     body: JSON.stringify(layout),
+  });
+}
+
+export function layoutCollaborationUrl(fieldId: string): string {
+  return `/local/api/fields/${encodeURIComponent(fieldId)}/layout/collaboration`;
+}
+
+export function syncLayoutCollaboration(
+  fieldId: string,
+  payload: {
+    client_id: string;
+    active_space_id?: string;
+    selected_placement_id?: string;
+    state?: LayoutPresenceState;
+    leave?: boolean;
+  },
+  { signal }: { signal?: AbortSignal } = {},
+): Promise<LayoutCollaborationSnapshot> {
+  return requestJson(layoutCollaborationUrl(fieldId), {
+    method: "POST",
+    body: JSON.stringify(payload),
+    signal,
   });
 }
 

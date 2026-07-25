@@ -58,7 +58,7 @@ because the load voltage is different.
 ## Analog Soil Sensor Wiring
 
 - Use `A0` for `SOI`.
-- Use `A5/D5` for WTR analog soil moisture.
+- Use `A2/D2` for WTR analog soil moisture.
 - Keep the analog signal wire short and away from motor wiring.
 - Verify dry and wet raw ADC values before sealing the enclosure.
 
@@ -72,7 +72,7 @@ because the load voltage is different.
 | RS485 A/B | Not shorted, twisted pair used |
 | Pump / valve | Off at boot, on only during command |
 | WTR profile output | Off at boot, on only during command |
-| Sensor 12V switch | Off during sleep, on during RS485 read for WTR/WRS |
+| Sensor 12V switch | Off during sleep, on during RS485 read for WRS |
 | BOOT button | Pulls GPIO0 low only when pressed |
 
 Record any deviation and do not close the enclosure until it is resolved.

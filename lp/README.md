@@ -106,7 +106,7 @@ GA4や広告ピクセルを有効にする場合は、公開地域と利用す�
 計測イベント例：
 
 - `cta_click`
-- `video_open`, `video_play`, `video_complete`
+- `video_open`, `video_language_select`, `video_play`, `video_complete`
 - `audience_select`
 - `faq_open`
 - `lead_validation_error`, `lead_endpoint_missing`
@@ -134,9 +134,15 @@ GA4や広告ピクセルを有効にする場合は、公開地域と利用す�
 - `worker.js`: 静的配信、セキュリティヘッダー、フォーム受付、Discord招待発行、登録者メールAPI
 - `wrangler.jsonc`: `/app/*` ルート、D1、レート制限、Discord Service Binding、Email Service、静的アセット設定
 - `migrations/`: D1の回答保存スキーマ
-- `assets/`: 既存チラシで使用した写真、実画面、デモ動画。画面表示には約181KBのWebPを使い、PNGはフォールバック、JPEGはOGP用です
+- `assets/`: 既存チラシで使用した写真、実画面、日英のデモ動画・ポスター・WebVTT字幕。画面表示には約181KBのWebPを使い、PNGはフォールバック、JPEGはOGP用です
 - `scripts/build.mjs`: 公開ファイルを `dist/app/` に生成
 - `scripts/wrangler-env.mjs`: `.env` のDiscord Webhookを検証し、SecretとしてWranglerへ渡す
 - `scripts/worker-test.mjs`: APIの入力検証・保存・bot判定・招待メール・Webhook障害通知テスト
 - `scripts/smoke.mjs`: PC・スマホのブラウザ回帰と画面キャプチャ
 - `artifacts/`: smokeで生成する確認用キャプチャ
+
+デモ動画はHubの現在仕様を使って再収録します。日英共通のシーン台本、
+ComfyUIでのBGM生成、ローカルTTS、音声ミックスの手順は
+`../hub/README.md` のデモ動画節を参照してください。LPでは日本語版を初期表示し、
+動画ダイアログ内で英語版へ切り替えられます。英語版は英語テロップだけでなく、
+Hub の実際の `?lang=en` 画面を収録しています。

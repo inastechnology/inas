@@ -285,6 +285,7 @@ dependencies = [
     { name = "dotenv" },
     { name = "ffmpeg-python" },
     { name = "flask" },
+    { name = "ina-edge-runtime" },
     { name = "libsql" },
     { name = "paho-mqtt" },
     { name = "plotly" },
@@ -304,6 +305,7 @@ requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "ffmpeg-python", specifier = ">=0.2.0" },
     { name = "flask", specifier = ">=3.1.0" },
+    { name = "ina-edge-runtime", editable = "shared/edge-runtime" },
     { name = "libsql", specifier = ">=0.1.11" },
     { name = "paho-mqtt", specifier = ">=2.1.0" },
     { name = "plotly", specifier = ">=6.0.0" },
@@ -313,6 +315,19 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.9.6" }]
+
+[[package]]
+name = "ina-edge-runtime"
+version = "0.1.0"
+source = { editable = "shared/edge-runtime" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "jsonschema", specifier = ">=4.10.0" },
+    { name = "ruff", specifier = ">=0.9.6" },
+]
 
 [[package]]
 name = "itsdangerous"

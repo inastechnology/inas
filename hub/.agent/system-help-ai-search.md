@@ -4,7 +4,9 @@
 
 ## Purpose
 
-Hub の栽培相談とは分離したシステムヘルプ検索層を Cloudflare AI Search で構築する。利用者向けに整理した日本語文書だけを登録し、Cloudflare 上の実インデックスへ代表質問を送り、根拠文書と回答可能性を確認する。最終的に、認証済み Cloudflare Worker から検索結果と出典を安全な JSON として取得できる状態にする。
+Hub の栽培相談とは分離したシステムヘルプ検索層を評価する。共有Cloud Hubを
+廃止したため、検索を製品化する場合はLocal Hubから呼ぶ任意connectorまたは
+独立した認証済みserviceとして再設計し、顧客業務DBとは分離する。
 
 ## Progress
 
@@ -16,13 +18,17 @@ Hub の栽培相談とは分離したシステムヘルプ検索層を Cloudflar
 - [x] ローカルのテスト22件と型検査を完了した。
 - [x] Cloudflare を再認証し、AI Search インスタンスとR2バケットを作成して6文書を登録した。
 - [x] 代表質問9件を実行し、検索設定を改善して9/9成功を確認した。
-- [x] Workerの既存デプロイがないことを確認した。Access/Turso/custom domainが未設定のため、無効なWorkerは作らず、認証済み検索APIを次回cloud appデプロイへ含める状態にした。
+- [x] Workerの既存デプロイがないことを確認した。
+- [x] (2026-07-23) 管理付きLocal Hub方針への変更に伴い、未deployのWorker API、
+  binding、同期scriptをrepoから削除した。既存AI Search/R2 resourceはこの変更で
+  操作せず、将来の明示的な再設計まで製品経路から使用しない。
 
 ## Discoveries
 
 - 現在の栽培チャットは圃場、作付け、カレンダー、提案、肥料履歴、過去質問を直接 LLM に渡しており、文書検索は持たない。
 - 現在の質問ポリシーは栽培・農作業・圃場機器以外を拒否するため、システムヘルプは別 API / UI として扱う必要がある。
-- `hub/cloudflare` は Hono + Cloudflare Access + Turso の構成で、`reader` 以上の認証済み利用者向け API を追加できる。
+- 旧`hub/cloudflare` Hono/Turso試作は未deployであり、管理付きLocal Hub方針では
+  不要になった。
 - Wrangler の保存済み OAuth セッションは期限切れで、実リソース操作前に再ログインが必要である。
 - Cloudflare AI Search の instance binding は `ai_search` で設定し、`search()` は文書チャンク、スコア、source key を返す。
 
@@ -35,8 +41,12 @@ Hub の栽培相談とは分離したシステムヘルプ検索層を Cloudflar
 
 ## Validation
 
-ローカルでは `hub/cloudflare` で `npm test` と `npm run typecheck` を実行する。文書同期スクリプトは dry-run とマニフェスト検証を行う。実環境では索引完了後、少なくともセットアップ、デバイス、圃場、栽培カレンダー、権限、障害対応、対象外質問を含む評価セットを実行し、期待する文書が上位に現れるかを確認する。失敗例は文書見出し・語彙・検索しきい値・取得件数を調整して再評価する。
+この実験経路は現在製品に接続していない。再開時は新しい認証境界、Local Hub側の
+connector、文書同期、評価set、data保持方針を別ExecPlanで定義してから検証する。
 
 ## Outcomes
 
-CloudflareにR2バケット `inas-system-help-docs` とAI Searchインスタンス `inas-system-help` を作成し、6件の日本語システムヘルプを登録した。初回のベクトル検索は7/9、ハイブリッド検索＋日本語再ランキングは2/9だった。再ランキングが正しい日本語候補を過剰に除外していたため、最終設定をハイブリッド検索、再ランキングなし、しきい値0.2、最大5件とし、代表質問9/9で期待文書と必須語句を確認した。公開endpointは使用していない。`ina-device-hub-cloud` WorkerはCloudflare上に未作成で、Access/Turso/custom domainもこのworker設定では未確定なので、検索APIコードとbindingは次回のcloud app初回デプロイへ安全に含める。
+CloudflareにR2バケット `inas-system-help-docs` とAI Searchインスタンス
+`inas-system-help` を作成し、代表質問9/9まで検索品質を確認したが、公開endpointと
+Workerは作成していない。共有Cloud Hub廃止後は未使用resourceとして扱い、削除や
+再利用は別の明示的な運用判断に委ねる。

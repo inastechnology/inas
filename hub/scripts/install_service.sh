@@ -108,6 +108,19 @@ else
     echo "Required deployment command is missing: rsync" >&2
     exit 5
   fi
+  EDGE_RUNTIME_SOURCE="$REPO_ROOT/shared/edge-runtime"
+  EDGE_RUNTIME_EXPECTED_SOURCE="$(readlink -f "$REPO_ROOT/../shared/edge-runtime" || true)"
+  EDGE_RUNTIME_RESOLVED_SOURCE="$(readlink -f "$EDGE_RUNTIME_SOURCE" || true)"
+  EDGE_RUNTIME_TARGET="$TARGET_DIR/shared/edge-runtime"
+  if [[ -L "$EDGE_RUNTIME_SOURCE" ]] && { [[ -z "$EDGE_RUNTIME_EXPECTED_SOURCE" ]] || [[ "$EDGE_RUNTIME_RESOLVED_SOURCE" != "$EDGE_RUNTIME_EXPECTED_SOURCE" ]]; }; then
+    echo "Shared Edge Runtime link does not resolve inside the INAS repository: $EDGE_RUNTIME_SOURCE" >&2
+    exit 5
+  fi
+  if [[ -z "$EDGE_RUNTIME_RESOLVED_SOURCE" ]] || [[ ! -f "$EDGE_RUNTIME_RESOLVED_SOURCE/pyproject.toml" ]]; then
+    echo "Shared Edge Runtime source is missing: $EDGE_RUNTIME_SOURCE" >&2
+    echo "Deploy from a complete INAS repository checkout or a materialized Hub bundle." >&2
+    exit 5
+  fi
   echo "Copying repository files to target directory"
   rsync -a --delete \
     --exclude='.git' \
@@ -120,8 +133,20 @@ else
     --exclude='logs' \
     --exclude='node_modules' \
     --exclude='admin-ui/node_modules' \
-    --exclude='cloudflare/node_modules' \
+    --exclude='shared/edge-runtime' \
     "$REPO_ROOT/" "$TARGET_DIR/"
+  if [[ -L "$EDGE_RUNTIME_TARGET" ]] || { [[ -e "$EDGE_RUNTIME_TARGET" ]] && [[ ! -d "$EDGE_RUNTIME_TARGET" ]]; }; then
+    echo "Refusing to replace unexpected shared package target: $EDGE_RUNTIME_TARGET" >&2
+    exit 5
+  fi
+  echo "Materializing shared Edge Runtime package"
+  mkdir -p "$EDGE_RUNTIME_TARGET"
+  rsync -aL --delete \
+    --exclude='.venv' \
+    --exclude='.ruff_cache' \
+    --exclude='__pycache__' \
+    --exclude='*.pyc' \
+    "$EDGE_RUNTIME_RESOLVED_SOURCE/" "$EDGE_RUNTIME_TARGET/"
 fi
 
 echo "Setting ownership to ${RUN_AS_USER}:${RUN_AS_USER}"

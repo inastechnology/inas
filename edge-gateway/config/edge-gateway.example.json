@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "data_directory": "/var/lib/inas",
+  "identity_file": "/var/lib/inas/identity.json",
+  "hardware_profile_id": "egw-cm4-standard-r1",
+  "software_version": "0.1.0",
+  "capabilities": [
+    "mqtt",
+    "ntp",
+    "wifi_ap"
+  ],
+  "mqtt": {
+    "host": "192.168.50.1",
+    "port": 1883,
+    "username_file": "/etc/inas/credentials/mqtt-username",
+    "password_file": "/etc/inas/credentials/mqtt-password",
+    "keepalive_seconds": 60
+  },
+  "parent": null,
+  "health": {
+    "bind_host": "192.168.50.1",
+    "port": 39152
+  }
+}

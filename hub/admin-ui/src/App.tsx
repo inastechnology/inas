@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ArrowLeft,
   ArrowUp,
@@ -20,6 +20,8 @@ import {
   Sparkles,
   Trash2,
   Undo2,
+  Users,
+  WifiOff,
   X,
 } from "lucide-react";
 
@@ -52,15 +54,19 @@ import { DisabledActionReason, disabledActionTitle } from "./DisabledActionReaso
 import { errorMessage, formatDate, todayString } from "./formatters";
 import { InstallationCanvas } from "./InstallationCanvas";
 import { HelpDisclosure } from "./HelpDisclosure";
-import { mergeLayouts } from "./layoutMerge";
+import { collaboratorColor, collaboratorLabel, presenceStateLabel } from "./layoutCollaboration";
+import { reconcileRemoteLayout } from "./layoutMerge";
 import { ActivityIndicator, LoadingState } from "./LoadingState";
 import { PlantCalendarDrawer } from "./plant-calendar/PlantCalendarDrawer";
 import { PRESET_BY_ID, PRESETS, SPACE_TYPE_LABELS } from "./presets";
 import { matchesSearch } from "./search";
 import { SearchableSelect } from "./SearchableSelect";
+import { useLayoutCollaboration, type CollaborationConnectionState } from "./useLayoutCollaboration";
 import type {
   FieldLayout,
+  LayoutCollaborator,
   LayoutDevice,
+  LayoutPresenceState,
   LayoutSpace,
   Placement,
   PlacementPreset,
@@ -101,6 +107,11 @@ interface LayoutConflictState {
   conflictPaths: string[];
 }
 
+interface CollaborationNotice {
+  id: number;
+  message: string;
+}
+
 export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
   const [layout, setLayout] = useState<FieldLayout | null>(null);
   const [baseLayout, setBaseLayout] = useState<FieldLayout | null>(null);
@@ -120,6 +131,11 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
   const [calendarPlantingId, setCalendarPlantingId] = useState("");
   const [plantBusy, setPlantBusy] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
+  const [collaborationNotice, setCollaborationNotice] = useState<CollaborationNotice | null>(null);
+  const collaborationEditorRef = useRef({ layout, baseLayout, dirty, saving, layoutConflict, activeSpaceId });
+  const remoteLayoutLoadRef = useRef(0);
+
+  collaborationEditorRef.current = { layout, baseLayout, dirty, saving, layoutConflict, activeSpaceId };
 
   const reload = async () => {
     setLoading(true);
@@ -220,6 +236,78 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     () => PRESETS.filter((preset) => preset.paletteVisible !== false && matchesSearch(paletteQuery, [preset.label, preset.group, ...preset.keywords])),
     [paletteQuery],
   );
+  const presenceState: LayoutPresenceState = saving ? "saving" : layoutConflict ? "conflict" : dirty ? "editing" : "viewing";
+  const {
+    snapshot: collaborationSnapshot,
+    connectionState: collaborationConnectionState,
+  } = useLayoutCollaboration({
+    fieldId,
+    activeSpaceId: activeSpace?.id ?? "",
+    selectedPlacementId: selectedId ?? "",
+    state: presenceState,
+    enabled: Boolean(layout && activeSpace),
+  });
+  const collaborators = collaborationSnapshot?.participants ?? [];
+  const remoteCollaborators = collaborationConnectionState === "online"
+    ? collaborators.filter((participant) => !participant.is_current)
+    : [];
+
+  useEffect(() => {
+    if (!collaborationNotice) return undefined;
+    const timer = window.setTimeout(() => setCollaborationNotice(null), 5_500);
+    return () => window.clearTimeout(timer);
+  }, [collaborationNotice]);
+
+  useEffect(() => {
+    const remoteRevision = collaborationSnapshot?.layout.revision ?? 0;
+    const editor = collaborationEditorRef.current;
+    if (
+      !remoteRevision
+      || !editor.layout
+      || !editor.baseLayout
+      || remoteRevision <= editor.baseLayout.revision
+      || editor.saving
+      || editor.layoutConflict
+      || remoteLayoutLoadRef.current > 0
+    ) return;
+
+    remoteLayoutLoadRef.current = remoteRevision;
+    void loadLayout(fieldId)
+      .then((serverLayout) => {
+        const current = collaborationEditorRef.current;
+        if (!current.layout || !current.baseLayout || current.saving || current.layoutConflict) return;
+        const reconciliation = reconcileRemoteLayout(current.baseLayout, current.layout, serverLayout, current.dirty);
+        if (reconciliation.kind === "unchanged") return;
+        if (reconciliation.kind === "conflict") {
+          setLayoutConflict(reconciliation.conflict);
+          return;
+        }
+
+        setLayout(reconciliation.layout);
+        setBaseLayout(reconciliation.baseLayout);
+        setPast([]);
+        setFuture([]);
+        setDirty(reconciliation.dirty);
+        ensureActiveSpace(reconciliation.layout, current.activeSpaceId, setActiveSpaceId, setSelectedId);
+        const boundDeviceIds = reconciliation.layout.spaces
+          .flatMap((space) => space.placements.map((placement) => placement.binding?.device_id ?? ""))
+          .filter(Boolean);
+        void loadLayoutDevices(fieldId, boundDeviceIds).then(setDevices).catch(() => undefined);
+        const actor = serverLayout.updated_by ? collaboratorLabel(serverLayout.updated_by) : "別の編集者";
+        setCollaborationNotice({
+          id: Date.now(),
+          message: reconciliation.kind === "merge"
+            ? `${actor}さんの更新を、自分の未保存変更と自動統合しました。`
+            : `${actor}さんの更新を反映しました（r${serverLayout.revision}）。`,
+        });
+      })
+      .catch(() => {
+        setCollaborationNotice({ id: Date.now(), message: "共同編集の最新版を取得できませんでした。接続後に自動で再試行します。" });
+      })
+      .finally(() => {
+        remoteLayoutLoadRef.current = 0;
+      });
+  }, [collaborationSnapshot, fieldId]);
 
   const refreshPlants = async (_calendarPlantingId = "") => {
     const nextBundle = await loadPlantBundle(fieldId);
@@ -471,20 +559,56 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
     if (!layout || saving) return;
     setSaving(true);
     setError("");
+    let candidate = structuredClone(layout);
+    let mergeBase = baseLayout ? structuredClone(baseLayout) : null;
+    let mergedConcurrentUpdate = false;
     try {
-      const saved = await saveLayout(fieldId, layout);
-      setLayout(saved);
-      setBaseLayout(structuredClone(saved));
-      setPast([]);
-      setFuture([]);
-      setDirty(false);
-    } catch (caught) {
-      const current = caught instanceof ApiError && caught.status === 409 ? caught.body.current : null;
-      if (baseLayout && current && typeof current === "object") {
-        const merged = mergeLayouts(baseLayout, layout, current as FieldLayout);
-        setLayoutConflict({ server: current as FieldLayout, ...merged });
-      } else {
-        setError(errorMessage(caught));
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const saved = await saveLayout(fieldId, candidate);
+          setLayout(saved);
+          setBaseLayout(structuredClone(saved));
+          setPast([]);
+          setFuture([]);
+          setDirty(false);
+          if (mergedConcurrentUpdate) {
+            setCollaborationNotice({ id: Date.now(), message: `同時更新を自動統合して保存しました（r${saved.revision}）。` });
+          }
+          return;
+        } catch (caught) {
+          const current = caught instanceof ApiError && caught.status === 409 ? caught.body.current : null;
+          if (!mergeBase || !current || typeof current !== "object") {
+            setError(errorMessage(caught));
+            return;
+          }
+
+          const reconciliation = reconcileRemoteLayout(mergeBase, candidate, current as FieldLayout, true);
+          if (reconciliation.kind === "conflict") {
+            setLayoutConflict(reconciliation.conflict);
+            return;
+          }
+          if (reconciliation.kind === "unchanged") {
+            setError("最新版との統合に失敗しました。しばらく待ってから再度保存してください。");
+            return;
+          }
+
+          candidate = reconciliation.layout;
+          mergeBase = reconciliation.baseLayout;
+          mergedConcurrentUpdate = true;
+          setLayout(candidate);
+          setBaseLayout(mergeBase);
+          setPast([]);
+          setFuture([]);
+          setDirty(reconciliation.dirty);
+          if (!reconciliation.dirty) {
+            setCollaborationNotice({ id: Date.now(), message: `同じ更新がすでに保存されていました（r${candidate.revision}）。` });
+            return;
+          }
+          if (attempt === 1) {
+            setCollaborationNotice({ id: Date.now(), message: "新しい更新を自動統合しました。もう一度保存してください。" });
+            return;
+          }
+        }
       }
     } finally {
       setSaving(false);
@@ -659,7 +783,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
   }
 
   return (
-    <div className={`installation-app ${error ? "has-error" : ""}`}>
+    <div className={`installation-app ${error ? "has-error" : ""} ${collaborationNotice ? "has-collaboration-notice" : ""}`}>
       <header className="editor-header">
         <div className="editor-identity">
           <a className="icon-link labeled-icon-button" href={fieldDetailUrl} aria-label="圃場詳細へ戻る" title="圃場詳細へ戻る"><ArrowLeft size={19} /><span>圃場へ戻る</span></a>
@@ -695,6 +819,14 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
           <button type="button" className="save-button" onClick={() => void persist()} disabled={!dirty || saving} aria-busy={saving} title={saving ? "保存処理中です" : !dirty ? "未保存の変更はありません" : "設置ビューを保存"}>{!saving && <Save size={17} />}{saving ? "保存しています" : "保存"}</button>
         </div>
       </header>
+
+      {collaborationNotice && (
+        <div className="collaboration-notice" role="status" aria-live="polite">
+          <Users size={16} />
+          <span>{collaborationNotice.message}</span>
+          <button type="button" onClick={() => setCollaborationNotice(null)} aria-label="共同編集のお知らせを閉じる" title="閉じる"><X size={15} /></button>
+        </div>
+      )}
 
       {error && (
         <div className="error-banner" role="alert">
@@ -747,7 +879,14 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
               <strong>{activeSpace.name}</strong>
               <span>{SPACE_TYPE_LABELS[activeSpace.space_type]} ・ {activeSpace.grid.columns} × {activeSpace.grid.rows} マス</span>
             </div>
-            <span>{activeSpace.grid.columns * activeSpace.grid.cell_size_m}m × {activeSpace.grid.rows * activeSpace.grid.cell_size_m}m</span>
+            <div className="canvas-toolbar-meta">
+              <CollaborationPresence
+                participants={collaborators}
+                connectionState={collaborationConnectionState}
+                activeSpaceId={activeSpace.id}
+              />
+              <span className="canvas-dimensions">{activeSpace.grid.columns * activeSpace.grid.cell_size_m}m × {activeSpace.grid.rows * activeSpace.grid.cell_size_m}m</span>
+            </div>
           </div>
           <InstallationCanvas
             layout={layout}
@@ -755,6 +894,7 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
             selectedId={selectedId}
             plantingByPlacementId={plantingByPlacementId}
             wateringSourceNamesByPlacementId={wateringSourceNamesByPlacementId}
+            collaborators={remoteCollaborators}
             zoom={zoom}
             onZoomChange={setZoom}
             onSelect={setSelectedId}
@@ -867,6 +1007,84 @@ export function App({ fieldId, fieldName, fieldDetailUrl }: AppProps) {
       )}
     </div>
   );
+}
+
+function CollaborationPresence({
+  participants,
+  connectionState,
+  activeSpaceId,
+}: {
+  participants: LayoutCollaborator[];
+  connectionState: CollaborationConnectionState;
+  activeSpaceId: string;
+}) {
+  const participantGroups = Array.from(participants.reduce((groups, participant) => {
+    const identity = participant.email || participant.client_id;
+    groups.set(identity, [...(groups.get(identity) ?? []), participant]);
+    return groups;
+  }, new Map<string, LayoutCollaborator[]>())).map(([identity, tabs]) => ({
+    identity,
+    tabs,
+    representative: tabs.slice().sort((left, right) => presenceStatePriority(right.state) - presenceStatePriority(left.state))[0],
+    isCurrent: tabs.some((participant) => participant.is_current),
+    isInActiveSpace: tabs.some((participant) => participant.active_space_id === activeSpaceId),
+  }));
+  const tabSuffix = participants.length > participantGroups.length ? `・${participants.length}画面` : "";
+  const label = connectionState === "offline"
+    ? "同期を再接続中"
+    : connectionState === "connecting"
+      ? "共同編集に接続中"
+      : `${Math.max(1, participantGroups.length)}人${tabSuffix}で編集中`;
+  const title = connectionState === "offline"
+    ? "共同編集サーバーへ再接続しています。編集はこのまま続けられます。"
+    : "現在この設置ビューを開いているユーザー";
+
+  return (
+    <details className={`collaboration-presence ${connectionState}`}>
+      <summary title={title} aria-label={label}>
+        <span className="collaboration-connection-dot" aria-hidden="true">{connectionState === "offline" && <WifiOff size={11} />}</span>
+        <span className="collaboration-avatars" aria-hidden="true">
+          {participantGroups.slice(0, 3).map((group) => (
+            <span
+              key={group.identity}
+              style={{ "--collaborator-color": collaboratorColor(group.identity) } as CSSProperties}
+            >
+              {collaboratorLabel(group.representative.email).slice(0, 1).toUpperCase()}
+            </span>
+          ))}
+        </span>
+        <span className="collaboration-presence-label">{label}</span>
+      </summary>
+      <div className="collaboration-presence-popover">
+        <header><Users size={16} /><strong>共同編集</strong></header>
+        {connectionState === "offline" && <p>接続を復旧しています。未保存の変更は保持されます。</p>}
+        {connectionState === "connecting" && <p>参加者を確認しています。</p>}
+        {participantGroups.length > 0 && (
+          <ul>
+            {participantGroups.map((group) => (
+              <li key={group.identity}>
+                <span
+                  className="collaboration-participant-avatar"
+                  style={{ "--collaborator-color": collaboratorColor(group.identity) } as CSSProperties}
+                  aria-hidden="true"
+                >
+                  {collaboratorLabel(group.representative.email).slice(0, 1).toUpperCase()}
+                </span>
+                <span>
+                  <strong>{group.isCurrent ? "自分" : collaboratorLabel(group.representative.email)}{group.tabs.length > 1 ? `（${group.tabs.length}画面）` : ""}</strong>
+                  <small>{group.representative.email} ・ {group.isInActiveSpace ? "この空間" : "別の空間"} ・ {presenceStateLabel(group.representative.state)}</small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function presenceStatePriority(state: LayoutPresenceState): number {
+  return { viewing: 0, editing: 1, saving: 2, conflict: 3 }[state];
 }
 
 function formatConflictTimestamp(value: string): string {

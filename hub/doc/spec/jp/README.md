@@ -11,7 +11,7 @@
 - `data_processor.md` — センサーデータ処理ワーカ（MQTT -> 永続化 / 画像組立）
 - `general_log.md` — ロガー設定（ローテーション、stdout）
 - `hub_mqtt_client.md` — MQTT クライアントラッパー（paho）
-- `ina_db_connector.md` — Turso/libsql への DB ラッパー
+- `ina_db_connector.md` — Local Hub用Turso/libSQL replicaのDBラッパー
 - `location_repository.md` — ロケーション情報のローカルリポジトリ
 - `sensor_data_queue.md` — スレッドセーフなデータキュー
 - `sensor_data_repository.md` — センサーデータの一時保存と集計ロジック
@@ -23,7 +23,6 @@
 - `timelapse_task.md` — 定期撮影タスク（apscheduler）
 - `utils.md` — ユーティリティ（Plotly でのグラフ作成など）
 - `web_server.md` — Flask ベースのローカル管理 UI / API
-- `../CLOUDFLARE_CLOUD_APP_IMPLEMENTATION.md` — Cloudflare Workers cloud app の実装方針
 - `../CLOUDFLARE_HOSTED_OPTION.md` — Cloudflare hosted option の実装方針
 
 ## 使い方

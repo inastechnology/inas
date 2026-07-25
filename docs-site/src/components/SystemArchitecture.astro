@@ -10,7 +10,7 @@
     <article class="architecture-node architecture-browser">
       <span class="architecture-node-kicker">利用者のPC・スマートフォン</span>
       <strong>Webブラウザ</strong>
-      <p>外出先からHub画面を開く。専用アプリのインストールは不要。</p>
+      <p>外出先からLocal Hub画面を開く。専用アプリのインストールは不要。</p>
     </article>
     <div class="architecture-arrow" aria-hidden="true">→</div>
     <article class="architecture-node architecture-cloudflare">
@@ -26,7 +26,7 @@
   </div>
 
   <div class="architecture-downlink" aria-hidden="true">
-    <span>cloudflaredが外向き接続</span>
+    <span>外部から管理画面を見る場合だけ、cloudflaredがTunnelを維持</span>
     <b>↓</b>
   </div>
 
@@ -40,11 +40,11 @@
     <div class="architecture-arrow" aria-hidden="true">↔</div>
     <article class="architecture-node architecture-hub">
       <span class="architecture-node-kicker">Raspberry Piで常時実行</span>
-      <strong>INAS Hub</strong>
+      <strong>Local Hub</strong>
       <ul>
         <li>Hub UI / API <code>:39151</code></li>
         <li>Mosquitto MQTT <code>:1883</code></li>
-        <li>cloudflared</li>
+        <li>cloudflared（外部画面の任意入口）</li>
         <li>Avahi / <code>&lt;hub名&gt;.local</code></li>
       </ul>
     </article>
