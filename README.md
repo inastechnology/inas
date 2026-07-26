@@ -13,6 +13,20 @@ operation on the field LAN. A site can operate devices directly from a Local
 Hub or use an Edge Gateway that synchronizes with one parent Local Hub or Cloud
 Hub over outbound HTTPS.
 
+Start with [INAS System Specification](docs/SYSTEM_SPECIFICATION.md) for the cross-project
+architecture, device roles, field data model, OTA flow, and Cloudflare hosted
+options. The draw.io source for the system diagrams is
+[docs/assets/inas_system_diagrams.drawio](docs/assets/inas_system_diagrams.drawio).
+Documentation writing and localization rules are defined in
+[docs/DOCUMENTATION_GUIDE.md](docs/DOCUMENTATION_GUIDE.md).
+System-wide layer boundaries are defined in
+[docs/ARCHITECTURE_LAYERING_POLICY.md](docs/ARCHITECTURE_LAYERING_POLICY.md).
+Planned and community-proposed work is indexed in
+[docs/FUTURE_FEATURES.md](docs/FUTURE_FEATURES.md).
+Japanese documentation is stored under documentation directories such as
+[docs/jp/README.md](docs/jp/README.md), [hub/doc/jp/README.md](hub/doc/jp/README.md),
+and [client-devices/docs/jp/README.md](client-devices/docs/jp/README.md).
+
 ## System overview
 
 ![INAS system architecture](docs/assets/inas_system_architecture.svg)

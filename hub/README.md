@@ -25,6 +25,12 @@ Cross-project specification:
 - Serve a local Flask-based admin UI.
 - Register OTA firmware artifacts and deliver `firmware.bin` over HTTP.
 
+## Design Notes
+
+- [INAS future feature registry](../docs/FUTURE_FEATURES.md)
+- [Drip irrigation calibration and substrate reset](doc/HUB_DRIP_IRRIGATION_CALIBRATION_AND_SUBSTRATE_RESET_SPEC.md)
+- [AI Search documentation status](doc/AI_SEARCH_OPERATIONS.md)
+
 ## Quick Start
 
 1. Install uv if needed: https://docs.astral.sh/uv/getting-started/installation/

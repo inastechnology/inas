@@ -383,6 +383,8 @@ evidence[]
 
 ## 12. 参考資料
 
+点滴口の吐出量校正、通常潅水への換算、排液ECを使った培地リセットは [点滴潅水の吐出量校正・潅水提案・培地リセット仕様](HUB_DRIP_IRRIGATION_CALIBRATION_AND_SUBSTRATE_RESET_SPEC.md) に分離して定義する。
+
 - 農林水産省「食品中の硝酸塩に関する基礎情報」: https://www.maff.go.jp/j/syouan/seisaku/risk_analysis/priority/syosanen/about/index.html
 - 農林水産省「土壌診断と堆肥活用による肥料節減指針」: https://www.maff.go.jp/j/seisan/kankyo/hozen_type/h_sehi_kizyun/pdf/sisin0.pdf
 - 農研機構「有機質資材肥効見える化アプリ」: https://www.naro.go.jp/publicity_report/press/laboratory/karc/169314.html
@@ -390,4 +392,3 @@ evidence[]
 - Siemens Healthineers「みどりくん」: https://www.siemens-healthineers.com/jp/environmental-test/midorikun
 - HORIBA「LAQUAtwin NO3-11S」: https://www.horiba.com/jpn/water-quality/detail/action/show/Product/no3-11c-no3-11s-no3-11-794/
 - Open-Meteo Historical Weather API: https://open-meteo.com/en/docs/historical-weather-api
-

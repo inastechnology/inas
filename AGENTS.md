@@ -21,3 +21,17 @@ core when a declarative contribution can express the behavior.
 
 Other project-local `AGENTS.md` files may add more specific rules for their
 subtrees.
+
+## User-Facing System Help
+
+When a change affects farmer-facing Hub navigation, settings, troubleshooting,
+current-versus-future feature availability, or the community proposal process:
+
+1. Update or add a concise user-facing document under `hub/doc/system-help/`.
+2. Clearly distinguish currently available behavior from planned behavior.
+3. Link detailed design documents instead of copying internal specifications
+   into the user-facing document.
+
+The former `hub/cloudflare` AI Search integration is not connected to the
+current product. Do not recreate its manifest, synchronization scripts, Worker,
+or remote indexing path without an explicitly approved redesign.

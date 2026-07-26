@@ -28,6 +28,8 @@ cross-project specifications and architecture policy.
 - [AGENTIC_AGRICULTURE_VISION.md](AGENTIC_AGRICULTURE_VISION.md): product
   philosophy for receiving the world's call, returning people to the field,
   and using evidence-backed, bounded cooperation between growers and machines.
+- [FUTURE_FEATURES.md](FUTURE_FEATURES.md): visible registry of planned,
+  partially available, gated, and community-proposed product ideas.
 - [EDGE_GATEWAY_HARDWARE_AND_IDENTITY.md](EDGE_GATEWAY_HARDWARE_AND_IDENTITY.md):
   identity namespace, secure enrollment boundary, and Raspberry Pi/Compute
   Module appliance profiles for Edge Gateway and Local Hub nodes.
