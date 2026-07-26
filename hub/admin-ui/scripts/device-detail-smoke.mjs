@@ -154,7 +154,8 @@ try {
   assert.equal(await page.$eval('#runtime-config-form button[type="submit"]', (button) => button.disabled), true, "unchanged runtime config must not be saved again");
   assert.equal(await page.$eval("#save-push-runtime-config", (button) => button.disabled), true, "unchanged runtime config must not be sent");
   assert(await page.$("#output-connection-map"), "watering settings must visualize the current equipment connections");
-  assert.equal(await page.$$("#output-connection-map .switch-output").then((items) => items.length), 2);
+  const supportedOutputCount = await page.$$("#output-connection-map .switch-output").then((items) => items.length);
+  assert.equal(supportedOutputCount, 1, "the current WTR definition exposes one assignable irrigation output");
   assert.equal(await page.$eval("#open-output-settings", (trigger) => trigger.getAttribute("role")), "button");
   assert.equal(await page.$eval("#open-output-settings", (trigger) => trigger.getAttribute("tabindex")), "0");
   assert.match(await page.$eval("#open-output-settings", (trigger) => trigger.innerText || ""), /現在の水やりルート.*クリックして変更/s);
@@ -163,8 +164,8 @@ try {
   await page.screenshot({ path: "/tmp/ina-device-wtr-settings.png", fullPage: true });
   await page.click("#open-output-settings");
   assert.equal(await page.$eval("#output-settings-dialog", (dialog) => dialog.open), true);
-  assert.equal(await page.$$("#output-settings-dialog .output-edit-row").then((items) => items.length), 2, "WTR must expose only its two supported ports");
-  assert.equal(await page.$$("#output-settings-dialog [data-equipment-type]").then((items) => items.length), 8, "each port must offer illustrated equipment choices");
+  assert.equal(await page.$$("#output-settings-dialog .output-edit-row").then((items) => items.length), supportedOutputCount, "the route builder must follow the Device Definition output count");
+  assert.equal(await page.$$("#output-settings-dialog [data-equipment-type]").then((items) => items.length), supportedOutputCount * 4, "each port must offer illustrated equipment choices");
   const outputDialogText = await page.$eval("#output-settings-dialog", (dialog) => dialog.innerText || "");
   assert.match(outputDialogText, /水やりルートを組み立てる/);
   assert.match(await page.$eval("#output-settings-dialog [data-close-output-dialog]", (button) => button.textContent || ""), /閉じる/);
@@ -227,8 +228,52 @@ try {
   assert.match(await page.$eval("#soil-calibration-guide", (dialog) => dialog.innerText || ""), /湿った基準を記録する/);
   await page.screenshot({ path: "/tmp/ina-device-calibration-guide.png" });
   await page.click('#soil-calibration-guide [data-close-calibration-guide]');
-  assert.match(await page.$eval("#watering-schedules", (section) => section.innerText || ""), /水を送る接続先/);
-  assert.doesNotMatch(await page.$eval("#watering-schedules", (section) => section.innerText || ""), /ON 秒数|mask|MOSFET/);
+  const wateringSchedulesText = await page.$eval("#watering-schedules", (section) => section.innerText || "");
+  assert.match(wateringSchedulesText, /灌水モード.*通常灌水.*分割灌水/s);
+  assert.match(wateringSchedulesText, /水を送る接続先/);
+  assert.doesNotMatch(wateringSchedulesText, /ON 秒数|mask|MOSFET/);
+  assert.equal(await page.$("#watering-pattern"), null, "pulse irrigation must not remain a separate setup stage");
+  assert.equal(await page.$eval("#irrigation-mode-standard", (input) => input.checked), true);
+  assert.equal(await page.$eval("#irrigation-pattern-settings", (panel) => panel.hidden), true);
+  assert.equal(await page.$eval("[data-schedule-duration-field]", (field) => field.hidden), false);
+  const continuousDurationBeforePulse = await page.$eval("[data-schedule-duration]", (input) => Number(input.value));
+  await page.click("#irrigation-mode-pulse");
+  assert.equal(await page.$eval("#irrigation-pattern-settings", (panel) => panel.hidden), false);
+  assert.equal(await page.$eval("[data-schedule-duration-field]", (field) => field.hidden), true);
+  assert.equal(await page.$eval("#watering-pattern-on-sec", (input) => input.value), "60");
+  assert.equal(await page.$eval("#watering-pattern-off-sec", (input) => input.value), "60");
+  assert.equal(await page.$eval("#watering-pattern-repeat-count", (input) => input.value), "3");
+  assert.match(await page.$eval("#irrigation-pattern-summary", (summary) => summary.textContent || ""), /水を出す合計 3分.*予約開始から終了まで 5分/);
+  const pulseDraft = await page.evaluate(() => collectRuntimeConfigFromForm());
+  assert.deepEqual(pulseDraft.watering_pattern, { enabled: true, on_sec: 60, off_sec: 60, repeat_count: 3 });
+  assert.equal(pulseDraft.schedules[0].duration_sec, continuousDurationBeforePulse, "hidden continuous duration must survive pulse mode");
+  await page.evaluate((config) => window.renderRuntimeConfigForm(config), pulseDraft);
+  assert.equal(await page.$eval("#irrigation-mode-pulse", (input) => input.checked), true, "saved pulse mode must render as the selected irrigation mode");
+  assert.equal(await page.$eval("#irrigation-pattern-settings", (panel) => panel.hidden), false);
+  assert.equal(await page.$eval("[data-schedule-duration-field]", (field) => field.hidden), true);
+  const tabListInlinePosition = await page.$eval(".tab-list", (tabs) => {
+    const previous = tabs.style.position;
+    tabs.style.position = "static";
+    return previous;
+  });
+  await page.$("#watering-schedules").then((section) => section.screenshot({ path: "/tmp/ina-device-wtr-irrigation-mode.png" }));
+  await page.$eval(".tab-list", (tabs, previous) => { tabs.style.position = previous; }, tabListInlinePosition);
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const pulseModeMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  assert(pulseModeMobileOverflow <= 1, `mobile pulse irrigation mode must not overflow horizontally: ${pulseModeMobileOverflow}px`);
+  const mobileTabListInlinePosition = await page.$eval(".tab-list", (tabs) => {
+    const previous = tabs.style.position;
+    tabs.style.position = "static";
+    return previous;
+  });
+  await page.$("#watering-schedules").then((section) => section.screenshot({ path: "/tmp/ina-device-wtr-irrigation-mode-mobile.png" }));
+  await page.$eval(".tab-list", (tabs, previous) => { tabs.style.position = previous; }, mobileTabListInlinePosition);
+  await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
+  await page.$eval("#irrigation-mode-standard", (input) => input.click());
+  assert.equal(await page.$eval("#irrigation-pattern-settings", (panel) => panel.hidden), true);
+  assert.equal(await page.$eval("[data-schedule-duration-field]", (field) => field.hidden), false);
+  assert.equal((await page.evaluate(() => collectRuntimeConfigFromForm())).watering_pattern.enabled, false);
   await page.$eval("#ntp-server", (input) => {
     input.value = `${input.value}-edited`;
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -380,6 +425,8 @@ try {
     "/tmp/ina-device-route-new-tab-link.png",
       "/tmp/ina-device-wtr-settings-mobile.png",
       "/tmp/ina-device-calibration-guide.png",
+      "/tmp/ina-device-wtr-irrigation-mode.png",
+      "/tmp/ina-device-wtr-irrigation-mode-mobile.png",
       "/tmp/ina-device-wtr-firmware.png",
       "/tmp/ina-device-pending-maintenance.png",
       "/tmp/ina-device-env-monitoring.png",

@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ camera.name }} | カメラ詳細 | INA Hub</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #17251e;
+        --muted: #65736b;
+        --line: #d6dfd9;
+        --green: #1f7652;
+        --green-dark: #15553a;
+        --soft: #eff5f1;
+        --danger: #a93632;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body { margin: 0; color: var(--ink); background: #f1f5f2; font-family: system-ui, -apple-system, sans-serif; }
+      body:has(dialog[open]) { overflow: hidden; }
+      a { color: var(--green-dark); }
+      button, input, select { font: inherit; }
+      button { cursor: pointer; }
+      [hidden] { display: none !important; }
+      .camera-header { border-bottom: 1px solid var(--line); background: rgba(255,255,255,.96); }
+      .header-inner { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; width: min(1440px, 100%); margin: auto; padding: 18px 28px; }
+      .breadcrumb, .meta { margin: 0; color: var(--muted); font-size: 12px; }
+      h1 { margin: 5px 0 4px; font-size: clamp(25px, 3vw, 38px); letter-spacing: -.025em; }
+      h2 { margin: 0; font-size: clamp(19px, 2vw, 25px); }
+      h3 { margin: 0; font-size: 15px; }
+      .camera-id { display: inline-flex; max-width: 100%; margin-top: 4px; padding: 5px 8px; overflow-wrap: anywhere; border: 1px solid #c9d5cd; border-radius: 5px; color: #496057; background: #f8faf8; font: 11px ui-monospace, monospace; }
+      .header-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+      .badge { display: inline-flex; align-items: center; min-height: 28px; padding: 5px 9px; border-radius: 999px; color: #375348; background: #e8efeb; font-size: 11px; font-weight: 800; }
+      .badge.good { color: #14583a; background: #dff2e7; }
+      .badge.warn { color: #8a4b15; background: #fff0dd; }
+      .camera-nav-shell { position: sticky; top: 0; z-index: 12; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.96); backdrop-filter: blur(12px); }
+      .camera-nav { display: flex; width: min(1440px, 100%); margin: auto; padding: 0 28px; overflow-x: auto; }
+      .camera-nav a { flex: 0 0 auto; min-width: 120px; padding: 13px 17px 11px; border-bottom: 3px solid transparent; color: #526159; font-size: 13px; font-weight: 800; text-align: center; text-decoration: none; }
+      .camera-nav a:hover, .camera-nav a:focus-visible { border-bottom-color: #82aa98; color: var(--green-dark); background: #f2f7f4; }
+      main { display: grid; gap: 22px; width: min(1440px, 100%); margin: auto; padding: 24px 28px 64px; }
+      .surface { min-width: 0; padding: clamp(17px, 2vw, 25px); border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: 0 10px 28px rgba(32, 66, 47, .055); scroll-margin-top: 68px; }
+      .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 18px; }
+      .eyebrow { display: block; margin-bottom: 4px; color: #39705c; font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+      .hero { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .65fr); gap: 18px; padding: 0; overflow: hidden; }
+      .hero-media { position: relative; height: clamp(420px, 42vw, 680px); min-height: 0; overflow: hidden; background: #19251f; }
+      .hero-media img, .hero-media video { width: 100%; height: 100%; object-fit: cover; }
+      .hero-media-empty { display: grid; place-items: center; width: 100%; height: 100%; min-height: inherit; color: #c5d0c9; background: radial-gradient(circle at 50% 40%, #344a3f, #17231d 68%); text-align: center; }
+      .hero-media-overlay { position: absolute; inset: auto 0 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; padding: 70px 22px 20px; color: #fff; background: linear-gradient(transparent, rgba(9,18,13,.8)); pointer-events: none; }
+      .hero-media-overlay strong { display: block; font-size: clamp(18px, 2.2vw, 29px); }
+      .hero-media-overlay span { color: #d9e4dc; font-size: 12px; }
+      .hero-copy { display: grid; align-content: start; gap: 19px; padding: clamp(20px, 3vw, 34px); }
+      .hero-copy p { margin: 0; color: #53645b; font-size: 13px; line-height: 1.75; }
+      .hero-actions { display: grid; gap: 8px; }
+      .primary-link, .secondary-link, .button { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: 9px 14px; border: 1px solid #aebdb4; border-radius: 7px; color: #315c49; background: #fff; font-weight: 850; text-decoration: none; }
+      .primary-link, .button.primary { border-color: var(--green); color: #fff; background: var(--green); }
+      .primary-link:hover, .button.primary:hover { background: var(--green-dark); }
+      .camera-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 12px; margin: 0; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12px; }
+      .camera-facts dt { color: var(--muted); }
+      .camera-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-weight: 750; }
+      .reference-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+      .reference-list a { display: flex; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid #dbe3dd; border-radius: 6px; color: #315948; background: #f9fbf9; font-size: 11px; font-weight: 750; text-decoration: none; }
+      .live-stage { position: relative; display: grid; place-items: center; min-height: clamp(320px, 48vw, 720px); overflow: hidden; border-radius: 9px; background: radial-gradient(circle at 50% 45%, #35483e, #15211b 72%); }
+      .live-stage img { width: 100%; height: 100%; min-height: inherit; object-fit: contain; }
+      .live-placeholder { display: grid; place-items: center; max-width: 470px; padding: 30px; color: #d6e0da; text-align: center; }
+      .live-placeholder strong { margin-bottom: 8px; color: #fff; font-size: 19px; }
+      .live-placeholder p { margin: 0 0 20px; color: #b8c8bf; font-size: 12px; line-height: 1.6; }
+      .live-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+      .live-status { margin: 0; color: var(--muted); font-size: 11px; }
+      .filter-form { display: grid; grid-template-columns: minmax(150px, .6fr) minmax(150px, .6fr) auto; align-items: end; gap: 10px; }
+      label { display: grid; gap: 5px; color: #53645b; font-size: 11px; font-weight: 800; }
+      input, select { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #b9c6bd; border-radius: 6px; color: var(--ink); background: #fff; }
+      input:focus, select:focus { border-color: var(--green); outline: 3px solid rgba(31,118,82,.13); }
+      .quick-dates { display: flex; flex-wrap: wrap; gap: 6px; margin: 11px 0 18px; }
+      .quick-dates button { min-height: 32px; padding: 5px 9px; border: 1px solid #c4cfc8; border-radius: 999px; color: #496158; background: #fff; font-size: 10px; font-weight: 800; }
+      .quick-date-picker { display: flex; grid-template-columns: auto 150px; align-items: center; gap: 7px; margin-right: 5px; }
+      .quick-date-picker input { width: 150px; min-height: 32px; padding-block: 4px; }
+      .gallery-status { min-height: 20px; margin: 0 0 8px; color: var(--muted); font-size: 11px; }
+      .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+      .capture-card { position: relative; min-width: 0; padding: 0; overflow: hidden; border: 1px solid #d1dbd4; border-radius: 8px; color: inherit; background: #e7ece8; text-align: left; }
+      .capture-card:hover, .capture-card:focus-visible { border-color: #438068; outline: 3px solid #deebe4; transform: translateY(-1px); }
+      .capture-card img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
+      .capture-card span { position: absolute; inset: auto 0 0; padding: 28px 10px 8px; color: #fff; background: linear-gradient(transparent, rgba(8,17,12,.8)); font-size: 10px; font-weight: 800; }
+      .empty { padding: 30px; border: 1px dashed #cbd5ce; border-radius: 8px; color: var(--muted); background: #f8faf8; text-align: center; }
+      dialog { width: min(1180px, calc(100% - 28px)); max-height: calc(100vh - 28px); padding: 0; overflow: hidden; border: 1px solid #51635a; border-radius: 10px; background: #101713; box-shadow: 0 30px 90px rgba(0,0,0,.45); }
+      dialog::backdrop { background: rgba(5,10,7,.78); backdrop-filter: blur(4px); }
+      .lightbox { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100vh - 28px); }
+      .lightbox header, .lightbox footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; color: #e8eee9; background: #17211c; }
+      .lightbox header button, .lightbox footer button { min-height: 36px; padding: 6px 11px; border: 1px solid #58675f; border-radius: 6px; color: #e6eee9; background: #29362f; }
+      .lightbox img { display: block; width: 100%; height: min(76vh, 900px); object-fit: contain; background: #0b100d; }
+      .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+      .settings-grid .full { grid-column: 1 / -1; }
+      .check-field { display: flex; align-items: center; gap: 8px; min-height: 40px; }
+      .check-field input { width: auto; min-height: auto; }
+      .settings-note { margin: 0 0 18px; padding: 12px 14px; border-left: 4px solid #4d806b; color: #42584e; background: var(--soft); font-size: 12px; line-height: 1.65; }
+      .settings-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+      .settings-result { margin: 0 0 13px; padding: 11px 13px; border-radius: 6px; color: #315a49; background: #eaf4ee; font-size: 12px; }
+      .settings-result.error { color: var(--danger); background: #fff0ef; }
+      button:disabled { cursor: wait; opacity: .58; }
+      @media (min-width: 1700px) {
+        .gallery-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+        .hero-media { height: 680px; }
+      }
+      @media (max-width: 900px) {
+        .hero { grid-template-columns: 1fr; }
+        .hero-media { height: min(72vw, 520px); }
+      }
+      @media (max-width: 640px) {
+        .header-inner, main { padding-left: 14px; padding-right: 14px; }
+        .header-inner { display: grid; }
+        .header-badges { justify-content: flex-start; }
+        .camera-nav { padding: 0 14px; }
+        .camera-nav a { min-width: 100px; padding-inline: 12px; }
+        .surface { border-radius: 8px; }
+        .hero { padding: 0; }
+        .hero-media { height: 72vw; }
+        .filter-form, .settings-grid { grid-template-columns: 1fr; }
+        .settings-grid .full { grid-column: auto; }
+        .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .section-heading, .live-toolbar { align-items: stretch; flex-direction: column; }
+      }
+      @media (max-width: 400px) {
+        .gallery-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+    <link rel="stylesheet" href="/static/hub-ui.css">
+  </head>
+  <body class="hub-shell hub-camera-detail {{ accessibility_body_class }}">
+    <header class="camera-header">
+      <div class="header-inner">
+        <div>
+          <p class="breadcrumb"><a href="/mqtt-devices">保守・管理</a> / カメラ詳細</p>
+          <h1 id="camera-title">{{ camera.name }}</h1>
+          <span class="camera-id">{{ camera.id }}</span>
+        </div>
+        <div class="header-badges">
+          <span class="badge {{ 'good' if camera.credentials_configured else 'warn' }}">{{ "接続情報設定済み" if camera.credentials_configured else "接続情報未設定" }}</span>
+          <span class="badge {{ 'good' if camera.timelapse else '' }}">{{ "定点撮影 有効" if camera.timelapse else "定点撮影 無効" }}</span>
+        </div>
+      </div>
+    </header>
+    <nav class="camera-nav-shell" aria-label="カメラ詳細メニュー">
+      <div class="camera-nav">
+        <a href="#current">現在</a>
+        <a href="#live">ライブ</a>
+        <a href="#captures">撮影履歴</a>
+        <a href="#settings">接続設定</a>
+      </div>
+    </nav>
+
+    <main>
+      <section class="surface hero" id="current">
+        <div class="hero-media">
+          {% if latest_video %}
+          <video src="{{ latest_video.url }}" poster="{{ initial_images[0].url if initial_images else '' }}" autoplay muted loop playsinline></video>
+          {% elif initial_images %}
+          <img src="{{ initial_images[0].url }}" alt="{{ camera.name }}の最新画像">
+          {% else %}
+          <div class="hero-media-empty"><span>保存された画像はまだありません</span></div>
+          {% endif %}
+          <div class="hero-media-overlay">
+            <div><span>圃場の現在</span><strong>{{ camera.name }}</strong></div>
+            <span>{{ initial_images[0].captured_at if initial_images else "撮影待ち" }}</span>
+          </div>
+        </div>
+        <div class="hero-copy">
+          <div><span class="eyebrow">Camera overview</span><h2>このカメラで確認できること</h2></div>
+          <p>最新の定点画像、リアルタイム映像、過去の変化を一か所で確認できます。接続設定を変更した後は、保存前にHubから映像へ到達できるか確認できます。</p>
+          <div class="hero-actions">
+            <a class="primary-link" href="#captures">撮影履歴を見る</a>
+            <a class="secondary-link" href="#live">ライブ映像を確認</a>
+          </div>
+          <dl class="camera-facts">
+            <dt>方式</dt><dd>{{ camera.camera_type }}</dd>
+            <dt>接続先</dt><dd>{{ camera.ip_address }}:{{ camera.port }}</dd>
+            <dt>画質</dt><dd>{{ "高画質" if camera.stream == "main" else "軽量" }}（{{ camera.stream }}）</dd>
+            <dt>更新</dt><dd>{{ camera.updated_at or "記録なし" }}</dd>
+          </dl>
+          {% if references %}
+          <div>
+            <span class="eyebrow">設置先</span>
+            <ul class="reference-list">
+              {% for reference in references if reference.field_id %}
+              <li><a href="/fields/{{ reference.field_id }}"><span>{{ reference.field_name }}{% if reference.placement_name %} / {{ reference.placement_name }}{% endif %}</span><span aria-hidden="true">›</span></a></li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="surface" id="live">
+        <div class="section-heading">
+          <div><span class="eyebrow">Live view</span><h2>ライブ映像</h2></div>
+          <span class="meta">映像を開いている間だけHubがRTSPストリームへ接続します</span>
+        </div>
+        <div class="live-stage">
+          <div class="live-placeholder" id="live-placeholder">
+            <strong>必要なときだけライブ接続</strong>
+            <p>常時接続によるカメラとネットワークへの負荷を避けるため、ボタンを押して開始します。</p>
+            <button class="button primary" id="start-live" type="button">ライブを開始</button>
+          </div>
+          <img id="live-image" data-src="/local/api/camera/{{ camera.id }}/video_feed" alt="{{ camera.name }}のライブ映像" hidden>
+        </div>
+        <div class="live-toolbar">
+          <p class="live-status" id="live-status" role="status" aria-live="polite">停止中</p>
+          <button class="button" id="stop-live" type="button" hidden>ライブを停止</button>
+        </div>
+      </section>
+
+      <section class="surface" id="captures">
+        <div class="section-heading">
+          <div><span class="eyebrow">Capture history</span><h2>撮影履歴</h2></div>
+          <span class="meta">最大500枚 / 新しい順</span>
+        </div>
+        <form class="filter-form" id="capture-filter">
+          <label>開始日<input id="capture-start" name="start_date" type="date"></label>
+          <label>終了日<input id="capture-end" name="end_date" type="date"></label>
+          <button class="button primary" type="submit">この期間を表示</button>
+        </form>
+        <div class="quick-dates" aria-label="撮影期間のショートカット">
+          <label class="quick-date-picker">1日を指定<input id="capture-single" type="date" aria-label="1日だけ表示する日付"></label>
+          <button type="button" data-days="0">今日</button>
+          <button type="button" data-days="6">直近7日</button>
+          <button type="button" data-days="29">直近30日</button>
+          <button type="button" data-days="">期間指定を解除</button>
+        </div>
+        <p class="gallery-status" id="gallery-status" role="status" aria-live="polite"></p>
+        <div class="gallery-grid" id="capture-gallery"></div>
+        <div class="empty" id="capture-empty" hidden>指定した期間に画像はありません。</div>
+      </section>
+
+      <section class="surface" id="settings">
+        <div class="section-heading">
+          <div><span class="eyebrow">Connection settings</span><h2>カメラ接続設定</h2></div>
+          <span class="meta">{{ "管理者のみ変更できます" if current_user.role == "admin" else "閲覧のみ" }}</span>
+        </div>
+        <p class="settings-note"><strong>確認済みの方式はRTSPです。</strong> HubはRTSPで映像を取得し、ブラウザ向けに変換します。RTP単体の設定項目ではありません。IPアドレス、認証情報、RTSPポートやパスを変更した場合は「接続を確認」で映像取得を確かめてください。</p>
+        {% if current_user.role == "admin" %}
+        <p class="settings-result" id="settings-result" hidden role="status" aria-live="polite"></p>
+        <form id="camera-settings-form">
+          <div class="settings-grid">
+            <label class="full">表示名<input id="camera-name" name="name" maxlength="100" required value="{{ camera.name }}"></label>
+            <label>メーカー・方式
+              <select id="camera-type" name="camera_type" required>
+                <option value="reolink"{% if camera.camera_type == "reolink" %} selected{% endif %}>Reolink</option>
+                <option value="tapo"{% if camera.camera_type == "tapo" %} selected{% endif %}>Tapo</option>
+                <option value="custom"{% if camera.camera_type == "custom" %} selected{% endif %}>カスタムRTSP</option>
+              </select>
+            </label>
+            <label>IPアドレスまたはホスト名<input id="camera-address" name="ip_address" maxlength="253" required value="{{ camera.ip_address }}"></label>
+            <label>ユーザー名<input id="camera-username" name="username" maxlength="200" required autocomplete="username" value="{{ camera.username }}"></label>
+            <label>パスワード<input id="camera-password" name="password" maxlength="500" type="password" autocomplete="new-password" placeholder="変更する場合のみ入力"><small>空欄なら現在のパスワードを維持します。</small></label>
+            <label data-reolink-field>チャンネル<input id="camera-channel" name="channel" type="number" min="1" max="64" value="{{ camera.channel }}"></label>
+            <label data-reolink-field>ストリーム
+              <select id="camera-stream" name="stream">
+                <option value="main"{% if camera.stream == "main" %} selected{% endif %}>main（高画質）</option>
+                <option value="sub"{% if camera.stream == "sub" %} selected{% endif %}>sub（軽量）</option>
+              </select>
+            </label>
+            <label>RTSPポート<input id="camera-port" name="port" type="number" min="1" max="65535" value="{{ camera.port }}"></label>
+            <label>RTSPパス<input id="camera-path" name="rtsp_path" maxlength="240" value="{{ camera.rtsp_path }}" placeholder="例: /Preview_01_main"></label>
+            <label class="full check-field"><input id="camera-timelapse" name="timelapse" type="checkbox"{% if camera.timelapse %} checked{% endif %}> 定点撮影とタイムラプス生成に使用する</label>
+          </div>
+          <div class="settings-actions">
+            <button class="button" id="test-camera" type="button">接続を確認</button>
+            <button class="button primary" id="save-camera" type="submit">変更を保存</button>
+          </div>
+        </form>
+        {% else %}
+        <dl class="camera-facts">
+          <dt>方式</dt><dd>{{ camera.camera_type }}</dd>
+          <dt>接続先</dt><dd>{{ camera.ip_address }}:{{ camera.port }}</dd>
+          <dt>ストリーム</dt><dd>{{ camera.stream }}</dd>
+          <dt>定点撮影</dt><dd>{{ "有効" if camera.timelapse else "無効" }}</dd>
+        </dl>
+        {% endif %}
+      </section>
+    </main>
+
+    <dialog id="capture-dialog" aria-labelledby="lightbox-title">
+      <div class="lightbox">
+        <header><strong id="lightbox-title">撮影画像</strong><button id="close-lightbox" type="button">閉じる</button></header>
+        <img id="lightbox-image" alt="">
+        <footer><button id="previous-capture" type="button">前の画像</button><span id="lightbox-time"></span><button id="next-capture" type="button">次の画像</button></footer>
+      </div>
+    </dialog>
+
+    <script src="/static/context-help.js"></script>
+    <script>
+      const cameraId = {{ camera.id | tojson }};
+      const initialImages = {{ initial_images | tojson }};
+      let galleryImages = initialImages;
+      let lightboxIndex = 0;
+
+      const gallery = document.getElementById("capture-gallery");
+      const galleryStatus = document.getElementById("gallery-status");
+      const galleryEmpty = document.getElementById("capture-empty");
+      const captureDialog = document.getElementById("capture-dialog");
+      const lightboxImage = document.getElementById("lightbox-image");
+      const lightboxTime = document.getElementById("lightbox-time");
+
+      function formatCapturedAt(value) {
+        const date = new Date(value);
+        return Number.isNaN(date.valueOf()) ? value : new Intl.DateTimeFormat("ja-JP", { dateStyle: "medium", timeStyle: "short" }).format(date);
+      }
+
+      function renderGallery(items) {
+        gallery.replaceChildren();
+        galleryImages = items;
+        galleryEmpty.hidden = items.length > 0;
+        items.forEach((item, index) => {
+          const button = document.createElement("button");
+          button.className = "capture-card";
+          button.type = "button";
+          button.setAttribute("aria-label", `${formatCapturedAt(item.captured_at)}の画像を拡大`);
+          const image = document.createElement("img");
+          image.src = item.url;
+          image.alt = `${formatCapturedAt(item.captured_at)}に撮影`;
+          image.loading = index < 6 ? "eager" : "lazy";
+          const time = document.createElement("span");
+          time.textContent = formatCapturedAt(item.captured_at);
+          button.append(image, time);
+          button.addEventListener("click", () => openLightbox(index));
+          gallery.append(button);
+        });
+        galleryStatus.textContent = `${items.length}枚を表示しています`;
+      }
+
+      function openLightbox(index) {
+        lightboxIndex = index;
+        syncLightbox();
+        captureDialog.showModal();
+      }
+
+      function syncLightbox() {
+        const item = galleryImages[lightboxIndex];
+        if (!item) return;
+        lightboxImage.src = item.url;
+        lightboxImage.alt = `${formatCapturedAt(item.captured_at)}に撮影した拡大画像`;
+        lightboxTime.textContent = `${lightboxIndex + 1} / ${galleryImages.length}　${formatCapturedAt(item.captured_at)}`;
+        document.getElementById("previous-capture").disabled = lightboxIndex <= 0;
+        document.getElementById("next-capture").disabled = lightboxIndex >= galleryImages.length - 1;
+      }
+
+      async function loadGallery() {
+        const startDate = document.getElementById("capture-start").value;
+        const endDate = document.getElementById("capture-end").value;
+        if (startDate && endDate && startDate > endDate) {
+          galleryStatus.textContent = "開始日は終了日以前を指定してください。";
+          return;
+        }
+        const query = new URLSearchParams({ limit: "500" });
+        if (startDate) query.set("start_date", startDate);
+        if (endDate) query.set("end_date", endDate);
+        galleryStatus.textContent = "撮影履歴を読み込んでいます…";
+        try {
+          const response = await fetch(`/local/api/camera/${encodeURIComponent(cameraId)}/images?${query}`);
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(body.error || "撮影履歴を読み込めませんでした");
+          renderGallery(Array.isArray(body) ? body : []);
+        } catch (error) {
+          galleryStatus.textContent = error.message;
+        }
+      }
+
+      const params = new URLSearchParams(location.search);
+      document.getElementById("capture-start").value = params.get("start_date") || "";
+      document.getElementById("capture-end").value = params.get("end_date") || "";
+      if (params.get("start_date") && params.get("start_date") === params.get("end_date")) {
+        document.getElementById("capture-single").value = params.get("start_date");
+      }
+      renderGallery(initialImages);
+      if (params.has("start_date") || params.has("end_date")) void loadGallery();
+
+      document.getElementById("capture-filter").addEventListener("submit", (event) => {
+        event.preventDefault();
+        void loadGallery();
+      });
+      document.getElementById("capture-single").addEventListener("change", (event) => {
+        document.getElementById("capture-start").value = event.target.value;
+        document.getElementById("capture-end").value = event.target.value;
+        void loadGallery();
+      });
+      document.querySelectorAll("[data-days]").forEach((button) => button.addEventListener("click", () => {
+        const days = button.dataset.days;
+        const end = new Date();
+        const start = new Date();
+        if (days === "") {
+          document.getElementById("capture-start").value = "";
+          document.getElementById("capture-end").value = "";
+          document.getElementById("capture-single").value = "";
+        } else {
+          start.setDate(end.getDate() - Number(days));
+          const localDate = (value) => {
+            const offset = value.getTimezoneOffset() * 60000;
+            return new Date(value.valueOf() - offset).toISOString().slice(0, 10);
+          };
+          document.getElementById("capture-start").value = localDate(start);
+          document.getElementById("capture-end").value = localDate(end);
+          document.getElementById("capture-single").value = days === "0" ? localDate(end) : "";
+        }
+        void loadGallery();
+      }));
+      document.getElementById("close-lightbox").addEventListener("click", () => captureDialog.close());
+      document.getElementById("previous-capture").addEventListener("click", () => { if (lightboxIndex > 0) { lightboxIndex -= 1; syncLightbox(); } });
+      document.getElementById("next-capture").addEventListener("click", () => { if (lightboxIndex < galleryImages.length - 1) { lightboxIndex += 1; syncLightbox(); } });
+      captureDialog.addEventListener("click", (event) => { if (event.target === captureDialog) captureDialog.close(); });
+      captureDialog.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowLeft" && lightboxIndex > 0) { lightboxIndex -= 1; syncLightbox(); }
+        if (event.key === "ArrowRight" && lightboxIndex < galleryImages.length - 1) { lightboxIndex += 1; syncLightbox(); }
+      });
+
+      const liveImage = document.getElementById("live-image");
+      const livePlaceholder = document.getElementById("live-placeholder");
+      const liveStatus = document.getElementById("live-status");
+      const stopLive = document.getElementById("stop-live");
+      document.getElementById("start-live").addEventListener("click", () => {
+        liveImage.src = `${liveImage.dataset.src}?t=${Date.now()}`;
+        liveImage.hidden = false;
+        livePlaceholder.hidden = true;
+        stopLive.hidden = false;
+        liveStatus.textContent = "接続中 — 画面を離れる前に停止できます";
+      });
+      stopLive.addEventListener("click", () => {
+        liveImage.removeAttribute("src");
+        liveImage.hidden = true;
+        livePlaceholder.hidden = false;
+        stopLive.hidden = true;
+        liveStatus.textContent = "停止中";
+      });
+
+      {% if current_user.role == "admin" %}
+      const typeSelect = document.getElementById("camera-type");
+      const settingsResult = document.getElementById("settings-result");
+      const testButton = document.getElementById("test-camera");
+      const saveButton = document.getElementById("save-camera");
+
+      function syncCameraFields() {
+        const reolink = typeSelect.value === "reolink";
+        document.querySelectorAll("[data-reolink-field]").forEach((field) => field.hidden = !reolink);
+      }
+      function cameraPayload() {
+        return {
+          name: document.getElementById("camera-name").value.trim(),
+          camera_type: typeSelect.value,
+          ip_address: document.getElementById("camera-address").value.trim(),
+          port: document.getElementById("camera-port").value,
+          username: document.getElementById("camera-username").value.trim(),
+          password: document.getElementById("camera-password").value,
+          channel: document.getElementById("camera-channel").value,
+          stream: document.getElementById("camera-stream").value,
+          rtsp_path: document.getElementById("camera-path").value.trim(),
+          timelapse: document.getElementById("camera-timelapse").checked,
+        };
+      }
+      function showSettingsResult(message, ok) {
+        settingsResult.hidden = false;
+        settingsResult.className = `settings-result${ok ? "" : " error"}`;
+        settingsResult.textContent = message;
+      }
+      async function requestJson(url, options) {
+        const response = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || "処理に失敗しました");
+        return body;
+      }
+      typeSelect.addEventListener("change", syncCameraFields);
+      syncCameraFields();
+      testButton.addEventListener("click", async () => {
+        testButton.disabled = true;
+        showSettingsResult("HubからRTSP映像へ接続しています…", true);
+        try {
+          const body = cameraPayload();
+          body.device_id = cameraId;
+          const result = await requestJson("/local/api/cameras/test-connection", { method: "POST", body: JSON.stringify(body) });
+          showSettingsResult(result.message || (result.ok ? "接続できました" : "接続できませんでした"), Boolean(result.ok));
+        } catch (error) {
+          showSettingsResult(error.message, false);
+        } finally {
+          testButton.disabled = false;
+        }
+      });
+      document.getElementById("camera-settings-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        saveButton.disabled = true;
+        try {
+          const updated = await requestJson(`/local/api/cameras/${encodeURIComponent(cameraId)}`, { method: "PATCH", body: JSON.stringify(cameraPayload()) });
+          document.getElementById("camera-title").textContent = updated.name;
+          document.getElementById("camera-password").value = "";
+          showSettingsResult("接続設定を保存しました。ライブ映像で反映を確認できます。", true);
+        } catch (error) {
+          showSettingsResult(error.message, false);
+        } finally {
+          saveButton.disabled = false;
+        }
+      });
+      {% endif %}
+    </script>
+  </body>
+</html>

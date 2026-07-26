@@ -211,7 +211,7 @@ class AdminDemoServerTest(unittest.TestCase):
 
             self.assertEqual(os.environ["TURSO_DATABASE_URL"], "local-demo")
             self.assertEqual(os.environ["TURSO_AUTH_TOKEN"], "local-demo")
-            self.assertEqual(os.environ["S3_ENDPOINT_URL"], "demo")
+            self.assertEqual(os.environ["S3_ENDPOINT_URL"], "http://127.0.0.1:9")
             self.assertEqual(os.environ["S3_ACCESS_KEY"], "demo")
             self.assertEqual(os.environ["S3_SECRET_KEY"], "demo")
             self.assertEqual(os.environ["MQTT_BROKER_URL"], "localhost")

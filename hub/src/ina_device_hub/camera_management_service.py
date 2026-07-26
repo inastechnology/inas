@@ -188,8 +188,10 @@ class CameraManagementService:
             "credentials_configured": bool(credentials.get("username") and credentials.get("password")),
             "created_at": record.get("created_at") or "",
             "updated_at": record.get("updated_at") or "",
-            "preview_url": f"/camera/{device_id}/preview",
-            "images_url": f"/camera/{device_id}/images",
+            "detail_url": f"/camera/{device_id}",
+            "preview_url": f"/camera/{device_id}#live",
+            "images_url": f"/camera/{device_id}#captures",
+            "settings_url": f"/camera/{device_id}#settings",
         }
 
     def _credentials(self, device_id: str | None, record: dict | None):

@@ -1365,8 +1365,8 @@ function PlacementInspector({
       )}
       {selectedDevice && placement.preset === "camera" && (
         <div className="camera-placement-links">
-          {selectedDevice.preview_url && <a href={selectedDevice.preview_url} target="_blank" rel="noreferrer"><ExternalLink size={15} />ライブ映像を見る</a>}
-          {selectedDevice.manage_url && <a href={selectedDevice.manage_url}><ExternalLink size={15} />カメラ設定を開く</a>}
+          {selectedDevice.preview_url && <a href={selectedDevice.preview_url} target="_blank" rel="noreferrer"><ExternalLink size={15} />カメラ詳細・ライブを見る</a>}
+          {selectedDevice.manage_url && <a href={`${selectedDevice.manage_url}#settings`}><ExternalLink size={15} />カメラ設定を開く</a>}
         </div>
       )}
       <label>メモ<textarea value={placement.memo} onChange={(event) => onChange({ memo: event.target.value })} /></label>

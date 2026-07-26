@@ -32,6 +32,23 @@
       main { display: grid; gap: 22px; width: min(1240px, 100%); margin: auto; padding: 22px 28px 46px; }
       .overview-lead { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(330px, .8fr); gap: 18px; }
       .surface { min-width: 0; padding: 17px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+      .field-camera-section { overflow: hidden; background: linear-gradient(135deg, #15251d, #223c2d 58%, #152c24); border-color: #294839; color: #f3f7f4; box-shadow: 0 18px 46px rgba(19,46,31,.16); }
+      .field-camera-section .eyebrow { color: #91c9ad; }
+      .field-camera-section .meta { color: #b7c8be; }
+      .field-camera-grid { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x proximity; }
+      .field-camera-card { flex: 0 0 min(520px, 100%); min-width: 0; overflow: hidden; border: 1px solid rgba(218,235,225,.2); border-radius: 8px; background: rgba(7,18,12,.34); scroll-snap-align: start; }
+      .field-camera-media { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; color: #fff; background: radial-gradient(circle at 50% 40%, #3d5749, #111c16 72%); text-decoration: none; }
+      .field-camera-media:hover, .field-camera-media:focus-visible { outline: 3px solid #93cbb0; outline-offset: -3px; text-decoration: none; }
+      .field-camera-media img, .field-camera-media video { display: block; width: 100%; height: 100%; object-fit: cover; }
+      .field-camera-empty { display: grid; place-items: center; width: 100%; height: 100%; color: #b9c8bf; font-size: 11px; text-align: center; }
+      .field-camera-overlay { position: absolute; inset: auto 0 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 50px 13px 11px; background: linear-gradient(transparent, rgba(5,12,8,.84)); pointer-events: none; }
+      .field-camera-overlay strong { display: block; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+      .field-camera-overlay small { display: block; margin-top: 2px; color: #c8d6ce; font-size: 9px; }
+      .field-camera-mode { flex: 0 0 auto; padding: 4px 6px; border: 1px solid rgba(224,239,230,.34); border-radius: 999px; color: #e3f2e8; background: rgba(13,31,21,.66); font-size: 8px; font-weight: 850; letter-spacing: .08em; }
+      .field-camera-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; }
+      .field-camera-status { margin: 0; color: #aebfb5; font-size: 9px; }
+      .field-camera-open { color: #b8e0ca; font-size: 10px; font-weight: 800; text-decoration: none; white-space: nowrap; }
+      .field-camera-open:hover { color: #fff; text-decoration: underline; }
       .section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
       .eyebrow { display: block; margin-bottom: 3px; color: #36705c; font-size: 10px; font-weight: 800; }
       .status-line { display: grid; grid-template-columns: minmax(190px, 1fr) repeat(2, 88px); gap: 8px; margin-bottom: 12px; }
@@ -354,6 +371,8 @@
         .calendar-task-layout { grid-template-columns: 96px minmax(0, 1fr); gap: 9px; }
         .record-history-filter { grid-template-columns:1fr; }
         .record-history-filter .wide { grid-column:auto; }
+        .field-camera-grid { scroll-snap-type: x mandatory; }
+        .field-camera-card { flex: 0 0 min(84vw, 390px); scroll-snap-align: start; }
       }
     </style>
     <link rel="stylesheet" href="/static/hub-ui.css">
@@ -442,6 +461,65 @@
         </section>
       </div>
 
+      {% if context.camera_views %}
+      <section class="surface field-camera-section" data-tab-panel="overview">
+        <div class="section-heading"><div><span class="eyebrow">Field now</span><h2>圃場のいま</h2></div><span class="meta">カメラごとの最新画像と直近24時間の変化</span></div>
+        <div class="field-camera-grid">
+          {% for camera in context.camera_views %}
+          <article class="field-camera-card" data-camera-timelapse="{{ camera.timelapse_url }}" data-timelapse-enabled="{{ 'true' if camera.timelapse_enabled else 'false' }}">
+            <a class="field-camera-media" href="{{ camera.detail_url }}" aria-label="{{ camera.name }}のカメラ詳細を開く">
+              {% if camera.latest_video %}
+              <video src="{{ camera.latest_video.url }}" poster="{{ camera.latest_frame.url if camera.latest_frame else '' }}" autoplay muted loop playsinline preload="metadata"></video>
+              {% elif camera.latest_frame %}
+              <img src="{{ camera.latest_frame.url }}" alt="{{ camera.name }}の最新画像" loading="eager">
+              {% else %}
+              <span class="field-camera-empty">保存済みの画像はまだありません</span>
+              {% endif %}
+              <span class="field-camera-overlay"><span><strong>{{ camera.name }}</strong><small>{{ camera.scope_label }}{% if camera.latest_frame %} / {{ camera.latest_frame.captured_at }}{% endif %}</small></span><span class="field-camera-mode">{{ "24H TIMELAPSE" if camera.latest_video else "LATEST" }}</span></span>
+            </a>
+            <footer class="field-camera-footer"><p class="field-camera-status">{% if not camera.timelapse_enabled %}定点撮影は無効です{% elif camera.latest_video %}直近の変化を再生中{% elif camera.latest_frame %}タイムラプスを準備しています{% else %}次の撮影を待っています{% endif %}</p><a class="field-camera-open" href="{{ camera.detail_url }}">履歴・ライブを見る ›</a></footer>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+      <script>
+        (() => {
+          const cards = Array.from(document.querySelectorAll("[data-camera-timelapse]"));
+          cards.forEach(async (card) => {
+            if (card.dataset.timelapseEnabled !== "true" || !card.querySelector("img, video")) return;
+            const status = card.querySelector(".field-camera-status");
+            try {
+              const response = await fetch(card.dataset.cameraTimelapse, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+              const body = await response.json().catch(() => ({}));
+              if (!response.ok) {
+                if (response.status === 422) status.textContent = "画像が2枚そろうと動画になります";
+                return;
+              }
+              const media = card.querySelector(".field-camera-media");
+              let video = media.querySelector("video");
+              if (!video) {
+                video = document.createElement("video");
+                const poster = media.querySelector("img");
+                if (poster) video.poster = poster.src;
+                video.autoplay = true;
+                video.muted = true;
+                video.loop = true;
+                video.playsInline = true;
+                video.preload = "metadata";
+                poster?.replaceWith(video);
+              }
+              if (video.src !== new URL(body.url, location.href).href) video.src = body.url;
+              const mode = card.querySelector(".field-camera-mode");
+              if (mode) mode.textContent = "24H TIMELAPSE";
+              status.textContent = `${body.frame_count || ""}枚から直近の変化を再生中`.trim();
+            } catch (_error) {
+              status.textContent = "最新画像を表示しています";
+            }
+          });
+        })();
+      </script>
+      {% endif %}
+
       <section class="surface layout-section" data-tab-panel="overview">
         <div class="section-heading"><div><span class="eyebrow">設置状況</span><h2>設置ビュー</h2></div><span class="meta">{{ context.layout_preview.placements|length }}配置</span></div>
         <div class="installation-preview-wrap">
@@ -466,7 +544,7 @@
 
       <section class="surface" data-tab-panel="monitoring">
         <div class="section-heading"><div><span class="eyebrow">物理スコープ</span><h2>空間ごとの環境・設備</h2></div><span class="meta">{{ context.monitoring_scopes|length }}区分</span></div>
-        {% if context.monitoring_scopes %}<div class="monitoring-scopes">{% for scope in context.monitoring_scopes %}<article class="scope-panel"><header><h3>{{ scope.label }}</h3><span class="meta">{{ scope.devices|length }}機器</span></header>{% if scope.devices %}<div class="scope-device-list">{% for device in scope.devices %}<span class="scope-device"><span>{{ device.device_name or device.device_id }} / {{ device.device_role_label }}</span><a class="scope-device-settings" href="/mqtt-devices/{{ device.device_id }}?tab=settings" target="_blank" rel="noopener" title="{{ device.device_name or device.device_id }}の動作設定を新しいタブで開く" aria-label="{{ device.device_name or device.device_id }}の動作設定を新しいタブで開く">&#9881;</a></span>{% endfor %}</div>{% endif %}{% if scope.sensor_values %}<div class="sensor-values">{% for item in scope.sensor_values %}{% for key, value in item["values"].items() %}<a class="sensor-value" href="/mqtt-devices/{{ item.device_id }}?tab=monitoring" target="_blank" rel="noopener" aria-label="{{ item.device_name or item.device_id }}の{{ metric_labels.get(key, key) }}推移を新しいタブで開く"><span>{{ item.device_name or item.device_id }} / {{ metric_labels.get(key, key) }}</span><strong>{{ value }}</strong></a>{% endfor %}{% endfor %}</div>{% else %}<p class="meta">この空間の直近計測値はありません。</p>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに機器を配置すると、空間ごとにここへ整理されます。</p>{% endif %}
+        {% if context.monitoring_scopes %}<div class="monitoring-scopes">{% for scope in context.monitoring_scopes %}<article class="scope-panel"><header><h3>{{ scope.label }}</h3><span class="meta">{{ scope.devices|length }}機器</span></header>{% if scope.devices %}<div class="scope-device-list">{% for device in scope.devices %}{% set device_settings_label = 'カメラ設定' if device.device_role == 'camera' else '動作設定' %}<span class="scope-device"><span>{{ device.device_name or device.device_id }} / {{ device.device_role_label }}</span><a class="scope-device-settings" href="{{ '/camera/' ~ device.device_id ~ '#settings' if device.device_role == 'camera' else '/mqtt-devices/' ~ device.device_id ~ '?tab=settings' }}" target="_blank" rel="noopener" title="{{ device.device_name or device.device_id }}の{{ device_settings_label }}を新しいタブで開く" aria-label="{{ device.device_name or device.device_id }}の{{ device_settings_label }}を新しいタブで開く">&#9881;</a></span>{% endfor %}</div>{% endif %}{% if scope.sensor_values %}<div class="sensor-values">{% for item in scope.sensor_values %}{% for key, value in item["values"].items() %}<a class="sensor-value" href="/mqtt-devices/{{ item.device_id }}?tab=monitoring" target="_blank" rel="noopener" aria-label="{{ item.device_name or item.device_id }}の{{ metric_labels.get(key, key) }}推移を新しいタブで開く"><span>{{ item.device_name or item.device_id }} / {{ metric_labels.get(key, key) }}</span><strong>{{ value }}</strong></a>{% endfor %}{% endfor %}</div>{% else %}<p class="meta">この空間の直近計測値はありません。</p>{% endif %}</article>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに機器を配置すると、空間ごとにここへ整理されます。</p>{% endif %}
       </section>
 
       <!-- field-primary-stream-complete -->

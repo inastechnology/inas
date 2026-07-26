@@ -102,6 +102,10 @@ class CameraManagementServiceTest(unittest.TestCase):
         self.assertNotIn("password", metadata)
         self.assertEqual(stored_credentials, {"username": "camera-user", "password": "camera-password"})
         self.assertEqual(os.stat(self.credentials.credential_path).st_mode & 0o777, 0o600)
+        self.assertEqual(created["detail_url"], f"/camera/{created['id']}")
+        self.assertEqual(created["preview_url"], f"/camera/{created['id']}#live")
+        self.assertEqual(created["images_url"], f"/camera/{created['id']}#captures")
+        self.assertEqual(created["settings_url"], f"/camera/{created['id']}#settings")
 
     def test_update_with_blank_password_keeps_secret_and_migrates_legacy_record(self):
         device_id = "INACD-legacy"

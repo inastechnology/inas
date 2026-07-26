@@ -307,7 +307,7 @@ def _demo_layout_payload(current: dict):
                     "rotation": 0,
                     "binding": {
                         "device_id": "INADS-DEMO-CAM-001",
-                        "resource_type": "device",
+                        "resource_type": "camera",
                         "resource_id": "",
                         "target_placement_ids": [DEMO_PRIMARY_RIDGE_ID, "placement-demo-ridge-2"],
                     },
@@ -869,11 +869,11 @@ def _prepare_env():
         "HUB_SYNC_PARENT_CLIENT_CERT_FILE": "",
         "HUB_SYNC_PARENT_CLIENT_KEY_FILE": "",
         "WORK_DIR": demo_work_dir,
-        "LOCAL_STORAGE_BASE_DIR": "/tmp/ina-device-hub-demo/storage",
+        "LOCAL_STORAGE_BASE_DIR": str(Path(demo_work_dir) / "storage"),
         # A non-URL value makes InaDBConnector use SQLite under WORK_DIR.
         "TURSO_DATABASE_URL": "local-demo",
         "TURSO_AUTH_TOKEN": "local-demo",
-        "S3_ENDPOINT_URL": "demo",
+        "S3_ENDPOINT_URL": "http://127.0.0.1:9",
         "S3_BUCKET_NAME": "demo",
         "S3_BUCKET_REGION": "auto",
         "S3_ACCESS_KEY": "demo",
@@ -1018,6 +1018,7 @@ def main():
     _prepare_env()
 
     from ina_device_hub.ai_content_service import ai_content_service
+    from ina_device_hub.camera_management_service import camera_management_service
     from ina_device_hub.device_config_service import device_config_service
     from ina_device_hub.device_event_log import append_device_event
     from ina_device_hub.field_layout_repository import field_layout_repository
@@ -1025,6 +1026,7 @@ def main():
     from ina_device_hub.plant_calendar_generation_task import plant_calendar_generation_task
     from ina_device_hub.plant_management_repository import plant_management_repository
     from ina_device_hub.plant_task_notification_task import plant_task_notification_task
+    from ina_device_hub.timelapse_media_service import timelapse_media_service
     from ina_device_hub.web_server import app, initialize_web_server
 
     field_repository().upsert(
@@ -1041,6 +1043,7 @@ def main():
             "stage": "栽培中",
             "cultivation_context": {"cultivation_method": "ハウス・露地", "irrigation_method": "点滴"},
             "device_ids": ["INADS-DEMO-WTR-001", "INADS-DEMO-WTR-002", "INADS-DEMO-WTR-003", "INADS-DEMO-ENV-001"],
+            "camera_device_ids": ["INADS-DEMO-CAM-001"],
             "memo": "設置ビュー操作確認用のデモ圃場",
         },
     )
@@ -1098,6 +1101,36 @@ def main():
     plant_repository = plant_management_repository()
     content_service = ai_content_service()
     demo_today = _demo_today()
+    camera_service = camera_management_service()
+    camera_service.repository.upsert(
+        "INADS-DEMO-CAM-001",
+        {
+            "id": "INADS-DEMO-CAM-001",
+            "name": "ハウス定点カメラ",
+            "camera_type": "reolink",
+            "ip_address": "192.168.1.84",
+            "port": 554,
+            "channel": 1,
+            "stream": "main",
+            "rtsp_path": "",
+            "timelapse": True,
+            "created_at": f"{demo_today.isoformat()}T06:00:00+00:00",
+            "updated_at": f"{demo_today.isoformat()}T10:00:00+00:00",
+        },
+    )
+    camera_service.credential_repository.set(
+        "INADS-DEMO-CAM-001",
+        username="demo-camera",
+        password="demo-camera-password",
+    )
+    demo_camera_image = (root / "doc" / "jp" / "assets" / "inas-app-demo-poster.jpg").read_bytes()
+    media_service = timelapse_media_service()
+    for hour in (6, 7, 8, 9, 10):
+        media_service.save_frame(
+            "INADS-DEMO-CAM-001",
+            demo_camera_image,
+            captured_at=datetime(demo_today.year, demo_today.month, demo_today.day, hour, 0),
+        )
     demo_planting = _ensure_demo_cultivation(layout, plant_repository, content_service, today=demo_today)
     for planting in plant_repository.field_bundle(DEMO_FIELD_ID)["plantings"]:
         calendar = plant_repository.get_calendar(planting["id"])

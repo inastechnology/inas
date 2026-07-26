@@ -1,7 +1,9 @@
 import os
 import shutil
 import tempfile
+import threading
 from datetime import datetime
+from urllib.parse import quote
 
 import ffmpeg
 
@@ -17,6 +19,7 @@ class TimelapseMediaService:
     def __init__(self):
         self.local_storage_base_dir = setting().get("local_storage_base_dir")
         self.storage_connector = storage_connector()
+        self._video_lock = threading.Lock()
 
     def save_frame(
         self,
@@ -84,7 +87,7 @@ class TimelapseMediaService:
                     "camera_id": device_id,
                     "captured_at": timestamp.isoformat(),
                     "relative_path": relative_path,
-                    "url": f"/local/api/camera-images/{relative_path}",
+                    "url": f"/local/api/camera-images/{quote(relative_path, safe='/')}",
                 }
             )
         return records
@@ -110,12 +113,15 @@ class TimelapseMediaService:
         max_width: int | None = None,
         max_height: int | None = None,
         video_bitrate: str | None = None,
+        max_frames: int | None = None,
     ):
         frame_paths = self.list_frames(
             device_id,
             start_at=start_at,
             end_at=end_at,
         )
+        if max_frames:
+            frame_paths = frame_paths[-max(2, max_frames) :]
         if len(frame_paths) < 2:
             return None
 
@@ -169,9 +175,98 @@ class TimelapseMediaService:
                 )
             except ffmpeg.Error as error:
                 logger.error(error.stderr.decode())
+                try:
+                    if os.path.isfile(output_path):
+                        os.remove(output_path)
+                except OSError:
+                    logger.warning("Could not remove incomplete timelapse video: %s", output_path)
                 return None
 
         return output_path
+
+    def ensure_recent_video(
+        self,
+        device_id: str,
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        fps: int = 8,
+        max_frames: int = 96,
+    ):
+        frame_paths = self.list_frames(device_id, start_at=start_at, end_at=end_at)
+        frame_paths = frame_paths[-max(2, max_frames) :]
+        if len(frame_paths) < 2:
+            return None
+
+        latest_frame_at = self._parse_frame_timestamp(os.path.basename(frame_paths[-1]))
+        if latest_frame_at is None:
+            return None
+        relative_path = self.get_video_relative_path(device_id, latest_frame_at)
+        output_path = os.path.join(self.local_storage_base_dir, relative_path)
+        with self._video_lock:
+            if not self._is_nonempty_file(output_path):
+                output_path = self.create_video(
+                    device_id,
+                    start_at=start_at,
+                    end_at=latest_frame_at,
+                    fps=fps,
+                    max_width=960,
+                    max_height=1200,
+                    video_bitrate="1800k",
+                    max_frames=max_frames,
+                )
+            if not output_path:
+                return None
+        return {
+            "camera_id": device_id,
+            "captured_at": latest_frame_at.isoformat(),
+            "frame_count": len(frame_paths),
+            "relative_path": relative_path,
+            "url": f"/local/api/camera-videos/{quote(relative_path, safe='/')}",
+        }
+
+    def list_video_records(self, device_id: str, limit: int = 20):
+        device_dir = os.path.join(
+            self.local_storage_base_dir,
+            "timelapse_videos",
+            device_id,
+        )
+        if not os.path.exists(device_dir):
+            return []
+
+        records = []
+        for root, _, files in os.walk(device_dir):
+            for file_name in files:
+                if not file_name.endswith(".mp4"):
+                    continue
+                timestamp = self._parse_video_timestamp(file_name)
+                if timestamp is None:
+                    continue
+                full_path = os.path.join(root, file_name)
+                if not self._is_nonempty_file(full_path):
+                    continue
+                relative_path = os.path.relpath(full_path, self.local_storage_base_dir)
+                records.append(
+                    {
+                        "camera_id": device_id,
+                        "captured_at": timestamp.isoformat(),
+                        "relative_path": relative_path,
+                        "url": f"/local/api/camera-videos/{quote(relative_path, safe='/')}",
+                    }
+                )
+        return sorted(records, key=lambda item: item["captured_at"], reverse=True)[: max(1, limit)]
+
+    def resolve_video_path(self, relative_path: str):
+        normalized = os.path.normpath(relative_path).lstrip(os.sep)
+        if not normalized.startswith(os.path.join("timelapse_videos", "")):
+            return None
+        full_path = os.path.abspath(os.path.join(self.local_storage_base_dir, normalized))
+        base_path = os.path.abspath(os.path.join(self.local_storage_base_dir, "timelapse_videos"))
+        if not full_path.startswith(base_path + os.sep):
+            return None
+        if not self._is_nonempty_file(full_path):
+            return None
+        return full_path
 
     def get_video_relative_path(self, device_id: str, captured_at: datetime):
         return os.path.join(
@@ -187,6 +282,16 @@ class TimelapseMediaService:
             return datetime.strptime(stem, "%Y%m%d_%H%M%S")
         except ValueError:
             return None
+
+    def _parse_video_timestamp(self, file_name: str):
+        return self._parse_frame_timestamp(file_name)
+
+    @staticmethod
+    def _is_nonempty_file(path: str):
+        try:
+            return os.path.isfile(path) and os.path.getsize(path) > 0
+        except OSError:
+            return False
 
 
 __instance = None

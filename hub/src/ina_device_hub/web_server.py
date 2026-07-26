@@ -229,6 +229,7 @@ def apply_security_headers(response):
     if (
         request.path.startswith("/settings")
         or request.path.startswith(("/local/api/settings/", "/local/api/extensions/", "/local/api/cameras", "/local/api/hierarchy/", "/sync/v1/", "/cameras"))
+        or request.path.startswith("/camera/")
         or "/growth-monitoring" in request.path
         or "/camera-growth-assessments" in request.path
     ):
@@ -757,7 +758,7 @@ def edit_camera_page(device_id):
     camera = camera_management_service().get(device_id)
     if camera is None:
         return jsonify({"error": "camera not found"}), 404
-    return render_template("camera_form.html", camera=camera, form_mode="edit")
+    return redirect(f"/camera/{quote(str(device_id), safe='')}#settings")
 
 
 @app.route("/local/api/cameras", methods=["GET", "POST"])
@@ -815,116 +816,40 @@ def camera_api(device_id):
     return jsonify(updated)
 
 
+@app.route("/camera/<device_id>", methods=["GET"])
+def camera_detail_page(device_id):
+    service = camera_management_service()
+    camera = service.get(device_id)
+    if camera is None:
+        return jsonify({"error": "camera not found"}), 404
+    media_service = timelapse_media_service()
+    images = media_service.list_frame_records(device_id, limit=24)
+    list_videos = getattr(media_service, "list_video_records", None)
+    videos = list_videos(device_id, limit=1) if callable(list_videos) else []
+    return render_template(
+        "camera_detail.html",
+        camera=camera,
+        references=service.references(device_id),
+        initial_images=images,
+        latest_video=videos[0] if videos else None,
+        current_user=current_user_from_request(request),
+    )
+
+
 @app.route("/camera/<device_id>/preview", methods=["GET"])
 def preview_camera(device_id):
-    # シンプルな HTML を生成して、device_id の見出しとレスポンシブな動画を表示
-    html = """
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Camera Stream - {{ device_id }}</title>
-        <link rel="stylesheet" href="/static/hub-ui.css">
-        <style>
-            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-            h1 { text-align: center; margin-bottom: 20px; }
-            .video-container { display: flex; justify-content: center; }
-            .video-container img { width: 100%; max-width: 800px; height: auto; }
-        </style>
-    </head>
-    <body class="hub-shell hub-legacy {{ accessibility_body_class }}">
-        <h1>カメラライブ / {{ device_id }}</h1>
-        <div class="video-container">
-            <img src="/local/api/camera/{{ device_id }}/video_feed" alt="Camera Stream">
-        </div>
-    </body>
-    </html>
-    """
-    return render_template_string(html, device_id=device_id)
+    if camera_management_service().get(device_id) is None:
+        return jsonify({"error": "camera not found"}), 404
+    return redirect(f"/camera/{quote(str(device_id), safe='')}#live")
 
 
 @app.route("/camera/<device_id>/images", methods=["GET"])
 def camera_images(device_id):
+    if camera_management_service().get(device_id) is None:
+        return jsonify({"error": "camera not found"}), 404
     date_value = request.args.get("date", "").strip()
-    limit = _request_limit(default=48, maximum=500)
-    start_at, end_at, date_error = _camera_image_date_range(date_value)
-    if date_error:
-        return jsonify({"error": date_error}), 400
-
-    images = timelapse_media_service().list_frame_records(
-        device_id,
-        start_at=start_at,
-        end_at=end_at,
-        limit=limit,
-    )
-    camera = camera_connector().camera_device_repository.get(device_id) or {}
-    html = """
-    <!doctype html>
-    <html>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Camera Images</title>
-        <link rel="stylesheet" href="/static/hub-ui.css">
-        <style>
-          body { font-family: Arial, sans-serif; margin: 0; background: #f7f8fa; color: #20242a; }
-          header { padding: 16px 20px; background: #ffffff; border-bottom: 1px solid #dfe3e8; }
-          main { padding: 16px 20px 28px; }
-          form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-bottom: 16px; }
-          label { display: grid; gap: 4px; font-size: 13px; color: #4d5662; }
-          input, button { font-size: 15px; padding: 8px 10px; border: 1px solid #c8ced6; border-radius: 6px; background: #fff; }
-          button { cursor: pointer; background: #1f6feb; border-color: #1f6feb; color: #fff; }
-          .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
-          .image-card { background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; overflow: hidden; }
-          .image-card img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #e9edf2; }
-          .meta { padding: 8px 10px; font-size: 13px; color: #4d5662; }
-          .empty { padding: 28px; background: #fff; border: 1px solid #dfe3e8; border-radius: 8px; color: #4d5662; }
-          a { color: #1f6feb; text-decoration: none; }
-        </style>
-      </head>
-      <body class="hub-shell hub-legacy {{ accessibility_body_class }}">
-        <header>
-          <h1>Camera Images</h1>
-          <div>{{ camera_name }} / {{ device_id }}</div>
-        </header>
-        <main>
-          <form method="get">
-            <label>
-              Date
-              <input type="date" name="date" value="{{ date_value }}">
-            </label>
-            <label>
-              Limit
-              <input type="number" name="limit" min="1" max="500" value="{{ limit }}">
-            </label>
-            <button type="submit">表示</button>
-            <a href="/camera/{{ device_id }}/images">直近</a>
-            <a href="/camera/{{ device_id }}/preview">ライブ</a>
-          </form>
-          {% if images %}
-          <div class="grid">
-            {% for image in images %}
-            <a class="image-card" href="{{ image.url }}" target="_blank" rel="noopener noreferrer">
-              <img src="{{ image.url }}" alt="{{ image.captured_at }}">
-              <div class="meta">{{ image.captured_at }}</div>
-            </a>
-            {% endfor %}
-          </div>
-          {% else %}
-          <div class="empty">画像がありません。</div>
-          {% endif %}
-        </main>
-      </body>
-    </html>
-    """
-    return render_template_string(
-        html,
-        device_id=device_id,
-        camera_name=camera.get("name") or device_id,
-        date_value=date_value,
-        limit=limit,
-        images=images,
-    )
+    query = f"?{urlencode({'start_date': date_value, 'end_date': date_value})}" if date_value else ""
+    return redirect(f"/camera/{quote(str(device_id), safe='')}{query}#captures")
 
 
 def _build_mqtt_admin_view(
@@ -1168,6 +1093,7 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "kind_label": _device_kind_label(device_kind),
         "supports_irrigation": device_kind in {"WTR", "WRS"},
         "supports_fertigation": device_kind == "FGT",
+        "supports_watering_pattern": "watering_pattern" in definition.get("runtime_config", {}).get("send_keys", []),
         "definition": definition,
         "ui_extensions": build_device_detail_extensions(device_kind, device=record, status=payload, config=config),
         "runtime_config_payload": project_runtime_config(device_kind, config),
@@ -3247,7 +3173,6 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .connection-stage { order: 1; }
           .watering-rule-stage { order: 2; }
           .schedule-stage { order: 3; }
-          .pattern-stage { order: 4; }
           .calibration-stage { order: 5; }
           .environment-stage { order: 6; }
           .advanced-settings { order: 8; }
@@ -3284,6 +3209,20 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           }
           .switch-row input { width: auto; }
           .schedule-editor, .mosfet-switch-editor { display: grid; gap: 10px; }
+          .irrigation-mode-picker { display: grid; gap: 9px; margin: 14px 0; padding: 0; border: 0; }
+          .irrigation-mode-picker legend { padding: 0; color: #264f3d; font-size: 13px; font-weight: 850; }
+          .irrigation-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+          .irrigation-mode-option { position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 9px; align-items: start; min-height: 82px; padding: 13px; border: 2px solid #d4dfd7; border-radius: 11px; background: #fff; cursor: pointer; transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease; }
+          .irrigation-mode-option:hover { border-color: #7eaa91; background: #f7fbf8; }
+          .irrigation-mode-option:has(input:checked) { border-color: #2d865d; color: #174f35; background: #eaf6ee; box-shadow: inset 0 0 0 1px #2d865d; }
+          .irrigation-mode-option input { width: 19px; height: 19px; margin-top: 1px; accent-color: #27845a; }
+          .irrigation-mode-option strong, .irrigation-mode-option small { display: block; }
+          .irrigation-mode-option small { margin-top: 4px; color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1.45; }
+          .irrigation-mode-settings { display: grid; gap: 10px; margin-bottom: 13px; padding: 14px; border: 1px solid #bdd8c8; border-radius: 11px; background: #f2f9f4; }
+          .irrigation-mode-settings[hidden], [data-schedule-duration-field][hidden] { display: none !important; }
+          .irrigation-mode-settings .config-toolbar { align-items: start; }
+          .irrigation-pattern-summary { margin: 0; padding: 10px 12px; border-radius: 8px; color: #245a41; background: #deefe4; font-size: 12px; font-weight: 750; }
+          .irrigation-mode-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
           .output-routing { display: grid; grid-template-columns: minmax(220px, .65fr) minmax(360px, 1.35fr); gap: 14px; margin-top: 9px; padding: 14px; border: 1px solid #cddbd2; border-radius: 9px; background: #f8fbf8; }
           .output-routing-trigger { cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, background-color .16s ease; }
           .output-routing-trigger:hover { border-color: #6eaa89; background: #f3faf5; box-shadow: 0 10px 26px rgba(32, 94, 65, .12); }
@@ -3519,6 +3458,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .ridge-row { grid-template-columns: 1fr; }
             .ridge-meta { justify-content: flex-start; }
             .schedule-row { grid-template-columns: 1fr; }
+            .irrigation-mode-options { grid-template-columns: 1fr; }
             .calibration-card { grid-template-columns: 1fr; }
             .tab-list { margin-inline: -16px; border-radius: 0; padding-inline: 16px; }
             .device-guide, .device-identity { grid-template-columns: 1fr; }
@@ -3665,7 +3605,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               {% endfor %}
               {% for camera in camera_devices %}
               <article class="device-tile" data-camera-id="{{ camera.id }}">
-                <a class="device-tile-link" href="{{ camera.preview_url }}">
+                <a class="device-tile-link" href="{{ camera.detail_url or camera.preview_url }}">
                   <div>
                     <div class="device-title">{{ camera.name }}</div>
                     <div class="device-sub">ネットワークカメラ / {{ camera.camera_type }}</div>
@@ -3677,7 +3617,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                     <div class="mini"><span>タイムラプス</span><strong>{{ "有効" if camera.timelapse else "無効" }}</strong></div>
                   </div>
                 </a>
-                <a class="camera-edit-link" href="/cameras/{{ camera.id }}/edit">設定</a>
+                <a class="camera-edit-link" href="{{ camera.settings_url or '/camera/' ~ camera.id ~ '#settings' }}">設定</a>
                 <button type="button" class="device-delete-button" data-delete-camera="{{ camera.id }}" data-delete-camera-name="{{ camera.name }}">登録を解除</button>
               </article>
               {% endfor %}
@@ -3901,31 +3841,47 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
               <div id="watering-schedules" class="setup-stage schedule-stage"{% if not selected.supports_irrigation and not selected.supports_fertigation %} hidden{% endif %}>
                 <h3>{{ '液肥づくりの予約' if selected.supports_fertigation else '灌水予約' }}</h3>
+                {% if selected.supports_watering_pattern %}
+                <fieldset class="irrigation-mode-picker" aria-describedby="irrigation-mode-help">
+                  <legend>灌水モード</legend>
+                  <div class="irrigation-mode-options">
+                    <label class="irrigation-mode-option" for="irrigation-mode-standard">
+                      <input id="irrigation-mode-standard" name="irrigation-mode" type="radio" value="standard">
+                      <span><strong>通常灌水</strong><small>予約ごとに設定した時間、続けて水を出します。</small></span>
+                    </label>
+                    <label class="irrigation-mode-option" for="irrigation-mode-pulse">
+                      <input id="irrigation-mode-pulse" name="irrigation-mode" type="radio" value="pulse">
+                      <span><strong>分割灌水</strong><small>水を出す・止める動きを繰り返し、ゆっくり浸透させます。</small></span>
+                    </label>
+                  </div>
+                  <p id="irrigation-mode-help" class="irrigation-mode-note">選んだモードは、この機器のすべての灌水予約に適用されます。</p>
+                </fieldset>
+                <div id="irrigation-pattern-settings" class="irrigation-mode-settings" hidden>
+                  <div class="config-toolbar">
+                    <div class="config-field">
+                      <label for="watering-pattern-on-sec">水を出す時間（秒）</label>
+                      <input id="watering-pattern-on-sec" type="number" min="0" max="3600" step="1">
+                    </div>
+                    <div class="config-field">
+                      <label for="watering-pattern-off-sec">水を止める時間（秒）</label>
+                      <input id="watering-pattern-off-sec" type="number" min="0" max="3600" step="1">
+                    </div>
+                    <div class="config-field">
+                      <label for="watering-pattern-repeat-count">繰り返し回数</label>
+                      <input id="watering-pattern-repeat-count" type="number" min="0" max="20" step="1">
+                    </div>
+                  </div>
+                  <p id="irrigation-pattern-summary" class="irrigation-pattern-summary" aria-live="polite"></p>
+                </div>
+                {% else %}
+                <input id="irrigation-mode-standard" name="irrigation-mode" type="radio" value="standard" checked hidden>
+                <input id="watering-pattern-on-sec" type="number" value="0" hidden>
+                <input id="watering-pattern-off-sec" type="number" value="0" hidden>
+                <input id="watering-pattern-repeat-count" type="number" value="0" hidden>
+                {% endif %}
                 <div id="schedule-editor" class="schedule-editor"></div>
                 <div class="actions">
                   <button type="button" id="add-schedule">＋ {{ '液肥づくり' if selected.supports_fertigation else '水やり' }}予約を追加</button>
-                </div>
-              </div>
-
-              <div id="watering-pattern" class="setup-stage pattern-stage"{% if not selected.supports_irrigation %} hidden{% endif %}>
-                <h3>分割灌水</h3>
-                <div class="config-toolbar">
-                  <label class="switch-row" for="watering-pattern-enabled">
-                    <input id="watering-pattern-enabled" type="checkbox">
-                    分割灌水を使う
-                  </label>
-                  <div class="config-field">
-                    <label for="watering-pattern-on-sec">水を出す時間（秒）</label>
-                    <input id="watering-pattern-on-sec" type="number" min="0" max="3600" step="1">
-                  </div>
-                  <div class="config-field">
-                    <label for="watering-pattern-off-sec">水を止める時間（秒）</label>
-                    <input id="watering-pattern-off-sec" type="number" min="0" max="3600" step="1">
-                  </div>
-                  <div class="config-field">
-                    <label for="watering-pattern-repeat-count">繰り返し回数</label>
-                    <input id="watering-pattern-repeat-count" type="number" min="0" max="20" step="1">
-                  </div>
                 </div>
               </div>
 
@@ -4328,6 +4284,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const initialRuntimeConfig = {{ (selected_device.config if selected_device else {}) | tojson }};
           const deviceDefinition = {{ (admin_view.selected.definition if admin_view.selected else {}) | tojson }};
           const deviceRuntimeSendKeys = (((deviceDefinition || {}).runtime_config || {}).send_keys || []);
+          const supportsWateringPattern = deviceRuntimeSendKeys.includes("watering_pattern");
           const isFertigationDevice = ((deviceDefinition || {}).device || {}).kind === "FGT";
           const deviceOutputCapabilities = {{ (admin_view.selected.output_settings.outputs if admin_view.selected else []) | tojson }};
           const unsupportedOutputSettings = {{ (admin_view.selected.output_settings.unsupported if admin_view.selected else []) | tojson }};
@@ -5094,7 +5051,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－ <span>削除</span></button>',
             ] : [
               '<div><label>時刻</label><input data-schedule-time type="time" required></div>',
-              '<div><label>灌水時間（秒）</label><input data-schedule-duration type="number" min="1" max="3600" step="1" required></div>',
+              '<div data-schedule-duration-field><label>灌水時間（秒）</label><input data-schedule-duration type="number" min="1" max="3600" step="1" required></div>',
               '<div><label>水を送る接続先</label><select data-schedule-channel></select></div>',
               '<div><label>頻度</label><select data-schedule-frequency-mode><option value="daily">毎日</option><option value="interval">日にちごと</option><option value="weekdays">曜日指定</option></select></div>',
               '<div data-frequency-panel="interval"><label>間隔</label><input data-schedule-interval-days type="number" min="1" max="31" step="1"></div>',
@@ -5127,6 +5084,45 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (!isFertigationDevice) row.querySelector("[data-schedule-frequency-mode]").addEventListener("input", () => setFrequencyControlsVisible(row));
             row.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", refreshRuntimeConfigPreview));
             return row;
+          }
+
+          function selectedIrrigationMode() {
+            return document.querySelector('input[name="irrigation-mode"]:checked')?.value === "pulse" ? "pulse" : "standard";
+          }
+
+          function updateIrrigationModeUi(applyPulseDefaults = false) {
+            const pulseMode = selectedIrrigationMode() === "pulse";
+            const patternSettings = document.getElementById("irrigation-pattern-settings");
+            if (patternSettings) patternSettings.hidden = !pulseMode;
+            document.querySelectorAll("[data-schedule-duration-field]").forEach((field) => {
+              field.hidden = pulseMode;
+            });
+
+            const onInput = document.getElementById("watering-pattern-on-sec");
+            const offInput = document.getElementById("watering-pattern-off-sec");
+            const repeatInput = document.getElementById("watering-pattern-repeat-count");
+            if (pulseMode && applyPulseDefaults) {
+              const hasSavedPattern = Number(onInput?.value) > 0 || Number(offInput?.value) > 0 || Number(repeatInput?.value) > 0;
+              if (!hasSavedPattern) {
+                onInput.value = "60";
+                offInput.value = "60";
+                repeatInput.value = "3";
+              } else {
+                if (Number(onInput?.value) <= 0) onInput.value = "60";
+                if (Number(offInput?.value) < 0 || offInput?.value === "") offInput.value = "0";
+                if (Number(repeatInput?.value) <= 0) repeatInput.value = "3";
+              }
+            }
+
+            const summary = document.getElementById("irrigation-pattern-summary");
+            if (summary) {
+              const onSec = Math.max(0, Number(onInput?.value) || 0);
+              const offSec = Math.max(0, Number(offInput?.value) || 0);
+              const repeatCount = Math.max(0, Number(repeatInput?.value) || 0);
+              const wateringSec = onSec * repeatCount;
+              const elapsedSec = wateringSec + offSec * Math.max(0, repeatCount - 1);
+              summary.textContent = `水を出す合計 ${formatDurationSeconds(wateringSec)} ／ 予約開始から終了まで ${formatDurationSeconds(elapsedSec)}`;
+            }
           }
 
           const envCalibrationProfiles = {
@@ -5282,8 +5278,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (otaCheckInterval) otaCheckInterval.value = String(Number.isInteger(config.ota_check_interval_sec) ? config.ota_check_interval_sec : 21600);
 
             const wateringPattern = config.watering_pattern || {};
-            const wateringPatternEnabled = document.getElementById("watering-pattern-enabled");
-            if (wateringPatternEnabled) wateringPatternEnabled.checked = Boolean(wateringPattern.enabled);
+            const irrigationMode = document.getElementById(wateringPattern.enabled ? "irrigation-mode-pulse" : "irrigation-mode-standard");
+            if (irrigationMode) irrigationMode.checked = true;
             const wateringPatternOnSec = document.getElementById("watering-pattern-on-sec");
             if (wateringPatternOnSec) wateringPatternOnSec.value = String(Number.isInteger(wateringPattern.on_sec) ? wateringPattern.on_sec : 0);
             const wateringPatternOffSec = document.getElementById("watering-pattern-off-sec");
@@ -5375,6 +5371,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               const schedules = Array.isArray(config.schedules) && config.schedules.length ? config.schedules : [{ hour: 6, minute: 30, duration_sec: 1, channel_mask: 1, frequency: { mode: "daily" } }];
               schedules.slice(0, 8).forEach((schedule) => editor.appendChild(createScheduleRow(schedule)));
             }
+            updateIrrigationModeUi();
             refreshRuntimeConfigPreview();
           }
 
@@ -5404,12 +5401,15 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               };
             });
             if (schedules.length < 1 || schedules.length > 8) throw new Error("灌水予約は 1〜8 件にしてください");
-            const wateringPattern = {
-              enabled: document.getElementById("watering-pattern-enabled").checked,
+            const wateringPattern = supportsWateringPattern ? {
+              enabled: selectedIrrigationMode() === "pulse",
               on_sec: Number(document.getElementById("watering-pattern-on-sec").value),
               off_sec: Number(document.getElementById("watering-pattern-off-sec").value),
               repeat_count: Number(document.getElementById("watering-pattern-repeat-count").value),
-            };
+            } : structuredClone(initialRuntimeConfig.watering_pattern || { enabled: false, on_sec: 0, off_sec: 0, repeat_count: 0 });
+            if (wateringPattern.enabled && (wateringPattern.on_sec <= 0 || wateringPattern.repeat_count <= 0)) {
+              throw new Error("分割灌水は、水を出す時間と繰り返し回数を 1 以上にしてください");
+            }
             const soilCalibrationMode = document.getElementById("soil-calibration-mode").value;
             const soilCalibration = {
               mode: soilCalibrationMode,
@@ -5587,6 +5587,15 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             });
             runtimeConfigForm.querySelectorAll("input, select").forEach((input) => input.addEventListener("input", refreshRuntimeConfigPreview));
           }
+          document.querySelectorAll('input[name="irrigation-mode"]').forEach((input) => {
+            input.addEventListener("input", () => {
+              updateIrrigationModeUi(true);
+              refreshRuntimeConfigPreview();
+            });
+          });
+          ["watering-pattern-on-sec", "watering-pattern-off-sec", "watering-pattern-repeat-count"].forEach((id) => {
+            document.getElementById(id)?.addEventListener("input", () => updateIrrigationModeUi());
+          });
           const thresholdRange = document.getElementById("moisture-threshold");
           const thresholdNumber = document.getElementById("moisture-threshold-number");
           if (thresholdRange && thresholdNumber) {
@@ -6754,8 +6763,8 @@ def _field_layout_devices(field_id, field):
                     "state": "active" if camera_record.get("credentials_configured") else "pending",
                     "location": camera_record.get("ip_address") or "",
                     "resources": [],
-                    "preview_url": camera_record.get("preview_url") or f"/camera/{quote(str(device_id), safe='')}/preview",
-                    "manage_url": f"/cameras/{quote(str(device_id), safe='')}/edit",
+                    "preview_url": camera_record.get("preview_url") or f"/camera/{quote(str(device_id), safe='')}#live",
+                    "manage_url": camera_record.get("detail_url") or f"/camera/{quote(str(device_id), safe='')}",
                 }
             )
             continue
@@ -8104,6 +8113,7 @@ def _build_field_context(  # noqa: PLR0915
         ),
         "recent_notes": list(field.get("notes") or [])[-20:],
         "recent_images": recent_images[:12],
+        "camera_views": _build_field_camera_views(camera_ids, placement_rows),
         "compare_date": compare_day.strftime("%Y-%m-%d"),
         "image_compare": recent_images[:2],
         "image_compare_groups": image_compare_groups,
@@ -8291,7 +8301,7 @@ def _build_installation_tree(layout: dict, device_records: dict, active_planting
                     "relation": relation,
                     "relation_kind": relation_kind,
                     "href": (
-                        f"/camera/{quote(str(device_id), safe='')}/preview"
+                        f"/camera/{quote(str(device_id), safe='')}"
                         if device_id and is_camera
                         else f"/mqtt-devices/{quote(str(device_id), safe='')}"
                         if device_id
@@ -8402,7 +8412,9 @@ def _build_layout_preview(layout: dict, active_plantings: list, *, field_id=""):
                 "subtitle": crop_label or (f"栽培場所 {child_count}件" if child_count else ""),
                 "bound": bool(placement.get("binding")),
                 "href": (
-                    f"/mqtt-devices/{quote(str((placement.get('binding') or {}).get('device_id')), safe='')}"
+                    f"/camera/{quote(str((placement.get('binding') or {}).get('device_id')), safe='')}"
+                    if (placement.get("binding") or {}).get("device_id") and (placement.get("binding") or {}).get("resource_type") == "camera"
+                    else f"/mqtt-devices/{quote(str((placement.get('binding') or {}).get('device_id')), safe='')}"
                     if (placement.get("binding") or {}).get("device_id")
                     else _layout_placement_url(field_id, root.get("id"), placement.get("id"))
                 ),
@@ -8985,6 +8997,46 @@ def _field_camera_images(camera_id: str, limit: int = 2):
     return [dict(image, camera_id=camera_id) for image in images]
 
 
+def _build_field_camera_views(camera_ids: list, placement_rows: list):
+    media_service = timelapse_media_service()
+    list_videos = getattr(media_service, "list_video_records", None)
+    cameras = []
+    for camera_id in camera_ids:
+        camera = camera_management_service().get(camera_id) or {}
+        placement = _device_placement_for(placement_rows, camera_id) or {}
+        try:
+            frames = media_service.list_frame_records(camera_id, limit=1)
+        except Exception:
+            frames = []
+        try:
+            videos = list_videos(camera_id, limit=1) if callable(list_videos) else []
+        except Exception:
+            videos = []
+        latest_video = videos[0] if videos and camera.get("timelapse") else None
+        if latest_video:
+            try:
+                video_captured_at = datetime.fromisoformat(latest_video.get("captured_at") or "")
+                if video_captured_at.tzinfo is not None:
+                    video_captured_at = video_captured_at.astimezone().replace(tzinfo=None)
+                if video_captured_at < datetime.now() - timedelta(hours=24):
+                    latest_video = None
+            except (TypeError, ValueError):
+                latest_video = None
+        cameras.append(
+            {
+                "id": camera_id,
+                "name": camera.get("name") or placement.get("device_name") or camera_id,
+                "scope_label": placement.get("scope_label") or "圃場全体",
+                "latest_frame": frames[0] if frames else None,
+                "latest_video": latest_video,
+                "timelapse_enabled": bool(camera.get("timelapse")),
+                "detail_url": camera.get("detail_url") or f"/camera/{quote(str(camera_id), safe='')}",
+                "timelapse_url": f"/local/api/camera/{quote(str(camera_id), safe='')}/recent-timelapse",
+            }
+        )
+    return cameras
+
+
 # ==========================================
 # Local API
 # ==========================================
@@ -9441,8 +9493,14 @@ def video_feed(device_id):
 @app.route("/local/api/camera/<device_id>/images", methods=["GET"])
 def list_camera_images(device_id):
     date_value = request.args.get("date", "").strip()
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
     limit = _request_limit(default=48, maximum=500)
-    start_at, end_at, date_error = _camera_image_date_range(date_value)
+    start_at, end_at, date_error = _camera_image_date_range(
+        date_value,
+        start_date=start_date,
+        end_date=end_date,
+    )
     if date_error:
         return jsonify({"error": date_error}), 400
     return jsonify(
@@ -9455,12 +9513,38 @@ def list_camera_images(device_id):
     )
 
 
+@app.route("/local/api/camera/<device_id>/recent-timelapse", methods=["POST"])
+def create_recent_camera_timelapse(device_id):
+    camera = camera_management_service().get(device_id)
+    if camera is None:
+        return jsonify({"error": "camera not found"}), 404
+    now = datetime.now()
+    video = timelapse_media_service().ensure_recent_video(
+        device_id,
+        start_at=now - timedelta(hours=24),
+        end_at=now,
+        fps=8,
+        max_frames=96,
+    )
+    if video is None:
+        return jsonify({"error": "タイムラプスには直近24時間の画像が2枚以上必要です"}), 422
+    return jsonify(video)
+
+
 @app.route("/local/api/camera-images/<path:image_path>", methods=["GET"])
 def get_camera_image(image_path):
     frame_path = timelapse_media_service().resolve_frame_path(image_path)
     if frame_path is None:
         return jsonify({"error": "no image"}), 404
     return send_file(frame_path, mimetype="image/jpeg")
+
+
+@app.route("/local/api/camera-videos/<path:video_path>", methods=["GET"])
+def get_camera_video(video_path):
+    video_path = timelapse_media_service().resolve_video_path(video_path)
+    if video_path is None:
+        return jsonify({"error": "no video"}), 404
+    return send_file(video_path, mimetype="video/mp4", conditional=True)
 
 
 def initialize_web_server():
@@ -9512,15 +9596,22 @@ def _request_limit(default: int = 100, maximum: int = 1000):
     return max(1, min(limit, maximum))
 
 
-def _camera_image_date_range(date_value: str):
-    if not date_value:
+def _camera_image_date_range(date_value: str, *, start_date: str = "", end_date: str = ""):
+    if date_value and (start_date or end_date):
+        return None, None, "date cannot be combined with start_date or end_date"
+    if date_value:
+        start_date = date_value
+        end_date = date_value
+    if not start_date and not end_date:
         return None, None, None
     try:
-        target_date = datetime.strptime(date_value, "%Y-%m-%d")
+        start_at = datetime.strptime(start_date, "%Y-%m-%d") if start_date else None
+        end_day = datetime.strptime(end_date, "%Y-%m-%d") if end_date else None
     except ValueError:
-        return None, None, "date must be YYYY-MM-DD"
-    start_at = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_at = start_at + timedelta(days=1) - timedelta(microseconds=1)
+        return None, None, "date values must be YYYY-MM-DD"
+    end_at = end_day + timedelta(days=1) - timedelta(microseconds=1) if end_day else None
+    if start_at and end_at and start_at > end_at:
+        return None, None, "start_date must be on or before end_date"
     return start_at, end_at, None
 
 

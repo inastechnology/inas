@@ -268,7 +268,7 @@ class WebServerOTATest(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertIn("ハウス東側", html)
         self.assertIn("ネットワークカメラ / reolink", html)
-        self.assertIn(f'href="/cameras/{camera_id}/edit"', html)
+        self.assertIn(f'href="/camera/{camera_id}#settings"', html)
         self.assertIn('href="/cameras/new"', html)
         self.assertNotIn("camera-user", html)
 

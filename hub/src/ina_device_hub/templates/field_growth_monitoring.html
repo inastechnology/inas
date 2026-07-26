@@ -136,7 +136,7 @@
                 <div class="chips">{% for planting in source.plantings %}<span class="chip">{{ planting.crop_label }} / {{ planting.placement_name }}</span>{% else %}<span class="meta">定植情報なし</span>{% endfor %}</div>
               </div>
               {% if source.blocking_reasons %}<ul class="blocking-list">{% for reason in source.blocking_reasons %}<li>{{ reason.message }}</li>{% endfor %}</ul>{% endif %}
-              <div class="source-links">{% if source.preview_url %}<a href="{{ source.preview_url }}">ライブ映像</a>{% endif %}{% if source.images_url %}<a href="{{ source.images_url }}">撮影履歴</a>{% endif %}<a href="/fields/{{ dashboard.field.id }}/layout">監視対象を編集</a></div>
+              <div class="source-links">{% if source.detail_url %}<a href="{{ source.detail_url }}">カメラ詳細</a>{% endif %}{% if source.preview_url %}<a href="{{ source.preview_url }}">ライブ映像</a>{% endif %}{% if source.images_url %}<a href="{{ source.images_url }}">撮影履歴</a>{% endif %}<a href="/fields/{{ dashboard.field.id }}/layout">監視対象を編集</a></div>
               <button class="analyze-button" type="button" data-analyze-camera="{{ source.camera_id }}"{% if not source.ready %} disabled{% endif %}>今の状態を撮影してAI評価</button>
               <p class="source-status" data-analysis-status="{{ source.camera_id }}" aria-live="polite"></p>
             </div>

@@ -107,7 +107,7 @@
           </details>
 
           <div class="camera-actions">
-            {% if camera %}<a class="button-link" href="{{ camera.preview_url }}">ライブを見る</a>{% endif %}
+            {% if camera %}<a class="button-link" href="{{ camera.detail_url or camera.preview_url }}">カメラ詳細へ戻る</a>{% endif %}
             <button id="test-camera" type="button">接続を確認</button>
             <button id="save-camera" class="primary" type="submit">{{ "変更を保存" if camera else "カメラを登録" }}</button>
           </div>
@@ -194,8 +194,8 @@
         saveButton.setAttribute("aria-busy", "true");
         try {
           const url = formMode === "edit" ? "/local/api/cameras/" + encodeURIComponent(existingCamera.id) : "/local/api/cameras";
-          await requestJson(url, { method: formMode === "edit" ? "PATCH" : "POST", body: JSON.stringify(payload()) });
-          window.location.assign("/mqtt-devices");
+          const saved = await requestJson(url, { method: formMode === "edit" ? "PATCH" : "POST", body: JSON.stringify(payload()) });
+          window.location.assign(saved.detail_url || "/mqtt-devices");
         } catch (error) {
           setResult(error.message, false);
           saveButton.disabled = false;

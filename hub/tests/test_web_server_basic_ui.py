@@ -36,6 +36,7 @@ from ina_device_hub.sensor_device_repository import SensorDeviceRepository  # no
 class FakeTimelapseMediaService:
     def __init__(self):
         self.calls = []
+        self.video_calls = []
 
     def list_frame_records(self, device_id, start_at=None, end_at=None, limit=100):
         self.calls.append((device_id, start_at, end_at, limit))
@@ -47,6 +48,20 @@ class FakeTimelapseMediaService:
                 "url": "/local/api/camera-images/timelapse_frames/camera-1/20260704/20260704_063000.jpg",
             }
         ]
+
+    def list_video_records(self, device_id, limit=20):
+        del device_id, limit
+        return []
+
+    def ensure_recent_video(self, device_id, *, start_at, end_at, fps=8, max_frames=96):
+        self.video_calls.append((device_id, start_at, end_at, fps, max_frames))
+        return {
+            "camera_id": device_id,
+            "captured_at": "2026-07-04T06:30:00",
+            "frame_count": 12,
+            "relative_path": f"timelapse_videos/{device_id}/20260704/20260704_063000.mp4",
+            "url": f"/local/api/camera-videos/timelapse_videos/{device_id}/20260704/20260704_063000.mp4",
+        }
 
 
 class FakeAIContentService:
@@ -750,6 +765,74 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(end_at.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-04 23:59:59")
         self.assertEqual(limit, 12)
 
+    def test_camera_images_api_filters_by_date_range(self):
+        response = self.client.get("/local/api/camera/camera-1/images?start_date=2026-07-01&end_date=2026-07-04&limit=30")
+
+        self.assertEqual(response.status_code, 200)
+        device_id, start_at, end_at, limit = self.fake_timelapse_media_service.calls[-1]
+        self.assertEqual(device_id, "camera-1")
+        self.assertEqual(start_at.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-01 00:00:00")
+        self.assertEqual(end_at.strftime("%Y-%m-%d %H:%M:%S"), "2026-07-04 23:59:59")
+        self.assertEqual(limit, 30)
+
+    def test_camera_detail_combines_live_history_and_verified_rtsp_settings(self):
+        camera = {
+            "id": "INACD-garden",
+            "name": "ハウス東側",
+            "camera_type": "reolink",
+            "ip_address": "192.168.1.84",
+            "port": 554,
+            "channel": 1,
+            "stream": "main",
+            "rtsp_path": "",
+            "timelapse": True,
+            "username": "camera-user",
+            "credentials_configured": True,
+            "updated_at": "2026-07-04T06:30:00+00:00",
+        }
+
+        class CameraServiceStub:
+            def get(self, device_id):
+                return camera if device_id == camera["id"] else None
+
+            def references(self, device_id):
+                return [{"type": "field", "field_id": "field-1", "field_name": "東圃場"}] if device_id == camera["id"] else []
+
+        with patch.object(web_server, "camera_management_service", return_value=CameraServiceStub()):
+            response = self.client.get(f"/camera/{camera['id']}")
+            legacy_live = self.client.get(f"/camera/{camera['id']}/preview")
+            legacy_images = self.client.get(f"/camera/{camera['id']}/images?date=2026-07-04")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("撮影履歴", html)
+        self.assertIn("ライブ映像", html)
+        self.assertIn("確認済みの方式はRTSPです", html)
+        self.assertIn('id="capture-dialog"', html)
+        self.assertIn('id="camera-settings-form"', html)
+        self.assertEqual(legacy_live.headers["Location"], f"/camera/{camera['id']}#live")
+        self.assertEqual(
+            legacy_images.headers["Location"],
+            f"/camera/{camera['id']}?start_date=2026-07-04&end_date=2026-07-04#captures",
+        )
+
+    def test_recent_camera_timelapse_is_generated_from_last_24_hours(self):
+        camera = {"id": "INACD-garden", "name": "garden"}
+
+        class CameraServiceStub:
+            def get(self, device_id):
+                return camera if device_id == camera["id"] else None
+
+        with patch.object(web_server, "camera_management_service", return_value=CameraServiceStub()):
+            response = self.client.post(f"/local/api/camera/{camera['id']}/recent-timelapse", json={})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["frame_count"], 12)
+        device_id, start_at, end_at, fps, max_frames = self.fake_timelapse_media_service.video_calls[-1]
+        self.assertEqual(device_id, camera["id"])
+        self.assertEqual(round((end_at - start_at).total_seconds()), 24 * 60 * 60)
+        self.assertEqual((fps, max_frames), (8, 96))
+
     def test_inas_app_landing_page_explains_real_product_and_two_adoption_paths(self):
         response = self.client.get("/inas-app")
 
@@ -1368,7 +1451,9 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(other_options["items"], [])
         self.assertIn("garden", detail)
         self.assertIn("監視: ライチ", detail)
-        self.assertIn(f"/camera/{camera['id']}/preview", detail)
+        self.assertIn(f"/camera/{camera['id']}", detail)
+        self.assertNotIn(f"/mqtt-devices/{camera['id']}?tab=settings", detail)
+        self.assertIn("圃場のいま", detail)
 
     def test_field_detail_renders_containment_tree_and_device_resource_relation(self):
         field = self.field_repository.upsert(None, {"name": "階層テスト圃場"})
