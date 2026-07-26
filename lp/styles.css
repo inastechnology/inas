@@ -60,12 +60,13 @@ button { cursor: pointer; }
 .header-cta { justify-self: end; display: inline-flex; min-height: 44px; align-items: center; padding: 9px 18px; border-radius: 999px; color: #fff; background: var(--forest-800); font-size: 12px; font-weight: 900; text-decoration: none; box-shadow: 0 8px 22px rgb(17 62 45 / 16%); }
 .menu-button, .mobile-menu { display: none; }
 
-.hero { display: grid; grid-template-columns: minmax(460px, .92fr) minmax(520px, 1.08fr); min-height: 770px; background: var(--cream); }
-.hero-copy { display: flex; flex-direction: column; justify-content: center; max-width: 650px; padding: 74px 40px 74px max(40px, calc((100vw - 1180px) / 2)); }
+.hero { display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); min-height: 770px; background: var(--cream); }
+.hero-copy { display: flex; min-width: 0; flex-direction: column; justify-content: center; padding: 74px 40px 74px max(40px, calc((100vw - 1180px) / 2)); }
 .hero-kicker, .eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; color: var(--forest-700); font: 900 10px ui-monospace, SFMono-Regular, Consolas, monospace; letter-spacing: .14em; }
 .hero-kicker span { width: 36px; height: 1px; background: var(--leaf); }
-.hero h1 { margin: 0; font-family: "Yu Mincho", "Hiragino Mincho ProN", serif; font-size: clamp(48px, 5.5vw, 80px); font-weight: 600; letter-spacing: -.065em; line-height: 1.16; text-wrap: balance; }
-.hero h1 em { position: relative; color: var(--forest-700); font-style: normal; white-space: nowrap; }
+.hero h1 { margin: 0; font-family: "Yu Mincho", "Hiragino Mincho ProN", serif; font-size: clamp(48px, 4.8vw, 68px); font-weight: 600; letter-spacing: -.055em; line-height: 1.16; text-wrap: balance; }
+.hero-title-line { display: inline-block; white-space: nowrap; }
+.hero h1 em { position: relative; z-index: 0; color: var(--forest-700); font-style: normal; white-space: nowrap; isolation: isolate; }
 .hero h1 em::after { position: absolute; z-index: -1; right: -3px; bottom: 3px; left: -3px; height: 12px; border-radius: 999px; background: var(--lime); content: ""; opacity: .7; }
 .hero-lead { max-width: 600px; margin: 28px 0 0; color: var(--ink-soft); font-size: 16px; line-height: 2; }
 .hero-lead strong { color: var(--forest-800); }
@@ -288,8 +289,9 @@ button { cursor: pointer; }
 @media (max-width: 1050px) {
   .desktop-nav { gap: 16px; }
   .desktop-nav a { font-size: 11px; }
-  .hero { grid-template-columns: 1fr 1fr; }
-  .hero-copy { padding-left: 32px; }
+  .hero { grid-template-columns: minmax(0, .98fr) minmax(0, 1.02fr); }
+  .hero-copy { padding-right: 28px; padding-left: 32px; }
+  .hero h1 { font-size: clamp(45px, 5vw, 56px); }
   .problem-grid { grid-template-columns: 1fr 1fr; }
   .problem-grid article { min-height: 260px; }
   .open-source { grid-template-columns: 1fr 1fr; }

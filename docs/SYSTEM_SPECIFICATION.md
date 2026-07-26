@@ -22,11 +22,18 @@ python3 docs/assets/generate_system_diagrams.py
 
 ## Purpose
 
-INAS helps small-scale growers observe irrigation, soil state, environment,
-crop context, and work results in one system. The goal is not only device
-control, but a repeatable improvement loop: observe, interpret, propose an
-action, approve or execute it, evaluate the result, and feed the result back
-into the next decision.
+INAS's mission is to **build a society that can once again receive the world's
+call**. It should help people notice changes in plants, soil, water, and weather,
+verify them in the field, and choose how to respond.
+
+To serve that mission, INAS helps small-scale growers observe irrigation, soil
+state, environment, crop context, and work results in one system. Sensor values
+and AI proposals are clues that direct attention to the field, not the world
+itself or a final answer. The goal is not only device control, but a repeatable
+improvement loop: observe, interpret, propose an action, approve or execute it,
+evaluate the result, and feed the result back into the next decision. See
+[INAS Agentic Agriculture Vision](AGENTIC_AGRICULTURE_VISION.md) for the
+canonical product philosophy.
 
 The hub currently executes generic WTR/WRS irrigation. FGT firmware executes a
 local, scheduled fertilizer-mixing batch with device-side safety interlocks;

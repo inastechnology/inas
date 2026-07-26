@@ -10,7 +10,7 @@ const lpRoot = path.resolve(scriptDir, "..");
 const requireFromAdminUi = createRequire(path.resolve(scriptDir, "../../hub/admin-ui/package.json"));
 const puppeteer = requireFromAdminUi("puppeteer-core");
 let baseUrl = process.env.LP_AUDIT_URL || "";
-const widths = [320, 360, 375, 390, 430, 768, 820, 1024, 1280, 1440];
+const widths = [320, 360, 375, 390, 430, 768, 820, 1024, 1280, 1440, 1600, 1920, 2000, 2560];
 const screenshotDir = process.env.LP_AUDIT_SCREENSHOT_DIR || "";
 const mimeTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -78,6 +78,20 @@ async function inspect(width, state) {
       return `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}${className ? `.${className}` : ""}`;
     };
     const root = document.documentElement;
+    const hero = document.querySelector(".hero");
+    const heroLead = document.querySelector(".hero-lead");
+    const heroTitle = document.querySelector(".hero h1");
+    const heroTitleRect = heroTitle?.getBoundingClientRect();
+    const heroTitleOverflow = heroTitleRect
+      ? [...heroTitle.querySelectorAll(".hero-title-line")]
+        .map((element) => ({ text: element.textContent?.trim() || "", rect: element.getBoundingClientRect() }))
+        .filter(({ rect }) => rect.left < heroTitleRect.left - 1 || rect.right > heroTitleRect.right + 1)
+        .map(({ text, rect }) => ({
+          text,
+          left: Math.round(rect.left - heroTitleRect.left),
+          right: Math.round(rect.right - heroTitleRect.right),
+        }))
+      : [{ text: "hero title not found", left: 0, right: 0 }];
     const cards = [...document.querySelectorAll(selector)].filter((element) => element.getClientRects().length > 0);
     const cardOverflow = [];
     for (const card of cards) {
@@ -126,6 +140,11 @@ async function inspect(width, state) {
     }
     return {
       page: { clientWidth: root.clientWidth, scrollWidth: root.scrollWidth },
+      hero: {
+        height: Math.round(hero?.getBoundingClientRect().height || 0),
+        leadWidth: Math.round(heroLead?.getBoundingClientRect().width || 0),
+      },
+      heroTitleOverflow,
       cardOverflow,
       visibleFixedOverlays: [...document.querySelectorAll(".mobile-conversion-bar")]
         .filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).position === "fixed")
@@ -174,6 +193,8 @@ try {
 
   const failures = results.filter((result) => (
     result.page.scrollWidth > result.page.clientWidth + 1
+    || (result.width >= 1280 && (result.hero.height > 900 || result.hero.leadWidth < 400))
+    || result.heroTitleOverflow.length > 0
     || result.cardOverflow.length > 0
     || result.visibleFixedOverlays.length > 0
   ));

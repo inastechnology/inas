@@ -35,6 +35,14 @@ try {
   const slides = await page.$$(".slide");
   assert.equal(slides.length, 13, "pitch deck must contain 13 slides");
   assert.equal(await page.$eval("[data-total]", (element) => element.textContent), "13");
+  assert.equal(
+    await page.$eval("#slide-1 h1", (element) => element.textContent.replace(/\s+/g, " ").trim()),
+    "農を、次の世代へ渡せる形に。",
+  );
+  assert.equal(
+    await page.$eval("#slide-13 h2", (element) => element.textContent.replace(/\s+/g, " ").trim()),
+    "自然との関係を失わずに、食糧をつくり続ける。",
+  );
   await page.$eval(".deck-controls", (element) => { element.style.display = "none"; });
 
   const results = [];

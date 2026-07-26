@@ -154,7 +154,7 @@ try {
   await configured.goto(`${baseUrl}/?utm_source=google&utm_medium=cpc&utm_campaign=farmer_validation&audience=farmer`, { waitUntil: "networkidle0" });
   await fillLeadForm(configured, "lead@example.com");
   await configured.click('.interest-form button[type="submit"]');
-  await configured.waitForFunction(() => document.querySelector("[data-form-status]").textContent.includes("受付が完了"));
+  await configured.waitForFunction(() => document.querySelector("[data-form-status]").textContent.includes("Discordコミュニティの招待"));
   assert.equal(receivedLeads.length, 1);
   assert.equal(receivedLeads[0].email, "lead@example.com");
   assert.equal(receivedLeads[0].pain, "watering");

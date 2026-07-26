@@ -128,7 +128,7 @@ try {
     fullPage: true,
     searchQuery: "起動時潅水",
     requiredSelectors: [".manifesto-preview"],
-    requiredText: ["ここまで読み進めたあなたへ", "自動化は、いばらの道です"],
+    requiredText: ["ここまで読み進めたあなたへ", "新しい農の形を自分の圃場から探究する人", "自動化は、いばらの道です"],
     forbiddenText: generalSetupForbiddenText,
   });
   await openPage({
@@ -147,7 +147,7 @@ try {
       'img[src="/images/illustrations/why-inas-next-generation.webp"]',
       'img[src="/images/illustrations/why-inas-open-tools.webp"]',
     ],
-    requiredText: ["未来の農を一緒につくる仲間", "子どもたちの時代にも、食糧をつくり続ける", "私たちが約束すること"],
+    requiredText: ["世界からの呼びかけを、もう一度受け取る", "未来の農を一緒につくる仲間", "子どもたちの時代にも、食糧をつくり続ける", "私たちが約束すること"],
   });
   await openPage({
     path: "/devices/wtr/",

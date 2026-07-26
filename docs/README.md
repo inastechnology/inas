@@ -26,8 +26,8 @@ cross-project specifications and architecture policy.
   design policy for composing crop-specific systems such as strawberry drip
   cultivation from multiple devices orchestrated by the hub.
 - [AGENTIC_AGRICULTURE_VISION.md](AGENTIC_AGRICULTURE_VISION.md): product
-  philosophy for evidence-backed, bounded, rail-independent cooperation between
-  growers, fixed equipment, services, and future robots.
+  philosophy for receiving the world's call, returning people to the field,
+  and using evidence-backed, bounded cooperation between growers and machines.
 - [EDGE_GATEWAY_HARDWARE_AND_IDENTITY.md](EDGE_GATEWAY_HARDWARE_AND_IDENTITY.md):
   identity namespace, secure enrollment boundary, and Raspberry Pi/Compute
   Module appliance profiles for Edge Gateway and Local Hub nodes.
