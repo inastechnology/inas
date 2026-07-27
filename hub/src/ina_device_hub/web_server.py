@@ -7162,6 +7162,82 @@ def add_plant_calendar_action_api(planting_id):
     return jsonify(action), 201
 
 
+@app.route("/local/api/plantings/<planting_id>/work-routes", methods=["GET", "POST"])
+def plant_work_routes_api(planting_id):
+    repository = plant_management_repository()
+    if repository.get_planting(planting_id) is None:
+        return jsonify({"error": "planting not found"}), 404
+    if request.method == "GET":
+        return jsonify({"items": repository.list_work_routes(planting_id)})
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        route = repository.create_work_route(planting_id, request_body)
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(route), 201
+
+
+@app.route("/local/api/plantings/<planting_id>/work-routes/<route_id>", methods=["PATCH", "DELETE"])
+def plant_work_route_api(planting_id, route_id):
+    repository = plant_management_repository()
+    try:
+        if request.method == "DELETE":
+            repository.delete_work_route(planting_id, route_id)
+            return "", 204
+        request_body = request.get_json(silent=True)
+        if not isinstance(request_body, dict):
+            return jsonify({"error": "request body must be a JSON object"}), 400
+        return jsonify(repository.update_work_route(planting_id, route_id, request_body))
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+
+
+@app.route("/local/api/plantings/<planting_id>/work-routes/<route_id>/start", methods=["POST"])
+def start_plant_work_route_api(planting_id, route_id):
+    repository = plant_management_repository()
+    try:
+        return jsonify(repository.start_work_route(planting_id, route_id)), 201
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+
+
+@app.route("/local/api/plantings/<planting_id>/work-route-runs/<run_id>/steps/<step_id>/answer", methods=["POST"])
+def answer_plant_work_route_step_api(planting_id, run_id, step_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    repository = plant_management_repository()
+    try:
+        return jsonify(repository.answer_work_route_step(planting_id, run_id, step_id, request_body))
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+
+
+@app.route("/local/api/plantings/<planting_id>/work-route-runs/<run_id>/rewind", methods=["POST"])
+def rewind_plant_work_route_step_api(planting_id, run_id):
+    repository = plant_management_repository()
+    try:
+        return jsonify(repository.rewind_work_route_step(planting_id, run_id))
+    except PlantManagementNotFoundError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except PlantManagementConflictError as exc:
+        return jsonify({"error": str(exc)}), 409
+
+
 @app.route("/local/api/plantings/<planting_id>/calendar/actions/<action_id>", methods=["DELETE"])
 def delete_plant_calendar_action_api(planting_id, action_id):
     repository = plant_management_repository()

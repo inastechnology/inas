@@ -280,7 +280,7 @@ class WebServerBasicUITest(unittest.TestCase):
         self.plant_management_repository = PlantManagementRepository()
         self.plant_management_repository.repository_path = os.path.join(self.tmp_dir.name, ".plant_management.json")
         self.plant_management_repository.data = {
-            "schema_version": 1,
+            "schema_version": 2,
             "plantings": {},
             "calendars": {},
             "generation_tasks": [],

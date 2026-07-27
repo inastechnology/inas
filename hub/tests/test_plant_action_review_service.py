@@ -55,7 +55,7 @@ class PlantActionReviewServiceTest(unittest.TestCase):
         self.repository = PlantManagementRepository()
         self.repository.repository_path = os.path.join(self.tmp_dir.name, ".plant_management.json")
         self.repository.data = {
-            "schema_version": 1,
+            "schema_version": 2,
             "plantings": {},
             "calendars": {},
             "generation_tasks": [],

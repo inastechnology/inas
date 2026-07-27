@@ -88,7 +88,7 @@ interface AppProps {
 
 const HISTORY_LIMIT = 40;
 const EMPTY_PLANT_BUNDLE: PlantBundle = {
-  viewer: { email: "", role: "operator" }, action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {},
+  viewer: { email: "", role: "operator" }, action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {}, work_routes: [], work_route_runs: [],
 };
 const PLANTABLE_PRESETS = new Set<PlacementPreset>(["ridge", "tree", "pot", "hydroponic_bed"]);
 const SPACE_TARGET_PRESETS = new Set<PlacementPreset>(["greenhouse", "open_field", "shade_area"]);

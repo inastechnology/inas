@@ -732,7 +732,7 @@ export function PlantCalendarDrawer({
               {actionEntries.length > 0 && <div className="calendar-outlook"><AnnualCalendarGantt actions={scopedActionEntries.map((entry) => entry.action)} onActionSelect={openActionFromGantt} /></div>}
             </>}
 
-            {workspace === "work" && actionEntries.length > 0 && <section className="calendar-action-list" aria-label="管理作業">
+            {workspace === "work" && <section className="calendar-action-list" aria-label="管理作業">
               <div className="calendar-section-heading">
                 <div><strong>圃場の管理作業</strong><span>{scopedActionEntries.length}件を状態別に管理</span></div>
                 <div>

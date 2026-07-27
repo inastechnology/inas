@@ -27,10 +27,15 @@ MAX_QUESTIONS = 1000
 MAX_GENERATION_TASKS = 500
 MAX_FERTILIZER_APPLICATIONS = 5000
 MAX_FERTILIZER_MATERIALS = 500
+MAX_WORK_ROUTES = 500
+MAX_WORK_ROUTE_STEPS = 40
+MAX_WORK_ROUTE_RUNS = 5000
 
 VALID_PLANTING_STATUSES = {"active", "harvested", "removed"}
 VALID_CROP_CATEGORIES = {"vegetable", "fruit_tree", "flower", "herb", "other"}
 VALID_ACTION_STATUSES = {"planned", "in_progress", "awaiting_review", "completed", "skipped"}
+VALID_WORK_ROUTE_STEP_TYPES = {"observe", "measure", "decide", "prepare", "perform", "wait", "verify"}
+VALID_WORK_ROUTE_DEPENDENCY_TYPES = {"completed", "approved", "elapsed_days"}
 VALID_WORK_REVIEW_STATUSES = {"pending", "approved", "rejected"}
 VALID_GENERATION_TASK_STATUSES = {"queued", "running", "awaiting_review", "succeeded", "failed"}
 ACTIVE_GENERATION_TASK_STATUSES = {"queued", "running", "awaiting_review"}
@@ -1145,7 +1150,232 @@ class PlantManagementRepository:
                 if item.get("field_id") == field_id and (calendar_filter is None or item.get("placement_id") in placement_filter)
             ],
             "fertilizer_materials": self.list_fertilizer_materials(),
+            "work_routes": [
+                self._public_work_route(route)
+                for route in self.data.get("work_routes", {}).values()
+                if route.get("field_id") == field_id and (calendar_filter is None or route.get("planting_id") in calendar_filter)
+            ],
+            "work_route_runs": [
+                copy.deepcopy(run)
+                for run in self.data.get("work_route_runs", {}).values()
+                if run.get("field_id") == field_id and (calendar_filter is None or run.get("planting_id") in calendar_filter)
+            ],
         }
+
+    def list_work_routes(self, planting_id: str):
+        self._planting(planting_id)
+        return [
+            self._public_work_route(route)
+            for route in self.data.get("work_routes", {}).values()
+            if route.get("planting_id") == planting_id
+        ]
+
+    @serialized_repository_write("repository_path")
+    def create_work_route(self, planting_id: str, value: dict):
+        planting = self._planting(planting_id)
+        routes = self.data.setdefault("work_routes", {})
+        if len(routes) >= MAX_WORK_ROUTES:
+            raise PlantManagementValidationError("work route limit reached")
+        now = _utc_now()
+        route_id = str(uuid.uuid4())
+        route = _normalize_work_route(
+            route_id,
+            {
+                **(value if isinstance(value, dict) else {}),
+                "id": route_id,
+                "planting_id": planting_id,
+                "field_id": planting["field_id"],
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+        routes[route_id] = route
+        self.save()
+        return self._public_work_route(route)
+
+    @serialized_repository_write("repository_path")
+    def update_work_route(self, planting_id: str, route_id: str, value: dict):
+        route = self._work_route(planting_id, route_id)
+        if not isinstance(value, dict):
+            raise PlantManagementValidationError("work route data must be an object")
+        replacement = _normalize_work_route(
+            route_id,
+            {
+                **route,
+                **value,
+                "id": route_id,
+                "planting_id": route["planting_id"],
+                "field_id": route["field_id"],
+                "created_at": route["created_at"],
+                "updated_at": _utc_now(),
+            },
+        )
+        self.data["work_routes"][route_id] = replacement
+        self.save()
+        return self._public_work_route(replacement)
+
+    @serialized_repository_write("repository_path")
+    def delete_work_route(self, planting_id: str, route_id: str):
+        self._work_route(planting_id, route_id)
+        if any(
+            run.get("route_id") == route_id and run.get("status") == "in_progress"
+            for run in self.data.get("work_route_runs", {}).values()
+        ):
+            raise PlantManagementConflictError("in-progress work route cannot be deleted")
+        self.data["work_routes"].pop(route_id, None)
+        self.data["work_route_runs"] = {
+            run_id: run
+            for run_id, run in self.data.get("work_route_runs", {}).items()
+            if run.get("route_id") != route_id
+        }
+        self.save()
+
+    @serialized_repository_write("repository_path")
+    def start_work_route(self, planting_id: str, route_id: str):
+        route = self._work_route(planting_id, route_id)
+        blockers = self._work_route_blockers(route)
+        if blockers:
+            raise PlantManagementConflictError(blockers[0])
+        active = next(
+            (
+                run
+                for run in self.data.get("work_route_runs", {}).values()
+                if run.get("route_id") == route_id and run.get("status") == "in_progress"
+            ),
+            None,
+        )
+        if active:
+            return copy.deepcopy(active)
+        now = _utc_now()
+        run_id = str(uuid.uuid4())
+        run = {
+            "id": run_id,
+            "route_id": route_id,
+            "planting_id": route["planting_id"],
+            "field_id": route["field_id"],
+            "status": "in_progress",
+            "current_step_id": route["entry_step_id"],
+            "history": [],
+            "started_at": now,
+            "completed_at": "",
+            "updated_at": now,
+        }
+        runs = self.data.setdefault("work_route_runs", {})
+        runs[run_id] = run
+        if len(runs) > MAX_WORK_ROUTE_RUNS:
+            completed_ids = [key for key, item in runs.items() if item.get("status") == "completed"]
+            for old_id in completed_ids[: len(runs) - MAX_WORK_ROUTE_RUNS]:
+                runs.pop(old_id, None)
+        self.save()
+        return copy.deepcopy(run)
+
+    @serialized_repository_write("repository_path")
+    def answer_work_route_step(self, planting_id: str, run_id: str, step_id: str, value: dict):
+        run = self.data.get("work_route_runs", {}).get(run_id)
+        if run is None or run.get("planting_id") != planting_id:
+            raise PlantManagementNotFoundError("work route run not found")
+        if run.get("status") != "in_progress":
+            raise PlantManagementConflictError("work route run is already completed")
+        if run.get("current_step_id") != step_id:
+            raise PlantManagementConflictError("this step is not the current guide")
+        route = self._work_route(planting_id, run["route_id"])
+        step = next((item for item in route["steps"] if item["id"] == step_id), None)
+        if step is None:
+            raise PlantManagementNotFoundError("work route step not found")
+        if not isinstance(value, dict):
+            raise PlantManagementValidationError("step result must be an object")
+        outcome = _clean_string(value.get("outcome"), "completed")
+        next_step_id = step.get("next_step_id", "")
+        choice_id = _clean_string(value.get("choice_id"))[:120]
+        if step["type"] == "decide":
+            choice = next((item for item in step["choices"] if item["id"] == choice_id), None)
+            if choice is None:
+                raise PlantManagementValidationError("a valid decision choice is required")
+            next_step_id = choice.get("next_step_id", "")
+        elif outcome == "missing":
+            next_step_id = step.get("missing_step_id", "")
+            if not next_step_id:
+                raise PlantManagementValidationError("this measurement has no manual fallback")
+        recorded_value = _clean_string(value.get("value"))[:500]
+        if step["type"] == "measure" and outcome != "missing":
+            try:
+                recorded_value = str(float(recorded_value))
+            except (TypeError, ValueError) as exc:
+                raise PlantManagementValidationError("measurement value must be a number") from exc
+        now = _utc_now()
+        run["history"].append(
+            {
+                "step_id": step_id,
+                "step_type": step["type"],
+                "title": step["title"],
+                "outcome": outcome,
+                "choice_id": choice_id,
+                "value": recorded_value,
+                "note": _clean_string(value.get("note"))[:2000],
+                "source": _clean_string(value.get("source"), "manual")[:80],
+                "completed_at": now,
+            }
+        )
+        run["current_step_id"] = next_step_id
+        run["updated_at"] = now
+        if not next_step_id:
+            run["status"] = "completed"
+            run["completed_at"] = now
+        self.data["work_route_runs"][run_id] = run
+        self.save()
+        return copy.deepcopy(run)
+
+    @serialized_repository_write("repository_path")
+    def rewind_work_route_step(self, planting_id: str, run_id: str):
+        run = self.data.get("work_route_runs", {}).get(run_id)
+        if run is None or run.get("planting_id") != planting_id:
+            raise PlantManagementNotFoundError("work route run not found")
+        history = run.get("history") if isinstance(run.get("history"), list) else []
+        if not history:
+            raise PlantManagementConflictError("work route is already at its first step")
+        previous = history.pop()
+        route = self._work_route(planting_id, run["route_id"])
+        if not any(step.get("id") == previous.get("step_id") for step in route["steps"]):
+            raise PlantManagementConflictError("previous work route step no longer exists")
+        run["history"] = history
+        run["current_step_id"] = previous["step_id"]
+        run["status"] = "in_progress"
+        run["completed_at"] = ""
+        run["updated_at"] = _utc_now()
+        self.data["work_route_runs"][run_id] = run
+        self.save()
+        return {"run": copy.deepcopy(run), "restored_result": copy.deepcopy(previous)}
+
+    def _work_route(self, planting_id: str, route_id: str):
+        route = self.data.get("work_routes", {}).get(route_id)
+        if route is None or route.get("planting_id") != planting_id:
+            raise PlantManagementNotFoundError("work route not found")
+        return copy.deepcopy(route)
+
+    def _work_route_blockers(self, route: dict):
+        blockers = []
+        runs = list(self.data.get("work_route_runs", {}).values())
+        for dependency in route.get("dependencies", []):
+            completed = [
+                run
+                for run in runs
+                if run.get("route_id") == dependency["route_id"] and run.get("status") == "completed"
+            ]
+            if not completed:
+                blockers.append(dependency.get("label") or "先に必要な案内ルートが完了していません")
+                continue
+            if dependency["type"] == "elapsed_days":
+                latest = max((item.get("completed_at") or "" for item in completed), default="")
+                if latest:
+                    ready_at = datetime.fromisoformat(latest.replace("Z", "+00:00")) + timedelta(days=dependency["min_days"])
+                    if datetime.now(UTC) < ready_at:
+                        blockers.append(dependency.get("label") or f"前の作業から{dependency['min_days']}日待つ必要があります")
+        return blockers
+
+    def _public_work_route(self, route: dict):
+        result = copy.deepcopy(route)
+        result["start_blockers"] = self._work_route_blockers(route)
+        return result
 
     def list_suggestions(self, field_id: str, today: str | None = None, lead_days: int = 7):
         current = _date_value(today or date.today().isoformat(), "today")
@@ -1280,7 +1510,7 @@ class PlantManagementRepository:
 
 def _empty_data():
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "plantings": {},
         "calendars": {},
         "generation_tasks": [],
@@ -1289,14 +1519,17 @@ def _empty_data():
         "questions": [],
         "fertilizer_applications": [],
         "fertilizer_materials": [],
+        "work_routes": {},
+        "work_route_runs": {},
     }
 
 
 def _normalize_data(value):
     if not isinstance(value, dict):
         return _empty_data()
+    retire_legacy_actions = int(value.get("schema_version") or 1) < 2
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "plantings": {
             planting_id: _normalize_planting_record(planting_id, planting)
             for planting_id, planting in (value.get("plantings") or {}).items()
@@ -1305,7 +1538,7 @@ def _normalize_data(value):
         if isinstance(value.get("plantings"), dict)
         else {},
         "calendars": {
-            calendar_id: _normalize_calendar_record(calendar_id, calendar)
+            calendar_id: _normalize_calendar_record(calendar_id, calendar, retire_legacy_actions=retire_legacy_actions)
             for calendar_id, calendar in (value.get("calendars") or {}).items()
             if isinstance(calendar, dict)
         }
@@ -1327,6 +1560,20 @@ def _normalize_data(value):
             for item in list(value.get("fertilizer_materials") or [])[-MAX_FERTILIZER_MATERIALS:]
             if isinstance(item, dict) and not _clean_string(item.get("id")).startswith("builtin:")
         ],
+        "work_routes": {
+            route_id: _normalize_work_route(route_id, route)
+            for route_id, route in (value.get("work_routes") or {}).items()
+            if isinstance(route, dict)
+        }
+        if isinstance(value.get("work_routes"), dict)
+        else {},
+        "work_route_runs": {
+            run_id: _normalize_work_route_run(run_id, run)
+            for run_id, run in (value.get("work_route_runs") or {}).items()
+            if isinstance(run, dict)
+        }
+        if isinstance(value.get("work_route_runs"), dict)
+        else {},
     }
 
 
@@ -1640,15 +1887,165 @@ def _trim_generation_tasks(tasks: list):
     return [task for task in tasks if task.get("id") in keep_ids]
 
 
-def _normalize_calendar_record(calendar_id: str, value: dict):
+def _normalize_calendar_record(calendar_id: str, value: dict, *, retire_legacy_actions: bool = False):
     record = copy.deepcopy(value)
     record["id"] = _clean_string(record.get("id"), calendar_id)
     record["care_profile"] = _normalize_care_profile(record.get("care_profile"))
     record["task_rules"] = _normalize_task_rules(record.get("task_rules"))
     actions = record.get("actions") if isinstance(record.get("actions"), list) else []
-    record["actions"] = [_normalize_action(action, index) for index, action in enumerate(actions)]
+    # The v2 migration intentionally retires all pending legacy work. Completed
+    # evidence remains in work_logs and fertilizer applications.
+    record["actions"] = [] if retire_legacy_actions else [_normalize_action(action, index) for index, action in enumerate(actions)]
     record["generation"] = _normalize_generation(record.get("generation"))
     return record
+
+
+def _normalize_work_route(route_id: str, value: dict):
+    if not isinstance(value, dict):
+        raise PlantManagementValidationError("work route data must be an object")
+    raw_steps = value.get("steps")
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise PlantManagementValidationError("work route steps must be a non-empty array")
+    if len(raw_steps) > MAX_WORK_ROUTE_STEPS:
+        raise PlantManagementValidationError(f"work route steps must contain {MAX_WORK_ROUTE_STEPS} entries or less")
+
+    steps = []
+    step_ids = set()
+    for index, raw_step in enumerate(raw_steps):
+        if not isinstance(raw_step, dict):
+            raise PlantManagementValidationError("each work route step must be an object")
+        step_id = _clean_string(raw_step.get("id"), f"step-{index + 1}")[:120]
+        if not step_id or step_id in step_ids:
+            raise PlantManagementValidationError("work route step ids must be unique")
+        step_ids.add(step_id)
+        step_type = _clean_string(raw_step.get("type"), "perform")
+        if step_type not in VALID_WORK_ROUTE_STEP_TYPES:
+            raise PlantManagementValidationError("unsupported work route step type")
+        choices = []
+        if step_type == "decide":
+            raw_choices = raw_step.get("choices")
+            if not isinstance(raw_choices, list) or len(raw_choices) < 2:
+                raise PlantManagementValidationError("decision steps require at least two choices")
+            for choice_index, raw_choice in enumerate(raw_choices[:8]):
+                if not isinstance(raw_choice, dict):
+                    raise PlantManagementValidationError("each decision choice must be an object")
+                choices.append(
+                    {
+                        "id": _clean_string(raw_choice.get("id"), f"choice-{choice_index + 1}")[:120],
+                        "label": _required_string(raw_choice.get("label"), "choice.label", 180),
+                        "next_step_id": _clean_string(raw_choice.get("next_step_id"))[:120],
+                    }
+                )
+        steps.append(
+            {
+                "id": step_id,
+                "type": step_type,
+                "title": _required_string(raw_step.get("title"), "step.title", 180),
+                "description": _clean_string(raw_step.get("description"))[:2000],
+                "prompt": _clean_string(raw_step.get("prompt"))[:500],
+                "metric": _clean_string(raw_step.get("metric"))[:120],
+                "unit": _clean_string(raw_step.get("unit"))[:40],
+                "instructions": _clean_string(raw_step.get("instructions"))[:4000],
+                "next_step_id": _clean_string(raw_step.get("next_step_id"))[:120],
+                "missing_step_id": _clean_string(raw_step.get("missing_step_id"))[:120],
+                "choices": choices,
+            }
+        )
+
+    entry_step_id = _clean_string(value.get("entry_step_id"), steps[0]["id"])[:120]
+    if entry_step_id not in step_ids:
+        raise PlantManagementValidationError("entry_step_id must reference a route step")
+    references = []
+    for step in steps:
+        references.extend([step["next_step_id"], step["missing_step_id"]])
+        references.extend(choice["next_step_id"] for choice in step["choices"])
+    if any(reference and reference not in step_ids for reference in references):
+        raise PlantManagementValidationError("work route links must reference an existing step")
+    _assert_work_route_is_acyclic(steps, entry_step_id)
+
+    dependencies = []
+    for raw_dependency in value.get("dependencies") or []:
+        if not isinstance(raw_dependency, dict):
+            raise PlantManagementValidationError("each work route dependency must be an object")
+        dependency_type = _clean_string(raw_dependency.get("type"), "completed")
+        if dependency_type not in VALID_WORK_ROUTE_DEPENDENCY_TYPES:
+            raise PlantManagementValidationError("unsupported work route dependency type")
+        dependency_route_id = _required_string(raw_dependency.get("route_id"), "dependency.route_id", 120)
+        if dependency_route_id == route_id:
+            raise PlantManagementValidationError("a work route cannot depend on itself")
+        dependencies.append(
+            {
+                "route_id": dependency_route_id,
+                "type": dependency_type,
+                "min_days": _bounded_int(raw_dependency.get("min_days"), 0, 0, 3650, "dependency.min_days"),
+                "label": _clean_string(raw_dependency.get("label"))[:240],
+            }
+        )
+    status = _clean_string(value.get("status"), "active")
+    if status not in {"active", "archived"}:
+        raise PlantManagementValidationError("unsupported work route status")
+    return {
+        "id": _clean_string(value.get("id"), route_id)[:120],
+        "planting_id": _required_string(value.get("planting_id"), "planting_id", 120),
+        "field_id": _required_string(value.get("field_id"), "field_id", 120),
+        "action_id": _clean_string(value.get("action_id"))[:120],
+        "title": _required_string(value.get("title"), "title", 180),
+        "summary": _clean_string(value.get("summary"))[:1000],
+        "status": status,
+        "entry_step_id": entry_step_id,
+        "steps": steps,
+        "dependencies": dependencies,
+        "created_at": _clean_string(value.get("created_at"), _utc_now())[:80],
+        "updated_at": _clean_string(value.get("updated_at"), _utc_now())[:80],
+    }
+
+
+def _assert_work_route_is_acyclic(steps: list, entry_step_id: str):
+    edges = {}
+    for step in steps:
+        edges[step["id"]] = [
+            target
+            for target in [
+                step.get("next_step_id"),
+                step.get("missing_step_id"),
+                *(choice.get("next_step_id") for choice in step.get("choices", [])),
+            ]
+            if target
+        ]
+    visiting = set()
+    visited = set()
+
+    def visit(step_id):
+        if step_id in visiting:
+            raise PlantManagementValidationError("work route must not contain a loop")
+        if step_id in visited:
+            return
+        visiting.add(step_id)
+        for target in edges.get(step_id, []):
+            visit(target)
+        visiting.remove(step_id)
+        visited.add(step_id)
+
+    visit(entry_step_id)
+
+
+def _normalize_work_route_run(run_id: str, value: dict):
+    status = _clean_string(value.get("status"), "in_progress")
+    if status not in {"in_progress", "completed"}:
+        status = "in_progress"
+    history = value.get("history") if isinstance(value.get("history"), list) else []
+    return {
+        "id": _clean_string(value.get("id"), run_id)[:120],
+        "route_id": _clean_string(value.get("route_id"))[:120],
+        "planting_id": _clean_string(value.get("planting_id"))[:120],
+        "field_id": _clean_string(value.get("field_id"))[:120],
+        "status": status,
+        "current_step_id": _clean_string(value.get("current_step_id"))[:120],
+        "history": [copy.deepcopy(item) for item in history if isinstance(item, dict)][-MAX_WORK_ROUTE_STEPS:],
+        "started_at": _clean_string(value.get("started_at"))[:80],
+        "completed_at": _clean_string(value.get("completed_at"))[:80],
+        "updated_at": _clean_string(value.get("updated_at"))[:80],
+    }
 
 
 def _crop_category(value, crop_name=""):

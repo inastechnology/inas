@@ -352,6 +352,7 @@ export interface PlantCalendar {
   id: string;
   planting_id: string;
   field_id: string;
+  action_id: string;
   revision: number;
   actions: PlantCalendarAction[];
   care_profile: PlantCareProfile;
@@ -541,6 +542,63 @@ export interface PlantBundle {
   fertilizer_applications: FertilizerApplication[];
   fertilizer_materials: FertilizerMaterial[];
   operation_readiness: Record<string, AgenticOperationReadiness>;
+  work_routes: GuidedWorkRoute[];
+  work_route_runs: GuidedWorkRouteRun[];
+}
+
+export type GuidedWorkStepType = "observe" | "measure" | "decide" | "prepare" | "perform" | "wait" | "verify";
+
+export interface GuidedWorkRouteStep {
+  id: string;
+  type: GuidedWorkStepType;
+  title: string;
+  description: string;
+  prompt: string;
+  metric: string;
+  unit: string;
+  instructions: string;
+  next_step_id: string;
+  missing_step_id: string;
+  choices: Array<{ id: string; label: string; next_step_id: string }>;
+}
+
+export interface GuidedWorkRoute {
+  id: string;
+  planting_id: string;
+  field_id: string;
+  action_id: string;
+  title: string;
+  summary: string;
+  status: "active" | "archived";
+  entry_step_id: string;
+  steps: GuidedWorkRouteStep[];
+  dependencies: Array<{ route_id: string; type: "completed" | "approved" | "elapsed_days"; min_days: number; label: string }>;
+  start_blockers: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GuidedWorkRouteRun {
+  id: string;
+  route_id: string;
+  planting_id: string;
+  field_id: string;
+  status: "in_progress" | "completed";
+  current_step_id: string;
+  history: Array<{
+    step_id: string;
+    step_type: GuidedWorkStepType;
+    title: string;
+    outcome: string;
+    choice_id: string;
+    value: string;
+    note: string;
+    source: string;
+    completed_at: string;
+  }>;
+  started_at: string;
+  completed_at: string;
+  updated_at: string;
 }
 
 export interface PlantQuestionRecord {

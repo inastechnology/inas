@@ -19,6 +19,7 @@ import {
   Trash2,
   UserRound,
   Users,
+  Wrench,
 } from "lucide-react";
 
 import { DisabledActionReason, disabledActionTitle } from "../DisabledActionReason";
@@ -525,12 +526,12 @@ function WorkGuidance({ action }: { action: PlantCalendarAction }) {
   if (!details || (!details.targets.length && !details.checkpoints.length && !details.method_options.length)) return null;
   return (
     <section className="work-guidance" aria-label="迷わないための作業メモ">
-      <div><ClipboardCheck size={15} /><strong>迷わないための作業メモ</strong></div>
-      {details.targets.length > 0 && <p><span>見る場所</span>{details.targets.join("、")}</p>}
-      {details.checkpoints.length > 0 && <p><span>見ておくこと</span>{details.checkpoints.join("、")}</p>}
+      <header className="work-guidance-heading">
+        <span><Wrench size={20} /></span>
+        <div><small>実施方法</small><strong>この作業のやり方</strong><p>方法を選び、上から順に進めます。</p></div>
+      </header>
       {details.method_options.length > 0 && (
         <div className="work-method-options">
-          <span>やり方</span>
           <div className="work-method-list">
             {details.method_options.map((method, index) => (
               <WorkMethodDetails key={method.id} method={method} initiallyOpen={index === 0} />
@@ -538,7 +539,11 @@ function WorkGuidance({ action }: { action: PlantCalendarAction }) {
           </div>
         </div>
       )}
-      {details.completion_criteria.length > 0 && <p><span>ここまでできたら完了</span>{details.completion_criteria.join("、")}</p>}
+      <div className="work-guidance-context">
+        {details.targets.length > 0 && <p><span>見る場所</span>{details.targets.join("、")}</p>}
+        {details.checkpoints.length > 0 && <p><span>見ておくこと</span>{details.checkpoints.join("、")}</p>}
+        {details.completion_criteria.length > 0 && <p className="work-completion-criteria"><span><Check size={15} />完了の目安</span>{details.completion_criteria.join("、")}</p>}
+      </div>
     </section>
   );
 }
@@ -548,6 +553,7 @@ function WorkMethodDetails({ method, initiallyOpen }: { method: WorkMethodOption
   return (
     <details className="work-method-detail" open={initiallyOpen}>
       <summary>
+        <span className="work-method-number" aria-hidden="true">{initiallyOpen ? "推奨" : "別案"}</span>
         <strong>{method.label}</strong>
         {method.material_name && <small>{method.material_name}</small>}
       </summary>

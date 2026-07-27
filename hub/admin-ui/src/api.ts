@@ -1,4 +1,4 @@
-import type { FieldLayout, LayoutCollaborationSnapshot, LayoutDevice, LayoutPresenceState, PlantActionCompletionPayload, PlantActionMutationPayload, PlantActionReviewPayload, PlantActionSkipPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
+import type { FieldLayout, GuidedWorkRoute, GuidedWorkRouteRun, LayoutCollaborationSnapshot, LayoutDevice, LayoutPresenceState, PlantActionCompletionPayload, PlantActionMutationPayload, PlantActionReviewPayload, PlantActionSkipPayload, PlantBundle, PlantCalendarAction, Planting, PlantQuestionRecord } from "./types";
 
 export interface SearchPage<Item> {
   items: Item[];
@@ -120,6 +120,50 @@ export function loadPlantBundle(fieldId: string, { compact = false, calendarPlan
   if (calendarPlantingId) parameters.append("calendar_planting_id", calendarPlantingId);
   const query = parameters.size ? `?${parameters}` : "";
   return requestJson(`/local/api/fields/${encodeURIComponent(fieldId)}/plantings${query}`);
+}
+
+export function createWorkRoute(plantingId: string, payload: Partial<GuidedWorkRoute>): Promise<GuidedWorkRoute> {
+  return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/work-routes`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateWorkRoute(plantingId: string, routeId: string, payload: Partial<GuidedWorkRoute>): Promise<GuidedWorkRoute> {
+  return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/work-routes/${encodeURIComponent(routeId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteWorkRoute(plantingId: string, routeId: string): Promise<void> {
+  return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/work-routes/${encodeURIComponent(routeId)}`, { method: "DELETE" });
+}
+
+export function startWorkRoute(plantingId: string, routeId: string): Promise<GuidedWorkRouteRun> {
+  return requestJson(`/local/api/plantings/${encodeURIComponent(plantingId)}/work-routes/${encodeURIComponent(routeId)}/start`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function answerWorkRouteStep(
+  plantingId: string,
+  runId: string,
+  stepId: string,
+  payload: { outcome?: string; choice_id?: string; value?: string; note?: string; source?: string },
+): Promise<GuidedWorkRouteRun> {
+  return requestJson(
+    `/local/api/plantings/${encodeURIComponent(plantingId)}/work-route-runs/${encodeURIComponent(runId)}/steps/${encodeURIComponent(stepId)}/answer`,
+    { method: "POST", body: JSON.stringify(payload) },
+  );
+}
+
+export function rewindWorkRouteStep(plantingId: string, runId: string): Promise<{ run: GuidedWorkRouteRun }> {
+  return requestJson(
+    `/local/api/plantings/${encodeURIComponent(plantingId)}/work-route-runs/${encodeURIComponent(runId)}/rewind`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
 }
 
 export function createPlanting(fieldId: string, payload: Record<string, unknown>): Promise<unknown> {

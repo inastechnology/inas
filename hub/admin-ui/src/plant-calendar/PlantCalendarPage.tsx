@@ -25,7 +25,7 @@ import type { PlantActionMutationPayload, PlantBundle } from "../types";
 import { PlantCalendarDrawer } from "./PlantCalendarDrawer";
 
 const EMPTY_BUNDLE: PlantBundle = {
-  viewer: { email: "", role: "operator" }, action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {},
+  viewer: { email: "", role: "operator" }, action_types: [], plantings: [], calendars: {}, generation_tasks: [], suggestions: [], work_logs: [], fertilizer_applications: [], fertilizer_materials: [], operation_readiness: {}, work_routes: [], work_route_runs: [],
 };
 
 interface PlantCalendarPageProps {
