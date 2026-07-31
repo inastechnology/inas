@@ -18,6 +18,7 @@ VALID_FIELD_AREA_TYPES = {"section", "bed", "ridge", "zone", "point", "other"}
 VALID_DEVICE_SCOPE_TYPES = {"field", "section", "bed", "ridge", "zone", "point", "other"}
 VALID_DEVICE_ROLES = {"environment", "soil", "watering", "camera", "actuator", "sensor", "other"}
 VALID_FIELD_ENVIRONMENT_TYPES = {"", "outdoor", "greenhouse", "indoor", "semi_outdoor", "other"}
+VALID_WEATHER_LOCATION_STATUSES = {"unconfirmed", "confirmed"}
 VALID_RECORD_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 
@@ -232,6 +233,10 @@ class FieldRepository:
             raise FieldValidationError("name is required")
         record["name"] = name
         record["location"] = _normalize_field_location({**_clean_dict(record.get("location")), **_clean_dict(data.get("location"))})
+        if "weather_location" in data:
+            record["weather_location"] = _normalize_weather_location(
+                {**_clean_dict(record.get("weather_location")), **_clean_dict(data.get("weather_location"))}
+            )
         record["crop_profile"] = _normalize_crop_profile(
             {
                 **_clean_dict(record.get("crop_profile")),
@@ -475,6 +480,7 @@ def _new_field(field_id: str, now: str):
         "id": field_id,
         "name": "",
         "location": _normalize_field_location({}),
+        "weather_location": _normalize_weather_location({}),
         "crop": "",
         "stage": "",
         "crop_profile": _normalize_crop_profile({}),
@@ -502,6 +508,7 @@ def _normalize_field(field_id: str, record: dict):
     normalized.update(record)
     normalized["id"] = field_id
     normalized["location"] = _normalize_field_location(normalized.get("location"))
+    normalized["weather_location"] = _normalize_weather_location(normalized.get("weather_location"))
     normalized["crop_profile"] = _normalize_crop_profile(normalized.get("crop_profile"), normalized)
     normalized["crop"] = normalized["crop_profile"]["crop_name"]
     normalized["stage"] = normalized["crop_profile"]["growth_stage"]
@@ -536,6 +543,31 @@ def _normalize_field_location(value):
         "municipality": _clean_string(value.get("municipality")),
         "locality": _clean_string(value.get("locality")),
         "environment_type": environment_type,
+    }
+
+
+def _normalize_weather_location(value):
+    value = _clean_dict(value)
+    latitude = _clean_float(value.get("latitude"))
+    longitude = _clean_float(value.get("longitude"))
+    if latitude is not None and not -90 <= latitude <= 90:
+        raise FieldValidationError("weather latitude must be between -90 and 90")
+    if longitude is not None and not -180 <= longitude <= 180:
+        raise FieldValidationError("weather longitude must be between -180 and 180")
+    status = _clean_string(value.get("status"), "unconfirmed")
+    if status not in VALID_WEATHER_LOCATION_STATUSES:
+        raise FieldValidationError("weather location status must be unconfirmed or confirmed")
+    if status == "confirmed" and (latitude is None or longitude is None):
+        raise FieldValidationError("confirmed weather location requires latitude and longitude")
+    return {
+        "latitude": latitude,
+        "longitude": longitude,
+        "altitude_m": _clean_float(value.get("altitude_m")),
+        "timezone": _clean_string(value.get("timezone"), "Asia/Tokyo"),
+        "label": _clean_string(value.get("label")),
+        "status": status,
+        "confirmed_at": _clean_string(value.get("confirmed_at")),
+        "source": _clean_string(value.get("source"), "manual"),
     }
 
 

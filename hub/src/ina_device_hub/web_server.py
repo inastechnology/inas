@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 import os
 import uuid
@@ -32,6 +34,8 @@ from ina_device_hub.camera_management_service import (
     camera_management_service,
 )
 from ina_device_hub.collection_search import matches_search, paginate, search_terms
+from ina_device_hub.cultivation_research_repository import cultivation_research_repository
+from ina_device_hub.cultivation_research_service import analyze_correlation, build_research_dataset
 from ina_device_hub.device_config_repository import (
     DeviceConfigValidationError,
     DeviceRecordValidationError,
@@ -143,6 +147,7 @@ from ina_device_hub.user_preference_repository import (
     user_preference_repository,
 )
 from ina_device_hub.utils import Utils
+from ina_device_hub.weather_record_repository import weather_record_repository
 
 app = Flask(__name__)
 app.register_blueprint(operations_api)
@@ -7702,6 +7707,162 @@ def update_field_api(field_id):
     except FieldValidationError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify(field)
+
+
+@app.route("/local/api/fields/<field_id>/weather-location", methods=["GET", "PATCH"])
+def field_weather_location_api(field_id):
+    repo = field_repository()
+    field = repo.get(field_id)
+    if field is None:
+        return jsonify({"error": "field not found"}), 404
+    if request.method == "GET":
+        return jsonify({"field_id": field_id, "weather_location": field.get("weather_location")})
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        field = repo.upsert(field_id, {"weather_location": request_body})
+    except FieldValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"field_id": field_id, "weather_location": field["weather_location"]})
+
+
+@app.route("/local/api/fields/<field_id>/weather/observations", methods=["GET"])
+def field_weather_observations_api(field_id):
+    if field_repository().get(field_id) is None:
+        return jsonify({"error": "field not found"}), 404
+    records = weather_record_repository().list_records(
+        field_id=field_id,
+        record_type="observation",
+        date_from=request.args.get("date_from", ""),
+        date_to=request.args.get("date_to", ""),
+        limit=request.args.get("limit", 1000),
+    )
+    return jsonify({"field_id": field_id, "records": records})
+
+
+@app.route("/local/api/fields/<field_id>/weather/forecasts", methods=["GET"])
+def field_weather_forecasts_api(field_id):
+    if field_repository().get(field_id) is None:
+        return jsonify({"error": "field not found"}), 404
+    records = weather_record_repository().list_records(
+        field_id=field_id,
+        record_type="forecast",
+        date_from=request.args.get("date_from", ""),
+        date_to=request.args.get("date_to", ""),
+        limit=request.args.get("limit", 1000),
+    )
+    return jsonify({"field_id": field_id, "records": records})
+
+
+def _field_research_dataset(field_id):
+    field = field_repository().get(field_id)
+    if field is None:
+        return None
+    records = weather_record_repository().list_records(
+        field_id=field_id,
+        date_from=request.args.get("date_from", ""),
+        date_to=request.args.get("date_to", ""),
+        limit=10000,
+    )
+    return build_research_dataset(
+        field,
+        records,
+        date_from=request.args.get("date_from", ""),
+        date_to=request.args.get("date_to", ""),
+    )
+
+
+@app.route("/local/api/fields/<field_id>/research/dataset", methods=["GET"])
+def field_research_dataset_api(field_id):
+    dataset = _field_research_dataset(field_id)
+    if dataset is None:
+        return jsonify({"error": "field not found"}), 404
+    return jsonify(dataset)
+
+
+@app.route("/local/api/fields/<field_id>/research/analyses", methods=["POST"])
+def field_research_analysis_api(field_id):
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    dataset = _field_research_dataset(field_id)
+    if dataset is None:
+        return jsonify({"error": "field not found"}), 404
+    try:
+        analysis = analyze_correlation(
+            dataset,
+            str(request_body.get("x_metric") or ""),
+            str(request_body.get("y_metric") or ""),
+            method=str(request_body.get("method") or "pearson"),
+            lag_days=request_body.get("lag_days", 0),
+        )
+        saved = cultivation_research_repository().add_analysis(field_id, analysis)
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(saved), 201
+
+
+@app.route("/local/api/fields/<field_id>/research/hypotheses", methods=["GET", "POST"])
+def field_research_hypotheses_api(field_id):
+    if field_repository().get(field_id) is None:
+        return jsonify({"error": "field not found"}), 404
+    repo = cultivation_research_repository()
+    if request.method == "GET":
+        return jsonify({"field_id": field_id, "hypotheses": repo.list_hypotheses(field_id)})
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        hypothesis = repo.add_hypothesis(field_id, request_body)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(hypothesis), 201
+
+
+@app.route("/local/api/fields/<field_id>/research/hypotheses/<hypothesis_id>", methods=["PATCH"])
+def field_research_hypothesis_api(field_id, hypothesis_id):
+    if field_repository().get(field_id) is None:
+        return jsonify({"error": "field not found"}), 404
+    request_body = request.get_json(silent=True)
+    if not isinstance(request_body, dict):
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    try:
+        hypothesis = cultivation_research_repository().update_hypothesis(field_id, hypothesis_id, request_body)
+    except KeyError:
+        return jsonify({"error": "hypothesis not found"}), 404
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(hypothesis)
+
+
+@app.route("/local/api/fields/<field_id>/research/export.csv", methods=["GET"])
+def field_research_export_api(field_id):
+    dataset = _field_research_dataset(field_id)
+    if dataset is None:
+        return jsonify({"error": "field not found"}), 404
+    metric_names = sorted(
+        {f"weather.{key}" for row in dataset["rows"] for key in row["weather"]}
+        | {f"field_records.{key}" for row in dataset["rows"] for key in row["field_records"]}
+    )
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["date", *metric_names])
+    for row in dataset["rows"]:
+        writer.writerow(
+            [
+                row["date"],
+                *[
+                    (row["weather"].get(name[8:]) if name.startswith("weather.") else row["field_records"].get(name[14:]))
+                    for name in metric_names
+                ],
+            ]
+        )
+    return Response(
+        "\ufeff" + output.getvalue(),
+        mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="field-{field_id}-research.csv"'},
+    )
 
 
 @app.route("/local/api/fields/<field_id>/notes", methods=["POST"])

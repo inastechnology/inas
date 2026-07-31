@@ -390,6 +390,7 @@
         <button class="tab-button" type="button" role="tab" data-field-tab="monitoring" aria-selected="false" tabindex="-1">環境・設備</button>
         <button class="tab-button" type="button" role="tab" data-field-tab="cultivation" aria-selected="false" tabindex="-1">栽培</button>
         <button class="tab-button" type="button" role="tab" data-field-tab="records" aria-selected="false" tabindex="-1">記録</button>
+        <button class="tab-button" type="button" role="tab" data-field-tab="research" aria-selected="false" tabindex="-1">研究</button>
         <button class="tab-button" type="button" role="tab" data-field-tab="settings" aria-selected="false" tabindex="-1">設定</button>
       </div>
     </nav>
@@ -608,6 +609,30 @@
         <button class="record-history-more" id="record-history-more" type="button"{% if not context.record_search_has_next %} hidden{% endif %}>さらに20件を表示</button>
       </section>
 
+      <section class="surface" data-tab-panel="research" id="field-research" data-field-id="{{ field.id }}">
+        <div class="section-heading"><div><span class="eyebrow">気象 × 栽培記録</span><h2>圃場研究</h2></div><a class="planting-calendar-link" href="/local/api/fields/{{ field.id }}/research/export.csv">CSVを書き出す</a></div>
+        <p class="empty-state">天気、圃場の手入力記録を日単位で揃え、傾向を検証します。分析結果は相関であり、因果関係を示すものではありません。</p>
+        <div class="detail-grid">
+          <form class="stack-form" id="weather-location-form">
+            <div class="section-heading"><div><span class="eyebrow">取得地点</span><h3>気象地点</h3></div><span class="tag" id="weather-location-status">{{ field.weather_location.status }}</span></div>
+            <div class="form-grid"><label>緯度<input name="latitude" type="number" step="any" min="-90" max="90" value="{{ field.weather_location.latitude if field.weather_location.latitude is not none else '' }}" required></label><label>経度<input name="longitude" type="number" step="any" min="-180" max="180" value="{{ field.weather_location.longitude if field.weather_location.longitude is not none else '' }}" required></label><label>地点名<input name="label" value="{{ field.weather_location.label }}" placeholder="例: 東側圃場"></label><label>タイムゾーン<input name="timezone" value="{{ field.weather_location.timezone }}" required></label></div>
+            <label><input name="confirmed" type="checkbox"{% if field.weather_location.status == 'confirmed' %} checked{% endif %}> この地点を圃場の代表地点として確認した</label>
+            <p class="stateful-reason" id="weather-location-message"></p><button class="primary-button" type="submit">気象地点を保存</button>
+          </form>
+          <section class="stack-form">
+            <div class="section-heading"><div><span class="eyebrow">蓄積状況</span><h3>研究データ</h3></div></div>
+            <div class="sensor-values"><div class="sensor-value"><span>日単位の行</span><strong id="research-row-count">—</strong></div><div class="sensor-value"><span>利用可能な数値項目</span><strong id="research-metric-count">—</strong></div></div>
+            <p class="stateful-reason" id="research-dataset-message">データを読み込んでいます。</p>
+          </section>
+        </div>
+        <form class="stack-form" id="research-analysis-form">
+          <div class="section-heading"><div><span class="eyebrow">再現可能な計算</span><h3>相関を調べる</h3></div></div>
+          <div class="form-grid"><label>基準にする値<select name="x_metric" required></select></label><label>比較する値<select name="y_metric" required></select></label><label>計算法<select name="method"><option value="pearson">Pearson（直線的な関係）</option><option value="spearman">Spearman（順位の関係）</option></select></label><label>時間差（日）<input name="lag_days" type="number" min="-365" max="365" value="0"></label></div>
+          <button class="primary-button" type="submit">相関を計算</button>
+          <output class="scope-panel" id="research-analysis-result" hidden></output>
+        </form>
+      </section>
+
       <section class="surface" data-tab-panel="settings">
         <div class="section-heading"><div><span class="eyebrow">圃場情報</span><h2>場所設定</h2></div></div>
         <form class="location-form" method="post" data-stateful-form data-pristine-message="圃場情報は変更されていません。"><label>圃場名<input name="name" value="{{ field.name }}" required></label><div class="form-grid"><label>都道府県<select name="prefecture" required aria-label="圃場の都道府県" data-searchable-select data-search-placeholder="都道府県を検索"><option value="">選択</option>{% for prefecture in prefectures %}<option value="{{ prefecture }}"{% if field.location.prefecture == prefecture %} selected{% endif %}>{{ prefecture }}</option>{% endfor %}</select></label><label>市区町村<input name="municipality" value="{{ field.location.municipality }}" required></label><label>町名・地区<input name="locality" value="{{ field.location.locality }}"></label><label>設置環境<select name="environment_type" required><option value="">選択</option>{% for value, label in environment_options %}<option value="{{ value }}"{% if field.location.environment_type == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></div><p class="stateful-reason" data-stateful-reason></p><button class="primary-button" type="submit" data-stateful-submit>保存</button></form>
@@ -626,6 +651,87 @@
         <div class="record-item-dialog-body"><label class="record-search-label"><span>検索</span><input id="record-item-query" type="search" autocomplete="off" placeholder="潅水、EC、収穫など"></label><div class="record-category-filters" id="record-category-filters"><button type="button" class="active" data-record-category="">すべて</button>{% for value, label in context.record_categories %}<button type="button" data-record-category="{{ value }}">{{ label }}</button>{% endfor %}</div><section class="dialog-recent-items" id="dialog-recent-items" hidden><div class="record-subheading"><strong>過去に選択</strong></div><div class="recent-item-list" id="dialog-recent-item-list"></div></section><div class="record-search-results" id="record-search-results"></div></div>
       </section>
     </div>
+    <script>
+      (() => {
+        const root = document.getElementById("field-research");
+        if (!root) return;
+        const fieldId = root.dataset.fieldId;
+        const locationForm = document.getElementById("weather-location-form");
+        const analysisForm = document.getElementById("research-analysis-form");
+        const datasetMessage = document.getElementById("research-dataset-message");
+        const result = document.getElementById("research-analysis-result");
+
+        const labelForMetric = (name) => name
+          .replace("weather.", "気象 / ")
+          .replace("field_records.", "圃場記録 / ")
+          .replaceAll("_", " ");
+
+        async function loadDataset() {
+          const response = await fetch(`/local/api/fields/${encodeURIComponent(fieldId)}/research/dataset`);
+          const dataset = await response.json();
+          if (!response.ok) throw new Error(dataset.error || "研究データを取得できませんでした。");
+          const metrics = [...new Set(dataset.rows.flatMap((row) => [
+            ...Object.keys(row.weather || {}).map((key) => `weather.${key}`),
+            ...Object.keys(row.field_records || {}).map((key) => `field_records.${key}`),
+          ]))].sort();
+          document.getElementById("research-row-count").textContent = `${dataset.rows.length}日`;
+          document.getElementById("research-metric-count").textContent = `${metrics.length}項目`;
+          datasetMessage.textContent = metrics.length
+            ? "観測・解析値と手入力値の由来を保持して利用します。"
+            : "気象または圃場記録の数値が蓄積されると分析できます。";
+          analysisForm.querySelectorAll("select[name$='_metric']").forEach((select) => {
+            select.replaceChildren(...metrics.map((metric) => {
+              const option = document.createElement("option");
+              option.value = metric;
+              option.textContent = labelForMetric(metric);
+              return option;
+            }));
+          });
+          analysisForm.querySelector("button").disabled = metrics.length < 2;
+        }
+
+        locationForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const data = new FormData(locationForm);
+          const body = {
+            latitude: Number(data.get("latitude")),
+            longitude: Number(data.get("longitude")),
+            label: data.get("label"),
+            timezone: data.get("timezone"),
+            status: data.get("confirmed") ? "confirmed" : "unconfirmed",
+            source: "manual",
+            confirmed_at: data.get("confirmed") ? new Date().toISOString() : "",
+          };
+          const message = document.getElementById("weather-location-message");
+          const response = await fetch(`/local/api/fields/${encodeURIComponent(fieldId)}/weather-location`, {
+            method: "PATCH",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(body),
+          });
+          const payload = await response.json();
+          message.textContent = response.ok ? "気象地点を保存しました。" : (payload.error || "保存できませんでした。");
+          if (response.ok) document.getElementById("weather-location-status").textContent = payload.weather_location.status;
+        });
+
+        analysisForm.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const data = Object.fromEntries(new FormData(analysisForm));
+          data.lag_days = Number(data.lag_days);
+          const response = await fetch(`/local/api/fields/${encodeURIComponent(fieldId)}/research/analyses`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(data),
+          });
+          const payload = await response.json();
+          result.hidden = false;
+          result.textContent = response.ok
+            ? `${payload.interpretation} 係数: ${payload.coefficient ?? "算出不可"} / サンプル: ${payload.sample_size}`
+            : (payload.error || "分析できませんでした。");
+        });
+
+        loadDataset().catch((error) => { datasetMessage.textContent = error.message; });
+      })();
+    </script>
     <script type="application/json" id="record-calendar-data">{{ deferred_context.record_calendar.items_by_date|tojson }}</script>
     <script type="application/json" id="record-measurement-data">{{ deferred_context.record_calendar.measurements_by_date|tojson }}</script>
     <script type="application/json" id="record-catalog-data">{{ context.record_catalog|tojson }}</script>

@@ -3,6 +3,7 @@ from datetime import datetime
 
 from apscheduler.schedulers.background import BlockingScheduler
 
+from ina_device_hub.field_repository import field_repository
 from ina_device_hub.general_log import logger
 from ina_device_hub.open_meteo_weather_service import OpenMeteoWeatherService
 from ina_device_hub.setting import setting
@@ -54,22 +55,36 @@ class WeatherRecordTask:
         self._record_jma_forecast()
 
     def _record_open_meteo_daily_weather(self):
+        self._record_open_meteo_service(self.open_meteo_service, field_id=None)
+        for field in field_repository().list():
+            location = field.get("weather_location") or {}
+            if location.get("status") != "confirmed":
+                continue
+            service = OpenMeteoWeatherService(
+                latitude=location.get("latitude"),
+                longitude=location.get("longitude"),
+                timezone=location.get("timezone") or "Asia/Tokyo",
+                archive_url=self.settings.get("open_meteo_archive_url"),
+            )
+            self._record_open_meteo_service(service, field_id=field["id"])
+
+    def _record_open_meteo_service(self, service, field_id):
         try:
-            observations = self.open_meteo_service.fetch_recent_daily_records(
+            observations = service.fetch_recent_daily_records(
                 backfill_days=self.settings.get("backfill_days", 7),
             )
         except RuntimeError:
-            logger.exception("Failed to record Open-Meteo daily weather")
+            logger.exception(f"Failed to record Open-Meteo daily weather (field_id={field_id or 'legacy-global'})")
             return
 
         added_count = 0
         for observation in observations:
-            record = self.repository.add_daily_observation(observation)
+            record = self.repository.add_daily_observation(observation, field_id=field_id)
             if record:
                 added_count += 1
                 logger.info(f"Open-Meteo daily weather recorded: {record['record_id']}")
         if added_count == 0:
-            logger.info("Skip Open-Meteo daily weather records because all recent days are already recorded")
+            logger.info(f"Skip Open-Meteo daily weather records because recent days exist (field_id={field_id or 'legacy-global'})")
 
     def _record_jma_forecast(self):
         try:

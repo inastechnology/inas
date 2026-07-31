@@ -33,7 +33,7 @@
 | `FUT-001` | 点滴口を1穴ずつ測る吐出量校正、生育・天候に応じた潅水提案、排液ECを使った培地リセット | 仕様あり | [点滴潅水の吐出量校正・潅水提案・培地リセット仕様](../../hub/doc/jp/HUB_DRIP_IRRIGATION_CALIBRATION_AND_SUBSTRATE_RESET_SPEC.md) |
 | `FUT-002` | 肥料カタログ、土壌・培地検査、残効信頼度、過剰を避ける施肥候補 | 仕様あり | [施肥計画・肥料サジェスト実装方針](../../hub/doc/jp/HUB_FERTILIZATION_RECOMMENDATION_POLICY.md) |
 | `FUT-003` | カレンダー作業、センサー・画像・気象判断、設備保守、定期作業、利用者登録作業を一つの圃場TODOへ統合 | 一部提供 | [作物前提データと改善ループ](../../hub/doc/jp/AGRI_IMPROVEMENT_LOOP.md) |
-| `FUT-004` | 公的な作物知識、画像観察、気象・積算温度による予定調整を、出典と適用条件付きで利用 | 構想 | [植物管理カレンダー仕様](../../hub/doc/jp/HUB_PLANT_MANAGEMENT_CALENDAR_SPEC.md) |
+| `FUT-004` | 圃場別の気象実績・予報をセンサー、作業、生育、収穫へ結び、相関研究、積算温度、説明付き注意喚起、承認付き予定調整へ段階利用 | 仕様あり | [圃場気象・生育相関研究と作業判断への活用仕様](../../hub/doc/jp/HUB_WEATHER_CULTIVATION_RESEARCH_SPEC.md) |
 | `FUT-005` | 利用許諾を確認したデータ提供元から、農薬登録、作物適用、希釈倍率、使用回数、収穫前日数を検索 | 条件待ち | [植物管理カレンダー仕様](../../hub/doc/jp/HUB_PLANT_MANAGEMENT_CALENDAR_SPEC.md) |
 | `FUT-006` | FGTの液肥レシピ編集、手動承認、実行、状態・履歴確認を営農者向け画面から操作 | 仕様あり | [全体仕様](SYSTEM_SPECIFICATION.md)、[FGT設計概要](../../client-devices/fertigation-device/docs/jp/README.md) |
 | `FUT-007` | 湿度等から噴霧候補を作り、安全能力を宣言した将来デバイスで実行 | 構想 | [作物前提データと改善ループ](../../hub/doc/jp/AGRI_IMPROVEMENT_LOOP.md) |

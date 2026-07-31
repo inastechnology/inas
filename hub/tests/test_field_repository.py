@@ -123,6 +123,25 @@ class FieldRepositoryTest(unittest.TestCase):
         self.assertEqual(field["control_policy"]["allowed_actions"], ["watering", "fertigation"])
         self.assertEqual(field["knowledge_context"]["research_queries"], ["トマト 開花期 EC"])
 
+    def test_weather_location_requires_coordinates_before_confirmation(self):
+        field = self.repository.upsert(
+            None,
+            {
+                "name": "研究圃場",
+                "weather_location": {
+                    "latitude": "35.6812",
+                    "longitude": "139.7671",
+                    "timezone": "Asia/Tokyo",
+                    "label": "圃場中央",
+                    "status": "confirmed",
+                },
+            },
+        )
+
+        self.assertEqual(field["weather_location"]["latitude"], 35.6812)
+        self.assertEqual(field["weather_location"]["longitude"], 139.7671)
+        self.assertEqual(field["weather_location"]["status"], "confirmed")
+
     def test_invalid_field_environment_is_normalized_to_unset(self):
         field = self.repository.upsert(
             None,

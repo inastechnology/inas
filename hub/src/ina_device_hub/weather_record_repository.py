@@ -12,12 +12,18 @@ class WeatherRecordRepository:
         self.file_path = file_path or os.path.join(setting().get_work_dir(), "weather_records.jsonl")
         os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
 
-    def add_forecast(self, forecast: dict):
+    def add_forecast(self, forecast: dict, field_id: str | None = None):
         record = self.build_forecast_record(forecast)
+        record["field_id"] = field_id
+        if field_id:
+            record["record_id"] = f"field:{field_id}:{record['record_id']}"
         return self.add_record(record)
 
-    def add_daily_observation(self, observation: dict):
+    def add_daily_observation(self, observation: dict, field_id: str | None = None):
         record = self.build_daily_observation_record(observation)
+        record["field_id"] = field_id
+        if field_id:
+            record["record_id"] = f"field:{field_id}:{record['record_id']}"
         return self.add_record(record)
 
     def add_record(self, record: dict):
@@ -129,6 +135,48 @@ class WeatherRecordRepository:
                 except json.JSONDecodeError:
                     continue
         return records[-limit:]
+
+    def list_records(
+        self,
+        *,
+        field_id: str,
+        record_type: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        limit: int = 1000,
+    ):
+        """Return records explicitly assigned to a field.
+
+        Legacy records without ``field_id`` are intentionally excluded because a
+        nearby weather point must not be silently treated as field evidence.
+        """
+        if not os.path.exists(self.file_path):
+            return []
+        records = []
+        with open(self.file_path, encoding="utf-8") as file:
+            for line in file:
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("field_id") != field_id:
+                    continue
+                source_type = (record.get("source") or {}).get("type")
+                classified_type = "forecast" if source_type == "forecast" else "observation"
+                if record_type and classified_type != record_type:
+                    continue
+                dates = [item.get("date") for item in record.get("daily_summaries") or [] if item.get("date")]
+                if date_from and dates and max(dates) < date_from:
+                    continue
+                if date_to and dates and min(dates) > date_to:
+                    continue
+                records.append(record)
+        records.sort(key=lambda item: (item.get("recorded_at") or "", item.get("record_id") or ""))
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            limit = 1000
+        return records[-max(1, min(limit, 10000)) :]
 
     def _forecast_record_id(self, source: dict):
         return ":".join(

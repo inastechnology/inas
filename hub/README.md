@@ -346,6 +346,13 @@ for the full list. Commonly required groups:
 - Weather recording: `WEATHER_RECORD_ENABLED`,
   `WEATHER_RECORD_INTERVAL_SECONDS`, `WEATHER_PROVIDER`,
   `WEATHER_LATITUDE`, `WEATHER_LONGITUDE`, `WEATHER_TIMEZONE`
+
+The planned field-scoped weather history, forecast snapshots, cultivation
+research dataset, exploratory correlation, and phased decision support are
+specified in
+[Field Weather, Cultivation Research, and Work-Decision Specification](doc/HUB_WEATHER_CULTIVATION_RESEARCH_SPEC.md).
+The current recorder does not automatically change work dates or device
+settings.
 - Cloudflare Local Hub option: `CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME`,
   `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCOUNT_ID`,
   `CLOUDFLARE_ACCESS_API_TOKEN`

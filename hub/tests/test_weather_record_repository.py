@@ -22,6 +22,24 @@ from ina_device_hub.weather_record_repository import WeatherRecordRepository  # 
 
 
 class WeatherRecordRepositoryTest(unittest.TestCase):
+    def test_field_records_are_scoped_and_legacy_records_are_not_assigned(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            repository = WeatherRecordRepository(file_path=os.path.join(tmp_dir, "weather_records.jsonl"))
+            observation = {
+                "source": {"type": "reanalysis", "provider": "open_meteo"},
+                "location": {"requested_latitude": 35.0, "requested_longitude": 137.0},
+                "daily": {"date": "2026-07-01", "precipitation_mm": 3.0},
+            }
+            repository.add_daily_observation(observation)
+            repository.add_daily_observation(observation, field_id="field-a")
+            repository.add_daily_observation(observation, field_id="field-b")
+
+            records = repository.list_records(field_id="field-a", record_type="observation")
+
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["field_id"], "field-a")
+            self.assertTrue(records[0]["record_id"].startswith("field:field-a:"))
+
     def test_add_daily_observation_writes_aggregation_ready_record_once(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             repository = WeatherRecordRepository(file_path=os.path.join(tmp_dir, "weather_records.jsonl"))
