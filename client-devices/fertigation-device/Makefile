@@ -1,13 +1,20 @@
 PIO ?= platformio
 PYTHON ?= python3
-ENV = seeed_xiao_esp32s3
+ENV = seeed_xiao_esp32c6
 PLATFORMIO_CORE_DIR ?= $(CURDIR)/.pio-core
 BUILD_DIR := .pio/build/$(ENV)
 REPO_ROOT := $(abspath ../..)
 FIRMWARE_CHECKER ?= $(REPO_ROOT)/hub/scripts/check_firmware_manifest.py
 USER_CONFIG := .env.user.ini
+BOOT_APP0 ?= $(PLATFORMIO_CORE_DIR)/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin
 AUTO_UPLOAD_PORT := $(shell ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n 1)
 UPLOAD_PORT ?= $(AUTO_UPLOAD_PORT)
+RELEASE_MODULE_ID := fertigation-device
+RELEASE_MODULE_DEVICE_KIND := FGT
+RELEASE_MODULE_DISPLAY_NAME := FGT Fertigation Device
+RELEASE_MODULE_VERSION := 0.1.0
+
+include ../common/make/esp32s3-release-module.mk
 
 .PHONY: build test check-firmware buildfs upload monitor ports clean help
 
@@ -52,9 +59,10 @@ clean: $(USER_CONFIG)
 help:
 	@echo "Available targets:"
 	@echo "  test            - Run host-side FGT state-machine regression tests"
-	@echo "  build           - Build firmware for XIAO ESP32-S3"
+	@echo "  build           - Build firmware for XIAO ESP32-C6"
 	@echo "  check-firmware  - Verify the embedded OTA manifest"
 	@echo "  buildfs         - Build the LittleFS image"
+	@echo "  package         - Create the F/W release module ZIP"
 	@echo "  upload          - Upload locally (optional: UPLOAD_PORT=/dev/ttyACM0)"
 	@echo "  monitor         - Open the 115200 baud serial monitor"
 	@echo "  ports           - Show detected serial ports"

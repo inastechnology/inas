@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "rs485-debug-device",
+  "display_name": "RS485 Debug Device",
+  "console_baud": 115200,
+  "json_status_prefix": "Sending status: ",
+  "status_fields": [],
+  "line_status_rules": [
+    {
+      "id": "scan",
+      "label": "RS485スキャン",
+      "pattern": "\\[SCAN\\] Starting|\\[SCAN\\] baud=",
+      "value_group": "value",
+      "value_map": {},
+      "severity_map": {}
+    },
+    {
+      "id": "device_count",
+      "label": "認識デバイス数",
+      "pattern": "\\[SCAN\\] Complete: (?P<value>\\d+) supported device",
+      "value_group": "value",
+      "value_map": {
+        "0": "0台",
+        "1": "1台",
+        "2": "2台",
+        "3": "3台"
+      },
+      "severity_map": {
+        "0": "warning"
+      }
+    }
+  ],
+  "device_rules": [
+    {
+      "pattern": "\\[DETECTED\\] model=\"(?P<model>[^\"]+)\" id=(?P<id>\\d+) baud=(?P<baud>\\d+)",
+      "identity_template": "{baud}:{id}:{model}",
+      "display_template": "{model}  • ID {id}  • {baud}bps"
+    }
+  ],
+  "error_rules": [
+    {
+      "pattern": "\\[ERROR\\]|status=(?:tx_error|short_frame|crc_error|wrong_slave_id|wrong_function|wrong_byte_count|length_mismatch|malformed)|No device",
+      "severity": "error"
+    }
+  ]
+}

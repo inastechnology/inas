@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "environment-sensor-device",
+  "display_name": "ENV 環境センサー",
+  "console_baud": 115200,
+  "json_status_prefix": "Sending status: ",
+  "status_fields": [
+    {"id":"wifi","label":"Wi-Fi","json_key":"network_connected","true_label":"接続","false_label":"未接続","false_severity":"error"},
+    {"id":"runtime","label":"設定","json_key":"runtime_config_valid","true_label":"正常","false_label":"未設定","false_severity":"warning"},
+    {"id":"soil_rs485","label":"土壌RS485","json_key":"soil_rs485_ok","true_label":"認識","false_label":"未認識","false_severity":"error"},
+    {"id":"soil_id","label":"土壌センサーID","json_key":"soil_rs485_modbus_slave_id","unit":""},
+    {"id":"par_rs485","label":"PAR RS485","json_key":"par_ok","true_label":"認識","false_label":"未認識","false_severity":"error"},
+    {"id":"par_id","label":"PARセンサーID","json_key":"par_modbus_slave_id","unit":""},
+    {"id":"moisture","label":"土壌水分","json_key":"soil_moisture_percent","unit":"%"},
+    {"id":"par","label":"PAR","json_key":"par_umol_m2_s","unit":" µmol/m²/s"}
+  ],
+  "line_status_rules": [
+    {"id":"wifi","label":"Wi-Fi","pattern":"WiFi (?P<value>connected|Connection Failed)","value_map":{"connected":"接続","Connection Failed":"接続失敗"},"severity_map":{"connected":"ok","Connection Failed":"error"}},
+    {"id":"mqtt","label":"MQTT","pattern":"(?P<value>Runtime config received via MQTT|MQTT unavailable|MQTT Connection Failed)","value_map":{"Runtime config received via MQTT":"接続","MQTT unavailable":"未接続","MQTT Connection Failed":"接続失敗"},"severity_map":{"Runtime config received via MQTT":"ok","MQTT unavailable":"error","MQTT Connection Failed":"error"}}
+  ],
+  "device_rules": [],
+  "error_rules": [{"pattern":"(?i)(failed|error|timeout|CRC mismatch|Modbus exception)","severity":"error"}]
+}

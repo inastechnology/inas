@@ -17,6 +17,12 @@ FLASH_FREQ ?= keep
 FLASH_SIZE ?= keep
 AUTO_UPLOAD_PORT := $(shell ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n 1)
 UPLOAD_PORT ?= $(AUTO_UPLOAD_PORT)
+RELEASE_MODULE_ID := watering-device
+RELEASE_MODULE_DEVICE_KIND := WTR
+RELEASE_MODULE_DISPLAY_NAME := WTR Watering Device
+RELEASE_MODULE_VERSION := 0.0.6
+
+include ../common/make/esp32s3-release-module.mk
 
 .PHONY: build check-firmware buildfs merged-bin flash-merged upload ports remote-upload remote-monitor help
 
@@ -109,6 +115,7 @@ help:
 	@echo "  build           - Build the project"
 	@echo "  check-firmware  - Build firmware.bin and verify the embedded OTA manifest"
 	@echo "  buildfs         - Build the LittleFS image from data/"
+	@echo "  package         - Create the F/W release module ZIP"
 	@echo "  merged-bin      - Build a single flashable image at $(MERGED_BIN)"
 	@echo "  flash-merged    - Write the merged image to a connected board"
 	@echo "  upload          - Upload locally (optional: UPLOAD_PORT=/dev/ttyACM0)"

@@ -1,0 +1,1 @@
+"""Shipping tool domain models."""

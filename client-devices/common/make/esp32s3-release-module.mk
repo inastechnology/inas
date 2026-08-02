@@ -1,0 +1,27 @@
+RELEASE_MODULE_TOOL ?= $(REPO_ROOT)/client-devices/common/tools/create_release_module.py
+RELEASE_MODULE_TARGET ?= $(ENV)
+RELEASE_MODULE_CHIP ?= esp32s3
+RELEASE_MODULE_FLASH_SIZE ?= 8MB
+RELEASE_MODULE_PACKAGE_DEPS ?= build buildfs
+RELEASE_MODULE_FILESYSTEM ?= $(BUILD_DIR)/littlefs.bin
+RELEASE_MODULE_DIAGNOSTIC_PROFILE ?= shipping/diagnostic-profile.json
+RELEASE_ZIP ?= release/$(RELEASE_MODULE_ID)-$(RELEASE_MODULE_VERSION)-$(RELEASE_MODULE_TARGET).zip
+RELEASE_MODULE_OPTIONAL_ARGS = $(if $(strip $(RELEASE_MODULE_FILESYSTEM)),--filesystem "$(RELEASE_MODULE_FILESYSTEM)") $(if $(strip $(RELEASE_MODULE_DIAGNOSTIC_PROFILE)),--diagnostic-profile "$(RELEASE_MODULE_DIAGNOSTIC_PROFILE)")
+
+.DEFAULT_GOAL := all
+
+.PHONY: package
+
+package: $(RELEASE_MODULE_PACKAGE_DEPS)
+	$(PYTHON) "$(RELEASE_MODULE_TOOL)" \
+		--build-dir "$(BUILD_DIR)" \
+		--boot-app0 "$(BOOT_APP0)" \
+		--output "$(RELEASE_ZIP)" \
+		--module-id "$(RELEASE_MODULE_ID)" \
+		--device-kind "$(RELEASE_MODULE_DEVICE_KIND)" \
+		--display-name "$(RELEASE_MODULE_DISPLAY_NAME)" \
+		--firmware-version "$(RELEASE_MODULE_VERSION)" \
+		--target "$(RELEASE_MODULE_TARGET)" \
+		--chip "$(RELEASE_MODULE_CHIP)" \
+		--flash-size "$(RELEASE_MODULE_FLASH_SIZE)" \
+		$(RELEASE_MODULE_OPTIONAL_ARGS)

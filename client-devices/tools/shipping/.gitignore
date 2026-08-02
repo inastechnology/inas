@@ -1,0 +1,8 @@
+.venv/
+.shipping-setup.json
+__pycache__/
+*.py[cod]
+dist/
+build/
+*.spec
+release/
