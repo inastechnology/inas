@@ -32,6 +32,26 @@
 #define APP_RS485_TURNAROUND_DELAY_US 200
 #endif
 
+#ifndef APP_RS485_DRIVER_ENABLE_DELAY_US
+#define APP_RS485_DRIVER_ENABLE_DELAY_US 50
+#endif
+
+#ifndef APP_RS485_INIT_SETTLE_MS
+#define APP_RS485_INIT_SETTLE_MS 0
+#endif
+
+#ifndef APP_RS485_INTER_REQUEST_DELAY_MS
+#define APP_RS485_INTER_REQUEST_DELAY_MS 0
+#endif
+
+#ifndef APP_RS485_RX_PULLUP
+#define APP_RS485_RX_PULLUP 0
+#endif
+
+#ifndef APP_RS485_USE_IDF_HALF_DUPLEX
+#define APP_RS485_USE_IDF_HALF_DUPLEX 0
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -51,6 +71,9 @@ typedef struct
 hal_rs485_modbus_config_t hal_rs485_modbus_default_config();
 bool hal_rs485_modbus_init(const hal_rs485_modbus_config_t *config);
 void hal_rs485_modbus_deinit();
+void hal_rs485_modbus_set_diagnostics(bool enabled);
+bool hal_rs485_modbus_internal_loopback_test();
+bool hal_rs485_modbus_external_loopback_test();
 bool hal_rs485_modbus_read_registers(uint8_t slave_id,
                                      uint8_t function_code,
                                      uint16_t start_register,

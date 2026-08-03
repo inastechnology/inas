@@ -1,6 +1,6 @@
-# ESP32-S3 RS485 Debug Firmware
+# ESP32-S3 / ESP32-C6 RS485 Debug Firmware
 
-XIAO ESP32-S3 と MAX3485 を使って、RS485 Modbus RTU センサーを検出し、
+XIAO ESP32-S3またはXIAO ESP32-C6とMAX3485を使って、RS485 Modbus RTUセンサーを検出し、
 USB Debug COM に測定値を表示する診断用 PlatformIO プロジェクトです。
 
 現在対応するセンサー:
@@ -34,15 +34,26 @@ App層はHALとprotocol driverを利用しますが、HALとprotocol driverはAp
 |---|---|---|
 | `3V3` | `VCC` | MAX3485 の電源。5Vを接続しない |
 | `GND` | `GND`（どちらか一方） | 共通GND |
-| `D6 / GPIO43` | `TXD` | UART TX。module内部でMAX3485の`DI`へ接続 |
-| `D7 / GPIO44` | `RXD` | UART RX。module内部でMAX3485の`RO`へ接続 |
+| `D6 / GPIO43` | `RXD` | UART TX。module内部でMAX3485の`DI`へ接続 |
+| `D7 / GPIO44` | `TXD` | UART RX。module内部でMAX3485の`RO`へ接続 |
 | `D4 / GPIO5` | `EN` | `HIGH`で送信、`LOW`で受信 |
 | - | `A` | センサーの A / A+ |
 | - | `B` | センサーの B / B- |
 
-このmoduleの`TXD` / `RXD`表記はMCU側信号名であるため、同名同士を接続します。
-`GPIO43/TX -> module TXD`、`GPIO44/RX <- module RXD`です。一般UART機器間の
-ようにTXとRXをクロスしません。moduleの2つのGND端子は基板内で共通です。
+XIAO ESP32-C6で同じ最小F/Wを使用する場合は次のピンへ読み替える。
+
+| XIAO ESP32-C6 | MAX3485 V2.05 module | 用途 |
+|---|---|---|
+| `3V3` | `VCC` | MAX3485の電源 |
+| `GND` | `GND` | 共通GND |
+| `D6 / GPIO16` | `RXD` | UART1 TX |
+| `D7 / GPIO17` | `TXD` | UART1 RX |
+| `D8 / GPIO19` | `EN` | `HIGH`で送信、`LOW`で受信 |
+
+このmoduleの`TXD` / `RXD`表記はmodule側から見た方向であるため、
+`GPIO43/TX -> module RXD`、`GPIO44/RX <- module TXD`とクロス接続する。
+実機でこの接続による送受信を確認済みである。moduleの2つのGND端子は基板内で
+共通です。
 商品ページと付属PDFは基板上のLEDの役割を明記していないため、LEDの点灯だけで
 送信・受信の有無を判定しません。
 
@@ -180,6 +191,17 @@ pio run
 pio run --target upload
 pio device monitor
 ```
+
+XIAO ESP32-C6向けの最小診断F/Wは次の環境でビルドする。
+
+```bash
+make build PIO_ENV=seeed_xiao_esp32c6
+```
+
+配布用ファイルは
+`release/rs485-debug-device-0.1.0-seeed_xiao_esp32c6.inasfw`である。FGTの
+AP、Wi-Fi、MQTT、ポンプ制御を含まないため、同じC6・同じD6/D7/D8配線で
+RS485だけを切り分けられる。
 
 ## 出力例
 

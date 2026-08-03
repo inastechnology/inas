@@ -57,17 +57,84 @@ The commissioning page can:
 
 - pulse one of the five MOSFET outputs for a bounded duration;
 - turn the switched 12 V sensor supply on or off;
-- scan selected Modbus IDs at 2400, 4800, or 9600 bps;
-- read holding or input registers; and
-- change a sensor address with a read-before-write and read-after-write check.
+- automatically power, scan, and identify the supported soil and PAR sensors;
+- display measurements with product names and physical units;
+- repeat a value acquisition test for each detected sensor; and
+- register each detected sensor with a human-readable name and installation
+  location;
+- edit, disable, or remove registered sensors; and
+- change a sensor address with a read-before-write and read-after-write check;
+  and
+- install an extracted FGT `firmware.bin` from the local setup AP.
 
 Only one MOSFET output can be on. Every output is turned off automatically, and
 a guard interval is enforced before another output can turn on. Modbus
 operations are blocked while an actuator output is active.
 
+Automatic detection checks IDs 1 through 10 at 2400, 4800, and 9600 bps. It
+currently identifies **ComWinTop CWT-SOIL NPKPHCTH-S** and **DFRobot SEN0641
+PAR**. A successful test requires a CRC-valid Modbus response. Soil moisture,
+temperature, and pH also receive a basic protocol-range check. A PAR value of
+zero remains valid because darkness can legitimately produce zero irradiance.
+The firmware advances the scan one address at a time in the setup portal loop;
+the HTTP callback only starts the operation and reports progress. This keeps
+the captive portal responsive even when every address reaches the Modbus
+response timeout.
+
+### Local firmware update
+
+Open **F/Wアップデート** from the commissioning page, select the extracted
+`firmware.bin`, and press **更新を開始**. Do not upload the `.inasfw` bundle,
+the release ZIP, a merged factory image, or firmware for another device.
+
+Before flash writing starts, the firmware cancels sensor detection and turns
+all five MOSFET outputs and the switched 12 V sensor supply off. Commissioning
+operations remain blocked until restart. The uploaded image must have an ESP
+application-image header and an embedded INAS manifest matching all of:
+
+- `project=fertigation-device`
+- `device_kind=FGT`
+- `target=seeed_xiao_esp32c6`
+- `framework=arduino`
+
+The application image is streamed into the inactive OTA partition. It does not
+write the LittleFS partition, so Wi-Fi/MQTT settings and the local RS485 device
+registry remain in place. A rejected or interrupted upload leaves the current
+boot partition selected. After a successful update, the device restarts
+automatically.
+
+Keep both USB and 12 V power stable for the entire update. The setup status LED
+uses a 100 ms blink interval while writing, 50 ms after completion while
+waiting to restart, and 1000 ms after a rejected or failed update. Normal setup
+AP blinking is restored on the next portal start.
+
+### Persistent RS485 device registry
+
+Connect and register new sensors one at a time. A registration records the
+sensor type, name, installation location, Modbus address, baud rate, function
+code, start register, register count, and scale. Up to eight devices can be
+stored. The registry rejects two devices with the same address at the same
+baud rate.
+
+The registry is stored separately from Hub-delivered Runtime Config in
+LittleFS with a version, size, and CRC. Updates are written through a temporary
+file and a backup so an interrupted write does not silently replace the last
+valid registry. The same registry is loaded by both the setup AP and normal
+operation.
+
+Once a local registry has been saved, it is authoritative for physical RS485
+topology. Normal operation powers and reads every enabled registered device,
+switching UART baud rates as required, and includes a `rs485_devices` array in
+the published status. The legacy Runtime Config `soil` and `par` fields remain
+as a fallback only until the first local registry is saved. A deliberately
+saved empty registry therefore disables RS485 sensor reads instead of
+re-enabling compiled defaults.
+
 Address changes are intentionally not a bulk operation. If two sensors already
 have the same address, disconnect every sensor except the one being changed.
 The firmware sends the address write only once and does not retry an ambiguous
-write. Register `0x07D0` is offered as the default address register for the
-currently verified ComWinTop CWT-SOIL and DFRobot SEN0641 devices; use the
-connected sensor's verified manual for any other model.
+write. The verified `0x07D0` address register is applied automatically and is
+not exposed as a user setting. New devices default to “unregistered” during an
+address change. Select an existing registry entry only when changing the
+physical address of that exact registered sensor; its saved address is then
+updated after read-back verification.

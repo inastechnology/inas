@@ -45,6 +45,17 @@ shade; it is not guaranteed by nameplate power alone.
 | RS485 sensor 12 V enable | D9 / pad 10 | 20 | 47 kohm pull-down, reset OFF |
 | Reserved | D10 / pad 11 | 18 | Not connected |
 
+The ESP32-C6 firmware routes UART1 to D6/GPIO16 and D7/GPIO17. USB logs use
+hardware USB CDC and do not consume UART1. Before attaching the UART peripheral,
+the firmware configures D7/RX as an input with its internal pull-up enabled.
+This preserves the Modbus idle-high state and works around an ESP-IDF 5.x UART
+RX initialization failure. When an external RS485 V2.05
+MAX3485 module is used instead of the on-board transceiver, connect D6/TX to
+the module `RXD`, D7/RX to the module `TXD`, and D8 to `EN`. Firmware assigns
+D8 as UART1 RTS and uses the ESP-IDF `UART_MODE_RS485_HALF_DUPLEX` driver mode;
+the UART driver asserts EN while transmitting and releases it after the final
+bit instead of relying on application-level GPIO timing.
+
 The five MOSFET commands each use a 100 ohm series gate resistor and a physical
 47 kohm gate-to-GND pull-down. A reset or unpowered MCU therefore leaves every
 actuator OFF. D0/A0 is reserved for ADC measurement and must never drive a

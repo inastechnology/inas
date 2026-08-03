@@ -16,6 +16,8 @@ static DNSServer s_dns_server;
 static bool s_restart_requested = false;
 static app_initial_setting_portal_reason_t s_portal_reason = APP_INITIAL_SETTING_PORTAL_REASON_UNCONFIGURED;
 static app_initial_setting_extension_t s_extension = {};
+static volatile uint32_t s_status_led_blink_interval_ms =
+    APP_SETUP_PORTAL_ACTIVE_LED_BLINK_MS;
 
 static String app_initial_setting_escape_attr(const char *value);
 static uint8_t app_initial_setting_connected_station_count();
@@ -83,6 +85,19 @@ static void app_initial_setting_update_status_led_blink(uint32_t interval_ms)
     s_last_toggle_ms = now_ms;
     s_led_on = !s_led_on;
     app_initial_setting_set_status_led(s_led_on);
+}
+
+void app_initial_setting_set_status_led_blink_interval(
+    uint32_t interval_ms)
+{
+    s_status_led_blink_interval_ms =
+        interval_ms > 0 ? interval_ms : 1;
+}
+
+void app_initial_setting_reset_status_led_blink_interval()
+{
+    s_status_led_blink_interval_ms =
+        APP_SETUP_PORTAL_ACTIVE_LED_BLINK_MS;
 }
 
 static void app_initial_setting_copy_param(AsyncWebServerRequest *request,
@@ -310,6 +325,7 @@ void app_initial_setting_start_portal(app_initial_setting_portal_reason_t reason
     Serial.printf("Existing Wi-Fi SSID field value: %s\n", strlen(appConfig.ssid) > 0 ? appConfig.ssid : "(empty)");
     Serial.printf("Existing MQTT Broker field value: %s\n", strlen(appConfig.mqtt_broker) > 0 ? appConfig.mqtt_broker : "(empty)");
     Serial.println("=================================");
+    app_initial_setting_reset_status_led_blink_interval();
     app_initial_setting_init_status_led();
     WiFi.persistent(false);
     WiFi.disconnect(true, true);
@@ -360,7 +376,8 @@ void app_initial_setting_start_portal(app_initial_setting_portal_reason_t reason
     while (true)
     {
         s_dns_server.processNextRequest();
-        app_initial_setting_update_status_led_blink(APP_SETUP_PORTAL_ACTIVE_LED_BLINK_MS);
+        app_initial_setting_update_status_led_blink(
+            s_status_led_blink_interval_ms);
         if (s_extension.loop != nullptr)
         {
             s_extension.loop();

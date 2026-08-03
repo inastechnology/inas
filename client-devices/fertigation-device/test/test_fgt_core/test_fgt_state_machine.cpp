@@ -1,6 +1,10 @@
 #include <unity.h>
+#include <string.h>
 
 #include "fgt_commissioning_interlock.h"
+#include "fgt_firmware_manifest_validator.h"
+#include "fgt_rs485_device_registry.h"
+#include "fgt_sensor_diagnostics.h"
 #include "fgt_state_machine.h"
 
 using namespace fgt;
@@ -210,6 +214,184 @@ static void test_commissioning_auto_off_and_duration_limits()
     TEST_ASSERT_EQUAL_UINT32(3000, stopped.guard_remaining_ms);
 }
 
+static void test_sensor_identification_prefers_soil_signature()
+{
+    SensorIdentification identification =
+        identify_commissioning_sensor(true, false, true, true);
+    TEST_ASSERT_EQUAL(CommissioningSensorType::soil, identification.type);
+    TEST_ASSERT_EQUAL(SensorIdentificationConfidence::high,
+                      identification.confidence);
+
+    identification =
+        identify_commissioning_sensor(true, true, false, false);
+    TEST_ASSERT_EQUAL(CommissioningSensorType::soil, identification.type);
+    TEST_ASSERT_EQUAL(SensorIdentificationConfidence::medium,
+                      identification.confidence);
+}
+
+static void test_sensor_identification_does_not_treat_zero_par_as_soil()
+{
+    SensorIdentification identification =
+        identify_commissioning_sensor(false, false, false, false);
+    TEST_ASSERT_EQUAL(CommissioningSensorType::par, identification.type);
+    TEST_ASSERT_EQUAL(SensorIdentificationConfidence::high,
+                      identification.confidence);
+
+    identification =
+        identify_commissioning_sensor(true, false, true, false);
+    TEST_ASSERT_EQUAL(CommissioningSensorType::par, identification.type);
+    TEST_ASSERT_EQUAL(SensorIdentificationConfidence::tentative,
+                      identification.confidence);
+}
+
+static void test_soil_measurement_plausibility()
+{
+    TEST_ASSERT_TRUE(soil_measurement_values_plausible(352, 241, 64));
+    TEST_ASSERT_TRUE(soil_measurement_values_plausible(
+        0, static_cast<uint16_t>(static_cast<int16_t>(-100)), 0));
+    TEST_ASSERT_FALSE(soil_measurement_values_plausible(1001, 241, 64));
+    TEST_ASSERT_FALSE(soil_measurement_values_plausible(352, 851, 64));
+    TEST_ASSERT_FALSE(soil_measurement_values_plausible(352, 241, 141));
+}
+
+static Rs485DeviceConfig registry_device(
+    Rs485DeviceType type,
+    uint8_t slave_id,
+    uint32_t baud,
+    const char *name)
+{
+    Rs485DeviceConfig device = {};
+    device.enabled = true;
+    device.type = type;
+    device.slave_id = slave_id;
+    device.baud = baud;
+    device.function_code = 0x03;
+    device.start_register = 0;
+    device.register_count =
+        type == Rs485DeviceType::soil ? 7 : 1;
+    device.scale = 1.0F;
+    strncpy(device.name, name, sizeof(device.name) - 1);
+    strncpy(device.location, "RS485 branch 1",
+            sizeof(device.location) - 1);
+    return device;
+}
+
+static void test_rs485_registry_rejects_duplicate_bus_address()
+{
+    Rs485DeviceRegistry registry = {};
+    TEST_ASSERT_EQUAL(
+        Rs485RegistryResult::ok,
+        rs485_registry_add(
+            registry,
+            registry_device(
+                Rs485DeviceType::soil, 1, 4800, "soil")));
+    TEST_ASSERT_EQUAL(
+        Rs485RegistryResult::duplicate_address,
+        rs485_registry_add(
+            registry,
+            registry_device(
+                Rs485DeviceType::par, 1, 4800, "par")));
+    TEST_ASSERT_EQUAL(
+        Rs485RegistryResult::ok,
+        rs485_registry_add(
+            registry,
+            registry_device(
+                Rs485DeviceType::par, 1, 9600, "par")));
+    TEST_ASSERT_TRUE(rs485_registry_valid(registry));
+}
+
+static void test_rs485_registry_updates_and_removes_devices()
+{
+    Rs485DeviceRegistry registry = {};
+    TEST_ASSERT_EQUAL(
+        Rs485RegistryResult::ok,
+        rs485_registry_add(
+            registry,
+            registry_device(
+                Rs485DeviceType::soil, 1, 4800, "soil")));
+    TEST_ASSERT_EQUAL(
+        Rs485RegistryResult::ok,
+        rs485_registry_add(
+            registry,
+            registry_device(
+                Rs485DeviceType::par, 2, 4800, "par")));
+
+    Rs485DeviceConfig updated = registry.devices[0];
+    updated.slave_id = 3;
+    TEST_ASSERT_EQUAL(
+        Rs485RegistryResult::ok,
+        rs485_registry_update(registry, 0, updated));
+    TEST_ASSERT_EQUAL_INT(
+        0, rs485_registry_find_address(registry, 4800, 3));
+    TEST_ASSERT_EQUAL(
+        Rs485RegistryResult::ok,
+        rs485_registry_remove(registry, 0));
+    TEST_ASSERT_EQUAL_UINT8(1, registry.count);
+    TEST_ASSERT_EQUAL_UINT8(2, registry.devices[0].slave_id);
+    TEST_ASSERT_TRUE(rs485_registry_valid(registry));
+}
+
+static void test_firmware_manifest_scanner_accepts_split_chunks()
+{
+    const char image[] =
+        "\xE9"
+        "binary-prefix-INAS_FW_MANIFEST_V1_BEGIN\n"
+        "schema=1\n"
+        "project=fertigation-device\n"
+        "device_kind=FGT\n"
+        "version=0.1.0\n"
+        "target=seeed_xiao_esp32c6\n"
+        "framework=arduino\n"
+        "INAS_FW_MANIFEST_V1_END-binary-suffix";
+    FirmwareManifestScanner scanner;
+    const size_t chunk_lengths[] = {7, 19, 3, 31, 11, 1000};
+    size_t offset = 0;
+    for (size_t i = 0;
+         i < sizeof(chunk_lengths) / sizeof(chunk_lengths[0]) &&
+         offset < sizeof(image) - 1;
+         ++i)
+    {
+        const size_t remaining =
+            sizeof(image) - 1 - offset;
+        const size_t length =
+            chunk_lengths[i] < remaining
+                ? chunk_lengths[i]
+                : remaining;
+        scanner.feed(
+            reinterpret_cast<const uint8_t *>(image + offset),
+            length);
+        offset += length;
+    }
+
+    TEST_ASSERT_TRUE(scanner.complete());
+    TEST_ASSERT_FALSE(scanner.overflowed());
+    TEST_ASSERT_TRUE(scanner.matches(
+        "fertigation-device",
+        "FGT",
+        "seeed_xiao_esp32c6",
+        "arduino"));
+    TEST_ASSERT_FALSE(scanner.matches(
+        "fertigation-device",
+        "FGT",
+        "esp32s3",
+        "arduino"));
+}
+
+static void test_firmware_manifest_scanner_rejects_missing_manifest()
+{
+    const uint8_t image[] = {
+        0xE9, 0x01, 0x02, 0x03, 0x04};
+    FirmwareManifestScanner scanner;
+    scanner.feed(image, sizeof(image));
+
+    TEST_ASSERT_FALSE(scanner.complete());
+    TEST_ASSERT_FALSE(scanner.matches(
+        "fertigation-device",
+        "FGT",
+        "seeed_xiao_esp32c6",
+        "arduino"));
+}
+
 int main(int argc, char **argv)
 {
     UNITY_BEGIN();
@@ -221,5 +403,12 @@ int main(int argc, char **argv)
     RUN_TEST(test_commissioning_allows_only_one_output);
     RUN_TEST(test_commissioning_guard_period_starts_after_off);
     RUN_TEST(test_commissioning_auto_off_and_duration_limits);
+    RUN_TEST(test_sensor_identification_prefers_soil_signature);
+    RUN_TEST(test_sensor_identification_does_not_treat_zero_par_as_soil);
+    RUN_TEST(test_soil_measurement_plausibility);
+    RUN_TEST(test_rs485_registry_rejects_duplicate_bus_address);
+    RUN_TEST(test_rs485_registry_updates_and_removes_devices);
+    RUN_TEST(test_firmware_manifest_scanner_accepts_split_chunks);
+    RUN_TEST(test_firmware_manifest_scanner_rejects_missing_manifest);
     return UNITY_END();
 }

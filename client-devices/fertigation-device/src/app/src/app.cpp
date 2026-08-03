@@ -10,6 +10,7 @@
 #include "app_device.h"
 #include "app_fgt_journal.h"
 #include "app_fgt_commissioning.h"
+#include "app_fgt_rs485_devices.h"
 #include "app_fgt_runtime_config.h"
 #include "app_network.h"
 #include "fgt_state_machine.h"
@@ -37,6 +38,16 @@ static hal_direct_gpio_t s_io = {};
 static hal_battery_monitor_t s_battery_monitor = {};
 static hal_power_switch_t s_sensor_power = {};
 static bool s_rs485_ready = false;
+static uint32_t s_rs485_baud = 0;
+
+struct FgtConfiguredRs485Sample
+{
+    bool attempted = false;
+    bool bus_ready = false;
+    bool ok = false;
+    hal_rs485_soil_sample_t soil = {};
+    hal_rs485_par_sample_t par = {};
+};
 
 struct FgtSensorSample
 {
@@ -46,6 +57,9 @@ struct FgtSensorSample
     bool power_ok = false;
     hal_rs485_soil_sample_t soil = {};
     hal_rs485_par_sample_t par = {};
+    bool saved_registry_used = false;
+    uint8_t configured_count = 0;
+    FgtConfiguredRs485Sample configured[fgt::kMaxRs485Devices] = {};
 };
 
 struct FgtCycleState
@@ -107,6 +121,21 @@ static fgt::Inputs read_physical_inputs()
     return inputs;
 }
 
+static bool ensure_rs485_baud(uint32_t baud)
+{
+    if (s_rs485_ready && s_rs485_baud == baud)
+    {
+        return true;
+    }
+    hal_rs485_bus_deinit();
+    hal_rs485_modbus_config_t config =
+        hal_rs485_modbus_default_config();
+    config.baud = baud;
+    s_rs485_ready = hal_rs485_bus_init(&config);
+    s_rs485_baud = s_rs485_ready ? baud : 0;
+    return s_rs485_ready;
+}
+
 class FertigationDevice : public AppDevice
 {
 public:
@@ -134,6 +163,7 @@ protected:
     bool on_initialize() override
     {
         app_fgt_runtime_config_init();
+        app_fgt_rs485_devices_init();
         app_fgt_journal_init();
 
         const bool io_ready = hal_direct_gpio_open(&s_io);
@@ -144,6 +174,7 @@ protected:
         const bool power_ready = hal_power_switch_open(&s_sensor_power, &power_config);
         const hal_rs485_modbus_config_t rs485_config = hal_rs485_modbus_default_config();
         s_rs485_ready = hal_rs485_bus_init(&rs485_config);
+        s_rs485_baud = s_rs485_ready ? rs485_config.baud : 0;
         return io_ready && battery_ready && power_ready && s_rs485_ready;
     }
 
@@ -156,7 +187,7 @@ protected:
     {
         (void)config_received;
         const app_fgt_runtime_config_t &config = app_fgt_runtime_config_get();
-        Serial.printf("FGT config: valid=%s enabled=%s schedules=%u water=%lu initial=%lu A=%lu B=%lu rinse=%lu recovery_ack=%lu\n",
+        Serial.printf("FGT config: valid=%s enabled=%s schedules=%u water=%lu initial=%lu A=%lu B=%lu rinse=%lu recovery_ack=%lu local_rs485=%s devices=%u\n",
                       config.valid ? "true" : "false",
                       config.enabled ? "true" : "false",
                       static_cast<unsigned int>(config.schedule_count),
@@ -165,7 +196,12 @@ protected:
                       static_cast<unsigned long>(config.recipe.nutrient_a_ml),
                       static_cast<unsigned long>(config.recipe.nutrient_b_ml),
                       static_cast<unsigned long>(config.recipe.rinse_water_ml),
-                      static_cast<unsigned long>(config.recovery_ack));
+                      static_cast<unsigned long>(config.recovery_ack),
+                      app_fgt_rs485_devices_has_saved_registry()
+                          ? "true"
+                          : "false",
+                      static_cast<unsigned int>(
+                          app_fgt_rs485_devices_get().count));
     }
 
     const char *runtime_ntp_server() const override
@@ -261,6 +297,41 @@ protected:
                                const AppDeviceCycleResult &cycle_result) override
     {
         const app_fgt_runtime_config_t &config = app_fgt_runtime_config_get();
+        const fgt::Rs485DeviceRegistry &registry =
+            app_fgt_rs485_devices_get();
+        bool soil_enabled = config.sensors.soil.enabled;
+        bool par_enabled = config.sensors.par.enabled;
+        uint8_t soil_id = config.sensors.soil.modbus_slave_id;
+        uint8_t par_id = config.sensors.par.modbus_slave_id;
+        if (m_cycle.sensors.saved_registry_used)
+        {
+            soil_enabled = false;
+            par_enabled = false;
+            bool soil_found = false;
+            bool par_found = false;
+            for (size_t i = 0; i < registry.count; ++i)
+            {
+                const fgt::Rs485DeviceConfig &device =
+                    registry.devices[i];
+                if (device.type == fgt::Rs485DeviceType::soil &&
+                    (!soil_found ||
+                     (!soil_enabled && device.enabled)))
+                {
+                    soil_found = true;
+                    soil_enabled = device.enabled;
+                    soil_id = device.slave_id;
+                }
+                else if (
+                    device.type == fgt::Rs485DeviceType::par &&
+                    (!par_found ||
+                     (!par_enabled && device.enabled)))
+                {
+                    par_found = true;
+                    par_enabled = device.enabled;
+                    par_id = device.slave_id;
+                }
+            }
+        }
         JsonDocument doc;
         doc["seq"] = context.seq_id;
         doc["device_kind"] = APP_DEVICE_KIND;
@@ -309,9 +380,9 @@ protected:
         doc["battery_voltage_v"] = m_cycle.sensors.battery.battery_volts;
         doc["sensor_12v_power_requested"] = m_cycle.sensors.power_requested;
         doc["sensor_12v_power_error"] = m_cycle.sensors.power_requested && !m_cycle.sensors.power_ok;
-        doc["soil_rs485_enabled"] = config.sensors.soil.enabled;
+        doc["soil_rs485_enabled"] = soil_enabled;
         doc["soil_rs485_ok"] = m_cycle.sensors.soil.ok;
-        doc["soil_rs485_modbus_slave_id"] = config.sensors.soil.modbus_slave_id;
+        doc["soil_rs485_modbus_slave_id"] = soil_id;
         doc["soil_moisture_percent"] = m_cycle.sensors.soil.moisture_percent;
         doc["soil_temperature_c"] = m_cycle.sensors.soil.temperature_c;
         doc["soil_ec_us_cm"] = m_cycle.sensors.soil.ec_us_cm;
@@ -319,17 +390,68 @@ protected:
         doc["soil_n_mg_kg"] = m_cycle.sensors.soil.n_mg_kg;
         doc["soil_p_mg_kg"] = m_cycle.sensors.soil.p_mg_kg;
         doc["soil_k_mg_kg"] = m_cycle.sensors.soil.k_mg_kg;
-        doc["par_enabled"] = config.sensors.par.enabled;
+        doc["par_enabled"] = par_enabled;
         doc["par_ok"] = m_cycle.sensors.par.ok;
-        doc["par_modbus_slave_id"] = config.sensors.par.modbus_slave_id;
+        doc["par_modbus_slave_id"] = par_id;
         doc["par_umol_m2_s"] = m_cycle.sensors.par.par_umol_m2_s;
+        doc["rs485_registry_saved"] =
+            m_cycle.sensors.saved_registry_used;
+        doc["rs485_device_count"] =
+            m_cycle.sensors.configured_count;
+        JsonArray rs485_devices =
+            doc["rs485_devices"].to<JsonArray>();
+        if (m_cycle.sensors.saved_registry_used)
+        {
+            for (size_t i = 0; i < registry.count; ++i)
+            {
+                const fgt::Rs485DeviceConfig &device =
+                    registry.devices[i];
+                const FgtConfiguredRs485Sample &sample =
+                    m_cycle.sensors.configured[i];
+                JsonObject item = rs485_devices.add<JsonObject>();
+                item["index"] = i;
+                item["enabled"] = device.enabled;
+                item["type"] =
+                    device.type == fgt::Rs485DeviceType::soil
+                        ? "soil"
+                        : "par";
+                item["name"] = device.name;
+                item["location"] = device.location;
+                item["modbus_slave_id"] = device.slave_id;
+                item["baud"] = device.baud;
+                item["function_code"] = device.function_code;
+                item["start_register"] = device.start_register;
+                item["register_count"] = device.register_count;
+                item["attempted"] = sample.attempted;
+                item["bus_ready"] = sample.bus_ready;
+                item["ok"] = sample.ok;
+                if (device.type == fgt::Rs485DeviceType::soil)
+                {
+                    item["moisture_percent"] =
+                        sample.soil.moisture_percent;
+                    item["temperature_c"] =
+                        sample.soil.temperature_c;
+                    item["ec_us_cm"] = sample.soil.ec_us_cm;
+                    item["ph"] = sample.soil.ph;
+                    item["n_mg_kg"] = sample.soil.n_mg_kg;
+                    item["p_mg_kg"] = sample.soil.p_mg_kg;
+                    item["k_mg_kg"] = sample.soil.k_mg_kg;
+                }
+                else
+                {
+                    item["par_umol_m2_s"] =
+                        sample.par.par_umol_m2_s;
+                }
+            }
+        }
 
-        char payload[4096];
-        const size_t length = serializeJson(doc, payload, sizeof(payload));
-        if (length == 0 || length >= sizeof(payload)) return false;
-        Serial.printf("Sending status: %s\n", payload);
+        String payload;
+        payload.reserve(6144);
+        const size_t length = serializeJson(doc, payload);
+        if (length == 0 || length > 12288) return false;
+        Serial.printf("Sending status: %s\n", payload.c_str());
         const bool sent = app_network_send(APP_MSG_TYPE_STATUS,
-                                           reinterpret_cast<const uint8_t *>(payload),
+                                           reinterpret_cast<const uint8_t *>(payload.c_str()),
                                            length,
                                            context.seq_id);
         if (sent) app_network_flush(APP_MQTT_STATUS_PUBLISH_DRAIN_MS);
@@ -346,7 +468,27 @@ private:
         FgtSensorSample sample = {};
         sample.battery_ok =
             hal_battery_monitor_read(&s_battery_monitor, &sample.battery);
-        sample.power_requested = config.sensors.soil.enabled || config.sensors.par.enabled;
+        sample.saved_registry_used =
+            app_fgt_rs485_devices_has_saved_registry();
+        const fgt::Rs485DeviceRegistry &registry =
+            app_fgt_rs485_devices_get();
+        sample.configured_count =
+            sample.saved_registry_used ? registry.count : 0;
+        if (sample.saved_registry_used)
+        {
+            for (size_t i = 0; i < registry.count; ++i)
+            {
+                sample.power_requested =
+                    sample.power_requested ||
+                    registry.devices[i].enabled;
+            }
+        }
+        else
+        {
+            sample.power_requested =
+                config.sensors.soil.enabled ||
+                config.sensors.par.enabled;
+        }
         if (!sample.power_requested)
         {
             sample.power_ok = true;
@@ -354,13 +496,75 @@ private:
             return;
         }
         sample.power_ok = hal_power_switch_enable_wait(&s_sensor_power, config.sensors.power_settle_ms);
-        if (sample.power_ok && s_rs485_ready && config.sensors.soil.enabled)
+        if (sample.power_ok && sample.saved_registry_used)
         {
-            hal_rs485_soil_sensor_read(&config.sensors.soil, &sample.soil);
+            bool first_soil = true;
+            bool first_par = true;
+            for (size_t i = 0; i < registry.count; ++i)
+            {
+                const fgt::Rs485DeviceConfig &device =
+                    registry.devices[i];
+                FgtConfiguredRs485Sample &configured =
+                    sample.configured[i];
+                if (!device.enabled)
+                {
+                    continue;
+                }
+                configured.attempted = true;
+                configured.bus_ready =
+                    ensure_rs485_baud(device.baud);
+                if (!configured.bus_ready)
+                {
+                    continue;
+                }
+                if (device.type == fgt::Rs485DeviceType::soil)
+                {
+                    const hal_rs485_soil_sensor_config_t sensor_config = {
+                        true,
+                        device.slave_id,
+                        device.function_code,
+                        device.start_register,
+                    };
+                    configured.ok = hal_rs485_soil_sensor_read(
+                        &sensor_config, &configured.soil);
+                    if (first_soil)
+                    {
+                        sample.soil = configured.soil;
+                        first_soil = false;
+                    }
+                }
+                else
+                {
+                    const hal_rs485_par_sensor_config_t sensor_config = {
+                        true,
+                        device.slave_id,
+                        device.function_code,
+                        device.start_register,
+                        device.scale,
+                    };
+                    configured.ok = hal_rs485_par_sensor_read(
+                        &sensor_config, &configured.par);
+                    if (first_par)
+                    {
+                        sample.par = configured.par;
+                        first_par = false;
+                    }
+                }
+            }
         }
-        if (sample.power_ok && s_rs485_ready && config.sensors.par.enabled)
+        else if (sample.power_ok &&
+                 ensure_rs485_baud(APP_RS485_BAUD))
         {
-            hal_rs485_par_sensor_read(&config.sensors.par, &sample.par);
+            if (config.sensors.soil.enabled)
+            {
+                hal_rs485_soil_sensor_read(
+                    &config.sensors.soil, &sample.soil);
+            }
+            if (config.sensors.par.enabled)
+            {
+                hal_rs485_par_sensor_read(
+                    &config.sensors.par, &sample.par);
+            }
         }
         hal_power_switch_set(&s_sensor_power, false);
         m_cycle.sensors = sample;
@@ -448,6 +652,7 @@ void app_deinit()
     hal_power_switch_close(&s_sensor_power);
     hal_rs485_bus_deinit();
     s_rs485_ready = false;
+    s_rs485_baud = 0;
 }
 
 void app_loop()

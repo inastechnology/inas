@@ -479,7 +479,7 @@ bool app_init()
                   RS485_TX_PIN,
                   RS485_RX_PIN,
                   RS485_DE_RE_PIN);
-    Serial.println("Module wiring: GPIO43/TX->TXD GPIO44/RX<-RXD GPIO5->EN");
+    Serial.println("Module wiring: GPIO43/TX->RXD GPIO44/RX<-TXD GPIO5->EN");
     Serial.println("Supported: ComWinTop CWT-SOIL, DFRobot SEN0641 PAR");
     scanBus();
     return true;
