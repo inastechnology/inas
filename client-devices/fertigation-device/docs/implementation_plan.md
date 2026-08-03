@@ -1,12 +1,19 @@
 # Implementation Plan
 
+The current prototype uses the
+[direct-wired XIAO ESP32-C6 pin contract](jp/minimal_wiring.md). The dedicated
+KiCad controller PCB is an unbuilt future design. Contact-input, master-enable,
+and flow-meter items below remain future protected-hardware work and are not
+present in the current minimal pin contract.
+
 ## Architecture
 
 1. `lib/fgt-core` owns recipe validation, deterministic phase transitions,
    actuator commands, timeouts, and fault names. It has no Arduino dependency.
 2. Device App owns saved JSON configuration, schedules, batch journal,
    RS485 sampling, state-machine orchestration, MQTT status, and sleep policy.
-3. HAL owns MCP23017 register I/O and inlet-flow pulse counting.
+3. HAL owns direct GPIO output/contact-input primitives, the hardware
+   master-enable primitive, and inlet-flow pulse counting.
 4. Common INA client code continues to own Wi-Fi, MQTT, OTA, setup portal,
    LittleFS mount, time synchronization, and deep sleep.
 
@@ -16,7 +23,8 @@
    verification criteria.
 2. Write native state-machine tests before hardware orchestration.
 3. Implement the state machine until nominal and fault tests pass.
-4. Implement MCP23017 and flow-meter primitives with OFF-on-reset behavior.
+4. Implement the ESP32-C6 direct-GPIO hardware profile and flow-meter
+   primitives with OFF-on-reset behavior.
 5. Implement FGT runtime configuration with bounded defaults and CRC storage.
 6. Integrate schedules, batch execution, network servicing, RS485 readings, and
    status publication.

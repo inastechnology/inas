@@ -1,0 +1,779 @@
+; ComWinTop CWT-SOIL NPKPHCTH-S setup and test for Tera Term 4.94+ / 5.x.
+;
+; Modes:
+;   Read-only test:
+;     Auto-detects and verifies the current ID/baud settings, then monitors seven
+;     measurement registers from 0x0000.
+;   Initial setup and test:
+;     Auto-detects the current settings, optionally writes only slave ID (0x07D0)
+;     and baud code (0x07D1), verifies each change, then starts the same test.
+;
+; Measurement registers:
+;   0x0000 moisture, 0x0001 temperature, 0x0002 EC, 0x0003 pH,
+;   0x0004 N, 0x0005 P, 0x0006 K.
+;
+; Current V1.4 four-wire cable:
+;   External +12V -> Brown
+;   External GND  -> Black
+;   USB-RS485 A+  -> Yellow/Green
+;   USB-RS485 B-  -> Blue
+;   USB-RS485 GND -> External GND / Black
+;
+; Alternate cable shown by the bundled V1.3 configuration tool:
+;   External +12V -> Red
+;   External GND  -> Black
+;   USB-RS485 A+  -> Yellow
+;   USB-RS485 B-  -> Green
+;   USB-RS485 GND -> External GND / Black
+;
+; Do not connect the USB adapter's 5V output to the external 12V rail.
+; Factory settings: slave 1, 4800 bps, 8N1.
+; INAS fixed IDs: soil sensor 1 = slave 1, soil sensor 2 = slave 2,
+;                 PAR sensor = slave 3. Keep these IDs even when a device
+;                 is not installed. All devices use 4800 bps.
+;
+; Connection:
+;   Reuses an already-open Tera Term serial connection without asking for a
+;   COM port. If no connection is open, asks for a COM port and opens it.
+;
+; Display:
+;   The Tera Term VT window is reserved for bytes actually received from the
+;   RS485 bus. Progress and decoded values are shown in a status box, final
+;   results in message boxes, and valid measurements in the generated CSV.
+
+reuse_open_connection = 0
+testlink
+if result = 2 then
+  getmodemstatus modem_status
+  if result <> 0 then
+    messagebox 'The open Tera Term connection is not a serial connection. Open the USB-RS485 COM port, then run this macro again.' 'CWT soil setup and test'
+    end
+  endif
+  reuse_open_connection = 1
+  connection_label = 'open Tera Term serial session'
+else
+  inputbox 'No serial connection is open. Enter the USB-RS485 COM port number (example: 5 for COM5).' 'CWT soil setup and test' '5'
+  str2int com_port inputstr
+  if com_port <= 0 then
+    messagebox 'Invalid COM port number.' 'CWT soil setup and test'
+    end
+  endif
+  sprintf2 connection_label 'COM%d' com_port
+endif
+
+yesnobox 'Run INITIAL SETUP before the measurement test? YES may write slave ID and baud. NO is read-only.' 'CWT soil setup and test'
+setup_mode = result
+
+; The active values are discovered with the vendor-documented broadcast read.
+sensor_id = 1
+baud_rate = 4800
+
+if setup_mode = 1 then
+  inputbox 'Target soil sensor ID (first soil sensor: 1, second soil sensor: 2)' 'CWT target settings' '1'
+  str2int target_id inputstr
+  if target_id <> 1 && target_id <> 2 then
+    messagebox 'INAS assigns soil sensor 1 to ID 1 and soil sensor 2 to ID 2. PAR is reserved as ID 3.' 'CWT soil setup and test'
+    end
+  endif
+
+  inputbox 'Target baud rate (INAS RS485 sensor bus: 4800)' 'CWT target settings' '4800'
+  str2int target_baud_rate inputstr
+  if target_baud_rate <> 2400 && target_baud_rate <> 4800 && target_baud_rate <> 9600 then
+    messagebox 'Target baud rate must be 2400, 4800, or 9600.' 'CWT soil setup and test'
+    end
+  endif
+
+  if target_baud_rate <> 4800 then
+    yesnobox 'The INAS RS485 sensor bus uses 4800 bps. Continue with a different target baud?' 'Non-default baud warning'
+    if result = 0 then
+      end
+    endif
+  endif
+
+endif
+
+yesnobox 'AUTO-DETECTION SAFETY: Is exactly one CWT soil sensor connected to this RS485 bus? Disconnect PAR and all other RS485 devices before continuing.' 'Disconnect other RS485 devices'
+if result = 0 then
+  end
+endif
+
+inputbox 'Number of measurement polls after verification (0 = continuous; 30 = about one minute)' 'CWT measurement test' '30'
+str2int max_polls inputstr
+if max_polls < 0 then
+  messagebox 'Number of polls must be zero or greater.' 'CWT soil setup and test'
+  end
+endif
+
+yesnobox 'Confirm sensor GND, USB-RS485 GND, and 12V supply negative are connected. Continue?' 'CWT soil wiring'
+if result = 0 then
+  end
+endif
+
+if reuse_open_connection = 1 then
+  ; Tera Term provides direct setters for baud and flow control. The already
+  ; open serial session must use 8 data bits, no parity, and 1 stop bit.
+  setbaud baud_rate
+  setflowctrl 3
+else
+  sprintf2 connect_options '/C=%d /BAUD=%d /CDATABIT=8 /CPARITY=none /CSTOPBIT=1 /CFLOWCTRL=none' com_port baud_rate
+  connect connect_options
+  if result <> 2 then
+    messagebox 'Could not open the COM port. Close other applications using it and try again.' 'CWT soil setup and test'
+    end
+  endif
+endif
+
+settitle 'ComWinTop CWT soil setup and test'
+setecho 0
+timeout = 2
+mtimeout = 0
+setdebug 2
+clearscreen 0
+
+log_handle = -1
+abort_reason = ''
+poll_interval_sec = 2
+poll_count = 0
+good_count = 0
+timeout_count = 0
+crc_error_count = 0
+exception_count = 0
+
+sprintf2 display_text 'Connected: %s, 8N1. Auto-detecting at 2400, 4800, and 9600 bps.' connection_label
+statusbox display_text 'CWT soil setup and test'
+
+; Discover the active baud and slave ID before any write.
+call auto_detect_settings
+if detection_ok = 0 then
+  abort_reason = 'Could not auto-detect the sensor at 2400, 4800, or 9600 bps. No register was written. Check 12V, GND, A/B, and connect exactly one sensor.'
+  goto abort
+endif
+
+sprintf2 display_text 'Auto-detected response: slave=%d, active baud=%d' sensor_id baud_rate
+statusbox display_text 'CWT soil setup and test'
+
+; Read both setting registers with the detected address for a second check.
+call read_settings
+if settings_ok = 0 then
+  abort_reason = 'A broadcast response was detected, but current ID/baud verification failed. No register was written.'
+  goto abort
+endif
+
+if settings_sensor_id <> sensor_id then
+  sprintf2 abort_reason 'The sensor responded at ID %d but register 0x07D0 contains %d. No register was written.' sensor_id settings_sensor_id
+  goto abort
+endif
+
+if settings_baud_rate <> baud_rate then
+  sprintf2 abort_reason 'The active baud is %d but register 0x07D1 reports %d. No register was written.' baud_rate settings_baud_rate
+  goto abort
+endif
+
+sprintf2 display_text 'Verified current settings: slave=%d, baud=%d (code=%d)' settings_sensor_id settings_baud_rate settings_baud_code
+statusbox display_text 'CWT soil setup and test'
+
+if setup_mode = 1 then
+  sprintf2 setup_confirm_text 'WRITE INITIAL SETTINGS?\n\nCurrent: slave %d, baud %d\nTarget:  slave %d, baud %d\n\nOnly registers 0x07D0 and 0x07D1 may be written.' settings_sensor_id settings_baud_rate target_id target_baud_rate
+  yesnobox setup_confirm_text 'Final setup confirmation' 1
+  if result = 0 then
+    abort_reason = 'Setup was cancelled. No register was written.'
+    goto abort
+  endif
+
+  if target_baud_rate = 2400 then
+    target_baud_code = 0
+  elseif target_baud_rate = 4800 then
+    target_baud_code = 1
+  else
+    target_baud_code = 2
+  endif
+
+  ; Change baud first while the current slave ID is still known.
+  if target_baud_rate <> baud_rate then
+    write_register = $07D1
+    write_value = target_baud_code
+    call write_single_register
+    if write_ok = 0 then
+      abort_reason = 'Baud write was not acknowledged. Device state is unknown; do not retry blindly. Power-cycle and run read-only mode at the old and target baud rates.'
+      goto abort
+    endif
+
+    setbaud target_baud_rate
+    baud_rate = target_baud_rate
+    pause 1
+    call read_settings
+    if settings_ok = 0 || settings_sensor_id <> sensor_id || settings_baud_code <> target_baud_code then
+      abort_reason = 'Baud write echo was received, but verification at the target baud failed. Stop and power-cycle before retrying.'
+      goto abort
+    endif
+    sprintf2 display_text 'Verified baud change: %d bps (code=%d)' settings_baud_rate settings_baud_code
+    statusbox display_text 'CWT soil setup and test'
+  endif
+
+  ; Change slave ID only after baud communication has been verified.
+  if target_id <> sensor_id then
+    write_register = $07D0
+    write_value = target_id
+    call write_single_register
+    if write_ok = 0 then
+      abort_reason = 'Slave ID write was not acknowledged. Device state is unknown; do not retry blindly. Power-cycle and test both the old and target IDs.'
+      goto abort
+    endif
+
+    sensor_id = target_id
+    pause 1
+    call read_settings
+    if settings_ok = 0 || settings_sensor_id <> target_id || settings_baud_rate <> baud_rate then
+      abort_reason = 'Slave ID write echo was received, but verification at the target ID failed. Stop and power-cycle before retrying.'
+      goto abort
+    endif
+    sprintf2 display_text 'Verified slave ID change: %d' settings_sensor_id
+    statusbox display_text 'CWT soil setup and test'
+  endif
+
+  ; Final verification also covers the no-change case.
+  call read_settings
+  if settings_ok = 0 || settings_sensor_id <> target_id || settings_baud_rate <> target_baud_rate then
+    abort_reason = 'Final setup verification failed. Stop and inspect the sensor settings before connecting other RS485 devices.'
+    goto abort
+  endif
+
+  sprintf2 display_text 'INITIAL SETUP PASSED: slave=%d, baud=%d' settings_sensor_id settings_baud_rate
+  statusbox display_text 'CWT soil setup and test'
+  messagebox display_text 'CWT initial setup complete'
+else
+  statusbox 'READ-ONLY MODE: no register will be written.' 'CWT soil setup and test'
+endif
+
+; Build the measurement request and response patterns with the verified ID.
+call prepare_measurement_request
+
+getdir macro_dir
+gettime log_stamp '%Y%m%d-%H%M%S'
+sprintf2 log_path '%s\cwt-soil-test-%s-id%d-%dbps.csv' macro_dir log_stamp sensor_id baud_rate
+fileopen log_handle log_path 0
+if log_handle >= 0 then
+  filewriteln log_handle 'timestamp,slave_id,baud,moisture_raw,moisture_percent,temperature_raw,temperature_c,ec_us_cm,ph_raw,ph,n_mg_kg,p_mg_kg,k_mg_kg'
+endif
+
+sprintf2 display_text 'Measurement serial: %s, %d bps, 8N1, slave %d' connection_label baud_rate sensor_id
+statusbox display_text 'CWT soil setup and test'
+sprintf2 display_text 'Measurement request: %02X 03 00 00 00 07 %02X %02X' sensor_id request_crc_lo request_crc_hi
+statusbox display_text 'CWT soil setup and test'
+
+:poll
+poll_count = poll_count + 1
+flushrecv
+send sensor_id $03 $00 $00 $00 $07 request_crc_lo request_crc_hi
+waitregex response_regex measurement_exception_regex
+wait_result = result
+
+if wait_result = 0 then
+  timeout_count = timeout_count + 1
+  gettime time_text '%Y-%m-%d %H:%M:%S'
+  sprintf2 display_text '%s  TIMEOUT poll=%d (check 12V/GND, slave, baud, and A/B)' time_text poll_count
+  statusbox display_text 'CWT soil setup and test'
+  goto poll_complete
+endif
+
+if wait_result = 2 then
+  hex_text = groupmatchstr1
+  call hex_to_int
+  exception_code = hex_value
+  hex_text = groupmatchstr2
+  call hex_to_int
+  received_crc_lo = hex_value
+  hex_text = groupmatchstr3
+  call hex_to_int
+  received_crc_hi = hex_value
+
+  crc_value = $FFFF
+  crc_byte = sensor_id
+  call crc16_update
+  crc_byte = $83
+  call crc16_update
+  crc_byte = exception_code
+  call crc16_update
+  calculated_crc_lo = crc_value & $FF
+  calculated_crc_hi = (crc_value >> 8) & $FF
+
+  gettime time_text '%Y-%m-%d %H:%M:%S'
+  if received_crc_lo <> calculated_crc_lo || received_crc_hi <> calculated_crc_hi then
+    crc_error_count = crc_error_count + 1
+    sprintf2 display_text '%s  CRC ERROR in exception frame' time_text
+  else
+    exception_count = exception_count + 1
+    sprintf2 display_text '%s  MODBUS EXCEPTION code=0x%02X' time_text exception_code
+  endif
+  statusbox display_text 'CWT soil setup and test'
+  goto poll_complete
+endif
+
+word_text = groupmatchstr1
+call parse_word
+moisture_raw = word_value
+moisture_hi = word_hi
+moisture_lo = word_lo
+
+word_text = groupmatchstr2
+call parse_word
+temperature_raw = word_value
+temperature_hi = word_hi
+temperature_lo = word_lo
+
+word_text = groupmatchstr3
+call parse_word
+ec_raw = word_value
+ec_hi = word_hi
+ec_lo = word_lo
+
+word_text = groupmatchstr4
+call parse_word
+ph_raw = word_value
+ph_hi = word_hi
+ph_lo = word_lo
+
+word_text = groupmatchstr5
+call parse_word
+n_raw = word_value
+n_hi = word_hi
+n_lo = word_lo
+
+word_text = groupmatchstr6
+call parse_word
+p_raw = word_value
+p_hi = word_hi
+p_lo = word_lo
+
+word_text = groupmatchstr7
+call parse_word
+k_raw = word_value
+k_hi = word_hi
+k_lo = word_lo
+
+strcopy groupmatchstr8 1 2 hex_text
+call hex_to_int
+received_crc_lo = hex_value
+strcopy groupmatchstr8 4 2 hex_text
+call hex_to_int
+received_crc_hi = hex_value
+
+crc_value = $FFFF
+crc_byte = sensor_id
+call crc16_update
+crc_byte = $03
+call crc16_update
+crc_byte = $0E
+call crc16_update
+crc_byte = moisture_hi
+call crc16_update
+crc_byte = moisture_lo
+call crc16_update
+crc_byte = temperature_hi
+call crc16_update
+crc_byte = temperature_lo
+call crc16_update
+crc_byte = ec_hi
+call crc16_update
+crc_byte = ec_lo
+call crc16_update
+crc_byte = ph_hi
+call crc16_update
+crc_byte = ph_lo
+call crc16_update
+crc_byte = n_hi
+call crc16_update
+crc_byte = n_lo
+call crc16_update
+crc_byte = p_hi
+call crc16_update
+crc_byte = p_lo
+call crc16_update
+crc_byte = k_hi
+call crc16_update
+crc_byte = k_lo
+call crc16_update
+calculated_crc_lo = crc_value & $FF
+calculated_crc_hi = (crc_value >> 8) & $FF
+
+gettime time_text '%Y-%m-%d %H:%M:%S'
+if received_crc_lo <> calculated_crc_lo || received_crc_hi <> calculated_crc_hi then
+  crc_error_count = crc_error_count + 1
+  sprintf2 display_text '%s  CRC ERROR poll=%d; frame discarded' time_text poll_count
+  statusbox display_text 'CWT soil setup and test'
+  goto poll_complete
+endif
+
+temperature_signed = temperature_raw
+if temperature_signed >= $8000 then
+  temperature_signed = temperature_signed - $10000
+endif
+
+tenths_value = moisture_raw
+call format_tenths
+moisture_text = tenths_text
+tenths_value = temperature_signed
+call format_tenths
+temperature_text = tenths_text
+tenths_value = ph_raw
+call format_tenths
+ph_text = tenths_text
+
+good_count = good_count + 1
+sprintf2 display_text '%s  OK #%d  moisture=%s%%  temp=%sC  EC=%d uS/cm  pH=%s  N=%d  P=%d  K=%d mg/kg' time_text good_count moisture_text temperature_text ec_raw ph_text n_raw p_raw k_raw
+statusbox display_text 'CWT soil setup and test'
+
+if log_handle >= 0 then
+  sprintf2 csv_line '%s,%d,%d,%d,%s,%d,%s,%d,%d,%s,%d,%d,%d' time_text sensor_id baud_rate moisture_raw moisture_text temperature_raw temperature_text ec_raw ph_raw ph_text n_raw p_raw k_raw
+  filewriteln log_handle csv_line
+endif
+
+:poll_complete
+if max_polls > 0 && poll_count >= max_polls then
+  goto finish
+endif
+pause poll_interval_sec
+goto poll
+
+:finish
+if log_handle >= 0 then
+  fileclose log_handle
+endif
+setdebug 0
+sprintf2 summary_text 'Finished: polls=%d, valid=%d, timeouts=%d, CRC errors=%d, Modbus exceptions=%d' poll_count good_count timeout_count crc_error_count exception_count
+messagebox summary_text 'CWT soil setup and test'
+end
+
+:abort
+if log_handle >= 0 then
+  fileclose log_handle
+endif
+setdebug 0
+messagebox abort_reason 'CWT setup/test aborted'
+end
+
+; Auto-detect one CWT sensor with the manufacturer-documented broadcast address.
+; Request: FF 03 07 D0 00 01 91 59
+; Response: ACTUAL_ID 03 02 00 ACTUAL_ID CRC_L CRC_H
+:auto_detect_settings
+detection_ok = 0
+
+for detect_baud_index 0 2
+  if detect_baud_index = 0 then
+    detect_baud = 2400
+  elseif detect_baud_index = 1 then
+    detect_baud = 4800
+  else
+    detect_baud = 9600
+  endif
+
+  setbaud detect_baud
+  pause 1
+  flushrecv
+  sprintf2 display_text 'Auto-detect: testing %d bps with FF 03 07 D0 00 01 91 59' detect_baud
+  statusbox display_text 'CWT soil auto-detection'
+  send $FF $03 $07 $D0 $00 $01 $91 $59
+  waitregex '([0-9A-F][0-9A-F]) 03 02 ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F])'
+  if result = 0 then
+    continue
+  endif
+
+  hex_text = groupmatchstr1
+  call hex_to_int
+  detected_response_id = hex_value
+  word_text = groupmatchstr2
+  call parse_word
+  detected_register_id = word_value
+  detected_id_hi = word_hi
+  detected_id_lo = word_lo
+  strcopy groupmatchstr3 1 2 hex_text
+  call hex_to_int
+  detected_crc_lo = hex_value
+  strcopy groupmatchstr3 4 2 hex_text
+  call hex_to_int
+  detected_crc_hi = hex_value
+
+  crc_value = $FFFF
+  crc_byte = detected_response_id
+  call crc16_update
+  crc_byte = $03
+  call crc16_update
+  crc_byte = $02
+  call crc16_update
+  crc_byte = detected_id_hi
+  call crc16_update
+  crc_byte = detected_id_lo
+  call crc16_update
+  calculated_crc_lo = crc_value & $FF
+  calculated_crc_hi = (crc_value >> 8) & $FF
+
+  if detected_crc_lo <> calculated_crc_lo || detected_crc_hi <> calculated_crc_hi then
+    sprintf2 display_text 'Auto-detect: discarded a CRC-invalid frame at %d bps.' detect_baud
+    statusbox display_text 'CWT soil auto-detection'
+    continue
+  endif
+  if detected_id_hi <> 0 || detected_register_id < 1 || detected_register_id > 254 then
+    sprintf2 display_text 'Auto-detect: discarded an invalid slave ID at %d bps.' detect_baud
+    statusbox display_text 'CWT soil auto-detection'
+    continue
+  endif
+  if detected_response_id <> detected_register_id then
+    sprintf2 display_text 'Auto-detect: response address %d did not match register value %d.' detected_response_id detected_register_id
+    statusbox display_text 'CWT soil auto-detection'
+    continue
+  endif
+
+  sensor_id = detected_register_id
+  baud_rate = detect_baud
+  detection_ok = 1
+  return
+next
+
+return
+
+; Read 0x07D0 (slave ID) and 0x07D1 (baud code) using the current globals
+; sensor_id and baud_rate. Returns settings_ok and decoded settings values.
+:read_settings
+settings_ok = 0
+
+crc_value = $FFFF
+crc_byte = sensor_id
+call crc16_update
+crc_byte = $03
+call crc16_update
+crc_byte = $07
+call crc16_update
+crc_byte = $D0
+call crc16_update
+crc_byte = $00
+call crc16_update
+crc_byte = $02
+call crc16_update
+settings_request_crc_lo = crc_value & $FF
+settings_request_crc_hi = (crc_value >> 8) & $FF
+
+sprintf2 settings_response_regex '%02X 03 04 ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F])' sensor_id
+sprintf2 settings_exception_regex '%02X 83 ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F])' sensor_id
+
+flushrecv
+send sensor_id $03 $07 $D0 $00 $02 settings_request_crc_lo settings_request_crc_hi
+waitregex settings_response_regex settings_exception_regex
+settings_wait_result = result
+
+if settings_wait_result = 0 then
+  return
+endif
+
+if settings_wait_result = 2 then
+  hex_text = groupmatchstr1
+  call hex_to_int
+  exception_code = hex_value
+  sprintf2 display_text 'Settings read returned Modbus exception 0x%02X.' exception_code
+  statusbox display_text 'CWT soil setup and test'
+  return
+endif
+
+word_text = groupmatchstr1
+call parse_word
+settings_sensor_id = word_value
+settings_id_hi = word_hi
+settings_id_lo = word_lo
+
+word_text = groupmatchstr2
+call parse_word
+settings_baud_code = word_value
+settings_baud_hi = word_hi
+settings_baud_lo = word_lo
+
+strcopy groupmatchstr3 1 2 hex_text
+call hex_to_int
+settings_received_crc_lo = hex_value
+strcopy groupmatchstr3 4 2 hex_text
+call hex_to_int
+settings_received_crc_hi = hex_value
+
+crc_value = $FFFF
+crc_byte = sensor_id
+call crc16_update
+crc_byte = $03
+call crc16_update
+crc_byte = $04
+call crc16_update
+crc_byte = settings_id_hi
+call crc16_update
+crc_byte = settings_id_lo
+call crc16_update
+crc_byte = settings_baud_hi
+call crc16_update
+crc_byte = settings_baud_lo
+call crc16_update
+settings_calculated_crc_lo = crc_value & $FF
+settings_calculated_crc_hi = (crc_value >> 8) & $FF
+
+if settings_received_crc_lo <> settings_calculated_crc_lo || settings_received_crc_hi <> settings_calculated_crc_hi then
+  statusbox 'Settings response CRC error.' 'CWT soil setup and test'
+  return
+endif
+
+if settings_id_hi <> 0 || settings_baud_hi <> 0 then
+  statusbox 'Settings response uses an unsupported value width.' 'CWT soil setup and test'
+  return
+endif
+
+if settings_sensor_id < 1 || settings_sensor_id > 254 then
+  statusbox 'Settings response contains an invalid slave ID.' 'CWT soil setup and test'
+  return
+endif
+
+if settings_baud_code = 0 then
+  settings_baud_rate = 2400
+elseif settings_baud_code = 1 then
+  settings_baud_rate = 4800
+elseif settings_baud_code = 2 then
+  settings_baud_rate = 9600
+else
+  statusbox 'Settings response contains an unknown baud code.' 'CWT soil setup and test'
+  return
+endif
+
+settings_ok = 1
+return
+
+; Write one holding register with FC06. Inputs: write_register, write_value.
+; Uses the current sensor_id and baud. Returns write_ok.
+:write_single_register
+write_ok = 0
+write_reg_hi = (write_register >> 8) & $FF
+write_reg_lo = write_register & $FF
+write_value_hi = (write_value >> 8) & $FF
+write_value_lo = write_value & $FF
+
+crc_value = $FFFF
+crc_byte = sensor_id
+call crc16_update
+crc_byte = $06
+call crc16_update
+crc_byte = write_reg_hi
+call crc16_update
+crc_byte = write_reg_lo
+call crc16_update
+crc_byte = write_value_hi
+call crc16_update
+crc_byte = write_value_lo
+call crc16_update
+write_request_crc_lo = crc_value & $FF
+write_request_crc_hi = (crc_value >> 8) & $FF
+
+sprintf2 write_response_regex '%02X 06 %02X %02X %02X %02X ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F])' sensor_id write_reg_hi write_reg_lo write_value_hi write_value_lo
+sprintf2 write_exception_regex '%02X 86 ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F])' sensor_id
+
+sprintf2 display_text 'WRITE request: slave=%d register=0x%04X value=%d' sensor_id write_register write_value
+statusbox display_text 'CWT soil setup and test'
+flushrecv
+send sensor_id $06 write_reg_hi write_reg_lo write_value_hi write_value_lo write_request_crc_lo write_request_crc_hi
+waitregex write_response_regex write_exception_regex
+write_wait_result = result
+
+if write_wait_result = 0 then
+  statusbox 'WRITE timeout; result is unknown.' 'CWT soil setup and test'
+  return
+endif
+
+if write_wait_result = 2 then
+  hex_text = groupmatchstr1
+  call hex_to_int
+  exception_code = hex_value
+  sprintf2 display_text 'WRITE returned Modbus exception 0x%02X.' exception_code
+  statusbox display_text 'CWT soil setup and test'
+  return
+endif
+
+strcopy groupmatchstr1 1 2 hex_text
+call hex_to_int
+write_received_crc_lo = hex_value
+strcopy groupmatchstr1 4 2 hex_text
+call hex_to_int
+write_received_crc_hi = hex_value
+
+if write_received_crc_lo <> write_request_crc_lo || write_received_crc_hi <> write_request_crc_hi then
+  statusbox 'WRITE echo CRC error.' 'CWT soil setup and test'
+  return
+endif
+
+write_ok = 1
+statusbox 'WRITE echo verified.' 'CWT soil setup and test'
+return
+
+; Build measurement request and response patterns for the verified sensor_id.
+:prepare_measurement_request
+crc_value = $FFFF
+crc_byte = sensor_id
+call crc16_update
+crc_byte = $03
+call crc16_update
+crc_byte = $00
+call crc16_update
+crc_byte = $00
+call crc16_update
+crc_byte = $00
+call crc16_update
+crc_byte = $07
+call crc16_update
+request_crc_lo = crc_value & $FF
+request_crc_hi = (crc_value >> 8) & $FF
+
+sprintf2 response_regex '%02X 03 0E ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F] [0-9A-F][0-9A-F])' sensor_id
+sprintf2 measurement_exception_regex '%02X 83 ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F])' sensor_id
+return
+
+; Parse "HH LL" in word_text.
+:parse_word
+strcopy word_text 1 2 hex_text
+call hex_to_int
+word_hi = hex_value
+strcopy word_text 4 2 hex_text
+call hex_to_int
+word_lo = hex_value
+word_value = word_hi * 256 + word_lo
+return
+
+; Convert two uppercase hexadecimal characters in hex_text to hex_value.
+:hex_to_int
+hex_value = 0
+for hex_index 1 2
+  strcopy hex_text hex_index 1 hex_digit
+  strscan '0123456789ABCDEF' hex_digit
+  if result = 0 then
+    hex_value = 0
+    return
+  endif
+  hex_value = hex_value * 16 + result - 1
+next
+return
+
+; Format an integer containing tenths as a decimal string.
+:format_tenths
+if tenths_value < 0 then
+  tenths_abs = 0 - tenths_value
+  tenths_whole = tenths_abs / 10
+  tenths_fraction = tenths_abs % 10
+  sprintf2 tenths_text '-%d.%d' tenths_whole tenths_fraction
+else
+  tenths_whole = tenths_value / 10
+  tenths_fraction = tenths_value % 10
+  sprintf2 tenths_text '%d.%d' tenths_whole tenths_fraction
+endif
+return
+
+; Update global crc_value with global crc_byte (Modbus CRC16).
+:crc16_update
+crc_value = crc_value ^ crc_byte
+for crc_bit 1 8
+  if (crc_value & 1) <> 0 then
+    crc_value = (crc_value >> 1) ^ $A001
+  else
+    crc_value = crc_value >> 1
+  endif
+next
+crc_value = crc_value & $FFFF
+return

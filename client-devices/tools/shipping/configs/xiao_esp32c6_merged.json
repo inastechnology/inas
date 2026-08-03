@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "name": "XIAO ESP32-C6 merged full flash image",
+  "chip": "esp32c6",
+  "flash_size": "4MB",
+  "regions": [
+    {
+      "id": "merged",
+      "label": "Merged full image",
+      "address": "0x0",
+      "max_size": "0x400000",
+      "required": true,
+      "default_enabled": true,
+      "accepted_names": [
+        "firmware.factory.bin"
+      ],
+      "description": "FGT用4MB完全F/W"
+    }
+  ]
+}

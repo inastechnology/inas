@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <HardwareSerial.h>
+#include <string.h>
 
 static HardwareSerial *s_serial = nullptr;
 static uint8_t s_uart_num = 0xFF;
@@ -190,6 +191,92 @@ bool hal_rs485_modbus_read_registers(uint8_t slave_id,
     {
         const size_t offset = 3 + static_cast<size_t>(i) * 2;
         out_registers[i] = (static_cast<uint16_t>(response[offset]) << 8) | response[offset + 1];
+    }
+    return true;
+}
+
+bool hal_rs485_modbus_write_single_register(uint8_t slave_id,
+                                            uint16_t register_address,
+                                            uint16_t value)
+{
+    if (!s_ready || s_serial == nullptr || slave_id == 0 || slave_id > 247)
+    {
+        return false;
+    }
+
+    while (s_serial->available() > 0)
+    {
+        s_serial->read();
+    }
+
+    uint8_t request[8] = {
+        slave_id,
+        0x06,
+        static_cast<uint8_t>(register_address >> 8),
+        static_cast<uint8_t>(register_address & 0xFF),
+        static_cast<uint8_t>(value >> 8),
+        static_cast<uint8_t>(value & 0xFF),
+        0,
+        0,
+    };
+    const uint16_t request_crc = hal_rs485_modbus_crc16(request, 6);
+    request[6] = static_cast<uint8_t>(request_crc & 0xFF);
+    request[7] = static_cast<uint8_t>(request_crc >> 8);
+
+    hal_rs485_set_transmit(true);
+    delayMicroseconds(50);
+    const size_t transmitted = s_serial->write(request, sizeof(request));
+    s_serial->flush();
+    delayMicroseconds(s_config.turnaround_delay_us);
+    hal_rs485_set_transmit(false);
+    if (transmitted != sizeof(request))
+    {
+        Serial.println("Modbus FC06 transmit failed");
+        return false;
+    }
+
+    uint8_t response[8] = {};
+    size_t response_length = 0;
+    const uint32_t start_ms = millis();
+    while (millis() - start_ms < s_config.response_timeout_ms)
+    {
+        while (s_serial->available() > 0 && response_length < sizeof(response))
+        {
+            response[response_length++] = static_cast<uint8_t>(s_serial->read());
+        }
+        if (response_length >= sizeof(response) ||
+            (response_length >= 5 && response[1] == 0x86))
+        {
+            break;
+        }
+        delay(1);
+    }
+
+    if (response_length != sizeof(response))
+    {
+        Serial.printf("Modbus FC06 response length error: slave=%u register=0x%04X bytes=%u\n",
+                      static_cast<unsigned int>(slave_id),
+                      register_address,
+                      static_cast<unsigned int>(response_length));
+        return false;
+    }
+    const uint16_t actual_crc = static_cast<uint16_t>(response[6]) |
+                                (static_cast<uint16_t>(response[7]) << 8);
+    const uint16_t expected_crc = hal_rs485_modbus_crc16(response, 6);
+    if (actual_crc != expected_crc)
+    {
+        Serial.printf("Modbus FC06 CRC mismatch: actual=0x%04X expected=0x%04X\n",
+                      actual_crc,
+                      expected_crc);
+        return false;
+    }
+    if (memcmp(request, response, sizeof(request)) != 0)
+    {
+        Serial.printf("Modbus FC06 echo mismatch: slave=%u register=0x%04X value=%u\n",
+                      static_cast<unsigned int>(slave_id),
+                      register_address,
+                      static_cast<unsigned int>(value));
+        return false;
     }
     return true;
 }

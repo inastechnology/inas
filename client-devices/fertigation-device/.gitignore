@@ -1,4 +1,9 @@
-.pio
-.pio-core
-.vscode
-.env.user.ini
+# Device-local PlatformIO state
+.pio/
+.pio-core/
+
+# Local secrets; examples remain version-controlled
+.env
+.env.*
+!.env.example
+!.env.*.example

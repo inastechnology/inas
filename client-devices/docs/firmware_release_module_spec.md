@@ -2,9 +2,10 @@
 
 ## 目的
 
-Shipping ToolとデバイスF/Wを分離して配布するためのZIP形式です。Shipping Tool
+Shipping ToolとデバイスF/Wを分離して配布するための`.inasfw`形式です。Shipping Tool
 本体に特定デバイスのF/Wを埋め込まず、各F/Wプロジェクトが独立したRelease
-moduleを生成します。
+moduleを生成します。内部データ形式はZIPですが、利用者は展開せず、そのまま
+Shipping Toolへ読み込ませます。旧`.zip`パッケージは読み込み互換のみ維持します。
 
 対象プロジェクト:
 
@@ -21,7 +22,7 @@ moduleを生成します。
 make package
 ```
 
-## ZIP構成
+## `.inasfw`構成
 
 ```text
 <module-name>/
@@ -62,7 +63,7 @@ ONにします。
 
 Shipping Toolは書込み前に以下を検証します。
 
-- ZIP内に`release-module.json`が1つだけ存在すること
+- パッケージ内に`release-module.json`が1つだけ存在すること
 - module schemaとmodule typeが対応形式であること
 - manifestで参照されたファイルが存在すること
 - 全ファイルのSHA-256がmanifestと一致すること
@@ -72,5 +73,5 @@ Shipping Toolは書込み前に以下を検証します。
 
 Release moduleの生成処理は
 `client-devices/common/tools/create_release_module.py`へ共通化されています。新しい
-ESP32-S3 F/Wプロジェクトは
-`client-devices/common/make/esp32s3-release-module.mk`をincludeしてください。
+ESP32 F/Wプロジェクトは
+`client-devices/common/make/esp32-firmware.mk`をincludeしてください。

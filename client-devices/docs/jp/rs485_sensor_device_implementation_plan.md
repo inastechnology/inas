@@ -47,20 +47,31 @@ RS485 Modbus RTU の低レベル処理は共通ライブラリに置き、`ENV` 
    - `make build`
    - `make check-firmware`
 
-## 未確定事項
+## 確認済み事項と残作業
 
-現時点でセンサーの正式な Modbus register table がないため、register map は仮実装である。実機マニュアル入手後、以下を確認する。
+ComWinTop CWT-SOIL `NPKPHCTH-S` 系はメーカー配布の 5 本プローブ用
+V1.4 マニュアルを確認済みである。詳細は
+[comwintop_cwt_soil_npkphcth_s_spec.md](comwintop_cwt_soil_npkphcth_s_spec.md)
+を参照する。
 
-- slave id 初期値
-- baud rate
-- parity / stop bits
-- function code (`0x03` or `0x04`)
-- register address
-- scale
-- signed / unsigned
-- 16-bit / 32-bit
-- NPK の単位
-- PAR センサーの単位と scale
+- 工場出荷 slave ID: `1`
+- 通信: 4800bps、8N1
+- function code: read `0x03`、single write `0x06`
+- read range: `0x0000` から 7 registers
+- scale: 水分 / 温度 / pH は 0.1、EC / N / P / K は 1
+- 温度: signed 16-bit
+- N/P/K: mg/kg。ただしメーカー資料上も傾向値扱い
+
+残作業:
+
+- 選定した実機ロットのラベル、線色、応答をベンチ試験する。
+- firmware / Hub に残る土壌センサー既定 FC04 を、既設の別型センサーへ
+  影響させずに CWT 用 FC03 プロファイルへ整合する。
+- WRS の短い sensor power settle と、pH の 5 分安定条件を両立する
+  電源方式を決める。
+- PAR センサーは製品ごとに単位と scale を確認する。
+- 固定 ID `1` / `2` の土壌センサー 2 台を同時に扱えるよう、runtime config、
+  status payload、Hub 表示、散水判定の代表値を設計する。現行は `soil` 1 枠。
 
 ## 変更しやすい箇所
 
@@ -94,7 +105,7 @@ SOI `platformio.ini` の build flags は未校正時の初期値:
 Hub UI では「通常」「乾いた状態を記録」「湿った状態を記録」「未校正に戻す」として表示する。詳細設定では手動の乾燥値・湿潤値・測定回数・測定間隔を編集できる。
 `normal` 以外の mode は一回限りのコマンドとして扱い、Hub は保存時に `request_id` を付与する。SOI は同じ `request_id` を二重処理せず、処理後はローカル設定を `normal` に戻す。
 
-ENV build flags は未受信時の初期値:
+CWT プロファイルとして目標にする ENV build flags:
 
 ```ini
 -D APP_RS485_UART_NUM=1
@@ -103,23 +114,26 @@ ENV build flags は未受信時の初期値:
 -D APP_RS485_DE_PIN=5
 -D APP_RS485_BAUD=4800
 -D APP_ENV_PAR_ENABLED=1
--D APP_ENV_PAR_MODBUS_SLAVE_ID=1
+-D APP_ENV_PAR_MODBUS_SLAVE_ID=3
 -D APP_ENV_PAR_MODBUS_FUNCTION=3
 -D APP_ENV_PAR_REGISTER=0
 -D APP_ENV_PAR_SCALE=1.0f
 -D APP_ENV_SOIL_RS485_ENABLED=0
--D APP_ENV_SOIL_MODBUS_SLAVE_ID=2
--D APP_ENV_SOIL_MODBUS_FUNCTION=4
+-D APP_ENV_SOIL_MODBUS_SLAVE_ID=1
+-D APP_ENV_SOIL_MODBUS_FUNCTION=3
 -D APP_ENV_SOIL_MODBUS_START_REGISTER=0
 ```
+
+上記は CWT 用の目標値であり、2026-08-01 時点の source default は FC04 の
+ままである。実機試験前に runtime config で FC03 を明示する。
 
 運用中の ENV 設定は Hub の runtime config で更新する:
 
 ```json
 {
   "env_sensors": {
-    "par": {"enabled": true, "modbus_slave_id": 1, "modbus_function": 3, "register": 0},
-    "soil": {"enabled": true, "modbus_slave_id": 2, "modbus_function": 4, "start_register": 0}
+    "par": {"enabled": true, "modbus_slave_id": 3, "modbus_function": 3, "register": 0},
+    "soil": {"enabled": true, "modbus_slave_id": 1, "modbus_function": 3, "start_register": 0}
   },
   "env_calibration": {
     "mode": "capture_reference",

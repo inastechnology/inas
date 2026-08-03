@@ -125,7 +125,11 @@ External terminals:
 | yellow / 485-A | `RS485_A` | Twist with 485-B |
 | blue / 485-B | `RS485_B` | Recheck A/B labels if every read times out |
 
-Use `4800bps / slave 1 / function 0x03 / register 0x0000 / scale 1.0` for the SEN0641 default profile. Use `slave 2` for the soil sensor by default and do not duplicate IDs on one bus.
+The SEN0641 factory profile is
+`4800bps / slave 1 / function 0x03 / register 0x0000 / scale 1.0`.
+INAS reserves fixed role IDs: soil sensor 1=`slave 1`, soil sensor 2=`slave 2`,
+and PAR=`slave 3`. Keep PAR at `slave 3` even when soil sensor 2 is absent.
+Configure the SEN0641 as ID `3` while it is the only device on the bus.
 
 If a 5V MAX485 module is used, power it from 5V and place a 3.3V level shifter between MAX485 `RO` and XIAO `D7/GPIO44`. Never drive the XIAO RX pin directly from a 5V `RO` output. Prefer a 3.3V-logic MAX3485, SP3485, or SN65HVD transceiver for new builds.
 

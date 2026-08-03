@@ -40,7 +40,10 @@ ENV stores runtime sensor settings and calibration parameters in LittleFS.
 Hub sends them through `env_sensors` and `env_calibration`.
 
 1. Enable the connected sensor group in Hub: light sensor, soil EC/pH/NPK, or both.
-2. Confirm the Modbus slave id, function code, and register address from the sensor manual.
+2. For the selected ComWinTop CWT-SOIL profile, use the
+   [source-confirmed specification](../docs/jp/comwintop_cwt_soil_npkphcth_s_spec.md):
+   4800bps, 8N1, FC03, and seven registers from `0x0000`. Confirm the actual
+   sensor label and slave id before power-on.
 3. Put the sensor in a known reference condition and send
    `env_calibration.mode=capture_reference`.
 4. ENV records an offset so the current reading matches

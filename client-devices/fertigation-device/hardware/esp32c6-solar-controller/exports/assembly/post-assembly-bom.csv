@@ -1,0 +1,24 @@
+﻿Designator,Qty,Comment,Manufacturer,MPN,LCSC Part #,Assembly,Footprint,Engineering Note
+C1,1,470u 35V LOW-ESR,Nichicon,UHE1V471MPD,C116237,THT/manual,Capacitor_THT:CP_Radial_D10.0mm_P5.00mm,
+C11,1,47u 25V LOW-ESR,Nichicon,UHE1E470MDD,C134230,THT/manual,Capacitor_THT:CP_Radial_D5.0mm_P2.00mm,
+F1,1,ATO HOLDER + 20A FUSE,Littelfuse,178.6165.0001 + 0287020.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,"20 A initial; coordinate with measured inrush, wire, and battery fuse"
+F10,1,MOSFET OUT 1 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,10 A initial; lower rating permitted for measured low-current loads
+F11,1,MOSFET OUT 2 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,10 A initial; lower rating permitted for measured low-current loads
+F12,1,MOSFET OUT 3 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,10 A initial; lower rating permitted for measured low-current loads
+F13,1,MOSFET OUT 4 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,10 A initial; lower rating permitted for measured low-current loads
+F14,1,MOSFET OUT 5 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,10 A initial; lower rating permitted for measured low-current loads
+J1,1,PC 5/2-G-7.62 POWER INPUT,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,32 A nominal; Phoenix drilling pattern has 3 solder pins per potential
+J2,1,RS485 PORT 1,Phoenix Contact,1757268,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_4_G_5_08_1757268,Mating plug 1757035
+J3,1,RS485 PORT 2,Phoenix Contact,1757268,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_4_G_5_08_1757268,Mating plug 1757035
+J5,1,FLOW 12V/PULSE/GND,Phoenix Contact,1757255,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_3_G_5_08_1757255,Mating plug 1757022
+J6,1,TANK EMPTY,Phoenix Contact,1757242,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_2_G_5_08_1757242,Mating plug 1757019
+J7,1,TANK FULL,Phoenix Contact,1757242,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_2_G_5_08_1757242,Mating plug 1757019
+J8,1,LEAK NC,Phoenix Contact,1757242,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_2_G_5_08_1757242,Mating plug 1757019
+J9,1,EMERGENCY STOP NC,Phoenix Contact,1757242,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_2_G_5_08_1757242,Mating plug 1757019
+J10,1,MOSFET OUT 1 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,32 A header; mating plug 1718481; 3 solder pins per potential
+J11,1,MOSFET OUT 2 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,32 A header; mating plug 1718481; 3 solder pins per potential
+J12,1,MOSFET OUT 3 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,32 A header; mating plug 1718481; 3 solder pins per potential
+J13,1,MOSFET OUT 4 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,32 A header; mating plug 1718481; 3 solder pins per potential
+J14,1,MOSFET OUT 5 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,32 A header; mating plug 1718481; 3 solder pins per potential
+JP1,1,RS485 TERM ENABLE,Sullins,PRPC002SAAN-RC,C3346540,THT/manual,Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical,Fit removable 2.54 mm shorting shunt only at bus end
+U1,1,Seeed XIAO ESP32-C6 SMD,Seeed Studio,XIAO ESP32-C6,,SMT/manual,INA_ESP32C6:XIAO_ESP32C6_SMD_24P,Use Seeed official 24-pad SMD land pattern; reflow/hot-air assembly is required for underside GPIO pads

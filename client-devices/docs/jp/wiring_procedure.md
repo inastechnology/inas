@@ -33,6 +33,7 @@
 - 全 sensor が無応答の場合は、A/B 極性、baud rate、GND を最初に疑う。
 - 5V MAX485 module を使う場合は、`RO` から ESP32S3 RX への信号を 3.3V へ level shift する。5V 出力を GPIO へ直結しない。
 - SEN0641 は brown=VCC、black=GND、yellow=485-A、blue=485-B とし、既定 `4800bps / slave 1 / FC03 / register 0x0000` で検査する。
+- ComWinTop CWT-SOIL 5 本プローブの V1.4 配線は brown=12V+、black=GND、yellow/green=485-A+、blue=485-B-。12V 電源マイナス、black、`RS485_GND`、transceiver GND、XIAO GND を共通化する。別ロットとレジスタ仕様は [comwintop_cwt_soil_npkphcth_s_spec.md](comwintop_cwt_soil_npkphcth_s_spec.md) を参照する。
 
 ## ポンプ・バルブ配線
 

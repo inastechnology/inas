@@ -58,7 +58,7 @@ To create a single flashable image for another PC, use:
 make merged-bin
 ```
 
-This creates `.pio/build/seeed_xiao_esp32s3/flash_merged.bin`, which can be
+This creates `.pio/build/seeed_xiao_esp32s3/firmware.factory.bin`, which can be
 written to the device at offset `0x0`. To flash it directly from the current
 machine:
 
@@ -67,7 +67,7 @@ make flash-merged UPLOAD_PORT=/dev/ttyACM0
 ```
 
 To write the prebuilt merged image from Windows without rebuilding, copy
-`.pio/build/seeed_xiao_esp32s3/flash_merged.bin` and
+`.pio/build/seeed_xiao_esp32s3/firmware.factory.bin` and
 `../common/tools/xiao-esp32s3/flash.ps1` to the same folder on the
 Windows machine connected to the device. Then run PowerShell from that folder:
 

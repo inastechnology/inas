@@ -1,0 +1,25 @@
+{
+  "board": {},
+  "boards": [],
+  "cvpcb": {},
+  "erc": {},
+  "libraries": {},
+  "meta": {
+    "filename": "esp32c6-solar-controller.kicad_pro",
+    "version": 1
+  },
+  "net_settings": {
+    "classes": [],
+    "meta": {
+      "version": 3
+    }
+  },
+  "pcbnew": {},
+  "schematic": {},
+  "sheets": [],
+  "text_variables": {
+    "ASSEMBLY": "JLCPCB",
+    "HW_REV": "REV_A",
+    "STATUS": "ORDERABLE_ENGINEERING_BUILD"
+  }
+}

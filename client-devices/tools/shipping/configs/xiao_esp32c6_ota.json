@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "name": "INAS XIAO ESP32-C6 OTA layout",
+  "chip": "esp32c6",
+  "flash_size": "4MB",
+  "regions": [
+    {
+      "id": "bootloader",
+      "label": "Bootloader",
+      "address": "0x0",
+      "max_size": "0x8000",
+      "required": false,
+      "default_enabled": false,
+      "accepted_names": ["bootloader.bin"],
+      "description": "起動プログラム"
+    },
+    {
+      "id": "partition_table",
+      "label": "Partition table",
+      "address": "0x8000",
+      "max_size": "0x1000",
+      "required": false,
+      "default_enabled": false,
+      "accepted_names": ["partitions.bin"],
+      "description": "フラッシュ領域の区切り"
+    },
+    {
+      "id": "nvs",
+      "label": "NVS初期値",
+      "address": "0x9000",
+      "max_size": "0x5000",
+      "required": false,
+      "default_enabled": false,
+      "accepted_names": ["nvs.bin"],
+      "description": "個体ID・製造設定（通常は書かない）",
+      "sensitive": true
+    },
+    {
+      "id": "ota_boot_metadata",
+      "label": "OTA boot metadata",
+      "address": "0xE000",
+      "max_size": "0x2000",
+      "required": false,
+      "default_enabled": false,
+      "accepted_names": ["boot_app0.bin", "otadata.bin"],
+      "description": "起動するOTAスロットの情報"
+    },
+    {
+      "id": "app0",
+      "label": "Application app0",
+      "address": "0x10000",
+      "max_size": "0x1A0000",
+      "required": false,
+      "default_enabled": false,
+      "accepted_names": ["firmware.bin", "app.bin"],
+      "description": "メインF/W領域"
+    },
+    {
+      "id": "app1",
+      "label": "Application app1",
+      "address": "0x1B0000",
+      "max_size": "0x1A0000",
+      "required": false,
+      "default_enabled": false,
+      "accepted_names": ["firmware.bin", "app.bin"],
+      "description": "予備F/W領域"
+    },
+    {
+      "id": "storage",
+      "label": "LittleFS storage",
+      "address": "0x350000",
+      "max_size": "0x0A0000",
+      "required": false,
+      "default_enabled": false,
+      "accepted_names": ["littlefs.bin", "spiffs.bin"],
+      "description": "Wi-Fi・MQTT設定（通常は保持）",
+      "sensitive": true
+    }
+  ]
+}

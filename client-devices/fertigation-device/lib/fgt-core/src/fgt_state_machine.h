@@ -47,6 +47,8 @@ struct Recipe
     // planned irrigation total is total_water_ml + rinse_water_ml.
     uint32_t total_water_ml = 4500;
     uint32_t initial_water_ml = 1250;
+    uint32_t initial_fill_ms = 75000;
+    uint32_t final_fill_ms = 195000;
     uint32_t nutrient_a_ml = 10;
     uint32_t nutrient_b_ml = 10;
     uint32_t nutrient_a_rate_ml_min = 100;
@@ -55,10 +57,11 @@ struct Recipe
     uint32_t mix_after_a_ms = 30000;
     uint32_t mix_after_b_ms = 60000;
     uint32_t final_mix_ms = 120000;
-    uint32_t irrigation_max_ms = 900000;
+    uint32_t irrigation_max_ms = 300000;
     uint32_t rinse_water_ml = 500;
+    uint32_t rinse_fill_ms = 30000;
     uint32_t rinse_mix_ms = 30000;
-    uint32_t rinse_drain_max_ms = 180000;
+    uint32_t rinse_drain_max_ms = 60000;
 };
 
 struct Limits

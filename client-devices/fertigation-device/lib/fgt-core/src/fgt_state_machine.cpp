@@ -45,12 +45,14 @@ bool recipe_valid(const Recipe &recipe, const Limits &limits)
     {
         return false;
     }
-    if (recipe.pre_mix_ms == 0 || recipe.final_mix_ms == 0 || recipe.irrigation_max_ms == 0)
+    if (recipe.initial_fill_ms == 0 || recipe.final_fill_ms == 0 ||
+        recipe.pre_mix_ms == 0 || recipe.final_mix_ms == 0 || recipe.irrigation_max_ms == 0)
     {
         return false;
     }
     if (recipe.rinse_water_ml > limits.max_total_water_ml ||
-        (recipe.rinse_water_ml > 0 && (recipe.rinse_mix_ms == 0 || recipe.rinse_drain_max_ms == 0)))
+        (recipe.rinse_water_ml > 0 &&
+         (recipe.rinse_fill_ms == 0 || recipe.rinse_mix_ms == 0 || recipe.rinse_drain_max_ms == 0)))
     {
         return false;
     }
@@ -120,27 +122,6 @@ bool StateMachine::start(const Recipe &recipe, const Limits &limits, const Input
         fail(Fault::invalid_recipe, now_ms);
         return false;
     }
-    if (!inputs.io_ok)
-    {
-        fail(Fault::io_failure, now_ms);
-        return false;
-    }
-    if (inputs.leak_detected)
-    {
-        fail(Fault::leak_detected, now_ms);
-        return false;
-    }
-    if (inputs.emergency_stop)
-    {
-        fail(Fault::emergency_stop, now_ms);
-        return false;
-    }
-    if (!inputs.tank_empty || inputs.tank_full)
-    {
-        fail(Fault::tank_not_empty, now_ms);
-        return false;
-    }
-
     enter(Phase::initial_fill, now_ms, inputs);
     return true;
 }
@@ -159,95 +140,52 @@ Snapshot StateMachine::tick(const Inputs &inputs, uint32_t now_ms)
     switch (m_phase)
     {
     case Phase::initial_fill:
-        if (!check_fill_progress(inputs, now_ms)) break;
-        if (inputs.tank_full && full_too_early(batch_water_ml(inputs), m_recipe.initial_water_ml))
-        {
-            fail(Fault::unexpected_full, now_ms);
-        }
-        else if (batch_water_ml(inputs) >= m_recipe.initial_water_ml || inputs.tank_full)
-        {
+        if (phase_elapsed(now_ms) >= m_recipe.initial_fill_ms)
             enter(Phase::pre_mix, now_ms, inputs);
-        }
-        else if (phase_elapsed(now_ms) >= m_limits.max_fill_ms)
-        {
-            fail(Fault::fill_timeout, now_ms);
-        }
         break;
     case Phase::pre_mix:
-        if (inputs.tank_empty) fail(Fault::tank_empty_during_mix, now_ms);
-        else if (phase_elapsed(now_ms) >= m_recipe.pre_mix_ms)
+        if (phase_elapsed(now_ms) >= m_recipe.pre_mix_ms)
             enter(m_recipe.nutrient_a_ml > 0 ? Phase::dose_a : Phase::mix_after_a, now_ms, inputs);
         break;
     case Phase::dose_a:
-        if (inputs.tank_empty) fail(Fault::tank_empty_during_mix, now_ms);
-        else if (phase_elapsed(now_ms) >= dose_duration_ms(m_recipe.nutrient_a_ml, m_recipe.nutrient_a_rate_ml_min))
+        if (phase_elapsed(now_ms) >= dose_duration_ms(m_recipe.nutrient_a_ml, m_recipe.nutrient_a_rate_ml_min))
             enter(Phase::mix_after_a, now_ms, inputs);
         break;
     case Phase::mix_after_a:
-        if (inputs.tank_empty) fail(Fault::tank_empty_during_mix, now_ms);
-        else if (phase_elapsed(now_ms) >= m_recipe.mix_after_a_ms)
+        if (phase_elapsed(now_ms) >= m_recipe.mix_after_a_ms)
             enter(m_recipe.nutrient_b_ml > 0 ? Phase::dose_b : Phase::mix_after_b, now_ms, inputs);
         break;
     case Phase::dose_b:
-        if (inputs.tank_empty) fail(Fault::tank_empty_during_mix, now_ms);
-        else if (phase_elapsed(now_ms) >= dose_duration_ms(m_recipe.nutrient_b_ml, m_recipe.nutrient_b_rate_ml_min))
+        if (phase_elapsed(now_ms) >= dose_duration_ms(m_recipe.nutrient_b_ml, m_recipe.nutrient_b_rate_ml_min))
             enter(Phase::mix_after_b, now_ms, inputs);
         break;
     case Phase::mix_after_b:
-        if (inputs.tank_empty) fail(Fault::tank_empty_during_mix, now_ms);
-        else if (phase_elapsed(now_ms) >= m_recipe.mix_after_b_ms)
+        if (phase_elapsed(now_ms) >= m_recipe.mix_after_b_ms)
             enter(Phase::final_fill, now_ms, inputs);
         break;
     case Phase::final_fill:
-        if (!check_fill_progress(inputs, now_ms)) break;
-        if (inputs.tank_full && full_too_early(batch_water_ml(inputs), m_recipe.total_water_ml))
-        {
-            fail(Fault::unexpected_full, now_ms);
-        }
-        else if (batch_water_ml(inputs) >= m_recipe.total_water_ml || inputs.tank_full)
-        {
+        if (phase_elapsed(now_ms) >= m_recipe.final_fill_ms)
             enter(Phase::final_mix, now_ms, inputs);
-        }
-        else if (phase_elapsed(now_ms) >= m_limits.max_fill_ms)
-        {
-            fail(Fault::fill_timeout, now_ms);
-        }
         break;
     case Phase::final_mix:
-        if (inputs.tank_empty) fail(Fault::tank_empty_during_mix, now_ms);
-        else if (phase_elapsed(now_ms) >= m_recipe.final_mix_ms)
+        if (phase_elapsed(now_ms) >= m_recipe.final_mix_ms)
             enter(Phase::irrigation, now_ms, inputs);
         break;
     case Phase::irrigation:
-        if (inputs.tank_empty)
+        if (phase_elapsed(now_ms) >= m_recipe.irrigation_max_ms)
             enter(m_recipe.rinse_water_ml > 0 ? Phase::rinse_fill : Phase::complete, now_ms, inputs);
-        else if (phase_elapsed(now_ms) >= m_recipe.irrigation_max_ms)
-            fail(Fault::irrigation_timeout, now_ms);
         break;
     case Phase::rinse_fill:
-        if (!check_fill_progress(inputs, now_ms)) break;
-        if (inputs.tank_full && full_too_early(fill_water_ml(inputs), m_recipe.rinse_water_ml))
-        {
-            fail(Fault::unexpected_full, now_ms);
-        }
-        else if (fill_water_ml(inputs) >= m_recipe.rinse_water_ml || inputs.tank_full)
-        {
+        if (phase_elapsed(now_ms) >= m_recipe.rinse_fill_ms)
             enter(Phase::rinse_mix, now_ms, inputs);
-        }
-        else if (phase_elapsed(now_ms) >= m_limits.max_fill_ms)
-        {
-            fail(Fault::fill_timeout, now_ms);
-        }
         break;
     case Phase::rinse_mix:
-        if (inputs.tank_empty) fail(Fault::tank_empty_during_mix, now_ms);
-        else if (phase_elapsed(now_ms) >= m_recipe.rinse_mix_ms)
+        if (phase_elapsed(now_ms) >= m_recipe.rinse_mix_ms)
             enter(Phase::rinse_drain, now_ms, inputs);
         break;
     case Phase::rinse_drain:
-        if (inputs.tank_empty) enter(Phase::complete, now_ms, inputs);
-        else if (phase_elapsed(now_ms) >= m_recipe.rinse_drain_max_ms)
-            fail(Fault::rinse_drain_timeout, now_ms);
+        if (phase_elapsed(now_ms) >= m_recipe.rinse_drain_max_ms)
+            enter(Phase::complete, now_ms, inputs);
         break;
     default:
         break;

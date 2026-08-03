@@ -53,7 +53,7 @@ add product-name wrappers that only group existing HAL calls.
 | `make buildfs` | Build LittleFS image from `data/` |
 | `make upload` | Build + upload over USB (auto-detects `/dev/ttyACM*` or `/dev/ttyUSB*`) |
 | `make upload UPLOAD_PORT=/dev/ttyACM0` | Upload to specific port |
-| `make merged-bin` | Produce single flashable `flash_merged.bin` at offset `0x0` |
+| `make merged-bin` | Produce single flashable `firmware.factory.bin` at offset `0x0` |
 | `make flash-merged UPLOAD_PORT=/dev/ttyACM0` | Write merged image in one shot |
 | `make ports` | List detected serial ports |
 | `make remote-upload` | Upload via PlatformIO Remote |

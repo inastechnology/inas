@@ -12,7 +12,7 @@ create a separate tool directory for that board.
 - `flash.ps1`: writes prebuilt XIAO ESP32S3 images. The default mode writes
   `firmware.bin` to OTA app slots only and preserves LittleFS. Use
   `-Mode WithBoot` to also write bootloader, partition table, and `boot_app0.bin`
-  without writing LittleFS. Use `-Mode Merged` to write `flash_merged.bin` at
+  without writing LittleFS. Use `-Mode Merged` to write `firmware.factory.bin` at
   offset `0x0`, which overwrites LittleFS and saved Wi-Fi/MQTT settings.
 
 Examples:

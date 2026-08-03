@@ -524,7 +524,7 @@ Artifact for OTA:
 .pio/build/seeed_xiao_esp32s3/firmware.bin
 ```
 
-Do not use `flash_merged.bin` for OTA. The merged image contains bootloader, partition table, app, and filesystem and is only for provisioning or lab reflashing.
+Do not use `firmware.factory.bin` for OTA. The merged image contains bootloader, partition table, app, and filesystem and is only for provisioning or lab reflashing.
 
 Generate digest:
 

@@ -54,6 +54,7 @@ Linux または WSL2 を使う。Native Windows build は symbolic link の扱�
 - [Client firmware レイヤ分離ポリシー](firmware_layering_policy.md)
 - [XIAO ESP32S3 pin assignments](pin_assignments.md)
 - [RS485 sensor device specification](rs485_sensor_device_spec.md)
+- [ComWinTop CWT-SOIL NPKPHCTH-S RS485 土壌センサー仕様](comwintop_cwt_soil_npkphcth_s_spec.md)
 - [RS485 sensor device implementation plan](rs485_sensor_device_implementation_plan.md)
 - [FGT 液肥づくり・潅水装置 設計概要](../../fertigation-device/docs/jp/README.md)
 

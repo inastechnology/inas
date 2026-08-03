@@ -350,7 +350,7 @@ class ShippingToolWindow:
         )
         ttk.Button(
             layout_frame,
-            text="Release module ZIPを開く",
+            text="F/Wパッケージを開く",
             style="Primary.TButton",
             command=self.choose_release_module,
         ).grid(
@@ -365,7 +365,7 @@ class ShippingToolWindow:
         bulk_frame.pack(fill="x")
         self.bulk_drop_label = tk.Label(
             bulk_frame,
-            text="Release module ZIP、または複数のBINをここへD&D\n"
+            text=".inasfw F/Wパッケージ、または複数のBINをここへD&D\n"
             "manifestまたはファイル名から書込み先を自動設定します",
             bg="#edf4ff",
             fg=COLORS["blue"],
@@ -694,8 +694,12 @@ class ShippingToolWindow:
 
     def choose_release_module(self) -> None:
         path = filedialog.askopenfilename(
-            title="F/W Release module ZIPを選択",
-            filetypes=[("INAS release module", "*.zip"), ("All files", "*.*")],
+            title="INAS F/Wパッケージを選択",
+            filetypes=[
+                ("INAS firmware package", "*.inasfw"),
+                ("Legacy release module ZIP", "*.zip"),
+                ("All files", "*.*"),
+            ],
         )
         if path:
             self.open_release_module(Path(path))
@@ -838,12 +842,14 @@ class ShippingToolWindow:
     def handle_bulk_drop(self, event: tk.Event) -> None:
         paths = [Path(path) for path in self.root.tk.splitlist(event.data)]
         release_modules = [
-            path for path in paths if path.suffix.casefold() == ".zip"
+            path
+            for path in paths
+            if path.suffix.casefold() in {".inasfw", ".zip"}
         ]
         if len(release_modules) > 1:
             messagebox.showwarning(
                 "Release moduleを1つ選択してください",
-                "同時に読み込めるRelease module ZIPは1つです。",
+                "同時に読み込めるF/Wパッケージは1つです。",
                 parent=self.root,
             )
             return

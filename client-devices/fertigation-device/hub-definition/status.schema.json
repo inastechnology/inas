@@ -2,6 +2,22 @@
   "schema_version": 1,
   "metrics": [
     {
+      "id": "battery_voltage",
+      "label": "バッテリー電圧",
+      "status_keys": [
+        "battery_voltage_v"
+      ],
+      "unit": "V",
+      "digits": 3,
+      "slot_id": "power",
+      "enabled_path": "",
+      "chart": {
+        "kind": "battery_voltage",
+        "title": "バッテリー電圧推移",
+        "empty_message": "バッテリー電圧の時系列データはまだありません。"
+      }
+    },
+    {
       "id": "batch_water",
       "label": "今回の給水量",
       "status_keys": [

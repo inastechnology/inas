@@ -1,0 +1,60 @@
+﻿Designator,Qty,Comment,Manufacturer,MPN,LCSC Part #,Assembly,Footprint,Populate Rev A,Engineering Note
+C1,1,470u 35V LOW-ESR,Nichicon,UHE1V471MPD,C116237,THT/manual,Capacitor_THT:CP_Radial_D10.0mm_P5.00mm,YES,
+"C2,C9,C10",3,22u 10V X7R,Samsung Electro-Mechanics,CL31B226KPHNNNE,C87996,SMT,Capacitor_SMD:C_1206_3216Metric,YES,
+"C3,C5,C7,C12,C20,C21,C22,C23,C24,C30,C31,C32,C33,C34",14,100n 50V X7R,Samsung Electro-Mechanics,CL10B104KB8NNNC,C1591,SMT,Capacitor_SMD:C_0603_1608Metric,YES,
+C6,1,2.2u 16V X7R,Samsung Electro-Mechanics,CL21B225KOFNNNE,C28234,SMT,Capacitor_SMD:C_0805_2012Metric,YES,LM74610-Q1 charge-pump capacitor
+C8,1,10u 50V X7R,Samsung Electro-Mechanics,CL31B106KBHNNNE,C89632,SMT,Capacitor_SMD:C_1206_3216Metric,YES,
+C11,1,47u 25V LOW-ESR,Nichicon,UHE1E470MDD,C134230,THT/manual,Capacitor_THT:CP_Radial_D5.0mm_P2.00mm,YES,
+C13,1,100p 50V C0G,Samsung Electro-Mechanics,CL10C101JB8NNNC,C14858,SMT,Capacitor_SMD:C_0603_1608Metric,YES,LM74610-Q1 anode-cathode input filter
+"C35,C36,C37",3,2.2u 16V X7R,Samsung Electro-Mechanics,CL21B225KOFNNNE,C28234,SMT,Capacitor_SMD:C_0805_2012Metric,YES,Local gate-driver charge reservoir; paired with 100 nF bypass
+D1,1,SMBJ18A,Littelfuse,SMBJ18A,C151256,SMT,Diode_SMD:D_SMB,YES,Valid only when charger LOAD remains below 16 V steady state
+D2,1,CDSOT23-SM712,Bourns,CDSOT23-SM712,C404012,SMT,Package_TO_SOT_SMD:SOT-23,YES,
+D3,1,"BAT54S,215 ADC CLAMP",Nexperia,"BAT54S,215",C47546,SMT,Package_TO_SOT_SMD:SOT-23,YES,
+"D10,D11,D12,D13,D14",5,STPS30SM60SG-TR 60V/30A,STMicroelectronics,STPS30SM60SG-TR,C2935135,SMT,Package_TO_SOT_SMD:TO-263-2_TabPin1,YES,
+"D20,D21,D22,D23,D24",5,OUTPUT TVS/SNUBBER DNP,,,,SMT,Diode_SMD:D_SMB,NO,Select only after cable transient measurement
+"D30,D31,D32,D33",4,TPD1E10B06DPYR,Texas Instruments,TPD1E10B06DPYR,C48260,SMT,INA_CUSTOM:X1SON-2_L1.0-W0.6-P0.65-BI-1,YES,LCSC verified DPY land pattern
+D34,1,TPD1E10B06DPYR,Texas Instruments,TPD1E10B06DPYR,C48260,SMT,INA_CUSTOM:X1SON-2_L1.0-W0.6-P0.65-BI-1,YES,Bidirectional cable-entry ESD protection; place adjacent to J5
+F1,1,ATO HOLDER + 20A FUSE,Littelfuse,178.6165.0001 + 0287020.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,YES,"20 A initial; coordinate with measured inrush, wire, and battery fuse"
+F2,1,0.75A HOLD PTC,Bourns,MF-NSMF075-2,C89653,SMT,Fuse:Fuse_1206_3216Metric,YES,
+F3,1,0.75A HOLD / 24V PTC,Bourns,MF-MSMF075/24-2,C208467,SMT,Fuse:Fuse_1812_4532Metric,YES,Shared protection for generic RS485/field 12 V terminals; not software switched
+F10,1,MOSFET OUT 1 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,YES,10 A initial; lower rating permitted for measured low-current loads
+F11,1,MOSFET OUT 2 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,YES,10 A initial; lower rating permitted for measured low-current loads
+F12,1,MOSFET OUT 3 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,YES,10 A initial; lower rating permitted for measured low-current loads
+F13,1,MOSFET OUT 4 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,YES,10 A initial; lower rating permitted for measured low-current loads
+F14,1,MOSFET OUT 5 ATO HOLDER + 10A FUSE,Littelfuse,178.6165.0001 + 0287010.H,C207060,THT/manual,INA_CUSTOM:178.6165.0001,YES,10 A initial; lower rating permitted for measured low-current loads
+J1,1,PC 5/2-G-7.62 POWER INPUT,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,YES,32 A nominal; Phoenix drilling pattern has 3 solder pins per potential
+J2,1,RS485 PORT 1,Phoenix Contact,1757268,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_4_G_5_08_1757268,YES,Mating plug 1757035
+J3,1,RS485 PORT 2,Phoenix Contact,1757268,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_4_G_5_08_1757268,YES,Mating plug 1757035
+J4,1,RS485 PORT 3,Phoenix Contact,1757268,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_4_G_5_08_1757268,NO,Mating plug 1757035
+J5,1,FLOW 12V/PULSE/GND,Phoenix Contact,1757255,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_3_G_5_08_1757255,YES,Mating plug 1757022
+J6,1,TANK EMPTY,Phoenix Contact,1757242,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_2_G_5_08_1757242,YES,Mating plug 1757019
+J7,1,TANK FULL,Phoenix Contact,1757242,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_2_G_5_08_1757242,YES,Mating plug 1757019
+J8,1,LEAK NC,Phoenix Contact,1757242,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_2_G_5_08_1757242,YES,Mating plug 1757019
+J9,1,EMERGENCY STOP NC,Phoenix Contact,1757242,,THT/wave,INA_CUSTOM:Phoenix_MSTBA_2_5_2_G_5_08_1757242,YES,Mating plug 1757019
+J10,1,MOSFET OUT 1 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,YES,32 A header; mating plug 1718481; 3 solder pins per potential
+J11,1,MOSFET OUT 2 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,YES,32 A header; mating plug 1718481; 3 solder pins per potential
+J12,1,MOSFET OUT 3 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,YES,32 A header; mating plug 1718481; 3 solder pins per potential
+J13,1,MOSFET OUT 4 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,YES,32 A header; mating plug 1718481; 3 solder pins per potential
+J14,1,MOSFET OUT 5 12V,Phoenix Contact,1720466,,THT/wave,INA_CUSTOM:Phoenix_PC5_2_G_7_62_1720466,YES,32 A header; mating plug 1718481; 3 solder pins per potential
+JP1,1,RS485 TERM ENABLE,Sullins,PRPC002SAAN-RC,C3346540,THT/manual,Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical,YES,Fit removable 2.54 mm shorting shunt only at bus end
+L1,1,4.7uH 4.6A,Bourns,SRP5030TA-4R7M,C2047088,SMT,Inductor_SMD:L_Bourns_SRP5030T,YES,
+Q1,1,CSD18540Q5B 60V,Texas Instruments,CSD18540Q5B,C86513,SMT,INA_CUSTOM:VSON-CLIP-8_L5.0-W6.0-P1.27-BL,YES,"TI Q5B manufacturer land pattern; physical pins 1-3=S, 4=G, 5-8=D"
+"Q2,Q3,Q4,Q5,Q6",5,CSD18540Q5B 60V,Texas Instruments,CSD18540Q5B,C86513,SMT,INA_CUSTOM:VSON-CLIP-8_L5.0-W6.0-P1.27-BL,YES,TI Q5B land pattern; validate thermal rise and measured inrush
+R1,1,150k 1%,UNI-ROYAL,0603WAF1503T5E,C22807,SMT,Resistor_SMD:R_0603_1608Metric,YES,
+R2,1,27k 1%,UNI-ROYAL,0603WAF2702T5E,C22967,SMT,Resistor_SMD:R_0603_1608Metric,YES,
+"R3,R20,R22,R24,R26",5,1k 1%,UNI-ROYAL,0603WAF1001T5E,C21190,SMT,Resistor_SMD:R_0603_1608Metric,YES,
+"R8,R9,R18,R19,R40,R41,R42,R43,R44,R55,R56,R57,R58,R59",14,47k 1%,UNI-ROYAL,0603WAF4702T5E,C25819,SMT,Resistor_SMD:R_0603_1608Metric,YES,
+"R10,R11",2,10R 1%,UNI-ROYAL,0603WAF100JT5E,C22859,SMT,Resistor_SMD:R_0603_1608Metric,YES,
+R12,1,120R 1%,UNI-ROYAL,0805W8F1200T5E,C17437,SMT,Resistor_SMD:R_0805_2012Metric,YES,
+"R13,R14",2,680R 1% BIAS,UNI-ROYAL,0603WAF6800T5E,C23228,SMT,Resistor_SMD:R_0603_1608Metric,NO,
+"R16,R21,R23,R25,R27",5,10k 1%,UNI-ROYAL,0603WAF1002T5E,C25804,SMT,Resistor_SMD:R_0603_1608Metric,YES,
+R17,1,2.2k 1%,UNI-ROYAL,0603WAF2201T5E,C4190,SMT,Resistor_SMD:R_0603_1608Metric,YES,Limits residual surge current into TLV7031 while preserving pulse bandwidth
+"R50,R51,R52,R53,R54",5,22R 1%,UNI-ROYAL,0603WAF220JT5E,C23345,SMT,Resistor_SMD:R_0603_1608Metric,YES,
+U1,1,Seeed XIAO ESP32-C6 SMD,Seeed Studio,XIAO ESP32-C6,,SMT/manual,INA_ESP32C6:XIAO_ESP32C6_SMD_24P,YES,Use Seeed official 24-pad SMD land pattern; reflow/hot-air assembly is required for underside GPIO pads
+U3,1,THVD1410DR,Texas Instruments,THVD1410DR,C2671345,SMT,Package_SO:SOIC-8_3.9x4.9mm_P1.27mm,YES,
+U4,1,AP63205WU-7 5V/2A,Diodes Incorporated,AP63205WU-7,C2071056,SMT,Package_TO_SOT_SMD:TSOT-23-6,YES,
+"U5,U6",2,SN74AHCT08DR,Texas Instruments,SN74AHCT08DR,C7480,SMT,Package_SO:SOIC-14_3.9x8.7mm_P1.27mm,YES,
+"U7,U8,U9",3,TC4427AEOA,Microchip,TC4427AEOA,C18690,SMT,Package_SO:SOIC-8_3.9x4.9mm_P1.27mm,YES,
+U11,1,SN74HC14DR,Texas Instruments,SN74HC14DR,C6820,SMT,Package_SO:SOIC-14_3.9x8.7mm_P1.27mm,YES,
+U12,1,TLV7031DBVR,Texas Instruments,TLV7031DBVR,C2869832,SMT,Package_TO_SOT_SMD:SOT-23-5,YES,Default front end: dry contact or NPN/open-collector; verify actual flow output
+U13,1,LM74610QDGKRQ1,Texas Instruments,LM74610QDGKRQ1,C2649431,SMT,INA_CUSTOM:VSSOP-8_L3.0-W3.0-P0.65-LS5.0-BL,YES,TI DGK 8-pin VSSOP 3x5 mm manufacturer land pattern

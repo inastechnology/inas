@@ -8,6 +8,7 @@
 #include <WiFi.h>
 #include <ctype.h>
 #include <mbedtls/sha256.h>
+#include <mbedtls/version.h>
 #include <string.h>
 #include "esp_ota_ops.h"
 
@@ -20,6 +21,36 @@
 
 extern "C" const char INAS_FIRMWARE_MANIFEST[];
 static const char *const INAS_FIRMWARE_MANIFEST_LINK_ANCHOR __attribute__((used)) = INAS_FIRMWARE_MANIFEST;
+
+static int app_ota_sha256_starts(mbedtls_sha256_context *context)
+{
+#if MBEDTLS_VERSION_MAJOR >= 3
+    mbedtls_sha256_starts(context, 0);
+    return 0;
+#else
+    return mbedtls_sha256_starts_ret(context, 0);
+#endif
+}
+
+static int app_ota_sha256_update(mbedtls_sha256_context *context, const uint8_t *data, size_t length)
+{
+#if MBEDTLS_VERSION_MAJOR >= 3
+    mbedtls_sha256_update(context, data, length);
+    return 0;
+#else
+    return mbedtls_sha256_update_ret(context, data, length);
+#endif
+}
+
+static int app_ota_sha256_finish(mbedtls_sha256_context *context, uint8_t digest[32])
+{
+#if MBEDTLS_VERSION_MAJOR >= 3
+    mbedtls_sha256_finish(context, digest);
+    return 0;
+#else
+    return mbedtls_sha256_finish_ret(context, digest);
+#endif
+}
 
 typedef struct
 {
@@ -314,7 +345,7 @@ static bool app_ota_download_and_install(uint32_t seq_id)
 
     mbedtls_sha256_context sha_context;
     mbedtls_sha256_init(&sha_context);
-    if (mbedtls_sha256_starts_ret(&sha_context, 0) != 0)
+    if (app_ota_sha256_starts(&sha_context) != 0)
     {
         mbedtls_sha256_free(&sha_context);
         http.end();
@@ -366,7 +397,7 @@ static bool app_ota_download_and_install(uint32_t seq_id)
             continue;
         }
 
-        if (mbedtls_sha256_update_ret(&sha_context, buffer, read_len) != 0)
+        if (app_ota_sha256_update(&sha_context, buffer, read_len) != 0)
         {
             mbedtls_sha256_free(&sha_context);
             http.end();
@@ -400,7 +431,7 @@ static bool app_ota_download_and_install(uint32_t seq_id)
     }
 
     uint8_t digest[32];
-    if (mbedtls_sha256_finish_ret(&sha_context, digest) != 0)
+    if (app_ota_sha256_finish(&sha_context, digest) != 0)
     {
         mbedtls_sha256_free(&sha_context);
         http.end();

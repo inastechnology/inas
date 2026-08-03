@@ -15,6 +15,7 @@ static AsyncWebServer s_server(80);
 static DNSServer s_dns_server;
 static bool s_restart_requested = false;
 static app_initial_setting_portal_reason_t s_portal_reason = APP_INITIAL_SETTING_PORTAL_REASON_UNCONFIGURED;
+static app_initial_setting_extension_t s_extension = {};
 
 static String app_initial_setting_escape_attr(const char *value);
 static uint8_t app_initial_setting_connected_station_count();
@@ -135,6 +136,8 @@ static String app_initial_setting_page()
     html += F(".row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.hint{font-size:13px;color:#627d98;margin-top:6px}");
     html += F(".reason{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px 14px;margin:14px 0 16px;color:#7c2d12}");
     html += F(".reason strong{display:block;margin-bottom:4px}.reason code{font-size:12px;color:#9a3412}");
+    html += F(".tool{background:#eef6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin:0 0 16px}");
+    html += F(".tool strong{display:block;margin-bottom:4px}.tool p{font-size:14px;margin:0 0 12px}.tool a{display:inline-block;padding:9px 12px;border-radius:6px;background:#0f766e;color:#fff;text-decoration:none;font-weight:700}");
     html += F("button{width:100%;margin-top:20px;padding:12px 14px;border:0;border-radius:6px;background:#1f6feb;color:#fff;font-weight:700;font:inherit}");
     html += F("@media(max-width:520px){.row{grid-template-columns:1fr}}");
     html += F("</style></head><body><main>");
@@ -145,6 +148,16 @@ static String app_initial_setting_page()
     html += F("<br><code>");
     html += app_initial_setting_portal_reason_name(s_portal_reason);
     html += F("</code></section>");
+    if (s_extension.label != nullptr && s_extension.path != nullptr)
+    {
+        html += F("<section class=\"tool\"><strong>");
+        html += s_extension.label;
+        html += F("</strong><p>");
+        html += s_extension.description != nullptr ? s_extension.description : "";
+        html += F("</p><a href=\"");
+        html += s_extension.path;
+        html += F("\">Open</a></section>");
+    }
     html += F("<form method=\"post\" action=\"/save\">");
     html += F("<label for=\"ssid\">Wi-Fi SSID</label>");
     html += F("<input id=\"ssid\" name=\"ssid\" required maxlength=\"255\" value=\"");
@@ -170,6 +183,11 @@ static String app_initial_setting_page()
     html += F("<button type=\"submit\">Save and Restart</button>");
     html += F("</form></main></body></html>");
     return html;
+}
+
+void app_initial_setting_set_extension(const app_initial_setting_extension_t *extension)
+{
+    s_extension = extension != nullptr ? *extension : app_initial_setting_extension_t{};
 }
 
 static String app_initial_setting_escape_attr(const char *value)
@@ -315,10 +333,18 @@ void app_initial_setting_start_portal(app_initial_setting_portal_reason_t reason
 
     s_dns_server.start(53, "*", ap_ip);
 
+    if (s_extension.begin != nullptr)
+    {
+        s_extension.begin();
+    }
     s_server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
                 { request->send(200, "text/html", app_initial_setting_page()); });
     s_server.on("/save", HTTP_POST, [](AsyncWebServerRequest *request)
                 { app_initial_setting_apply_form(request); });
+    if (s_extension.register_routes != nullptr)
+    {
+        s_extension.register_routes(&s_server);
+    }
     s_server.onNotFound([](AsyncWebServerRequest *request)
                         { request->redirect("/"); });
     s_server.begin();
@@ -335,6 +361,10 @@ void app_initial_setting_start_portal(app_initial_setting_portal_reason_t reason
     {
         s_dns_server.processNextRequest();
         app_initial_setting_update_status_led_blink(APP_SETUP_PORTAL_ACTIVE_LED_BLINK_MS);
+        if (s_extension.loop != nullptr)
+        {
+            s_extension.loop();
+        }
 
         const uint8_t station_count = app_initial_setting_connected_station_count();
         if (station_count != previous_station_count)
@@ -349,6 +379,10 @@ void app_initial_setting_start_portal(app_initial_setting_portal_reason_t reason
 
         if (s_restart_requested)
         {
+            if (s_extension.end != nullptr)
+            {
+                s_extension.end();
+            }
             app_initial_setting_set_status_led(true);
             delay(1000);
             ESP.restart();
@@ -357,6 +391,10 @@ void app_initial_setting_start_portal(app_initial_setting_portal_reason_t reason
         {
             Serial.printf("Setup portal recovery idle timeout reached after %lu ms with no AP clients. Restarting to retry normal operation...\n",
                           static_cast<unsigned long>(recovery_timeout_ms));
+            if (s_extension.end != nullptr)
+            {
+                s_extension.end();
+            }
             delay(1000);
             ESP.restart();
         }

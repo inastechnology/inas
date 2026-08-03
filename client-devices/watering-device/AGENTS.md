@@ -11,6 +11,8 @@
 
 ## Build, Test, and Development Commands
 - `make build`: compile firmware for `seeed_xiao_esp32s3`.
+- `make factory-bin`: create `firmware.factory.bin`, flashable at address `0x0`.
+- `make package`: create the shipping-tool release ZIP.
 - `make upload`: build and upload to a locally connected board.
 - `make remote-upload`: upload via PlatformIO Remote.
 - `make remote-monitor`: open remote serial monitor.

@@ -11,7 +11,7 @@ Modes:
   LittleFS Wi-Fi/MQTT settings.
 - WithBoot: writes bootloader.bin, partitions.bin, boot_app0.bin, and
   firmware.bin without writing LittleFS.
-- Merged: writes flash_merged.bin at offset 0x0. This overwrites LittleFS.
+- Merged: writes firmware.factory.bin at offset 0x0. This overwrites LittleFS.
 
 By default, FirmwareOnly writes firmware.bin to both OTA slots. This avoids
 ambiguity after previous OTA updates, where the currently selected boot slot may
@@ -28,7 +28,7 @@ one slot.
 .\flash.ps1 -Mode WithBoot -ArtifactDir . -InstallEsptool
 
 .EXAMPLE
-.\flash.ps1 -Mode Merged -ImagePath .\flash_merged.bin -InstallEsptool
+.\flash.ps1 -Mode Merged -ImagePath .\firmware.factory.bin -InstallEsptool
 
 .EXAMPLE
 .\flash.ps1 -Help
@@ -72,7 +72,7 @@ Modes:
   WithBoot      Write bootloader.bin, partitions.bin, boot_app0.bin, and
                 firmware.bin. LittleFS is not written.
 
-  Merged        Write flash_merged.bin at offset 0x0. This overwrites LittleFS,
+  Merged        Write firmware.factory.bin at offset 0x0. This overwrites LittleFS,
                 including saved Wi-Fi/MQTT settings and runtime config.
 
 Typical commands:
@@ -93,7 +93,7 @@ Required files in the same folder:
     flash.ps1
 
   Merged:
-    flash_merged.bin
+    firmware.factory.bin
     flash.ps1
 
 Options:
@@ -109,7 +109,7 @@ Options:
       app0 = 0x10000, app1 = 0x340000.
 
   -ImagePath <path>
-      Explicit firmware.bin or flash_merged.bin path.
+      Explicit firmware.bin or firmware.factory.bin path.
 
   -ArtifactDir <path>
       Directory containing bootloader.bin, partitions.bin, boot_app0.bin, and
@@ -213,7 +213,7 @@ function Resolve-ExistingDirectory {
 function Get-DefaultImagePath {
     $imageName = "firmware.bin"
     if ($Mode -eq "Merged") {
-        $imageName = "flash_merged.bin"
+        $imageName = "firmware.factory.bin"
     }
 
     $scriptImage = Join-Path $PSScriptRoot $imageName
@@ -498,7 +498,7 @@ if ([string]::IsNullOrWhiteSpace($effectiveImagePath)) {
 
 $imageDescription = "firmware.bin"
 if ($Mode -eq "Merged") {
-    $imageDescription = "flash_merged.bin"
+    $imageDescription = "firmware.factory.bin"
 }
 $image = Resolve-ExistingFile -Path $effectiveImagePath -Description $imageDescription
 
@@ -560,7 +560,7 @@ if ($Mode -eq "WithBoot") {
 }
 Write-Host ""
 if ($Mode -eq "Merged") {
-    Write-Host "flash_merged.bin を 0x0 に書き込みます。" -ForegroundColor Yellow
+    Write-Host "firmware.factory.bin を 0x0 に書き込みます。" -ForegroundColor Yellow
     Write-Host "既存の LittleFS Wi-Fi/MQTT 設定と runtime config は上書きされます。" -ForegroundColor Yellow
 }
 elseif ($Mode -eq "WithBoot") {

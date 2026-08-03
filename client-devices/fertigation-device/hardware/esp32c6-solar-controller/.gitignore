@@ -1,0 +1,10 @@
+# KiCad temporary and recovery files.
+~*.lck
+*.kicad_prl
+*-backups/
+*.kicad_sch-bak
+*.kicad_pcb-bak
+
+# Generated Python bytecode is not part of the hardware release.
+tools/__pycache__/
+*.pyc

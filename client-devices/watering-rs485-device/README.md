@@ -27,12 +27,21 @@ an RS485 Modbus soil sensor.
 
 ### SEN0641 and MAX485
 
-The DFRobot SEN0641 PAR sensor is supported by the default WRS PAR profile:
-`4800bps`, 8N1, slave `1`, function `0x03`, register `0x0000`, one register,
-and scale `1.0`. Connect its brown wire to switched sensor 12V, black to
-`RS485_GND`, yellow to `RS485_A`, and blue to `RS485_B`. The default soil
-sensor address is `2`, so it can share the bus without changing the SEN0641
-factory address.
+The DFRobot SEN0641 PAR sensor uses `4800bps`, 8N1, function `0x03`, register
+`0x0000`, one register, and scale `1.0`. Its factory slave address is `1`.
+Connect its brown wire to switched sensor 12V, black to `RS485_GND`, yellow to
+`RS485_A`, and blue to `RS485_B`.
+
+The selected ComWinTop CWT-SOIL five-probe profile uses `4800bps`, 8N1,
+function `0x03`, seven registers from `0x0000`, and factory slave address `1`.
+INAS uses fixed role IDs: soil sensor 1=`1`, soil sensor 2=`2`, and PAR=`3`.
+Keep the first CWT at ID `1`; configure only the second CWT as ID `2`, and
+configure the SEN0641 as ID `3`. PAR remains ID `3` when the second soil sensor
+is absent. Configure each changed device while it is the only device on the
+bus. The current V1.4 CWT cable is brown=`12V+`, black=`RS485_GND`,
+yellow/green=`RS485_A`, and blue=`RS485_B`. See the
+[source-confirmed product specification](../docs/jp/comwintop_cwt_soil_npkphcth_s_spec.md)
+for the alternate cable revision and write frame.
 
 MAX485 modules normally use 5V logic. Do not connect a 5V MAX485 `RO` output
 directly to XIAO `D7/GPIO44`; level-shift RX to 3.3V. A 3.3V-logic MAX3485,
@@ -82,13 +91,13 @@ WRS accepts the existing WTR/ENV fields:
   "env_sensors": {
     "soil": {
       "enabled": true,
-      "modbus_slave_id": 2,
-      "modbus_function": 4,
+      "modbus_slave_id": 1,
+      "modbus_function": 3,
       "start_register": 0
     },
     "par": {
       "enabled": false,
-      "modbus_slave_id": 1,
+      "modbus_slave_id": 3,
       "modbus_function": 3,
       "register": 0,
       "scale": 1.0
@@ -153,8 +162,8 @@ WRS also accepts a WRS-specific overlay:
       "channel_mask": 1
     },
     "sensors": {
-      "soil": {"enabled": true, "modbus_slave_id": 2, "modbus_function": 4, "start_register": 0},
-      "par": {"enabled": false, "modbus_slave_id": 1, "modbus_function": 3, "register": 0, "scale": 1.0},
+      "soil": {"enabled": true, "modbus_slave_id": 1, "modbus_function": 3, "start_register": 0},
+      "par": {"enabled": false, "modbus_slave_id": 3, "modbus_function": 3, "register": 0, "scale": 1.0},
       "power_settle_ms": 800
     }
   }
@@ -162,6 +171,16 @@ WRS also accepts a WRS-specific overlay:
 ```
 
 The `wrs` overlay wins over `env_sensors` when both are present.
+
+These examples are the CWT profile and the fixed INAS ID allocation. Some
+firmware and Hub defaults still use the old `soil=2 / PAR=1` allocation and
+FC04. Explicitly send `soil.modbus_slave_id: 1`, `par.modbus_slave_id: 3`, and
+`soil.modbus_function: 3` until those defaults are changed after bench
+validation.
+
+The current WRS runtime schema and watering logic have one `soil` slot. ID `2`
+is reserved for a second soil sensor, but simultaneous reads and per-sensor
+status require a separate firmware/Hub extension.
 
 `channel_mask` is a device-side irrigation output mask. WRS does not know
 whether an output is connected to a pump, valve, relay, or solenoid:

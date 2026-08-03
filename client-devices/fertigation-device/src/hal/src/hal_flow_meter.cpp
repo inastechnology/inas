@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 #ifndef APP_FGT_FLOW_PULSE_PIN
-#define APP_FGT_FLOW_PULSE_PIN D5
+#define APP_FGT_FLOW_PULSE_PIN -1
 #endif
 
 #ifndef APP_FGT_FLOW_PULSES_PER_LITER

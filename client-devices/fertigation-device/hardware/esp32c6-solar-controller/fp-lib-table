@@ -1,0 +1,5 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "INA_ESP32C6")(type "KiCad")(uri "${KIPRJMOD}/INA_ESP32C6.pretty")(options "")(descr "INA XIAO footprints"))
+  (lib (name "INA_CUSTOM")(type "KiCad")(uri "${KIPRJMOD}/INA_CUSTOM.pretty")(options "")(descr "INA verified manufacturer and LCSC footprints"))
+)

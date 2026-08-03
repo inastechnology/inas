@@ -17,7 +17,7 @@
 - `make build`: compile firmware for `seeed_xiao_esp32s3`.
 - `make check-firmware`: build and verify the embedded OTA manifest.
 - `make upload`: build and upload to a locally connected board.
-- `make merged-bin`: create a single flashable provisioning image.
+- `make factory-bin`: create `firmware.factory.bin`, flashable at address `0x0`.
 
 ## Device Contract
 

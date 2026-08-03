@@ -136,7 +136,7 @@ make
 
 - `.pio/build/seeed_xiao_esp32s3/firmware.bin`
   - PlatformIOまたはOTA用のアプリケーションイメージ
-- `.pio/build/seeed_xiao_esp32s3/rs485-debug-device-esp32s3.bin`
+- `.pio/build/seeed_xiao_esp32s3/firmware.factory.bin`
   - bootloaderとpartition tableを含む、アドレス`0x0`から書ける完全イメージ
 
 通常のUSB書込みとデバッグ表示:
@@ -158,7 +158,7 @@ make flash-merged
 make package
 ```
 
-`release/rs485-debug-device-esp32s3.zip`に、`bootloader.bin`、
+`release/rs485-debug-device-0.1.0-seeed_xiao_esp32s3.inasfw`に、`bootloader.bin`、
 `partitions.bin`、`boot_app0.bin`、`firmware.bin`、診断プロファイル、
 配置・バージョン・SHA-256を記載した`release-module.json`がまとめられます。
 このZIPをINAS Shipping Toolへそのまま読み込んで書き込みます。

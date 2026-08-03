@@ -14,4 +14,8 @@ Current contract:
 
 - RS485 Modbus RTU on UART1
 - PAR/light sensor enabled by default
-- 12V soil EC/pH/NPK sensor support is build-flag gated until the sensor manual is confirmed
+- ComWinTop CWT-SOIL 12V soil EC/pH/NPK manual and FC03 register profile are
+  confirmed in
+  [../../docs/jp/comwintop_cwt_soil_npkphcth_s_spec.md](../../docs/jp/comwintop_cwt_soil_npkphcth_s_spec.md)
+- soil support remains build-flag gated until the FC04 defaults are aligned and
+  the selected sensor lot is bench-tested

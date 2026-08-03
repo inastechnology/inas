@@ -9,18 +9,15 @@
 #include "app_def.h"
 #include "app_device.h"
 #include "app_fgt_journal.h"
+#include "app_fgt_commissioning.h"
 #include "app_fgt_runtime_config.h"
 #include "app_network.h"
 #include "fgt_state_machine.h"
-#include "hal_flow_meter.h"
-#include "hal_mcp23017.h"
+#include "hal_battery_monitor.h"
+#include "hal_direct_gpio.h"
 #include "hal_power_switch.h"
 #include "hal_rs485_bus.h"
 #include "hal_rs485_sensor_protocol.h"
-
-#ifndef APP_FGT_MASTER_ENABLE_PIN
-#define APP_FGT_MASTER_ENABLE_PIN D3
-#endif
 
 static constexpr uint32_t kScheduleDueGraceSec = 15UL * 60UL;
 static constexpr uint32_t kControlTickMs = 20;
@@ -36,12 +33,15 @@ static constexpr uint16_t kLeakInput = 1U << 10;
 static constexpr uint16_t kEmergencyInput = 1U << 11;
 static constexpr uint16_t kSafetyInputs = kTankEmptyInput | kTankFullInput | kLeakInput | kEmergencyInput;
 
-static hal_mcp23017_t s_io = {};
+static hal_direct_gpio_t s_io = {};
+static hal_battery_monitor_t s_battery_monitor = {};
 static hal_power_switch_t s_sensor_power = {};
 static bool s_rs485_ready = false;
 
 struct FgtSensorSample
 {
+    bool battery_ok = false;
+    hal_battery_sample_t battery = {};
     bool power_requested = false;
     bool power_ok = false;
     hal_rs485_soil_sample_t soil = {};
@@ -68,8 +68,7 @@ struct FgtCycleState
 
 static void force_actuators_off()
 {
-    digitalWrite(APP_FGT_MASTER_ENABLE_PIN, LOW);
-    hal_mcp23017_all_outputs_off(&s_io);
+    hal_direct_gpio_all_outputs_off(&s_io);
 }
 
 static uint16_t output_mask(const fgt::Outputs &outputs)
@@ -87,21 +86,16 @@ static bool apply_outputs(const fgt::Outputs &outputs)
 {
     // Master OFF creates a break-before-make interval at every transition and
     // prevents a transient A+B overlap even when I2C is delayed.
-    digitalWrite(APP_FGT_MASTER_ENABLE_PIN, LOW);
     const uint16_t requested = output_mask(outputs);
     if ((requested & kNutrientAOutput) != 0 && (requested & kNutrientBOutput) != 0)
     {
-        hal_mcp23017_all_outputs_off(&s_io);
+        hal_direct_gpio_all_outputs_off(&s_io);
         return false;
     }
-    if (!hal_mcp23017_write_outputs(&s_io, kActuatorOutputs, requested))
+    if (!hal_direct_gpio_write_outputs(&s_io, kActuatorOutputs, requested))
     {
-        hal_mcp23017_all_outputs_off(&s_io);
+        hal_direct_gpio_all_outputs_off(&s_io);
         return false;
-    }
-    if (requested != 0)
-    {
-        digitalWrite(APP_FGT_MASTER_ENABLE_PIN, HIGH);
     }
     return true;
 }
@@ -109,18 +103,7 @@ static bool apply_outputs(const fgt::Outputs &outputs)
 static fgt::Inputs read_physical_inputs()
 {
     fgt::Inputs inputs = {};
-    uint16_t gpio = 0;
-    inputs.io_ok = hal_mcp23017_read_gpio(&s_io, &gpio);
-    if (inputs.io_ok)
-    {
-        // Pull-up inputs are active low. Disconnected safety wiring therefore
-        // does not claim an empty tank and cannot start a batch.
-        inputs.tank_empty = (gpio & kTankEmptyInput) == 0;
-        inputs.tank_full = (gpio & kTankFullInput) == 0;
-        inputs.leak_detected = (gpio & kLeakInput) == 0;
-        inputs.emergency_stop = (gpio & kEmergencyInput) == 0;
-    }
-    inputs.inlet_water_ml = hal_flow_meter_total_ml();
+    inputs.io_ok = true;
     return inputs;
 }
 
@@ -150,21 +133,18 @@ protected:
 
     bool on_initialize() override
     {
-        pinMode(APP_FGT_MASTER_ENABLE_PIN, OUTPUT);
-        digitalWrite(APP_FGT_MASTER_ENABLE_PIN, LOW);
         app_fgt_runtime_config_init();
         app_fgt_journal_init();
 
-        const hal_mcp23017_config_t io_config = hal_mcp23017_default_config();
-        const bool io_ready = hal_mcp23017_open(&s_io, &io_config) &&
-                              hal_mcp23017_configure(&s_io, kActuatorOutputs, kSafetyInputs);
+        const bool io_ready = hal_direct_gpio_open(&s_io);
         force_actuators_off();
 
+        const bool battery_ready = hal_battery_monitor_open(&s_battery_monitor);
         const hal_power_switch_config_t power_config = hal_power_switch_default_config();
         const bool power_ready = hal_power_switch_open(&s_sensor_power, &power_config);
         const hal_rs485_modbus_config_t rs485_config = hal_rs485_modbus_default_config();
         s_rs485_ready = hal_rs485_bus_init(&rs485_config);
-        return io_ready && power_ready && s_rs485_ready && configure_flow_meter();
+        return io_ready && battery_ready && power_ready && s_rs485_ready;
     }
 
     void prepare_runtime_config_request() override
@@ -175,7 +155,6 @@ protected:
     void on_runtime_config_ready(bool config_received) override
     {
         (void)config_received;
-        configure_flow_meter();
         const app_fgt_runtime_config_t &config = app_fgt_runtime_config_get();
         Serial.printf("FGT config: valid=%s enabled=%s schedules=%u water=%lu initial=%lu A=%lu B=%lu rinse=%lu recovery_ack=%lu\n",
                       config.valid ? "true" : "false",
@@ -325,10 +304,14 @@ protected:
         doc["nutrient_b_on"] = m_cycle.state.outputs.nutrient_b;
         doc["mixer_on"] = m_cycle.state.outputs.mixer;
         doc["irrigation_on"] = m_cycle.state.outputs.irrigation;
+        doc["battery_voltage_ok"] = m_cycle.sensors.battery_ok;
+        doc["battery_adc_mv"] = m_cycle.sensors.battery.adc_millivolts;
+        doc["battery_voltage_v"] = m_cycle.sensors.battery.battery_volts;
         doc["sensor_12v_power_requested"] = m_cycle.sensors.power_requested;
         doc["sensor_12v_power_error"] = m_cycle.sensors.power_requested && !m_cycle.sensors.power_ok;
         doc["soil_rs485_enabled"] = config.sensors.soil.enabled;
         doc["soil_rs485_ok"] = m_cycle.sensors.soil.ok;
+        doc["soil_rs485_modbus_slave_id"] = config.sensors.soil.modbus_slave_id;
         doc["soil_moisture_percent"] = m_cycle.sensors.soil.moisture_percent;
         doc["soil_temperature_c"] = m_cycle.sensors.soil.temperature_c;
         doc["soil_ec_us_cm"] = m_cycle.sensors.soil.ec_us_cm;
@@ -338,11 +321,13 @@ protected:
         doc["soil_k_mg_kg"] = m_cycle.sensors.soil.k_mg_kg;
         doc["par_enabled"] = config.sensors.par.enabled;
         doc["par_ok"] = m_cycle.sensors.par.ok;
+        doc["par_modbus_slave_id"] = config.sensors.par.modbus_slave_id;
         doc["par_umol_m2_s"] = m_cycle.sensors.par.par_umol_m2_s;
 
         char payload[4096];
         const size_t length = serializeJson(doc, payload, sizeof(payload));
         if (length == 0 || length >= sizeof(payload)) return false;
+        Serial.printf("Sending status: %s\n", payload);
         const bool sent = app_network_send(APP_MSG_TYPE_STATUS,
                                            reinterpret_cast<const uint8_t *>(payload),
                                            length,
@@ -355,18 +340,12 @@ private:
     FgtCycleState m_cycle = {};
     fgt::StateMachine m_machine;
 
-    bool configure_flow_meter()
-    {
-        hal_flow_meter_deinit();
-        hal_flow_meter_config_t flow = hal_flow_meter_default_config();
-        flow.pulses_per_liter = app_fgt_runtime_config_get().sensors.flow_pulses_per_liter;
-        return hal_flow_meter_init(&flow);
-    }
-
     void read_sensors()
     {
         const app_fgt_runtime_config_t &config = app_fgt_runtime_config_get();
         FgtSensorSample sample = {};
+        sample.battery_ok =
+            hal_battery_monitor_read(&s_battery_monitor, &sample.battery);
         sample.power_requested = config.sensors.soil.enabled || config.sensors.par.enabled;
         if (!sample.power_requested)
         {
@@ -389,7 +368,6 @@ private:
 
     void run_batch(const app_fgt_runtime_config_t &config, time_t due_epoch)
     {
-        hal_flow_meter_reset();
         m_cycle.inputs = read_physical_inputs();
         const uint32_t started_ms = millis();
         if (!m_machine.start(config.recipe, config.limits, m_cycle.inputs, started_ms))
@@ -455,6 +433,7 @@ static FertigationDevice s_device;
 
 int app_init()
 {
+    app_fgt_commissioning_register_setup_portal();
     AppDeviceInitializeOptions options;
     options.setup_ap_enabled = true;
     options.start_network = true;
@@ -465,8 +444,7 @@ int app_init()
 void app_deinit()
 {
     force_actuators_off();
-    hal_flow_meter_deinit();
-    hal_mcp23017_close(&s_io);
+    hal_direct_gpio_close(&s_io);
     hal_power_switch_close(&s_sensor_power);
     hal_rs485_bus_deinit();
     s_rs485_ready = false;

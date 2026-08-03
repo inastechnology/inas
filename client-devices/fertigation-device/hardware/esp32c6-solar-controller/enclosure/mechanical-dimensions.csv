@@ -1,0 +1,10 @@
+﻿Item,Dimension,Value mm,Release status
+Controller PCB,Outline,180 x 115,RELEASED
+Controller PCB,Mount hole,4 x 3.2,RELEASED
+Controller PCB,Hole pitch,172 x 107,RELEASED
+BMP3040Z,Plate outline,265 x 365 x 1.6,OFFICIAL
+BMP3040Z,Existing hole pitch,228 x 325,OFFICIAL
+X-Lok CC-03RMFS-QC800P,Panel D-cut,20.8 / 19.4,OFFICIAL
+Phoenix 1237436,Panel thread/cut,M16 x 1.5 / 16.2,VERIFY CUT ON SAMPLE
+MPPT pictured unit,Outline,134 x 70,VERIFY PHYSICAL UNIT
+MPPT pictured unit,Hole pitch,126 x 50,VERIFY PHYSICAL UNIT

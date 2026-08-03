@@ -210,116 +210,23 @@ build_flags =
 
 
 def _render_makefile(spec: DeviceProjectSpec) -> str:
-    return f"""# Makefile for wrapping PlatformIO commands
+    return f"""DEVICE_ID := {spec.project_slug}
+DEVICE_KIND := {spec.device_kind}
+DEVICE_NAME := {spec.display_name}
+DEVICE_VERSION := {spec.firmware_version}
+PIO_ENV := {spec.env_name}
+ESP_CHIP := esp32s3
+FLASH_SIZE := 8MB
+HAS_FILESYSTEM := 1
 
-PIO ?= platformio
-PYTHON ?= python3
-ENV = {spec.env_name}
-BUILD_DIR := .pio/build/$(ENV)
-REPO_ROOT := $(abspath ../..)
-FIRMWARE_CHECKER ?= $(REPO_ROOT)/hub/scripts/check_firmware_manifest.py
-PIO_PYTHON ?= $(HOME)/.platformio/penv/bin/python
-ESPTOOL ?= $(HOME)/.platformio/packages/tool-esptoolpy/esptool.py
-BOOT_APP0 ?= $(HOME)/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin
-MERGED_BIN ?= $(BUILD_DIR)/flash_merged.bin
-FILESYSTEM_BIN ?= $(BUILD_DIR)/littlefs.bin
-FLASH_MODE ?= keep
-FLASH_FREQ ?= keep
-FLASH_SIZE ?= keep
-AUTO_UPLOAD_PORT := $(shell ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null | head -n 1)
-UPLOAD_PORT ?= $(AUTO_UPLOAD_PORT)
-RELEASE_MODULE_ID := {spec.project_slug}
-RELEASE_MODULE_DEVICE_KIND := {spec.device_kind}
-RELEASE_MODULE_DISPLAY_NAME := {spec.display_name}
-RELEASE_MODULE_VERSION := {spec.firmware_version}
+include ../common/make/esp32-firmware.mk
 
-include ../common/make/esp32s3-release-module.mk
-
-.PHONY: build check-firmware buildfs merged-bin flash-merged upload ports remote-upload remote-monitor help
-
-all: build
-
-build:
-\t$(PIO) run --environment $(ENV)
-
-check-firmware: build
-\t$(PYTHON) "$(FIRMWARE_CHECKER)" "$(BUILD_DIR)/firmware.bin"
-
-buildfs:
-\t$(PIO) run --environment $(ENV) --target buildfs
-
-merged-bin: build buildfs
-\t@if [ ! -f "$(BOOT_APP0)" ]; then \\
-\t\techo "boot_app0.bin not found: $(BOOT_APP0)"; \\
-\t\techo "If PlatformIO is installed in a custom location, override BOOT_APP0=/path/to/boot_app0.bin"; \\
-\t\texit 1; \\
-\tfi
-\t@if [ ! -f "$(ESPTOOL)" ]; then \\
-\t\techo "esptool.py not found: $(ESPTOOL)"; \\
-\t\techo "If PlatformIO is installed in a custom location, override ESPTOOL=/path/to/esptool.py"; \\
-\t\texit 1; \\
-\tfi
-\t@if [ ! -f "$(PIO_PYTHON)" ]; then \\
-\t\techo "PlatformIO Python not found: $(PIO_PYTHON)"; \\
-\t\techo "If PlatformIO uses a different virtualenv, override PIO_PYTHON=/path/to/python"; \\
-\t\texit 1; \\
-\tfi
-\t$(PIO_PYTHON) $(ESPTOOL) --chip esp32s3 merge_bin \\
-\t\t--output "$(MERGED_BIN)" \\
-\t\t--flash_mode $(FLASH_MODE) \\
-\t\t--flash_freq $(FLASH_FREQ) \\
-\t\t--flash_size $(FLASH_SIZE) \\
-\t\t0x0 "$(BUILD_DIR)/bootloader.bin" \\
-\t\t0x8000 "$(BUILD_DIR)/partitions.bin" \\
-\t\t0xe000 "$(BOOT_APP0)" \\
-\t\t0x10000 "$(BUILD_DIR)/firmware.bin" \\
-\t\t0x670000 "$(FILESYSTEM_BIN)"
-\t@echo "Merged image created: $(MERGED_BIN)"
-
-flash-merged: merged-bin
-\t@if [ -z "$(UPLOAD_PORT)" ]; then \\
-\t\techo "Upload port not found."; \\
-\t\techo "Connect device, then run: make flash-merged UPLOAD_PORT=/dev/ttyACM0"; \\
-\t\techo "Detected ports:"; \\
-\t\t$(PIO) device list || true; \\
-\t\texit 1; \\
-\tfi
-\t@echo "Flashing merged image via $(UPLOAD_PORT)"
-\t$(PIO_PYTHON) $(ESPTOOL) --chip esp32s3 --port "$(UPLOAD_PORT)" --baud 460800 write_flash 0x0 "$(MERGED_BIN)"
-
-upload:
-\t@if [ -z "$(UPLOAD_PORT)" ]; then \\
-\t\techo "Upload port not found."; \\
-\t\techo "Connect device, then run: make upload UPLOAD_PORT=/dev/ttyACM0"; \\
-\t\techo "Detected ports:"; \\
-\t\t$(PIO) device list || true; \\
-\t\texit 1; \\
-\tfi
-\t@echo "Uploading via $(UPLOAD_PORT)"
-\t$(PIO) run --target upload --environment $(ENV) --upload-port $(UPLOAD_PORT)
-
-ports:
-\t$(PIO) device list
-\t@echo "Raw candidates: $(AUTO_UPLOAD_PORT)"
-
+.PHONY: remote-upload remote-monitor
 remote-upload:
-\t$(PIO) remote run --target upload --environment $(ENV)
+\t$(PIO_RUN) remote run --target upload --environment $(PIO_ENV)
 
 remote-monitor:
-\t$(PIO) remote device monitor --environment $(ENV)
-
-help:
-\t@echo "Available targets:"
-\t@echo "  build           - Build the project"
-\t@echo "  check-firmware  - Build firmware.bin and verify the embedded OTA manifest"
-\t@echo "  buildfs         - Build the LittleFS image from data/"
-\t@echo "  package         - Create the F/W release module ZIP"
-\t@echo "  merged-bin      - Build a single flashable image at $(MERGED_BIN)"
-\t@echo "  flash-merged    - Write the merged image to a connected board"
-\t@echo "  upload          - Upload locally (optional: UPLOAD_PORT=/dev/ttyACM0)"
-\t@echo "  ports           - Show detected serial ports"
-\t@echo "  remote-upload   - Upload remotely"
-\t@echo "  remote-monitor  - Serial monitor via PlatformIO Remote"
+\t$(PIO_RUN) remote device monitor --environment $(PIO_ENV)
 """
 
 
@@ -446,16 +353,15 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-GITIGNORE_TEMPLATE = """.pio
-.vscode/.browse.c_cpp.db*
-.vscode/c_cpp_properties.json
-.vscode/launch.json
-.vscode/ipch
+GITIGNORE_TEMPLATE = """# Device-local PlatformIO state
+.pio/
+.pio-core/
 
-.idea
-
-# env
-.env*
+# Local secrets; examples remain version-controlled
+.env
+.env.*
+!.env.example
+!.env.*.example
 """
 
 PARTITIONS_TEMPLATE = """# Name,   Type, SubType, Offset,  Size, Flags

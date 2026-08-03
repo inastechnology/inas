@@ -1,7 +1,7 @@
 # INAS Shipping Tool
 
 ESP32-S3デバイスの出荷時F/W書込みを行うPython GUIです。各デバイスが生成する
-Release module ZIPを読み込むと、manifestの配置とSHA-256を検証し、bootloader、
+`.inasfw` F/Wパッケージを読み込むと、manifestの配置とSHA-256を検証し、bootloader、
 partition table、OTA metadata、firmwareを自動設定します。個別BINやmerged full
 imageにも対応します。USB Debug COMのログ確認とコマンド送信も同じツールで
 行えます。
@@ -16,7 +16,7 @@ imageにも対応します。USB Debug COMのログ確認とコマンド送信�
 - partition CSVではbootloader、merged image、必須区分を表現できないため、
   shipping tool固有のFlash layout JSONを使用します。
 - Shipping Tool本体へ特定デバイスのF/Wを同梱しません。F/Wはデバイスごとの
-  Release module ZIPとして独立して配布します。
+  `.inasfw` F/Wパッケージとして独立して配布します。
 
 ## セットアップ
 
@@ -72,7 +72,7 @@ make package
 ```
 
 ENV、SOI、WTR、WRS、FGTでも同様に、各デバイスディレクトリで`make package`を
-実行すると`release/*.zip`へRelease moduleが生成されます。形式の詳細は
+実行すると`release/*.inasfw`へF/Wパッケージが生成されます。形式の詳細は
 `client-devices/docs/firmware_release_module_spec.md`を参照してください。
 
 `tkinterdnd2`がない環境でもクリックによるファイル選択は動作します。D&Dを使う
@@ -83,7 +83,7 @@ ENV、SOI、WTR、WRS、FGTでも同様に、各デバイスディレクトリ�
 
 1. USBでESP32-S3を接続する。
 2. ポートを選択し、必要なら「接続確認」を押す。
-3. 「Release module ZIPを開く」を押すか、Release module ZIPをD&Dする。
+3. 「F/Wパッケージを開く」を押すか、`.inasfw`をD&Dする。
 4. manifestからbootloader、partition table、OTA metadata、firmwareが自動設定
    されたことを確認する。
 5. 有効になっている領域とアドレスを確認する。
@@ -97,6 +97,8 @@ ENV、SOI、WTR、WRS、FGTでも同様に、各デバイスディレクトリ�
 
 - `configs/xiao_esp32s3_ota.json`: INASのOTA対応8MB構成。領域単位書込み
 - `configs/xiao_esp32s3_merged.json`: merged imageを`0x0`へ書込み
+- `configs/xiao_esp32c6_ota.json`: FGTのOTA対応4MB構成。領域単位書込み
+- `configs/xiao_esp32c6_merged.json`: FGTの4MB factory imageを`0x0`へ書込み
 
 一括D&Dではファイル名から書込み先を自動判定します。
 
@@ -108,7 +110,9 @@ ENV、SOI、WTR、WRS、FGTでも同様に、各デバイスディレクトリ�
 | `firmware.bin`、`app.bin` | app0とapp1の両方 |
 | `littlefs.bin`、`spiffs.bin` | LittleFS storage |
 | `nvs.bin` | NVS初期値 |
-| `flash_merged.bin`、`rs485-debug-device-esp32s3.bin` | merged / `0x0` |
+| `firmware.factory.bin` | factory image / `0x0` |
+
+旧`flash_merged.bin`と`rs485-debug-device-esp32s3.bin`も移行期間中は読み込めます。
 
 個別の領域行にも推奨ファイル名を常時表示します。異なる名前のBINを個別行へ
 D&Dした場合は、誤配置を防ぐ確認メッセージが表示されます。

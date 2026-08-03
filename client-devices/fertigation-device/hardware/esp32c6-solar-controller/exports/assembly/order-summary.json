@@ -1,0 +1,14 @@
+{
+  "revision": "REV A",
+  "status": "orderable engineering build",
+  "smt_placements": 90,
+  "post_assembly_components": 23,
+  "dnp_components": 8,
+  "files": [
+    "exports/assembly/jlcpcb-smt-bom.csv",
+    "exports/assembly/jlcpcb-smt-cpl.csv",
+    "exports/assembly/post-assembly-bom.csv",
+    "exports/assembly/dnp-list.csv",
+    "exports/assembly/procurement-bom.csv"
+  ]
+}

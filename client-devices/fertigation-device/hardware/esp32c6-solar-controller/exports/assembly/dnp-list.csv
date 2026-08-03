@@ -1,0 +1,9 @@
+﻿Designator,Comment,Footprint,Reason
+R13,680R 1% BIAS,Resistor_SMD:R_0603_1608Metric,Optional; do not populate for Rev A
+R14,680R 1% BIAS,Resistor_SMD:R_0603_1608Metric,Optional; do not populate for Rev A
+J4,RS485 PORT 3,INA_CUSTOM:Phoenix_MSTBA_2_5_4_G_5_08_1757268,Mating plug 1757035
+D20,OUTPUT TVS/SNUBBER DNP,Diode_SMD:D_SMB,Select only after cable transient measurement
+D21,OUTPUT TVS/SNUBBER DNP,Diode_SMD:D_SMB,Select only after cable transient measurement
+D22,OUTPUT TVS/SNUBBER DNP,Diode_SMD:D_SMB,Select only after cable transient measurement
+D23,OUTPUT TVS/SNUBBER DNP,Diode_SMD:D_SMB,Select only after cable transient measurement
+D24,OUTPUT TVS/SNUBBER DNP,Diode_SMD:D_SMB,Select only after cable transient measurement

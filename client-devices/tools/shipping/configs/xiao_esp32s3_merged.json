@@ -11,6 +11,7 @@
       "required": true,
       "default_enabled": true,
       "accepted_names": [
+        "firmware.factory.bin",
         "flash_merged.bin",
         "rs485-debug-device-esp32s3.bin"
       ],

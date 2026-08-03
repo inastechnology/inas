@@ -81,10 +81,12 @@ def load_release_module(path: Path) -> LoadedReleaseModule:
     archive_path = path.resolve()
     if not archive_path.is_file():
         raise ReleaseModuleError(f"Release module not found: {archive_path}")
-    if archive_path.suffix.casefold() != ".zip":
-        raise ReleaseModuleError("Release module must be a ZIP file")
+    if archive_path.suffix.casefold() not in {".inasfw", ".zip"}:
+        raise ReleaseModuleError(
+            "Release module must be an .inasfw package or legacy ZIP file"
+        )
     if archive_path.stat().st_size > MAX_ARCHIVE_SIZE:
-        raise ReleaseModuleError("Release module ZIP is too large")
+        raise ReleaseModuleError("Release module package is too large")
 
     temporary = tempfile.TemporaryDirectory(prefix="inas-release-module-")
     temporary_root = Path(temporary.name)

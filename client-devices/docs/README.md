@@ -17,6 +17,7 @@ Japanese version:
 - [Client firmware layering policy](firmware_layering_policy.md)
 - [XIAO ESP32S3 pin assignments](pin_assignments.md)
 - [RS485 sensor device specification](rs485_sensor_device_spec.md)
+- [ComWinTop CWT-SOIL NPKPHCTH-S source-traceable specification (Japanese)](jp/comwintop_cwt_soil_npkphcth_s_spec.md)
 - [RS485 sensor device implementation plan](rs485_sensor_device_implementation_plan.md)
 
 ## Generated Diagrams

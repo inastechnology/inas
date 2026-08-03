@@ -146,6 +146,8 @@ static void parse_recipe(JsonObjectConst json, fgt::Recipe &recipe)
 {
     recipe.total_water_ml = bounded_u32(json["total_water_ml"], recipe.total_water_ml, 100, 100000);
     recipe.initial_water_ml = bounded_u32(json["initial_water_ml"], recipe.initial_water_ml, 50, 100000);
+    recipe.initial_fill_ms = seconds_to_ms(json["initial_fill_sec"], recipe.initial_fill_ms, 1, 3600);
+    recipe.final_fill_ms = seconds_to_ms(json["final_fill_sec"], recipe.final_fill_ms, 1, 3600);
     recipe.nutrient_a_ml = bounded_u32(json["nutrient_a_ml"], recipe.nutrient_a_ml, 0, 10000);
     recipe.nutrient_b_ml = bounded_u32(json["nutrient_b_ml"], recipe.nutrient_b_ml, 0, 10000);
     recipe.nutrient_a_rate_ml_min = bounded_u32(json["nutrient_a_rate_ml_min"], recipe.nutrient_a_rate_ml_min, 1, 10000);
@@ -154,10 +156,11 @@ static void parse_recipe(JsonObjectConst json, fgt::Recipe &recipe)
     recipe.mix_after_a_ms = seconds_to_ms(json["mix_after_a_sec"], recipe.mix_after_a_ms, 0, 1800);
     recipe.mix_after_b_ms = seconds_to_ms(json["mix_after_b_sec"], recipe.mix_after_b_ms, 0, 1800);
     recipe.final_mix_ms = seconds_to_ms(json["final_mix_sec"], recipe.final_mix_ms, 1, 3600);
-    recipe.irrigation_max_ms = seconds_to_ms(json["irrigation_max_sec"], recipe.irrigation_max_ms, 1, 7200);
+    recipe.irrigation_max_ms = seconds_to_ms(json["irrigation_sec"], recipe.irrigation_max_ms, 1, 7200);
     recipe.rinse_water_ml = bounded_u32(json["rinse_water_ml"], recipe.rinse_water_ml, 0, 100000);
+    recipe.rinse_fill_ms = seconds_to_ms(json["rinse_fill_sec"], recipe.rinse_fill_ms, 1, 3600);
     recipe.rinse_mix_ms = seconds_to_ms(json["rinse_mix_sec"], recipe.rinse_mix_ms, 0, 1800);
-    recipe.rinse_drain_max_ms = seconds_to_ms(json["rinse_drain_max_sec"], recipe.rinse_drain_max_ms, 0, 3600);
+    recipe.rinse_drain_max_ms = seconds_to_ms(json["rinse_drain_sec"], recipe.rinse_drain_max_ms, 1, 3600);
 }
 
 static void parse_limits(JsonObjectConst json, fgt::Limits &limits)

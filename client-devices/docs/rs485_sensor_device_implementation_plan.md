@@ -72,20 +72,31 @@ Layer boundaries follow [firmware_layering_policy.md](firmware_layering_policy.m
    - Run firmware manifest checks.
    - Run focused hub tests for measurement normalization and config handling.
 
-## Unknowns
+## Confirmed Profile And Remaining Work
 
-The official Modbus register tables for the selected sensors are not confirmed
-yet. After obtaining the real manuals, verify:
+The vendor's five-probe V1.4 manual confirms the selected ComWinTop CWT-SOIL
+`NPKPHCTH-S` profile. See the
+[source-traceable Japanese specification](jp/comwintop_cwt_soil_npkphcth_s_spec.md).
 
-- Default slave id
-- Baud rate
-- Function code
-- Start register
-- Register count
-- Signedness
-- Scale factors
-- NPK units
-- PAR sensor unit and scale
+- Factory slave id: `1`
+- Serial: 4800bps, 8N1
+- Functions: FC03 read, FC06 single-register write
+- Read range: seven registers from `0x0000`
+- Scale: 0.1 for moisture, temperature, and pH; 1 for EC and N/P/K
+- Temperature: signed 16-bit
+- N/P/K: mg/kg, but vendor documentation limits these to trend/reference use
+
+Remaining work:
+
+- Bench-check the selected hardware lot, label, cable colors, and response.
+- Align the pre-manual FC04 firmware and Hub defaults with an explicit CWT FC03
+  profile without changing existing installations that use another sensor.
+- Resolve WRS switched-power settling versus the vendor's five-minute pH
+  stabilization guidance.
+- Confirm units and scale for each selected PAR sensor.
+- Design runtime config, status payloads, Hub presentation, and the watering
+  decision value for two soil sensors at fixed IDs `1` and `2`. The current
+  schema has only one `soil` slot.
 
 ## Tunable Areas
 
@@ -122,7 +133,7 @@ ENV build flags are initial values used before runtime config is received:
 -D APP_ENV_RS485_TX_PIN=43
 -D APP_ENV_RS485_RX_PIN=44
 -D APP_ENV_RS485_DE_RE_PIN=5
--D APP_ENV_PAR_MODBUS_SLAVE_ID=1
+-D APP_ENV_PAR_MODBUS_SLAVE_ID=3
 -D APP_ENV_PAR_REGISTER=0
 -D APP_ENV_PAR_SCALE=1
 ```
@@ -132,8 +143,8 @@ Runtime ENV settings are updated from Hub runtime config:
 ```json
 {
   "env_sensors": {
-    "par": { "enabled": true, "slave_id": 1, "function": 4, "register": 0, "count": 1 },
-    "soil_rs485": { "enabled": true, "slave_id": 2, "function": 4, "register": 0, "count": 7 }
+    "par": { "enabled": true, "slave_id": 3, "function": 3, "register": 0, "count": 1 },
+    "soil_rs485": { "enabled": true, "slave_id": 1, "function": 3, "register": 0, "count": 7 }
   },
   "env_calibration": {
     "par_umol_m2_s": { "scale": 1.0, "offset": 0.0, "calibrated": false },

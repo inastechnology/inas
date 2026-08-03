@@ -74,6 +74,9 @@ def build_release_module(
     target: str,
     chip: str,
     flash_size: str,
+    app_max_size: str = "0x330000",
+    filesystem_offset: str = "0x670000",
+    filesystem_max_size: str = "0x180000",
     filesystem: Path | None = None,
     diagnostic_profile: Path | None = None,
 ) -> str:
@@ -115,7 +118,7 @@ def build_release_module(
             region_id="app0",
             label="Application app0",
             address="0x10000",
-            max_size="0x330000",
+            max_size=app_max_size,
             source=build_dir / "firmware.bin",
             archive_name="firmware.bin",
             required=True,
@@ -128,8 +131,8 @@ def build_release_module(
             ReleaseImage(
                 region_id="storage",
                 label="LittleFS storage",
-                address="0x670000",
-                max_size="0x180000",
+                address=filesystem_offset,
+                max_size=filesystem_max_size,
                 source=filesystem,
                 archive_name="littlefs.bin",
                 required=False,
@@ -210,7 +213,7 @@ def build_release_module(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Create an INAS device firmware release module ZIP"
+        description="Create an INAS .inasfw firmware release package"
     )
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--boot-app0", type=Path, required=True)
@@ -222,6 +225,9 @@ def main() -> int:
     parser.add_argument("--target", default="seeed_xiao_esp32s3")
     parser.add_argument("--chip", default="esp32s3")
     parser.add_argument("--flash-size", default="8MB")
+    parser.add_argument("--app-max-size", default="0x330000")
+    parser.add_argument("--filesystem-offset", default="0x670000")
+    parser.add_argument("--filesystem-max-size", default="0x180000")
     parser.add_argument("--filesystem", type=Path)
     parser.add_argument("--diagnostic-profile", type=Path)
     args = parser.parse_args()
@@ -238,6 +244,9 @@ def main() -> int:
             target=args.target,
             chip=args.chip,
             flash_size=args.flash_size,
+            app_max_size=args.app_max_size,
+            filesystem_offset=args.filesystem_offset,
+            filesystem_max_size=args.filesystem_max_size,
             filesystem=args.filesystem.resolve() if args.filesystem else None,
             diagnostic_profile=(
                 args.diagnostic_profile.resolve()

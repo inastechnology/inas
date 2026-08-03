@@ -15,6 +15,9 @@
 
 ## 線色の目安
 
+この表は装置内部で新しく製作するハーネスの推奨色であり、メーカー製
+センサーケーブルの線色を上書きしない。既製ケーブルは製品別の配線表に従う。
+
 | 信号種別 | 推奨色 | 備考 |
 |---|---|---|
 | 12V input / switched 12V | 赤 | 常時 12V と switched 12V をラベルで区別する |
@@ -102,7 +105,31 @@ RS485 前提の水やり全部入りデバイス。WRS は汎用の灌水 1 系 
 | yellow / 485-A | `RS485_A` | A/B を twisted pair にする |
 | blue / 485-B | `RS485_B` | 全読取 timeout 時は A/B 表記を再確認 |
 
-SEN0641 は既定 `4800bps / slave 1 / function 0x03 / register 0x0000 / scale 1.0` とする。土壌センサーは既定 `slave 2` とし、同じ bus で ID を重複させない。
+SEN0641 の工場出荷値は
+`4800bps / slave 1 / function 0x03 / register 0x0000 / scale 1.0`。
+INAS の固定割当は、土壌センサー 1=`slave 1`、土壌センサー 2=`slave 2`、
+PAR=`slave 3` とする。土壌センサー 2 がなくても PAR は `slave 3` のままとし、
+SEN0641 は単独接続して ID を `3` へ変更してから共通 bus へ接続する。
+
+### WRS + ComWinTop CWT-SOIL NPKPHCTH-S 配線
+
+| CWT sensor wire | WRS 接続先 | 確認 |
+|---|---|---|
+| brown / Power + | `SENSOR_12V_SW+` | sensor power ON 時に 12V |
+| black / Power - | `RS485_GND` | WRS、12V電源マイナス、RS485 transceiver GND と導通 |
+| yellow/green / RS485 A+ | `RS485_A` | 黄緑または黄/緑ストライプの 1 本 |
+| blue / RS485 B- | `RS485_B` | A/B と電源線を取り違えない |
+
+同梱設定ツールには、別ロットとみられる
+`red=12V / black=GND / yellow=A+ / green=B-` も記載されている。実機の
+4 芯がどちらの組み合わせかを確認し、異なるロットの配線表を混ぜない。
+
+CWT センサーは工場出荷時
+`4800bps / slave 1 / function 0x03 / start register 0x0000 / 7 registers`
+である。1 台目は slave ID `1` のまま使い、2 台目だけを単独接続して
+slave ID `2` へ変更する。PAR は slave ID `3` とする。詳細と変更フレームは
+[comwintop_cwt_soil_npkphcth_s_spec.md](comwintop_cwt_soil_npkphcth_s_spec.md)
+を参照する。
 
 5V MAX485 module を使う場合は 5V で給電し、MAX485 `RO` と XIAO `D7/GPIO44` の間に 3.3V level shifter を入れる。5V `RO` を XIAO へ直結しない。新規製造では 3.3V logic の MAX3485/SP3485/SN65HVD 系を優先する。
 
@@ -136,6 +163,12 @@ SEN0641 は既定 `4800bps / slave 1 / function 0x03 / register 0x0000 / scale 1
 | `RS485_A` / `RS485_B` | PAR、soil、EC/pH/NPK、日射センサー | sensor ごとに一意の Modbus slave ID |
 | `RS485_GND` | sensor bus ground | 圃場配線の安定化に必須 |
 | `SENSOR_12V+` | sensor 12V supply | future switch がない限り常時 12V |
+
+ComWinTop CWT-SOIL は
+`brown=SENSOR_12V+ / black=RS485_GND / yellow-green=RS485_A / blue=RS485_B`
+で接続する。別ロットの線色、FC03、レジスタ、安定時間は
+[comwintop_cwt_soil_npkphcth_s_spec.md](comwintop_cwt_soil_npkphcth_s_spec.md)
+を参照する。
 
 ## SOI
 

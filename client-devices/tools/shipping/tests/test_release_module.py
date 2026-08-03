@@ -61,7 +61,7 @@ class ReleaseModuleTest(unittest.TestCase):
             ],
             "checksums": checksums,
         }
-        output = directory / "test-release.zip"
+        output = directory / "test-release.inasfw"
         with zipfile.ZipFile(output, "w") as archive:
             archive.writestr(
                 "test-release/release-module.json",
@@ -85,6 +85,14 @@ class ReleaseModuleTest(unittest.TestCase):
                 )
             finally:
                 module.close()
+
+    def test_loads_legacy_zip_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            archive = self.create_module(Path(temporary))
+            legacy_archive = archive.with_suffix(".zip")
+            archive.rename(legacy_archive)
+            module = load_release_module(legacy_archive)
+            module.close()
 
     def test_rejects_checksum_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

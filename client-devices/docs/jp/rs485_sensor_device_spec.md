@@ -92,7 +92,11 @@ RS485 トランシーバは 3.3V ロジック対応品を使う。例: MAX3485, 
 
 ## ENV soil RS485 センサー仕様
 
-想定センサーは TH-EC-PH-NPK 系の 7in1 RS485 Modbus 土壌センサー。
+選定センサーは ComWinTop CWT-SOIL `NPKPHCTH-S` 系の、5 本プローブ
+7in1 RS485 Modbus 土壌センサー。製品固有の配線、電源、全レジスタ、
+原本の取得情報は
+[comwintop_cwt_soil_npkphcth_s_spec.md](comwintop_cwt_soil_npkphcth_s_spec.md)
+を正とする。
 
 測定対象:
 
@@ -104,7 +108,18 @@ RS485 トランシーバは 3.3V ロジック対応品を使う。例: MAX3485, 
 - リン P
 - カリウム K
 
-初期実装の仮 register map:
+確認済み通信プロファイル:
+
+| 項目 | 設定 |
+|---|---|
+| 電源 | DC 12V。センサー定格は DC 5-30V |
+| 通信 | Modbus RTU、4800bps、8N1 |
+| 工場出荷 slave ID | `1` |
+| read function | `0x03` |
+| start register | `0x0000` |
+| register count | `7` |
+
+確認済み register map:
 
 | offset | payload field           |                scale |
 | -----: | ----------------------- | -------------------: |
@@ -116,9 +131,16 @@ RS485 トランシーバは 3.3V ロジック対応品を使う。例: MAX3485, 
 |      5 | `soil_p_mg_kg`          |             register |
 |      6 | `soil_k_mg_kg`          |             register |
 
-この register map は製品マニュアル確認前の仮定である。実機導入時に、センサー付属の Modbus register table に合わせて `platformio.ini` と firmware の変換処理を調整する。
+V1.4 マニュアルの表見出しには function code `0x30` という誤記があるが、
+同じマニュアルの通信例と同梱設定ツールは `0x03` で一致する。INAS の固定
+割当は、土壌センサー 1=`1`、土壌センサー 2=`2`、PAR=`3` とする。
+土壌センサー 1 は工場出荷 ID `1` のまま使い、2 台目だけを単独接続して
+ID `2` へ変更する。PAR は土壌センサー 2 の有無にかかわらず ID `3` とする。
 
-ComWinTop 系の公開サンプルでは、水分・温度・EC は `baud=4800`, slave `0x01`, function code `0x04`, register `0x0000` から `U_WORD` で読んでいる。ただし pH/NPK register は別途マニュアル確認が必要。
+2026-08-01 時点の firmware / Hub 初期値には旧 ID 割当と、マニュアル確認前の
+function `0x04` が残る箇所がある。CWT センサーを使う runtime config では
+`modbus_slave_id: 1` と `modbus_function: 3` を明示する。現行設定は土壌
+センサー 1 枠のみで、ID `2` の 2 台目を同時に読むには別途拡張が必要である。
 
 ENV soil RS485 status payload:
 
@@ -128,7 +150,7 @@ ENV soil RS485 status payload:
   "sensor_model": "RS485-12V-ENV",
   "soil_rs485_enabled": true,
   "soil_rs485_ok": true,
-  "soil_rs485_modbus_slave_id": 2,
+  "soil_rs485_modbus_slave_id": 1,
   "soil_moisture_percent": 42.1,
   "soil_temperature_c": 21.5,
   "soil_ec_us_cm": 820,
@@ -179,7 +201,7 @@ ENV status payload:
   "sensor_model": "RS485-12V-ENV",
   "par_enabled": true,
   "par_ok": true,
-  "par_modbus_slave_id": 1,
+  "par_modbus_slave_id": 3,
   "par_umol_m2_s": 1234.0
 }
 ```
@@ -198,7 +220,10 @@ DFRobot `SEN0641` は ENV/WRS の RS485 PAR センサーとして使用できる
 | PAR register | `0x0000`、1 register、scale `1.0` |
 | 配線 | brown=VCC、black=GND、yellow=485-A、blue=485-B |
 
-WRS の既定 `par` 設定はこの値と一致する。同じ bus へ既定 ID `1` の土壌センサーを追加する場合は、接続前にどちらか一方の slave ID を変更する。WRS の既定構成では `PAR=1`、`soil=2` とする。bus 上の全センサーは baud rate を統一する。
+SEN0641 の工場出荷 ID は `1` だが、INAS では土壌センサー 1=`1`、
+土壌センサー 2=`2`、PAR=`3` の固定割当を使う。SEN0641 は単独接続して
+ID `3` へ変更してから共通 bus へ接続する。土壌センサー 2 がなくても PAR
+を ID `2` へ詰めない。bus 上の全センサーは baud rate を統一する。
 
 5V 動作の MAX485 module を XIAO ESP32S3 へ接続する場合、MAX485 `RO` の 5V 出力を `D7/GPIO44` へ直結しない。3.3V へ level shift するか、MAX3485/SP3485/SN65HVD 系の 3.3V logic transceiver を使う。MAX485 module 固有の pull-up、termination、A/B 表記も回路図で確認する。
 

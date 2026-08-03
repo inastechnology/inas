@@ -45,10 +45,10 @@ class CreateDeviceProjectTest(unittest.TestCase):
             self.assertIn('-D APP_FIRMWARE_PROJECT=\\"soil-device\\"', platformio)
             self.assertIn("-Wl,-u,INAS_FIRMWARE_MANIFEST", platformio)
             makefile = (project_root / "Makefile").read_text(encoding="utf-8")
-            self.assertIn("RELEASE_MODULE_ID := soil-device", makefile)
-            self.assertIn("RELEASE_MODULE_DEVICE_KIND := SOI", makefile)
+            self.assertIn("DEVICE_ID := soil-device", makefile)
+            self.assertIn("DEVICE_KIND := SOI", makefile)
             self.assertIn(
-                "include ../common/make/esp32s3-release-module.mk",
+                "include ../common/make/esp32-firmware.mk",
                 makefile,
             )
             app_cpp = (project_root / "src" / "app" / "src" / "app.cpp").read_text(encoding="utf-8")

@@ -128,7 +128,23 @@ Measurements:
 - Phosphorus P
 - Potassium K
 
-Initial provisional register map:
+The selected ComWinTop CWT-SOIL `NPKPHCTH-S` profile is source-confirmed from
+the vendor's five-probe V1.4 manual. The source hashes, wiring revisions,
+complete register table, and field cautions are recorded in
+[the Japanese product-specific specification](jp/comwintop_cwt_soil_npkphcth_s_spec.md).
+
+Confirmed profile:
+
+| Item | Setting |
+|---|---|
+| Power | 12V in INAS; sensor rating is 5-30V |
+| Serial | Modbus RTU, 4800bps, 8N1 |
+| Factory slave id | `1` |
+| Read function | `0x03` |
+| Start register | `0x0000` |
+| Register count | `7` |
+
+Confirmed register map:
 
 | offset | payload field | scale |
 |---:|---|---:|
@@ -140,13 +156,17 @@ Initial provisional register map:
 | 5 | `soil_p_mg_kg` | register |
 | 6 | `soil_k_mg_kg` | register |
 
-This register map is provisional until the product manual is confirmed. Adjust
-`platformio.ini` and firmware conversion logic to the real Modbus register table
-for the actual sensor.
+The V1.4 manual has a `0x30` typo in its read-function heading, while all of its
+request examples and the bundled configuration tool use `0x03`. INAS reserves
+fixed role IDs: soil sensor 1=`1`, soil sensor 2=`2`, and PAR=`3`. Keep the
+first soil sensor at its factory ID `1`; configure only the second soil sensor
+as ID `2`. PAR remains ID `3` even when the second soil sensor is absent.
 
-Public ComWinTop-style examples read moisture, temperature, and EC with
-`baud=4800`, slave `0x01`, function code `0x04`, and register `0x0000` as
-`U_WORD`. pH and NPK registers still need manual confirmation.
+As of 2026-08-01, some firmware and Hub defaults still contain the old ID
+allocation and the pre-manual FC04 assumption. Runtime config for this CWT
+sensor must explicitly set `modbus_slave_id` to `1` and `modbus_function` to
+`3`. The current schema has one soil-sensor slot; reading the reserved ID `2`
+sensor concurrently requires a separate extension.
 
 ENV soil RS485 status payload:
 
@@ -156,7 +176,7 @@ ENV soil RS485 status payload:
   "sensor_model": "RS485-12V-ENV",
   "soil_rs485_enabled": true,
   "soil_rs485_ok": true,
-  "soil_rs485_modbus_slave_id": 2,
+  "soil_rs485_modbus_slave_id": 1,
   "soil_moisture_percent": 42.1,
   "soil_temperature_c": 21.5,
   "soil_ec_us_cm": 820,
@@ -215,7 +235,7 @@ ENV status payload:
   "sensor_model": "RS485-12V-ENV",
   "par_enabled": true,
   "par_ok": true,
-  "par_modbus_slave_id": 1,
+  "par_modbus_slave_id": 3,
   "par_umol_m2_s": 1234.0
 }
 ```
@@ -234,7 +254,10 @@ DFRobot `SEN0641` can be used as the ENV/WRS RS485 PAR sensor. Treat the [DFRobo
 | PAR register | `0x0000`, one register, scale `1.0` |
 | Wires | brown=VCC, black=GND, yellow=485-A, blue=485-B |
 
-The WRS default `par` configuration matches this profile. If a soil sensor on the same bus also uses factory-default slave ID `1`, change one device address before connecting both devices. The WRS default allocation is `PAR=1` and `soil=2`. All devices on one bus must use the same baud rate.
+The SEN0641 factory ID is `1`, but the INAS fixed allocation is soil sensor
+1=`1`, soil sensor 2=`2`, and PAR=`3`. Configure the SEN0641 as ID `3` while it
+is the only device on the bus. Do not compress PAR to ID `2` when soil sensor 2
+is absent. All devices on one bus must use the same baud rate.
 
 When a 5V MAX485 module is used with the XIAO ESP32S3, do not connect its 5V `RO` output directly to `D7/GPIO44`. Level-shift the receive signal to 3.3V or use a 3.3V-logic transceiver such as MAX3485, SP3485, or an SN65HVD variant. Verify the specific MAX485 module's pull-ups, termination, and A/B labels against its schematic.
 

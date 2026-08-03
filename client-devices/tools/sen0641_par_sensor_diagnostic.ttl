@@ -1,0 +1,169 @@
+; DFRobot SEN0641 read-only diagnostic macro for Tera Term.
+;
+; It queries the sensor's current Modbus address and baud-rate setting with the
+; official broadcast inquiry at 2400, 4800, and 9600 bps. No register is written.
+;
+; Wiring for DSD TECH SH-U10:
+;   SH-U10 5V0 -> SEN0641 Brown (VCC)
+;   SH-U10 GND -> SEN0641 Black (GND)
+;   SH-U10 A+  -> SEN0641 Yellow (485-A)
+;   SH-U10 B-  -> SEN0641 Blue (485-B)
+;
+; Official inquiry:
+;   FF 03 07 D0 00 02 D1 58
+;
+; Stop the macro from the Tera Term Macro dialog if necessary.
+
+inputbox 'USB-RS485 adapter COM port number (example: 5 for COM5)' 'SEN0641 diagnostic'
+str2int com_port inputstr
+if com_port <= 0 then
+  messagebox 'Invalid COM port number.' 'SEN0641 diagnostic'
+  end
+endif
+
+sprintf2 connect_options '/C=%d /BAUD=4800 /CDATABIT=8 /CPARITY=none /CSTOPBIT=1 /CFLOWCTRL=none' com_port
+connect connect_options
+if result <> 2 then
+  messagebox 'Could not open the COM port. Close other applications using it and try again.' 'SEN0641 diagnostic'
+  end
+endif
+
+settitle 'SEN0641 address and baud diagnostic'
+setecho 0
+timeout = 1
+mtimeout = 0
+setdebug 2
+clearscreen 0
+
+dispstr 'SEN0641 read-only diagnostic started.'#13#10
+dispstr 'Inquiry: FF 03 07 D0 00 02 D1 58'#13#10
+dispstr 'Scanning 2400, 4800, and 9600 bps.'#13#10#13#10
+
+for baud_index 0 2
+  if baud_index = 0 then
+    baud_rate = 2400
+  elseif baud_index = 1 then
+    baud_rate = 4800
+  else
+    baud_rate = 9600
+  endif
+
+  setbaud baud_rate
+  pause 1
+  flushrecv
+  sprintf2 display_text 'Testing %d bps: send FF 03 07 D0 00 02 D1 58' baud_rate
+  dispstr display_text #13#10
+  send $FF $03 $07 $D0 $00 $02 $D1 $58
+
+  ; Response:
+  ; ACTUAL_ID 03 04 00 ADDRESS 00 BAUD_CODE CRC_L CRC_H
+  waitregex '([0-9A-F][0-9A-F]) 03 04 ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F]) ([0-9A-F][0-9A-F])'
+  if result = 0 then
+    sprintf2 display_text 'No response at %d bps.' baud_rate
+    dispstr display_text #13#10
+    continue
+  endif
+
+  hex_text = groupmatchstr1
+  call hex_to_int
+  response_id = hex_value
+  hex_text = groupmatchstr2
+  call hex_to_int
+  address_hi = hex_value
+  hex_text = groupmatchstr3
+  call hex_to_int
+  address_lo = hex_value
+  hex_text = groupmatchstr4
+  call hex_to_int
+  baud_hi = hex_value
+  hex_text = groupmatchstr5
+  call hex_to_int
+  baud_code = hex_value
+  hex_text = groupmatchstr6
+  call hex_to_int
+  received_crc_lo = hex_value
+  hex_text = groupmatchstr7
+  call hex_to_int
+  received_crc_hi = hex_value
+
+  crc_value = $FFFF
+  crc_byte = response_id
+  call crc16_update
+  crc_byte = $03
+  call crc16_update
+  crc_byte = $04
+  call crc16_update
+  crc_byte = address_hi
+  call crc16_update
+  crc_byte = address_lo
+  call crc16_update
+  crc_byte = baud_hi
+  call crc16_update
+  crc_byte = baud_code
+  call crc16_update
+  calculated_crc_lo = crc_value & $FF
+  calculated_crc_hi = (crc_value >> 8) & $FF
+
+  if received_crc_lo <> calculated_crc_lo || received_crc_hi <> calculated_crc_hi then
+    sprintf2 display_text 'A frame was received at %d bps, but its CRC was invalid.' baud_rate
+    dispstr display_text #13#10
+    continue
+  endif
+
+  if address_hi <> 0 || baud_hi <> 0 then
+    sprintf2 display_text 'A valid frame was received at %d bps, but its settings were outside the expected format.' baud_rate
+    dispstr display_text #13#10
+    continue
+  endif
+
+  if baud_code = 0 then
+    configured_baud = 2400
+  elseif baud_code = 1 then
+    configured_baud = 4800
+  elseif baud_code = 2 then
+    configured_baud = 9600
+  else
+    configured_baud = 0
+  endif
+
+  gettime time_text '%Y-%m-%d %H:%M:%S'
+  if configured_baud = 0 then
+    sprintf2 display_text '%s  FOUND: address=%d, active baud=%d, unknown baud code=%d' time_text address_lo baud_rate baud_code
+  else
+    sprintf2 display_text '%s  FOUND: address=%d, baud=%d (code=%d)' time_text address_lo configured_baud baud_code
+  endif
+  statusbox display_text 'SEN0641 diagnostic result'
+  dispstr #13#10 display_text #13#10
+  messagebox display_text 'SEN0641 detected'
+  end
+next
+
+dispstr #13#10 'No SEN0641 response was received at 2400, 4800, or 9600 bps.'#13#10
+dispstr 'Check 5V/GND, swap A+/B-, shorten the wiring, and power-cycle the sensor.'#13#10
+messagebox 'No response at 2400, 4800, or 9600 bps. Check 5V/GND and swap A+/B- after disconnecting USB power.' 'SEN0641 not detected'
+end
+
+:hex_to_int
+hex_value = 0
+for hex_index 1 2
+  strcopy hex_text hex_index 1 hex_digit
+  strscan '0123456789ABCDEF' hex_digit
+  if result = 0 then
+    hex_value = 0
+    return
+  endif
+  hex_value = hex_value * 16 + result - 1
+next
+return
+
+:crc16_update
+crc_value = crc_value ^ crc_byte
+for crc_bit 1 8
+  if (crc_value & 1) <> 0 then
+    crc_value = (crc_value >> 1) ^ $A001
+  else
+    crc_value = crc_value >> 1
+  endif
+next
+crc_value = crc_value & $FFFF
+return

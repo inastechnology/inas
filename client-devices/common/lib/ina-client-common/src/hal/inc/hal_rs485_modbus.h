@@ -57,6 +57,9 @@ bool hal_rs485_modbus_read_registers(uint8_t slave_id,
                                      uint16_t register_count,
                                      uint16_t *out_registers,
                                      size_t out_register_count);
+bool hal_rs485_modbus_write_single_register(uint8_t slave_id,
+                                            uint16_t register_address,
+                                            uint16_t value);
 uint16_t hal_rs485_modbus_crc16(const uint8_t *data, size_t length);
 
 #ifdef __cplusplus

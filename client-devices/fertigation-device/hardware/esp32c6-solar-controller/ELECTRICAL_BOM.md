@@ -1,9 +1,10 @@
 # Electrical BOM
 
-Status: released Rev A prototype electrical BOM for the KiCad schematic and
-PCB. Exact MPN, LCSC code, and selection reasoning are recorded in
+Status: development BOM for an unbuilt future PCB. It is not released for
+ordering and is not used by the current FGT hardware. Exact MPN, LCSC code, and
+selection reasoning are recorded in
 [PART_SELECTION.md](PART_SELECTION.md). Optional `5V_ACT` entries remain DNP;
-the released Rev A assembly is 12 V output only.
+the candidate Rev A assembly is 12 V output only.
 This document covers parts mounted on the controller PCB or directly wired as
 part of its electrical assembly. Enclosure, panel connectors, mounting
 hardware, and cable glands are listed separately in
@@ -16,7 +17,9 @@ Revision 1 is designed for JLCPCB mixed-technology assembly:
 - use SMT parts for logic, RS485, gate drivers, protection, and passive parts;
 - place SMT parts on the top side where practical;
 - use THT only for high-current pluggable terminals, replaceable fuse holders,
-  the XIAO sockets, and parts whose thermal/service requirements justify it;
+  and parts whose thermal/service requirements justify it;
+- exclude the XIAO module from the JLCPCB CPL and install it separately on its
+  official 24-pad SMD land pattern using paste and reflow/hot air;
 - allow JLCPCB wave/manual assembly for selected THT catalog parts;
 - verify every manufacturer part number and JLCPCB/LCSC part number again
   immediately before ordering because stock and assembly classification change;
@@ -30,64 +33,65 @@ The release package includes JLCPCB-formatted BOM and CPL CSV files plus a
 separate post-assembly BOM. The human-readable tables below explain the
 engineering intent; `exports/assembly/procurement-bom.csv` is the order list.
 
-Point-to-point prototype procurement:
+Major-part specification and procurement index:
 [ELECTRICAL_PROCUREMENT.csv](ELECTRICAL_PROCUREMENT.csv).
 PCB assembly procurement:
 [`exports/assembly/procurement-bom.csv`](exports/assembly/procurement-bom.csv).
 
-## Minimum point-to-point wiring
+## Rev A PCB connection topology
 
 ```text
-POWER IN 3 pin
-  pin 1 +12 V ───────────────────────────────────────── +12 V bus
-  pin 2 GND  ────────────────────────────────────────── GND bus
-  pin 3 NC
+J1 POWER IN
+  pin 1 charger LOAD+ -> F1 20 A -> LM74610/Q1 reverse protection -> 12V_ACT
+  pin 2 charger LOAD-/GND ------------------------------------------> GND
 
-+12 V bus ──┬── DCDC IN+
-            ├── LOAD 1+ ... LOAD 5+
-            ├── TTL-RS485 VCC
-            └── RS485 connector pin 1 (+12 V), all ports
+12V_ACT ---+--> AP63205 5 V buck -> F2 PPTC -> 5V_LOGIC
+           +--> F3 PPTC -> 12V_FIELD
+           +--> F10..F14 -> J10..J14 pin 1 (fixed +12 V)
 
-GND bus  ───┬── DCDC IN-
-            ├── MOSFET Source 1 ... 5
-            ├── TTL-RS485 GND
-            └── RS485 connector pin 3 (GND), all ports
+5V_LOGIC -> XIAO 5V, SN74AHCT08, TC4427A
+XIAO 3V3 -> THVD1410, TLV7031, SN74HC14 and low-current pull-ups
 
-DCDC OUT+ 5 V ───────────────────────────────────── XIAO 5V
-DCDC OUT- GND ───────────────────────────────────── XIAO GND
+J2..J4 RS485 (one common parallel bus)
+  pin 1 12V_FIELD
+  pin 2 GND
+  pin 3 RS485_A
+  pin 4 RS485_B
 
 Per MOSFET output:
-  XIAO GPIO ── 100 ohm ── Gate
-                             |
-                           47 kohm
-                             |
+  XIAO GPIO ──┬── safety AND ── TC4427A ── 22 ohm ── Gate
+              |
+            47 kohm
+              |
   GND ───────────────────── Source
-  LOAD- ─────────────────── Drain
+  J10..J14 pin 2 ────────── Drain / switched return
 
-  1N4001: K=LOAD+ / A=Drain
+  STPS30SM60S: cathode=+12 V / anode=Drain
 
 RS485:
-  XIAO TX ────────── TTL-RS485 RXD
-  XIAO RX ────────── TTL-RS485 TXD
-  TTL-RS485 A ────── RS485 connector pin 2, short internal parallel wiring
-  TTL-RS485 B ────── RS485 connector pin 4, short internal parallel wiring
+  XIAO TX ────────── THVD1410 D
+  XIAO RX ────────── THVD1410 R
+  XIAO DIR ───────── THVD1410 DE + /RE
+  THVD1410 A ─────── 10 ohm ── RS485 connector pin 3
+  THVD1410 B ─────── 10 ohm ── RS485 connector pin 4
 ```
 
 ## 1. Controller
 
 | Designator/group | Qty | Part or requirement | Mounting | Status |
 |---|---:|---|---|---|
-| `U1` | 1 | Seeed Studio XIAO ESP32-C6 | Socketed module | Selected |
-| `J_U1A`, `J_U1B` | 2 | 1x7, 2.54 mm female socket header | THT | Selected format |
-| `U2` | 1 | Microchip `MCP23017T-E/SO`, LCSC `C629440`, 16-bit I/O expander | SOIC-28, SMT | Selected |
-| `R_I2C1`, `R_I2C2` | 2 | 4.7 kohm I2C pull-up | 0603 or 0805, SMT | Initial value |
-| `C_U2` | 1 | 100 nF X7R MCP23017 decoupling | 0603 or 0805, SMT | Selected value |
-| `C_3V3_BULK` | 1 | 10 uF 3.3 V rail bulk capacitor | 0805/1206, SMT | Initial value |
-| `R_INT` | 1 | MCP23017 interrupt pull-up, 10 kohm | 0603, SMT | Selected initial value |
-| `TP_*` | 12+ | SMD test pads plus selected loop test points | SMT/THT mixed | Selected format |
+| `U1` | 1 | Seeed Studio XIAO ESP32-C6 | Official 24-pad SMD land pattern, hand reflow/hot air | Selected |
+| `R8` | 1 | Master-enable default-OFF pull-down, 47 kohm | 0603, SMT | Selected |
+| `R40..R44` | 5 | Direct output-command default-OFF pull-down, 47 kohm | 0603, SMT | Selected |
 
 The XIAO USB-C connector, BOOT button, RESET button, and antenna end remain
-accessible after assembly.
+accessible after assembly. The module is mounted without socket headers.
+
+The 11 side GPIO and four underside JTAG/GPIO pads provide the complete
+battery ADC, flow, RS485, four contact inputs, master enable, and five output
+commands. `GPIO4` and `GPIO5` are reset strap pins and are used only as
+47 kohm pull-down output commands so they remain LOW/OFF while reset is
+sampled.
 
 ## 2. Generic RS485 field terminals
 
@@ -100,7 +104,6 @@ replaced by a board-mounted 3.3 V transceiver.
 |---|---:|---|---|---|
 | `U3` | 1 | TI `THVD1410DR`, LCSC `C2671345`, 3.3 V, 500 kbps half-duplex RS485 transceiver | SOIC-8, SMT | Selected |
 | `C_U3` | 1 | 100 nF X7R local decoupling | 0603 or 0805, SMT | Selected value |
-| `R_TX`, `R_RX` | 2 | UART series resistor footprints | 0603, SMT | 0 ohm initial |
 | `R_DE_PD` | 1 | `DE`/`/RE` direction-control pull-down | 0603, SMT | 47 kohm initial |
 | `J2` | 1 | `RS485 PORT 1`: Phoenix `1757268`; plug `1757035`; `12V_FIELD`, `GND`, `A`, `B` | 4-pin pluggable THT terminal | Selected |
 | `J3` | 1 | `RS485 PORT 2`: Phoenix `1757268`; plug `1757035`; same pin order | 4-pin pluggable THT terminal | Selected |
@@ -108,14 +111,16 @@ replaced by a board-mounted 3.3 V transceiver.
 | `R_TERM` | 1 | 120 ohm, 1% RS485 termination | 0805 or 1206, SMT | Selected value |
 | `JP_TERM` | 1 | Termination enable header and shunt | 1x2, 2.54 mm THT | Selected |
 | `R_BIAS_A`, `R_BIAS_B` | 2 | 680 ohm, 1% RS485 fail-safe bias resistor footprints | 0805, SMT | DNP initial |
-| `R_AB1`, `R_AB2` | 2 | 10 ohm pulse-proof series resistors | 0603, SMT | TI surge-protection starting point |
+| `R10`, `R11` | 2 | 10 ohm, 1% A/B series damping resistors | 0603, SMT | Selected; bus waveform to validate |
 | `D_RS485` | 1 | Bourns `CDSOT23-SM712`, LCSC `C404012`, bidirectional RS485 TVS | SOT-23, SMT | Selected |
 | `F_FIELD` | 1 | Bourns `MF-MSMF075/24-2`, LCSC `C208467`, 0.75 A hold / 1.5 A trip | 1812, SMT | Shared protection for `12V_FIELD`; not software switched |
 | `C_RS485_BULK` | 1 | Nichicon `UHE1E470MDD`, LCSC `C134230`, 47 uF 25 V | THT D5 x 11 | Selected |
 
 Connect XIAO `D6/TX` to `D`, `D7/RX` to `R`, and tie `DE` and active-low
 `/RE` to `D8`. The external pull-down makes reset default to receive mode with
-the driver disabled. XIAO `D1` and `D9` are unassigned in revision 1.
+the driver disabled. XIAO `D1`, `D4`, `D5`, underside `MTDI`, and underside
+`MTMS` directly command outputs 1 through 5. `D9` and `D10` read tank empty
+and tank full.
 
 Revision 1 is non-isolated RS485 and carries a common `GND` with `A` and `B`.
 Cable length, grounding, and surge environment must be reviewed before release.
@@ -131,7 +136,7 @@ power from its protected `LOAD` output.
 | Designator/group | Qty | Part or requirement | Mounting | Status |
 |---|---:|---|---|---|
 | `J1` | 1 | Phoenix `PC 5/2-G-7,62` (`1720466`), plug `1718481`, 32 A nominal | THT/wave assembly | Selected; custom 6-solder-pin footprint |
-| `F_IN` | 1 | Littelfuse `178.6165.0001` PCB ATO holder + `0257020.PXPV` 20 A fuse | THT/manual | Selected initial value; final coordination from inrush and wire protection |
+| `F_IN` | 1 | Littelfuse `178.6165.0001` PCB ATO holder + `0287020.H` 20 A ATOF fuse | THT/manual | Selected initial value; final coordination from inrush and wire protection |
 | `Q_RPOL` | 1 | TI `CSD18540Q5B`, LCSC `C86513`, 60 V N-MOSFET | DNK 5 x 6 mm power SMT | Selected; thermal land pattern review required |
 | `U_RPOL` | 1 | TI `LM74610QDGKRQ1`, LCSC `C2649431`, ideal-diode/reverse-polarity controller | DGK VSSOP-8, 3 x 5 mm, SMT | Selected; manufacturer land pattern implemented |
 | `C_RPOL` | 1 | Samsung `CL21B225KOFNNNE`, LCSC `C28234`, 2.2 uF 16 V X7R charge-pump capacitor | 0805, SMT | Selected |
@@ -152,8 +157,8 @@ power from its protected `LOAD` output.
 | `D_BAT_CLAMP` | 1 | Nexperia `BAT54S,215`, LCSC `C47546`, dual Schottky ADC clamp | SOT-23, SMT | Selected |
 | `LED_12V`, `LED_5V` | 0 or 2 | Rail indicators with resistors | SMT | DNP for low-power build |
 
-`5V_LOGIC` supplies only XIAO ESP32-C6, MCP23017, RS485 logic, and low-current
-control circuits. It must not supply a pump.
+`5V_LOGIC` supplies only XIAO ESP32-C6, RS485 logic, and low-current control
+circuits. It must not supply a pump.
 
 ## 4. Optional future 5 V actuator rail
 
@@ -183,9 +188,11 @@ measurement.
 |---|---:|---|---|---|
 | `Q_OUT1..5` | 5 | TI `CSD18540Q5B`, LCSC `C86513`, 60 V, max. 3.3 mOhm at 4.5 V gate | DNK 5 x 6 mm power SMT | Selected; thermal rating to validate |
 | `U_GATE1..3` | 3 | Microchip `TC4427AEOA`, LCSC `C18690`, dual MOSFET gate driver | SOIC-8, SMT | Selected; one spare channel |
+| `C_GATE_HF1..3` | 3 | Samsung `CL10B104KB8NNNC`, 100 nF 50 V X7R | 0603, SMT | Local high-frequency bypass |
+| `C_GATE_BULK1..3` | 3 | Samsung `CL21B225KOFNNNE`, 2.2 uF 16 V X7R | 0805, SMT | Added local gate-charge reservoir |
 | `R_GATE1..5` | 5 | 22 ohm gate resistor | 0603, SMT | Selected initial value |
 | `R_GS1..5` | 5 | 47 kohm gate-source pull-down | 0603, SMT | Selected |
-| `F_OUT1..5` | 5 | Littelfuse `178.6165.0001` + ATO `0257010.PXPV` 10 A | THT/manual | Selected initial value; lower fuse allowed per load |
+| `F_OUT1..5` | 5 | Littelfuse `178.6165.0001` + ATOF `0287010.H` 10 A | THT/manual | Selected initial value; lower fuse allowed per load |
 | `D_FLY1..5` | 5 | ST `STPS30SM60SG-TR`, LCSC `C2935135`, 60 V / 30 A Schottky | D2PAK power SMT | Selected; alternate `STPS30M60SG-TR` / `C2970011` |
 | `D_TVS1..5` | 5 | Optional output TVS/snubber footprint | SMB power SMT | DNP until cable transient measurement |
 | `LED_OUT1..5` | 0 or 5 | Output indicator and resistor | SMT | DNP for low-power build |
@@ -233,8 +240,9 @@ reset, emergency stop, leak, or watchdog failure.
 |---|---:|---|---|---|
 | `J5` | 1 | Phoenix `1757255`; plug `1757022`; flow supply, pulse, GND | 3-pin pluggable THT terminal | Selected; default 12 V sensor supply |
 | `U_FLOW` | 1 | TI `TLV7031DBVR`, LCSC `C2869832`, comparator front end | SOT-23-5, SMT | Selected for NPN/open-collector or dry contact |
-| `R_FLOW_PULL`, `R_FLOW_SER`, `C_FLOW` | 3 | 10 kohm pull-up, 1 kohm series, 100 nF filter | 0603, SMT | Selected |
+| `R_FLOW_PULL`, `R_FLOW_SER`, `C_FLOW` | 3 | 10 kohm pull-up, 2.2 kohm series, 100 nF filter | 0603, SMT | Series resistance increased after ESD clamp-current review |
 | `R_FLOW_REF1`, `R_FLOW_REF2` | 2 | 47 kohm / 47 kohm, 1.65 V comparator reference | 0603, SMT | Selected |
+| `D_FLOW` | 1 | TI `TPD1E10B06DPYR`, LCSC `C48260`, cable-entry ESD | X1SON-2, SMT | Added adjacent to J5 |
 | `J6` | 1 | Phoenix `1757242`; plug `1757019`; tank-empty contact | 2-pin pluggable THT terminal | Selected |
 | `J7` | 1 | Phoenix `1757242`; plug `1757019`; tank-full contact | 2-pin pluggable THT terminal | Selected |
 | `J8` | 1 | Phoenix `1757242`; plug `1757019`; leak contact/safety loop | 2-pin pluggable THT terminal | Selected connector; NC contact required |
@@ -242,17 +250,19 @@ reset, emergency stop, leak, or watchdog failure.
 | `R_IN_*` | 4 | 10 kohm pull-up | 0603, SMT | Selected initial value |
 | `R_FILTER_*` | 4 | 1 kohm series resistor | 0603, SMT | Selected initial value |
 | `C_FILTER_*` | 4 | 100 nF X7R debounce/noise capacitor | 0603, SMT | Selected initial value |
-| `D_INPUT_*` | 4 | TI `TPD1E10B06DPYR`, LCSC `C48260`, cable-entry ESD | X1SON-2, SMT | Selected; exact land pattern review required |
+| `D_INPUT_*` | 4 | TI `TPD1E10B06DPYR`, LCSC `C48260`, cable-entry ESD | X1SON-2, SMT | Selected; same protection as flow input |
 | `U_MASTER` | 2 | TI `SN74AHCT08DR`, LCSC `C7480`, master-enable and per-output AND gates | SOIC-14, SMT | Selected |
 | `R_MASTER_PD` | 1+ | Master and driver default-OFF pull-downs | 0603 or 0805, SMT | 47-100 kohm |
 
 Emergency stop and leak remove gate-driver permission independently of
-firmware. MCP23017 still reports their state to the device application.
+firmware. XIAO underside `MTCK/GPIO6` and `MTDO/GPIO7` also report their
+filtered state to the device application.
 
-## 7. Commissioning inputs after part selection
+## 7. Inputs required before a future prototype review
 
-The major parts, schematic, and PCB are released for Rev A prototype ordering.
-Provide or measure these values before energizing field loads:
+The major parts, schematic, and PCB remain development material and are not
+approved for ordering. Provide or measure these values before restarting the
+prototype review:
 
 1. Solar-controller exact model and measured minimum/maximum `LOAD` voltage.
 2. Battery chemistry, operating range, maximum charger voltage, BMS current.
@@ -270,7 +280,6 @@ Provide or measure these values before energizing field loads:
 | Category | Quantity |
 |---|---:|
 | XIAO ESP32-C6 | 1 |
-| MCP23017 | 1 |
 | SMT RS485 transceiver | 1 |
 | MOSFET output channels | 5 |
 | Power-SMT MOSFETs | 5 |
