@@ -410,15 +410,34 @@ class AIContentServiceTest(unittest.TestCase):
         self.assertIn("直近1件だけ", self.service._initial_plant_plan_messages(context, [])[1]["content"])
 
     def test_calendar_parses_json_code_fence_from_llm(self):
+        window_start = date.today()
+        window_end = window_start + timedelta(days=9)
         self.service.ai_settings = {
             "text_analyze_api_key": "test",
             "text_analyze_base_url": "https://example.test/v1",
             "text_analyze_model": "test-model",
         }
         self.service._chat_completion = lambda **kwargs: (
-            """```json
-{"actions":[{"action_type":"fertilization","title":"追肥判断","priority":"recommended","window_start":"2026-08-01","window_end":"2026-08-10","timing_label":"8月上旬","reason":"樹勢維持","instructions":"葉色を確認","tags":["追肥"]}]}
-```"""
+            "```json\n"
+            + json.dumps(
+                {
+                    "actions": [
+                        {
+                            "action_type": "fertilization",
+                            "title": "追肥判断",
+                            "priority": "recommended",
+                            "window_start": window_start.isoformat(),
+                            "window_end": window_end.isoformat(),
+                            "timing_label": "今後10日間",
+                            "reason": "樹勢維持",
+                            "instructions": "葉色を確認",
+                            "tags": ["追肥"],
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
+            + "\n```"
         )
 
         result = self.service.generate_plant_calendar(self.context, guidance_examples=[{"changes": {"priority": {"after": "recommended"}}}])

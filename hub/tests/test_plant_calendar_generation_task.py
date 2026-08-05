@@ -27,14 +27,15 @@ class FakeAIService:
         self.contexts.append(context)
         if self.error:
             raise self.error
+        window_start = date.fromisoformat(context["planning"]["start_date"])
         return {
             "growth_targets": {"soil_moisture_percent": {"min": 34, "max": 64}},
             "actions": [
                 {
                     "action_type": "observation",
                     "title": "新梢を確認",
-                    "window_start": context["planning"]["start_date"],
-                    "window_end": "2026-07-31",
+                    "window_start": window_start.isoformat(),
+                    "window_end": (window_start + timedelta(days=7)).isoformat(),
                 }
             ],
             "generation": {"source": "test"},
