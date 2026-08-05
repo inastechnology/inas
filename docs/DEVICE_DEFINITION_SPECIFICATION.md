@@ -82,6 +82,11 @@ Before a reply or push, it projects that stored object through the selected
 Device Definition. Unknown legacy keys remain in the database but are not sent
 to a firmware type that does not declare them.
 
+`runtime-config.schema.json` may declare `fixed_values` for product invariants
+that are not user choices. Fixed dot-path values override stored legacy values
+in every Runtime Config preview, reply, and push. Each fixed path must be below
+a top-level key listed in `send_keys`.
+
 ## UI Rules
 
 - The primary screen uses farmer-facing names and pictures: for example,
@@ -97,6 +102,10 @@ to a firmware type that does not declare them.
   the action button.
 - Advanced settings may expose diagnostic values, but changing them still
   requires an allowed field in the definition.
+- A scheduled actuator product may declare `ui.scheduled_operation`. The hub
+  uses its enable, schedule, program, and required-output paths to distinguish a
+  usable schedule from one that cannot actuate, and warns before saving or
+  pushing a non-actuating configuration.
 
 ## Compatibility And Failure Handling
 

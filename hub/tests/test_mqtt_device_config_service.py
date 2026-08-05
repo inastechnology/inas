@@ -492,7 +492,8 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         )
         self.assertNotIn("moisture_threshold", result["payload"])
         self.assertNotIn("mosfet_switches", result["payload"])
-        self.assertFalse(result["payload"]["fgt"]["enabled"])
+        self.assertFalse(stored_before["fgt"]["enabled"])
+        self.assertTrue(result["payload"]["fgt"]["enabled"])
         self.assertEqual(self.service.get_config(device_id), stored_before)
 
     def test_publish_projects_stored_config_to_soil_sensor_keys(self):

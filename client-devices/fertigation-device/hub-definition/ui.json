@@ -8,12 +8,24 @@
     "schedules",
     "advanced"
   ],
+  "scheduled_operation": {
+    "enabled_path": "fgt.enabled",
+    "schedules_path": "schedules",
+    "program_required_when_path": "fgt.timed_outputs.enabled",
+    "program_outputs_path": "fgt.timed_outputs",
+    "required_output_ids": [
+      "irrigation"
+    ],
+    "label": "予約運転",
+    "enabled_label": "運転中",
+    "incomplete_label": "設定不足",
+    "no_schedule_label": "予約なし",
+    "ready_hint": "有効な予約を設定時刻に実行します",
+    "no_schedule_hint": "有効な予約がありません",
+    "missing_output_warning": "潅水ポンプのON時間と繰り返し回数が0のため、予約時刻に潅水されません。",
+    "settings_anchor": "fertigation-recipe"
+  },
   "configuration_fields": [
-    {
-      "path": "fgt.enabled",
-      "label": "予約運転を有効にする",
-      "type": "boolean"
-    },
     {
       "path": "fgt.timed_outputs.enabled",
       "label": "各ポンプを秒数で動かす",

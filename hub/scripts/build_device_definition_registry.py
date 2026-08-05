@@ -59,6 +59,9 @@ def build_registry():
         send_keys = assembled["runtime_config"].get("send_keys")
         if not isinstance(send_keys, list) or not send_keys or len(send_keys) != len(set(send_keys)):
             raise ValueError(f"runtime_config.send_keys must be a non-empty unique array for {kind}")
+        fixed_values = assembled["runtime_config"].get("fixed_values", {})
+        if not isinstance(fixed_values, dict) or not all(isinstance(path, str) and path and path.split(".", 1)[0] in send_keys for path in fixed_values):
+            raise ValueError(f"runtime_config.fixed_values must use paths below send_keys for {kind}")
         if assembled["status"].get("metrics") != definition["sensor_slots"]:
             raise ValueError(f"status metrics must match device sensor_slots for {kind}")
         definitions[kind] = assembled

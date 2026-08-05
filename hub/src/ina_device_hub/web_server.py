@@ -1065,6 +1065,7 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
     soil_moisture = _first_numeric_value(payload, ("soil_moisture_percent", "last_soil_moisture"))
     threshold = payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")
     output_settings = _build_device_output_settings(device_kind, config, layout_context)
+    scheduled_operation = _build_scheduled_operation_state(definition, config)
     enabled_outputs = [output for output in output_settings["outputs"] if output["enabled"]]
     readiness_checks = [
         {
@@ -1124,7 +1125,8 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "operational_heading": "現在の潅水判断" if device_kind in {"WTR", "WRS"} else "液肥づくりの現在地" if device_kind == "FGT" else "現在の計測・稼働状況",
         "operational_metrics": _build_device_operational_metrics(record, payload, config, now, watering),
         "monitoring_charts": _build_device_monitoring_charts(device_kind, statuses, config),
-        "schedules": _format_schedules_for_ui(config.get("schedules") or [], config),
+        "schedules": _format_schedules_for_ui(config.get("schedules") or [], config, scheduled_operation=scheduled_operation),
+        "scheduled_operation": scheduled_operation,
         "config_summary": _format_config_summary(config),
         "watering_history": _build_watering_history(statuses),
         "wake_history": _build_wake_history(statuses),
@@ -1242,6 +1244,14 @@ def _format_device_connection_event(event, now):
 
 
 def _build_device_output_settings(device_kind, config, layout_context):
+    definition = get_device_definition(device_kind)
+    effective_config = project_runtime_config(device_kind, config)
+    scheduled_operation_spec = definition.get("ui", {}).get("scheduled_operation") or {}
+    program_enabled_path = scheduled_operation_spec.get("program_required_when_path")
+    program_outputs_path = scheduled_operation_spec.get("program_outputs_path")
+    program_enabled = value_at_path(effective_config, program_enabled_path) is True if program_enabled_path else False
+    output_programs = value_at_path(effective_config, program_outputs_path) if program_outputs_path else None
+    output_programs = output_programs if isinstance(output_programs, dict) else {}
     capabilities = device_output_capabilities(device_kind)
     saved_outputs = [item for item in config.get("mosfet_switches") or [] if isinstance(item, dict)] if isinstance(config, dict) else []
     saved_by_id = {str(item.get("switch_id") or ""): item for item in saved_outputs if item.get("switch_id")}
@@ -1262,6 +1272,19 @@ def _build_device_output_settings(device_kind, config, layout_context):
     outputs = []
     for capability in capabilities:
         saved = saved_by_id.get(capability["switch_id"], {})
+        output_program = output_programs.get(capability["switch_id"])
+        output_program = output_program if isinstance(output_program, dict) else None
+        on_sec = output_program.get("on_sec") if output_program else None
+        repeat_count = output_program.get("repeat_count") if output_program else None
+        programmed = (
+            program_enabled
+            and isinstance(on_sec, int)
+            and not isinstance(on_sec, bool)
+            and on_sec > 0
+            and isinstance(repeat_count, int)
+            and not isinstance(repeat_count, bool)
+            and repeat_count > 0
+        )
         current_load = str(saved.get("controlled_load") or "").strip()
         equipment_options = []
         for target in layout_targets:
@@ -1297,7 +1320,9 @@ def _build_device_output_settings(device_kind, config, layout_context):
             {
                 **capability,
                 "name": str(saved.get("name") or capability["default_name"]).strip(),
-                "enabled": saved.get("enabled") is not False,
+                "enabled": programmed if output_program is not None else saved.get("enabled") is not False,
+                "programmed": programmed if output_program is not None else None,
+                "program_summary": f"{on_sec}秒 × {repeat_count}回" if programmed else "動作しません" if output_program is not None else "",
                 "controlled_load": current_load,
                 "equipment_type": equipment_type,
                 "equipment_types": available_types,
@@ -1500,6 +1525,18 @@ def _build_device_operational_metrics(record, payload, config, now, watering):
         return metrics
 
     metrics = _definition_operational_metrics(definition_metrics, payload, config)
+    scheduled_operation = _build_scheduled_operation_state(definition, config)
+    if scheduled_operation:
+        metrics.insert(
+            0,
+            {
+                "label": scheduled_operation["label"],
+                "value": scheduled_operation["value"],
+                "class": scheduled_operation["class"],
+                "hint": scheduled_operation["hint"],
+                "settings_anchor": scheduled_operation["settings_anchor"],
+            },
+        )
     if not metrics:
         detected_metric_specs = (
             ("気温", ("air_temperature_c",), "℃", 1, "air-temperature-chart"),
@@ -1527,7 +1564,7 @@ def _build_device_operational_metrics(record, payload, config, now, watering):
         return metrics
     return [
         {
-            "label": "稼働状態",
+            "label": "Hub登録",
             "value": _device_state_label(record.get("state")),
             "class": _device_state_class(record.get("state")),
             "hint": "機器の登録状態",
@@ -2040,7 +2077,7 @@ def _device_kind_label(device_kind):
 
 def _device_state_label(state):
     return {
-        "active": "稼働中",
+        "active": "利用中",
         "pending": "承認待ち",
         "disabled": "停止中",
         "retired": "廃止済み",
@@ -2076,6 +2113,74 @@ def _ota_state_class(state):
     }.get(state, "muted")
 
 
+def _build_scheduled_operation_state(definition, config):
+    spec = definition.get("ui", {}).get("scheduled_operation") if isinstance(definition, dict) else None
+    if not isinstance(spec, dict) or not spec.get("enabled_path"):
+        return None
+    device_kind = definition.get("device", {}).get("kind")
+    config = project_runtime_config(device_kind, config)
+    fixed_values = definition.get("runtime_config", {}).get("fixed_values") or {}
+
+    schedules = value_at_path(config, spec.get("schedules_path") or "schedules")
+    schedules = schedules if isinstance(schedules, list) else []
+    enabled_schedules = [schedule for schedule in schedules if isinstance(schedule, dict) and schedule.get("enabled") is not False]
+    operation_enabled = value_at_path(config, spec["enabled_path"]) is True
+    program_required_when_path = spec.get("program_required_when_path")
+    program_requirements_apply = value_at_path(config, program_required_when_path) is True if program_required_when_path else True
+    output_programs = value_at_path(config, spec.get("program_outputs_path"))
+    output_programs = output_programs if isinstance(output_programs, dict) else {}
+    missing_output_ids = []
+    for output_id in (spec.get("required_output_ids") or []) if program_requirements_apply else []:
+        output = output_programs.get(output_id)
+        if (
+            not isinstance(output, dict)
+            or not isinstance(output.get("on_sec"), int)
+            or output.get("on_sec", 0) <= 0
+            or not isinstance(output.get("repeat_count"), int)
+            or output.get("repeat_count", 0) <= 0
+        ):
+            missing_output_ids.append(output_id)
+
+    warnings = []
+    if enabled_schedules and not operation_enabled:
+        warnings.append(spec.get("disabled_warning") or "予約運転が停止中のため、予約は実行されません。")
+    if enabled_schedules and missing_output_ids:
+        warnings.append(spec.get("missing_output_warning") or "必要な出力時間が設定されていないため、予約は実行されません。")
+
+    if not enabled_schedules:
+        value = spec.get("no_schedule_label") or "予約なし"
+        css_class = "muted"
+        hint = spec.get("no_schedule_hint") or "有効な予約がありません"
+    elif not operation_enabled:
+        value = spec.get("disabled_label") or "停止中"
+        css_class = "warn"
+        hint = " ".join(warnings)
+    elif missing_output_ids:
+        value = spec.get("incomplete_label") or "設定不足"
+        css_class = "warn"
+        hint = " ".join(warnings)
+    else:
+        value = spec.get("enabled_label") or "運転中"
+        css_class = "good"
+        hint = spec.get("ready_hint") or "有効な予約を設定時刻に実行します"
+
+    return {
+        "label": spec.get("label") or "予約運転",
+        "value": value,
+        "class": css_class,
+        "hint": hint,
+        "warning": " ".join(warnings),
+        "warnings": warnings,
+        "enabled": operation_enabled,
+        "ready": bool(enabled_schedules) and operation_enabled and not missing_output_ids,
+        "active_schedule_count": len(enabled_schedules),
+        "missing_output_ids": missing_output_ids,
+        "enable_control_available": spec["enabled_path"] not in fixed_values,
+        "settings_anchor": spec.get("settings_anchor") or "watering-schedules",
+        "spec": spec,
+    }
+
+
 def _format_config_summary(config):
     if not isinstance(config, dict) or not config:
         return {"threshold": "未設定", "force": "未設定", "debug_log": "未設定", "ota_interval": "未設定", "schedule_count": "0件"}
@@ -2088,7 +2193,7 @@ def _format_config_summary(config):
     }
 
 
-def _format_schedules_for_ui(schedules, config=None):
+def _format_schedules_for_ui(schedules, config=None, *, scheduled_operation=None):
     formatted = []
     for schedule in schedules:
         if not isinstance(schedule, dict):
@@ -2103,6 +2208,24 @@ def _format_schedules_for_ui(schedules, config=None):
                 "time": f"{hour:02d}:{minute:02d}",
                 "duration": _format_duration(duration_sec),
                 "channel": _format_channel_mask_for_config(schedule.get("channel_mask"), config),
+                "state_label": (
+                    "利用しない"
+                    if schedule.get("enabled") is False
+                    else "実行予定"
+                    if scheduled_operation and scheduled_operation["ready"]
+                    else "実行されません"
+                    if scheduled_operation
+                    else ""
+                ),
+                "state_class": (
+                    "muted"
+                    if schedule.get("enabled") is False
+                    else "good"
+                    if scheduled_operation and scheduled_operation["ready"]
+                    else "warn"
+                    if scheduled_operation
+                    else ""
+                ),
             }
         )
     return formatted
@@ -3604,7 +3727,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   <div class="device-sub">{{ device.kind_label }} / {{ device.location }}</div>
                 </div>
                 <div>
-                  <span class="badge {{ device.state_class }}">{{ device.state_label }}</span>
+                  <span class="badge {{ device.state_class }}">Hub登録：{{ device.state_label }}</span>
                 </div>
                 <div class="tile-metrics">
                   {% for metric in device.operational_metrics %}<div class="mini"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>{% endfor %}
@@ -3649,7 +3772,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 {% if selected.memo %}<p>{{ selected.memo }}</p>{% endif %}
                 <details class="advanced-info identity-details"><summary>機器番号を確認（上級者向け）</summary><div class="detail-body"><code>{{ selected.id }}</code><p class="muted">問い合わせや機器交換のときに使用する識別番号です。</p></div></details>
               </div>
-              <span class="badge {{ selected.state_class }}">{{ selected.state_label }}</span>
+              <span class="badge {{ selected.state_class }}">Hub登録：{{ selected.state_label }}</span>
             </div><img src="/static/ui-illustrations/device-family.png" alt="農業用センサーと制御機器のイラスト"></div>
             <div class="priority-heading"><h3>{{ selected.operational_heading }}</h3><span class="muted">運用判断に必要な情報</span></div>
             <div class="metrics">
@@ -3721,12 +3844,14 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 {% if selected.supports_irrigation or selected.supports_fertigation %}
                 <section class="panel">
                   <h2>{{ '液肥づくりの予約' if selected.supports_fertigation else '灌水予約' }}</h2>
+                  {% if selected.scheduled_operation and selected.scheduled_operation.warning %}<p class="notice warn"><strong>{{ selected.scheduled_operation.value }}</strong><br>{{ selected.scheduled_operation.warning }}</p>{% endif %}
                   {% if selected.schedules %}
                   <div class="schedule-grid">
                     {% for schedule in selected.schedules %}
                     <div class="schedule">
                       <strong>{{ schedule.time }}</strong>
                       <div class="line-sub">{{ schedule.duration }} / {{ schedule.channel }}</div>
+                      {% if schedule.state_label %}<span class="badge {{ schedule.state_class }}">{{ schedule.state_label }}</span>{% endif %}
                     </div>
                     {% endfor %}
                   </div>
@@ -3791,9 +3916,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               {% if selected.supports_fertigation %}
               <section id="fertigation-recipe" class="setup-stage">
                 <div class="setup-stage-head"><div class="context-help-row"><h3>ポンプの時間設定</h3><details class="context-help left"><summary aria-label="時間指定運転の説明を開く" title="時間指定運転">?</summary><div class="context-help-panel" role="note"><strong>時間指定運転</strong><p>各出力を0〜1800秒で設定できます。ON時間と繰り返し回数を0にすると、その出力は動きません。</p></div></details></div><span class="badge good">秒数指定</span></div>
+                <p id="scheduled-operation-inline-warning" class="notice warn"{% if not selected.scheduled_operation.warning %} hidden{% endif %}>{{ selected.scheduled_operation.warning }}</p>
                 <div class="switch-flow-board fertigation-flow" aria-label="時間指定できるFGT出力">
                   <div class="controller-node">原水</div>
-                  <div class="switch-output-list">{% for output in selected.output_settings.outputs %}<div class="switch-output enabled"><span class="switch-output-dot"></span><span class="switch-output-icon" aria-hidden="true">{{ ['🚰','🅰️','🅱️','🌀','🌱'][loop.index0] }}</span><div><strong>{{ output.name }}</strong><small>{{ output.role_label }}</small></div><span class="terminal">出力 {{ output.number }}</span></div>{% endfor %}</div>
+                  <div class="switch-output-list">{% for output in selected.output_settings.outputs %}<div class="switch-output {{ 'enabled' if output.enabled else 'disabled' }}"><span class="switch-output-dot"></span><span class="switch-output-icon" aria-hidden="true">{{ ['🚰','🅰️','🅱️','🌀','🌱'][loop.index0] }}</span><div><strong>{{ output.name }}</strong><small>{{ output.role_label }}{% if output.program_summary %} / {{ output.program_summary }}{% endif %}</small></div><span class="terminal">出力 {{ output.number }}</span></div>{% endfor %}</div>
                 </div>
                 <div class="config-toolbar definition-config-fields">
                   {% for field in selected.definition.ui.configuration_fields %}
@@ -4001,10 +4127,20 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <div class="actions setup-save-bar">
                 <span class="muted" data-stateful-reason></span>
                 <button type="submit" data-stateful-submit>下書きを保存</button>
-                <button type="button" id="save-push-runtime-config" class="primary" data-requires-dirty{% if selected_device.state != 'active' %} data-state-blocked="true" disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>組み立てた設定を機器へ送る</button>
-                <button type="button" id="push-runtime-config"{% if selected_device.state != 'active' %} disabled aria-describedby="device-push-disabled" title="稼働中の機器にだけ送信できます"{% endif %}>保存済み設定をもう一度反映</button>
+                <button type="button" id="save-push-runtime-config" class="primary" data-requires-dirty{% if selected_device.state != 'active' %} data-state-blocked="true" disabled aria-describedby="device-push-disabled" title="利用中の機器にだけ送信できます"{% endif %}>組み立てた設定を機器へ送る</button>
+                <button type="button" id="push-runtime-config"{% if selected_device.state != 'active' %} disabled aria-describedby="device-push-disabled" title="利用中の機器にだけ送信できます"{% endif %}>保存済み設定をもう一度反映</button>
               </div>
-              {% if selected_device.state == 'retired' %}<p class="empty" id="device-push-disabled">廃止済みのため、動作設定は閲覧のみです。</p>{% elif selected_device.state != 'active' %}<p class="empty" id="device-push-disabled">現在は{{ selected.state_label }}です。設定は保存できますが、機器への送信は稼働状態へ変更してから行ってください。</p>{% endif %}
+              {% if selected.scheduled_operation %}
+              <dialog id="scheduled-operation-warning-dialog" class="config-dialog" aria-labelledby="scheduled-operation-warning-title">
+                <div class="dialog-head"><div><h3 id="scheduled-operation-warning-title">この設定では予約時刻に潅水されません</h3><p class="lead">機器へ送る前に、潅水ポンプの設定を確認してください。</p></div><button type="button" data-cancel-scheduled-operation-warning aria-label="警告を閉じる">× <span>閉じる</span></button></div>
+                <div class="dialog-body">
+                  <ul id="scheduled-operation-warning-list"></ul>
+                  {% if selected.scheduled_operation.enable_control_available %}<label class="switch-row" id="scheduled-operation-enable-row"><input id="scheduled-operation-enable-before-save" type="checkbox">{{ selected.scheduled_operation.spec.enable_checkbox_label }}</label>{% endif %}
+                </div>
+                <div class="dialog-actions"><button type="button" data-cancel-scheduled-operation-warning>設定に戻る</button><button type="button" id="scheduled-operation-warning-continue" class="primary">確認して続ける</button></div>
+              </dialog>
+              {% endif %}
+              {% if selected_device.state == 'retired' %}<p class="empty" id="device-push-disabled">廃止済みのため、動作設定は閲覧のみです。</p>{% elif selected_device.state != 'active' %}<p class="empty" id="device-push-disabled">現在は{{ selected.state_label }}です。設定は保存できますが、機器への送信は「利用中」へ変更してから行ってください。</p>{% endif %}
             </form>
           </section>
             </section>
@@ -4217,7 +4353,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 <div class="actions">
                   <button type="button" id="apply-runtime-json">JSON をフォームに反映</button>
                   <button type="button" id="save-runtime-json">JSON で保存</button>
-                  <button type="button" id="save-push-runtime-json" class="primary"{% if selected_device.state != 'active' %} disabled title="稼働中の機器にだけ送信できます"{% endif %}>JSONで保存して機器へ反映</button>
+                  <button type="button" id="save-push-runtime-json" class="primary"{% if selected_device.state != 'active' %} disabled title="利用中の機器にだけ送信できます"{% endif %}>JSONで保存して機器へ反映</button>
                 </div>
               </div>
             </details>
@@ -4294,6 +4430,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const initialRuntimeConfig = {{ (selected_device.config if selected_device else {}) | tojson }};
           const deviceDefinition = {{ (admin_view.selected.definition if admin_view.selected else {}) | tojson }};
           const deviceRuntimeSendKeys = (((deviceDefinition || {}).runtime_config || {}).send_keys || []);
+          const runtimeConfigFixedValues = (((deviceDefinition || {}).runtime_config || {}).fixed_values || {});
+          const scheduledOperationDefinition = (((deviceDefinition || {}).ui || {}).scheduled_operation || null);
           const supportsWateringPattern = deviceRuntimeSendKeys.includes("watering_pattern");
           const isFertigationDevice = ((deviceDefinition || {}).device || {}).kind === "FGT";
           const deviceOutputCapabilities = {{ (admin_view.selected.output_settings.outputs if admin_view.selected else []) | tojson }};
@@ -5262,7 +5400,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           }
 
           function renderRuntimeConfigForm(config) {
-            config = config || {};
+            config = applyRuntimeConfigFixedValues(config || {});
             const threshold = Number.isInteger(config.moisture_threshold) ? config.moisture_threshold : 35;
             const thresholdRange = document.getElementById("moisture-threshold");
             const thresholdNumber = document.getElementById("moisture-threshold-number");
@@ -5491,7 +5629,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             Object.keys(initialRuntimeConfig || {}).forEach((key) => {
               if (!(key in config)) config[key] = structuredClone(initialRuntimeConfig[key]);
             });
-            return config;
+            return applyRuntimeConfigFixedValues(config);
           }
 
           function getNestedValue(value, path) {
@@ -5508,9 +5646,87 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (keys.length) current[keys[keys.length - 1]] = nextValue;
           }
 
+          function applyRuntimeConfigFixedValues(config) {
+            const result = structuredClone(config || {});
+            Object.entries(runtimeConfigFixedValues).forEach(([path, value]) => setNestedValue(result, path, structuredClone(value)));
+            return result;
+          }
+
           function projectRuntimeConfig(config) {
-            if (!deviceRuntimeSendKeys.length) return structuredClone(config || {});
-            return Object.fromEntries(deviceRuntimeSendKeys.filter((key) => key in (config || {})).map((key) => [key, structuredClone(config[key])]));
+            const effectiveConfig = applyRuntimeConfigFixedValues(config);
+            if (!deviceRuntimeSendKeys.length) return effectiveConfig;
+            return Object.fromEntries(deviceRuntimeSendKeys.filter((key) => key in effectiveConfig).map((key) => [key, structuredClone(effectiveConfig[key])]));
+          }
+
+          function scheduledOperationWarnings(config) {
+            const spec = scheduledOperationDefinition;
+            if (!spec) return [];
+            const effectiveConfig = applyRuntimeConfigFixedValues(config);
+            const schedules = getNestedValue(effectiveConfig, spec.schedules_path || "schedules");
+            const enabledSchedules = Array.isArray(schedules) ? schedules.filter((schedule) => schedule && schedule.enabled !== false) : [];
+            if (!enabledSchedules.length) return [];
+            const warnings = [];
+            if (getNestedValue(effectiveConfig, spec.enabled_path) !== true) {
+              warnings.push(spec.disabled_warning || "予約運転が停止中のため、予約は実行されません。");
+            }
+            const programs = getNestedValue(effectiveConfig, spec.program_outputs_path) || {};
+            const programRequirementsApply = spec.program_required_when_path ? getNestedValue(effectiveConfig, spec.program_required_when_path) === true : true;
+            const missingOutput = programRequirementsApply && (spec.required_output_ids || []).some((outputId) => {
+              const output = programs[outputId] || {};
+              return Number(output.on_sec || 0) <= 0 || Number(output.repeat_count || 0) <= 0;
+            });
+            if (missingOutput) warnings.push(spec.missing_output_warning || "必要な出力時間が設定されていないため、予約は実行されません。");
+            return warnings;
+          }
+
+          function refreshScheduledOperationWarning(config) {
+            const warning = document.getElementById("scheduled-operation-inline-warning");
+            if (!warning) return;
+            const warnings = scheduledOperationWarnings(config);
+            warning.textContent = warnings.join(" ");
+            warning.hidden = warnings.length === 0;
+          }
+
+          function confirmScheduledOperationWarnings(config, push) {
+            const warnings = scheduledOperationWarnings(config);
+            const dialog = document.getElementById("scheduled-operation-warning-dialog");
+            if (!warnings.length || !dialog) return Promise.resolve(applyRuntimeConfigFixedValues(config));
+            const list = document.getElementById("scheduled-operation-warning-list");
+            if (list) {
+              list.replaceChildren(...warnings.map((warning) => {
+                const item = document.createElement("li");
+                item.textContent = warning;
+                return item;
+              }));
+            }
+            const enableCheckbox = document.getElementById("scheduled-operation-enable-before-save");
+            if (enableCheckbox) enableCheckbox.checked = getNestedValue(config, scheduledOperationDefinition.enabled_path) === true;
+            const continueButton = document.getElementById("scheduled-operation-warning-continue");
+            if (continueButton) continueButton.textContent = push ? "警告を確認して機器へ送る" : "警告を確認して下書きを保存";
+            openDialog(dialog);
+            return new Promise((resolve) => {
+              let settled = false;
+              const finish = (nextConfig) => {
+                if (settled) return;
+                settled = true;
+                closeDialog(dialog);
+                resolve(nextConfig);
+              };
+              document.querySelectorAll("[data-cancel-scheduled-operation-warning]").forEach((button) => {
+                button.onclick = () => finish(null);
+              });
+              dialog.oncancel = (event) => {
+                event.preventDefault();
+                finish(null);
+              };
+              if (continueButton) {
+                continueButton.onclick = () => {
+                  const nextConfig = structuredClone(config);
+                  if (enableCheckbox?.checked) setNestedValue(nextConfig, scheduledOperationDefinition.enabled_path, true);
+                  finish(applyRuntimeConfigFixedValues(nextConfig));
+                };
+              }
+            });
           }
 
           function setEnvMetricCalibration(metric, prefix, envCalibration) {
@@ -5550,6 +5766,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (debugLogDisplay) debugLogDisplay.textContent = config.debug_log_on_wake ? "はい" : "いいえ";
             const otaIntervalDisplay = document.getElementById("ota-interval-display");
             if (otaIntervalDisplay) otaIntervalDisplay.textContent = formatDurationSeconds(config.ota_check_interval_sec);
+            refreshScheduledOperationWarning(config);
           }
 
           async function saveRuntimeConfig(push, source) {
@@ -5557,7 +5774,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             if (source === "json") {
               const textarea = document.getElementById("runtime-config-json");
               try {
-                config = { ...structuredClone(initialRuntimeConfig), ...JSON.parse(textarea.value) };
+                config = applyRuntimeConfigFixedValues({ ...structuredClone(initialRuntimeConfig), ...JSON.parse(textarea.value) });
               } catch (error) {
                 showResult("水やり設定 JSON が正しくありません", false);
                 return;
@@ -5570,6 +5787,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 return;
               }
             }
+            config = await confirmScheduledOperationWarnings(config, push);
+            if (!config) return;
             renderRuntimeConfigForm(config);
             const textarea = document.getElementById("runtime-config-json");
             if (textarea) textarea.value = JSON.stringify(projectRuntimeConfig(config), null, 2);

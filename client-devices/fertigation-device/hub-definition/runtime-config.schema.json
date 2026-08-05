@@ -8,5 +8,8 @@
     "ota_check_interval_sec",
     "fgt",
     "schedules"
-  ]
+  ],
+  "fixed_values": {
+    "fgt.enabled": true
+  }
 }

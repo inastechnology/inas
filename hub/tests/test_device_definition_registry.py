@@ -23,7 +23,7 @@ from ina_device_hub.device_definition_registry import (
     list_device_definitions,
     project_runtime_config,
 )
-from ina_device_hub.web_server import _build_device_operational_metrics, _build_device_output_settings
+from ina_device_hub.web_server import _build_device_operational_metrics, _build_device_output_settings, _build_scheduled_operation_state
 
 
 class DeviceDefinitionRegistryTest(unittest.TestCase):
@@ -78,11 +78,66 @@ class DeviceDefinitionRegistryTest(unittest.TestCase):
         definition = get_device_definition("FGT")
         fields = {field["path"]: field for field in definition["ui"]["configuration_fields"]}
 
+        self.assertNotIn("fgt.enabled", fields)
         self.assertNotIn("fgt.recipe.nutrient_a_ml", fields)
         self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["unit"], "秒")
         self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["min"], 0)
         self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["max"], 1800)
         self.assertEqual(fields["sleep_sec"]["max"], 86400)
+
+    def test_fgt_runtime_projection_always_enables_scheduled_operation(self):
+        stored = {
+            "fgt": {"enabled": False, "timed_outputs": {"enabled": True}},
+            "schedules": [{"enabled": True, "hour": 6, "minute": 30}],
+        }
+
+        payload = project_runtime_config("FGT", stored)
+
+        self.assertIs(payload["fgt"]["enabled"], True)
+        self.assertIs(stored["fgt"]["enabled"], False)
+
+    def test_fgt_scheduled_operation_warns_when_irrigation_output_is_zero(self):
+        definition = get_device_definition("FGT")
+        config = {
+            "fgt": {
+                "enabled": False,
+                "timed_outputs": {
+                    "enabled": True,
+                    "irrigation": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+                },
+            },
+            "schedules": [{"enabled": True, "hour": 6, "minute": 30}],
+        }
+
+        state = _build_scheduled_operation_state(definition, config)
+
+        self.assertTrue(state["enabled"])
+        self.assertFalse(state["ready"])
+        self.assertEqual(state["value"], "設定不足")
+        self.assertIn("irrigation", state["missing_output_ids"])
+        self.assertIn("予約時刻に潅水されません", state["warning"])
+        self.assertFalse(state["enable_control_available"])
+
+    def test_fgt_output_cards_distinguish_programmed_and_zero_second_outputs(self):
+        config = {
+            "fgt": {
+                "timed_outputs": {
+                    "enabled": True,
+                    "water_inlet": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+                    "nutrient_a": {"on_sec": 120, "off_sec": 0, "repeat_count": 1},
+                    "nutrient_b": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+                    "mixer": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+                    "irrigation": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+                }
+            }
+        }
+
+        outputs = {output["switch_id"]: output for output in _build_device_output_settings("FGT", config, {"assignments": []})["outputs"]}
+
+        self.assertTrue(outputs["nutrient_a"]["enabled"])
+        self.assertEqual(outputs["nutrient_a"]["program_summary"], "120秒 × 1回")
+        self.assertFalse(outputs["irrigation"]["enabled"])
+        self.assertEqual(outputs["irrigation"]["program_summary"], "動作しません")
 
     def test_supported_but_missing_metrics_remain_visible(self):
         config = {"env_sensors": {"soil": {"enabled": False}, "par": {"enabled": True}}}

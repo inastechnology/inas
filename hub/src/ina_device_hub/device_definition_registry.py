@@ -51,9 +51,10 @@ def project_runtime_config(device_kind, stored_config):
         return {}
     definition = get_device_definition(device_kind)
     send_keys = definition.get("runtime_config", {}).get("send_keys") or []
-    if not send_keys:
-        return copy.deepcopy(stored_config)
-    return {key: copy.deepcopy(stored_config[key]) for key in send_keys if key in stored_config}
+    projected = copy.deepcopy(stored_config) if not send_keys else {key: copy.deepcopy(stored_config[key]) for key in send_keys if key in stored_config}
+    for path, fixed_value in (definition.get("runtime_config", {}).get("fixed_values") or {}).items():
+        _set_value_at_path(projected, path, copy.deepcopy(fixed_value))
+    return projected
 
 
 def value_at_path(value, path):
@@ -63,3 +64,16 @@ def value_at_path(value, path):
             return None
         current = current[token]
     return current
+
+
+def _set_value_at_path(value, path, next_value):
+    tokens = [token for token in str(path or "").split(".") if token]
+    current = value
+    for token in tokens[:-1]:
+        child = current.get(token)
+        if not isinstance(child, dict):
+            child = {}
+            current[token] = child
+        current = child
+    if tokens:
+        current[tokens[-1]] = next_value

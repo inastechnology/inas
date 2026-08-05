@@ -297,7 +297,7 @@ class DeviceConfigService:
             return False, None
         cached = config_reader(record["device_id"])
         if isinstance(cached, dict):
-            return True, cached
+            return True, project_runtime_config(record.get("device_kind"), cached)
         return True, project_runtime_config(record.get("device_kind"), self.default_config())
 
     def publish_config(self, device_id: str, action: str, config: dict | None = None, retain: bool = False, record_event: bool = True):
