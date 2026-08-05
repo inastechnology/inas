@@ -40,11 +40,28 @@ bool rs485_device_config_valid(const Rs485DeviceConfig &device)
     switch (device.type)
     {
     case Rs485DeviceType::soil:
-        return device.register_count == 7;
+        return device.register_count == kSoilRegisterCount;
     case Rs485DeviceType::par:
         return device.register_count == 1;
     }
     return false;
+}
+
+bool rs485_registry_normalize_legacy_soil_register_counts(
+    Rs485DeviceRegistry &registry)
+{
+    bool changed = false;
+    for (size_t i = 0; i < registry.count; ++i)
+    {
+        Rs485DeviceConfig &device = registry.devices[i];
+        if (device.type == Rs485DeviceType::soil &&
+            device.register_count == kLegacySoilRegisterCount)
+        {
+            device.register_count = kSoilRegisterCount;
+            changed = true;
+        }
+    }
+    return changed;
 }
 
 bool rs485_registry_valid(const Rs485DeviceRegistry &registry)

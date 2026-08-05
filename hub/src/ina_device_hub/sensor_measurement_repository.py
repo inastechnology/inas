@@ -56,7 +56,7 @@ SENSOR_MEASUREMENT_DEFINITIONS = [
         "display_name": "土壌pH",
         "unit": "pH",
         "category": "soil",
-        "device_kinds": ["ENV", "WTR", "WRS", "FGT"],
+        "device_kinds": ["ENV", "WTR", "WRS"],
         "value_type": "float",
         "description": "土壌酸度。",
     },
@@ -65,7 +65,7 @@ SENSOR_MEASUREMENT_DEFINITIONS = [
         "display_name": "窒素",
         "unit": "mg/kg",
         "category": "soil",
-        "device_kinds": ["ENV", "WTR", "WRS", "FGT"],
+        "device_kinds": ["ENV", "WTR", "WRS"],
         "value_type": "float",
         "description": "土壌中の窒素量。",
     },
@@ -74,7 +74,7 @@ SENSOR_MEASUREMENT_DEFINITIONS = [
         "display_name": "リン",
         "unit": "mg/kg",
         "category": "soil",
-        "device_kinds": ["ENV", "WTR", "WRS", "FGT"],
+        "device_kinds": ["ENV", "WTR", "WRS"],
         "value_type": "float",
         "description": "土壌中のリン量。",
     },
@@ -83,7 +83,7 @@ SENSOR_MEASUREMENT_DEFINITIONS = [
         "display_name": "カリウム",
         "unit": "mg/kg",
         "category": "soil",
-        "device_kinds": ["ENV", "WTR", "WRS", "FGT"],
+        "device_kinds": ["ENV", "WTR", "WRS"],
         "value_type": "float",
         "description": "土壌中のカリウム量。",
     },
@@ -108,6 +108,7 @@ SENSOR_MEASUREMENT_DEFINITIONS = [
 ]
 
 _DEFINITION_BY_METRIC = {definition["metric"]: definition for definition in SENSOR_MEASUREMENT_DEFINITIONS}
+_KNOWN_DEVICE_KINDS = {kind for definition in SENSOR_MEASUREMENT_DEFINITIONS for kind in definition["device_kinds"]}
 
 _STATUS_METRICS = {
     "air_temperature_c": {"ok_keys": (), "raw_key": "raw_air_temperature"},
@@ -145,11 +146,13 @@ class SensorMeasurementRepository:
 
     def latest_for_device(self, device_id: str, limit: int = 100):
         rows = self.db_connector.fetch_latest_sensor_measurements(device_id, limit=limit)
-        return [_measurement_row_to_dict(row) for row in rows]
+        measurements = [_measurement_row_to_dict(row) for row in rows]
+        return [item for item in measurements if metric_supported_for_device_kind(item.get("metric"), item.get("device_kind"))]
 
     def between_for_devices(self, device_ids: list[str], start_at: str, end_at: str, limit: int = 5000):
         rows = self.db_connector.fetch_sensor_measurements_for_devices(device_ids, start_at, end_at, limit=limit)
-        return [_measurement_row_to_dict(row) for row in rows]
+        measurements = [_measurement_row_to_dict(row) for row in rows]
+        return [item for item in measurements if metric_supported_for_device_kind(item.get("metric"), item.get("device_kind"))]
 
 
 def extract_measurements_from_status(device_id: str, status: dict, measured_at: str):
@@ -159,6 +162,8 @@ def extract_measurements_from_status(device_id: str, status: dict, measured_at: 
     device_kind = status.get("device_kind")
     result = []
     for metric, options in _STATUS_METRICS.items():
+        if not metric_supported_for_device_kind(metric, device_kind):
+            continue
         ok_keys = options.get("ok_keys")
         if ok_keys is None:
             ok_keys = (options["ok_key"],)
@@ -187,6 +192,14 @@ def extract_measurements_from_status(device_id: str, status: dict, measured_at: 
             }
         )
     return result
+
+
+def metric_supported_for_device_kind(metric: str | None, device_kind: str | None):
+    definition = _DEFINITION_BY_METRIC.get(str(metric or ""))
+    kind = str(device_kind or "").strip().upper()
+    if definition is None or not kind or kind not in _KNOWN_DEVICE_KINDS:
+        return True
+    return kind in definition.get("device_kinds", [])
 
 
 def _metric_calibrated(status: dict, metric: str):

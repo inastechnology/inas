@@ -87,14 +87,30 @@ class DeviceDefinitionRegistryTest(unittest.TestCase):
 
     def test_fgt_runtime_projection_always_enables_scheduled_operation(self):
         stored = {
-            "fgt": {"enabled": False, "timed_outputs": {"enabled": True}},
+            "fgt": {
+                "enabled": False,
+                "timed_outputs": {"enabled": True},
+                "sensors": {"soil": {"modbus_slave_id": 2, "modbus_function": 4, "start_register": 10}},
+            },
             "schedules": [{"enabled": True, "hour": 6, "minute": 30}],
         }
 
         payload = project_runtime_config("FGT", stored)
 
         self.assertIs(payload["fgt"]["enabled"], True)
+        self.assertEqual(
+            payload["fgt"]["sensors"]["soil"],
+            {"modbus_slave_id": 1, "modbus_function": 3, "start_register": 0},
+        )
         self.assertIs(stored["fgt"]["enabled"], False)
+        self.assertEqual(stored["fgt"]["sensors"]["soil"]["modbus_slave_id"], 2)
+
+    def test_fgt_declares_only_supported_three_in_one_soil_metrics(self):
+        definition = get_device_definition("FGT")
+        metric_ids = {item["id"] for item in definition["status"]["metrics"]}
+
+        self.assertTrue({"soil_moisture", "soil_temperature", "soil_ec"} <= metric_ids)
+        self.assertTrue({"soil_ph", "soil_n", "soil_p", "soil_k"}.isdisjoint(metric_ids))
 
     def test_fgt_scheduled_operation_warns_when_irrigation_output_is_zero(self):
         definition = get_device_definition("FGT")

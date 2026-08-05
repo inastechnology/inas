@@ -10,6 +10,9 @@
     "schedules"
   ],
   "fixed_values": {
-    "fgt.enabled": true
+    "fgt.enabled": true,
+    "fgt.sensors.soil.modbus_slave_id": 1,
+    "fgt.sensors.soil.modbus_function": 3,
+    "fgt.sensors.soil.start_register": 0
   }
 }

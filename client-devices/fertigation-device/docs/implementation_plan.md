@@ -36,8 +36,10 @@ present in the current minimal pin contract.
 
 - One active recipe is shared by all daily schedule entries.
 - Inlet volume is measured; irrigation terminates from tank-empty plus timeout.
-- Tank EC/pH feedback is not assumed. Soil EC/pH/NPK remains an RS485 field
-  sensor and is not used as proof of tank mixture concentration.
+- Tank EC/pH feedback is not assumed. The current RS485 field sensor provides
+  soil moisture, temperature, and EC only; it is not used as proof of tank
+  mixture concentration. pH/NPK support requires a separate declared sensor
+  profile and is not currently available.
 - Automatic recovery from an interrupted batch is prohibited.
 - Hardware-in-loop calibration of flow and A/B pump rates is required before
   enabling unattended fertilizer dosing.

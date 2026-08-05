@@ -416,13 +416,10 @@ protected:
         doc["soil_rs485_enabled"] = soil_enabled;
         doc["soil_rs485_ok"] = m_cycle.sensors.soil.ok;
         doc["soil_rs485_modbus_slave_id"] = soil_id;
+        doc["soil_sensor_profile"] = "moisture_temperature_ec";
         doc["soil_moisture_percent"] = m_cycle.sensors.soil.moisture_percent;
         doc["soil_temperature_c"] = m_cycle.sensors.soil.temperature_c;
         doc["soil_ec_us_cm"] = m_cycle.sensors.soil.ec_us_cm;
-        doc["soil_ph"] = m_cycle.sensors.soil.ph;
-        doc["soil_n_mg_kg"] = m_cycle.sensors.soil.n_mg_kg;
-        doc["soil_p_mg_kg"] = m_cycle.sensors.soil.p_mg_kg;
-        doc["soil_k_mg_kg"] = m_cycle.sensors.soil.k_mg_kg;
         doc["par_enabled"] = par_enabled;
         doc["par_ok"] = m_cycle.sensors.par.ok;
         doc["par_modbus_slave_id"] = par_id;
@@ -465,10 +462,8 @@ protected:
                     item["temperature_c"] =
                         sample.soil.temperature_c;
                     item["ec_us_cm"] = sample.soil.ec_us_cm;
-                    item["ph"] = sample.soil.ph;
-                    item["n_mg_kg"] = sample.soil.n_mg_kg;
-                    item["p_mg_kg"] = sample.soil.p_mg_kg;
-                    item["k_mg_kg"] = sample.soil.k_mg_kg;
+                    item["soil_sensor_profile"] =
+                        "moisture_temperature_ec";
                 }
                 else
                 {
@@ -559,8 +554,9 @@ private:
                         device.function_code,
                         device.start_register,
                     };
-                    configured.ok = hal_rs485_soil_sensor_read(
-                        &sensor_config, &configured.soil);
+                    configured.ok =
+                        hal_rs485_soil_moisture_temperature_ec_sensor_read(
+                            &sensor_config, &configured.soil);
                     if (first_soil)
                     {
                         sample.soil = configured.soil;
@@ -591,7 +587,7 @@ private:
         {
             if (config.sensors.soil.enabled)
             {
-                hal_rs485_soil_sensor_read(
+                hal_rs485_soil_moisture_temperature_ec_sensor_read(
                     &config.sensors.soil, &sample.soil);
             }
             if (config.sensors.par.enabled)

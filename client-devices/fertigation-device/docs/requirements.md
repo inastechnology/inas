@@ -22,7 +22,8 @@ Version 1 assumptions:
 - Water inlet is either a normally-closed valve or a transfer pump.
 - A and B stock solutions use independent 12 V peristaltic pumps.
 - Mixing and irrigation use independent 12 V brushless pumps.
-- Soil and PAR/irradiance sensors share one protected 12 V RS485 Modbus bus.
+- A three-in-one soil moisture/temperature/EC sensor and PAR/irradiance sensor
+  share one protected 12 V RS485 Modbus bus.
 - Five actuator commands and the RS485 sensor-power enable connect directly to
   dedicated XIAO ESP32-C6 GPIOs.
 - Flow, tank-level, leak, and emergency-stop inputs remain product requirements
@@ -96,7 +97,8 @@ minimal direct-wired prototype already implements every physical safety input.
 - Firmware builds for the XIAO ESP32-C6 direct-GPIO hardware profile and
   contains an `FGT` OTA manifest.
 - Status includes phase, fault, commanded outputs, target/observed water volume,
-  schedule, batch identifier, and RS485 sensor health/readings.
+  schedule, batch identifier, and supported RS485 sensor health/readings. The
+  current soil profile must not publish pH or N/P/K.
 - Saved configuration is CRC-protected and invalid content falls back safely.
 - Tests prove timed outputs run sequentially, enforce 0-to-1800-second bounds,
   support ON/OFF repetition, and stop every output on a fault.

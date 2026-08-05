@@ -53,6 +53,9 @@ typedef struct
 
 bool hal_rs485_soil_sensor_read(const hal_rs485_soil_sensor_config_t *config,
                                 hal_rs485_soil_sample_t *out_sample);
+bool hal_rs485_soil_moisture_temperature_ec_sensor_read(
+    const hal_rs485_soil_sensor_config_t *config,
+    hal_rs485_soil_sample_t *out_sample);
 bool hal_rs485_par_sensor_read(const hal_rs485_par_sensor_config_t *config,
                                hal_rs485_par_sample_t *out_sample);
 

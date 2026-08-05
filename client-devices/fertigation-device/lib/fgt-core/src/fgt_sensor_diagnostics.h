@@ -34,7 +34,7 @@ SensorIdentification identify_commissioning_sensor(
 
 bool soil_measurement_values_plausible(uint16_t raw_moisture,
                                        uint16_t raw_temperature,
-                                       uint16_t raw_ph);
+                                       uint16_t raw_ec);
 
 const char *sensor_identification_confidence_name(
     SensorIdentificationConfidence confidence);

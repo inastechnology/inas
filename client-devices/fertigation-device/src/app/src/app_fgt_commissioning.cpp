@@ -253,7 +253,7 @@ const char kCommissioningPage[] PROGMEM = R"HTML(
       <div class="actions">
         <button id="detectButton" data-sensor-action onclick="detectSensors()">センサーを自動検出して試験</button>
       </div>
-      <p class="hint">対応機種: ComWinTop CWT-SOIL NPKPHCTH-S、DFRobot SEN0641 PAR。ID 1〜10、2400/4800/9600 bpsを自動確認します。</p>
+      <p class="hint">対応機種: RS485土壌水分・地温・ECセンサー（3-in-1）、DFRobot SEN0641 PAR。ID 1〜10、2400/4800/9600 bpsを自動確認します。</p>
       <div id="sensorSummary" class="status"></div>
       <div id="sensorList" class="sensor-list"><div class="empty">まだセンサーを検出していません。</div></div>
       <details id="sensorCommunicationLogDetails">
@@ -1254,7 +1254,7 @@ const char *sensor_display_name(fgt::CommissioningSensorType type)
 const char *sensor_model_name(fgt::CommissioningSensorType type)
 {
     return type == fgt::CommissioningSensorType::soil
-               ? "ComWinTop CWT-SOIL NPKPHCTH-S"
+               ? "RS485 Soil Moisture/Temperature/EC 3-in-1"
                : "DFRobot SEN0641 PAR";
 }
 
@@ -1274,7 +1274,7 @@ const char *registry_device_type_key(fgt::Rs485DeviceType type)
 const char *registry_device_model_name(fgt::Rs485DeviceType type)
 {
     return type == fgt::Rs485DeviceType::soil
-               ? "ComWinTop CWT-SOIL NPKPHCTH-S"
+               ? "RS485 Soil Moisture/Temperature/EC 3-in-1"
                : "DFRobot SEN0641 PAR";
 }
 
@@ -1462,7 +1462,9 @@ bool read_sensor_measurement(fgt::CommissioningSensorType type,
     }
     *reading = {};
     const uint16_t count =
-        type == fgt::CommissioningSensorType::soil ? 7 : 1;
+        type == fgt::CommissioningSensorType::soil
+            ? fgt::kSoilRegisterCount
+            : 1;
     reading->communication_ok = read_sensor_registers_with_log(
         slave_id, 0x03, 0x0000, count, reading->values, 7);
     if (!reading->communication_ok)
@@ -1472,7 +1474,7 @@ bool read_sensor_measurement(fgt::CommissioningSensorType type,
     reading->values_plausible =
         type == fgt::CommissioningSensorType::par ||
         fgt::soil_measurement_values_plausible(
-            reading->values[0], reading->values[1], reading->values[3]);
+            reading->values[0], reading->values[1], reading->values[2]);
     return true;
 }
 
@@ -1521,14 +1523,6 @@ void add_sensor_json(JsonObject sensor,
                         static_cast<int16_t>(reading.values[1]) * 0.1F, "℃");
         add_measurement(measurements, "EC",
                         static_cast<float>(reading.values[2]), "µS/cm");
-        add_measurement(measurements, "pH",
-                        reading.values[3] * 0.1F, "");
-        add_measurement(measurements, "窒素 N",
-                        static_cast<float>(reading.values[4]), "mg/kg");
-        add_measurement(measurements, "リン P",
-                        static_cast<float>(reading.values[5]), "mg/kg");
-        add_measurement(measurements, "カリウム K",
-                        static_cast<float>(reading.values[6]), "mg/kg");
     }
     else if (reading.communication_ok)
     {
@@ -1581,12 +1575,15 @@ bool identify_sensor(uint8_t slave_id,
     uint16_t soil_values[7] = {};
     const bool soil_measurement_supported =
         read_sensor_registers_with_log(
-            slave_id, 0x03, 0x0000, 7, soil_values, 7);
+            slave_id,
+            0x03,
+            0x0000,
+            fgt::kSoilRegisterCount,
+            soil_values,
+            7);
     const bool soil_secondary_values_present =
         soil_measurement_supported &&
-        (soil_values[1] != 0 || soil_values[2] != 0 ||
-         soil_values[3] != 0 || soil_values[4] != 0 ||
-         soil_values[5] != 0 || soil_values[6] != 0);
+        (soil_values[1] != 0 || soil_values[2] != 0);
 
     uint16_t signature[3] = {};
     const bool soil_signature_read =
@@ -1638,7 +1635,7 @@ bool identify_sensor(uint8_t slave_id,
         memcpy(reading->values, soil_values, sizeof(soil_values));
         reading->values_plausible =
             fgt::soil_measurement_values_plausible(
-                reading->values[0], reading->values[1], reading->values[3]);
+                reading->values[0], reading->values[1], reading->values[2]);
     }
     else
     {
@@ -2092,7 +2089,9 @@ void handle_configured_device_register(
     device.function_code = 0x03;
     device.start_register = 0;
     device.register_count =
-        device.type == fgt::Rs485DeviceType::soil ? 7 : 1;
+        device.type == fgt::Rs485DeviceType::soil
+            ? fgt::kSoilRegisterCount
+            : 1;
     device.scale = 1.0F;
     memcpy(device.name, name, sizeof(device.name));
     memcpy(device.location, location, sizeof(device.location));

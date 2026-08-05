@@ -20,6 +20,7 @@ from ina_device_hub.ina_db_connector import InaDBConnector  # noqa: E402
 from ina_device_hub.sensor_measurement_repository import (  # noqa: E402
     SensorMeasurementRepository,
     extract_measurements_from_status,
+    metric_supported_for_device_kind,
 )
 
 
@@ -153,6 +154,32 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
         self.assertEqual(measurements[0]["raw_value"], 2810.0)
         self.assertTrue(measurements[0]["payload"]["calibrated"])
 
+    def test_extract_fgt_ignores_unsupported_ph_and_npk_values(self):
+        measurements = extract_measurements_from_status(
+            "INADS-fgt",
+            {
+                "seq": 15,
+                "device_kind": "FGT",
+                "soil_rs485_ok": True,
+                "soil_moisture_percent": 26.7,
+                "soil_temperature_c": 25.0,
+                "soil_ec_us_cm": 81.0,
+                "soil_ph": 4.4,
+                "soil_n_mg_kg": 40.0,
+                "soil_p_mg_kg": 0.0,
+                "soil_k_mg_kg": 0.0,
+            },
+            "2026-08-06T06:52:21+09:00",
+        )
+
+        self.assertEqual(
+            {item["metric"] for item in measurements},
+            {"soil_moisture_percent", "soil_temperature_c", "soil_ec_us_cm"},
+        )
+        self.assertFalse(metric_supported_for_device_kind("soil_ph", "FGT"))
+        self.assertTrue(metric_supported_for_device_kind("soil_ph", "ENV"))
+        self.assertTrue(metric_supported_for_device_kind("soil_ph", "NEW"))
+
     def test_repository_creates_definitions_and_writes_measurements(self):
         connector = InaDBConnector()
         repository = SensorMeasurementRepository(connector)
@@ -164,6 +191,7 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
         self.assertIn("WTR", by_metric["soil_ec_us_cm"]["device_kinds"])
         self.assertIn("WRS", by_metric["soil_ec_us_cm"]["device_kinds"])
         self.assertIn("FGT", by_metric["soil_ec_us_cm"]["device_kinds"])
+        self.assertNotIn("FGT", by_metric["soil_ph"]["device_kinds"])
         self.assertIn("WTR", by_metric["par_umol_m2_s"]["device_kinds"])
         self.assertIn("WRS", by_metric["par_umol_m2_s"]["device_kinds"])
         self.assertIn("FGT", by_metric["par_umol_m2_s"]["device_kinds"])

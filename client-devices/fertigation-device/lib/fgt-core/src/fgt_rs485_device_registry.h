@@ -9,6 +9,8 @@ namespace fgt
 constexpr size_t kMaxRs485Devices = 8;
 constexpr size_t kRs485DeviceNameSize = 64;
 constexpr size_t kRs485DeviceLocationSize = 96;
+constexpr uint8_t kSoilRegisterCount = 3;
+constexpr uint8_t kLegacySoilRegisterCount = 7;
 
 enum class Rs485DeviceType : uint8_t
 {
@@ -48,6 +50,8 @@ enum class Rs485RegistryResult : uint8_t
 
 bool rs485_device_config_valid(const Rs485DeviceConfig &device);
 bool rs485_registry_valid(const Rs485DeviceRegistry &registry);
+bool rs485_registry_normalize_legacy_soil_register_counts(
+    Rs485DeviceRegistry &registry);
 Rs485RegistryResult rs485_registry_add(
     Rs485DeviceRegistry &registry,
     const Rs485DeviceConfig &device);

@@ -617,6 +617,47 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("Plotly.newPlot", charts["par"])
         self.assertIsNone(charts["watering"])
 
+    def test_fgt_hides_unsupported_ph_and_npk_from_old_firmware_status(self):
+        device_id = "INADS-00000000-0000-4000-8000-00000000020f"
+        self.device_repository.record_status(
+            device_id,
+            {
+                "seq": 1,
+                "device_kind": "FGT",
+                "firmware_version": "0.2.0",
+                "soil_rs485_ok": True,
+                "soil_moisture_percent": 26.7,
+                "soil_temperature_c": 25.0,
+                "soil_ec_us_cm": 81,
+                "soil_ph": 4.4,
+                "soil_n_mg_kg": 40,
+                "soil_p_mg_kg": 0,
+                "soil_k_mg_kg": 0,
+            },
+        )
+
+        response = self.client.get(f"/mqtt-devices/{device_id}?tab=monitoring")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("26.7 %", html)
+        self.assertIn("25.0 ℃", html)
+        self.assertIn("81 µS/cm", html)
+        self.assertNotIn('data-chart-kind="soil_ph"', html)
+        self.assertNotIn('data-chart-kind="soil_n"', html)
+        self.assertNotIn('data-chart-kind="soil_p"', html)
+        self.assertNotIn('data-chart-kind="soil_k"', html)
+
+        charts_response = self.client.get(f"/local/api/mqtt-devices/{device_id}/charts")
+        self.assertEqual(charts_response.status_code, 200)
+        charts = charts_response.get_json()
+        self.assertIn("soil_moisture", charts)
+        self.assertIn("soil_temperature", charts)
+        self.assertIn("soil_ec", charts)
+        self.assertNotIn("soil_ph", charts)
+        self.assertNotIn("soil_n", charts)
+        self.assertNotIn("soil_p", charts)
+        self.assertNotIn("soil_k", charts)
+
     def test_single_purpose_sensor_pages_show_only_supported_equipment_cards(self):
         soil_device_id = "INADS-00000000-0000-4000-8000-000000000207"
         self.device_repository.record_status(

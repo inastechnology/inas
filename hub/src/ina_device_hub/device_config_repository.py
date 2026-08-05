@@ -613,8 +613,8 @@ def validate_device_config(config: dict):  # noqa: PLR0915
             "sensors": {
                 "soil": {
                     "enabled": _optional_bool(soil, "enabled", True, "fgt.sensors.soil.enabled"),
-                    "modbus_slave_id": _optional_int(soil, "modbus_slave_id", 2, 1, 247, "fgt.sensors.soil.modbus_slave_id"),
-                    "modbus_function": _optional_int(soil, "modbus_function", 4, 3, 4, "fgt.sensors.soil.modbus_function"),
+                    "modbus_slave_id": _optional_int(soil, "modbus_slave_id", 1, 1, 247, "fgt.sensors.soil.modbus_slave_id"),
+                    "modbus_function": _optional_int(soil, "modbus_function", 3, 3, 4, "fgt.sensors.soil.modbus_function"),
                     "start_register": _optional_int(soil, "start_register", 0, 0, 65535, "fgt.sensors.soil.start_register"),
                 },
                 "par": {

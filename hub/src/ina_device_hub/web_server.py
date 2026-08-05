@@ -129,7 +129,7 @@ from ina_device_hub.plant_question_policy import validate_plant_question
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
 from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
-from ina_device_hub.sensor_measurement_repository import extract_measurements_from_status, sensor_measurement_repository
+from ina_device_hub.sensor_measurement_repository import extract_measurements_from_status, metric_supported_for_device_kind, sensor_measurement_repository
 from ina_device_hub.setting import setting
 from ina_device_hub.storage_connector import storage_connector
 from ina_device_hub.timelapse_media_service import timelapse_media_service
@@ -9356,6 +9356,7 @@ def _compact_device_record(record: dict | None):
 
 def _field_latest_sensor_value(device_id: str, record: dict | None, placement: dict | None = None):
     payload = (record or {}).get("last_status") or {}
+    device_kind = payload.get("device_kind") or (record or {}).get("device_kind")
     values = {}
     for key in (
         "last_soil_moisture",
@@ -9374,7 +9375,7 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
         "rssi",
         "threshold",
     ):  # noqa: PLR0915
-        if payload.get(key) is not None:
+        if payload.get(key) is not None and metric_supported_for_device_kind(key, device_kind):
             values[key] = payload.get(key)
     try:
         latest_measurements = sensor_measurement_repository().latest_for_device(device_id, limit=30)
@@ -9684,10 +9685,11 @@ def list_mqtt_device_statuses(device_id):
 
 @app.route("/local/api/mqtt-devices/<device_id>/charts", methods=["GET"])
 def get_mqtt_device_charts(device_id):
-    if device_config_service().get_record(device_id) is None:
+    record = device_config_service().get_record(device_id)
+    if record is None:
         return jsonify({"error": "device not found"}), 404
     statuses = device_config_service().list_statuses(device_id, limit=MQTT_ADMIN_STATUS_HISTORY_LIMIT)
-    return jsonify(_build_mqtt_device_chart_payload(statuses))
+    return jsonify(_build_mqtt_device_chart_payload(statuses, record.get("device_kind")))
 
 
 @app.route("/demo/local/api/mqtt-devices/<device_id>/charts", methods=["GET"])
@@ -9695,12 +9697,13 @@ def get_demo_mqtt_device_charts(device_id):
     demo_data = _demo_mqtt_admin_page_data(device_id)
     if demo_data["selected_device_id"] != device_id:
         return jsonify({"error": "device not found"}), 404
-    return jsonify(_build_mqtt_device_chart_payload(demo_data["selected_statuses"]))
+    record = demo_data["devices"].get(device_id) or {}
+    return jsonify(_build_mqtt_device_chart_payload(demo_data["selected_statuses"], record.get("device_kind")))
 
 
-def _build_mqtt_device_chart_payload(statuses):
+def _build_mqtt_device_chart_payload(statuses, device_kind=None):
     watering_chart = _build_watering_trend_chart(statuses, include_plotlyjs=False)
-    return {
+    charts = {
         "watering": watering_chart,
         "soil_moisture": _build_soil_moisture_chart(statuses, include_plotlyjs=False),
         "air_temperature": _build_metric_trend_chart(
@@ -9794,6 +9797,19 @@ def _build_mqtt_device_chart_payload(statuses):
             div_id="par-chart",
         ),
     }
+    chart_metrics = {
+        "air_temperature": "air_temperature_c",
+        "air_humidity": "air_humidity_percent",
+        "soil_moisture": "soil_moisture_percent",
+        "soil_temperature": "soil_temperature_c",
+        "soil_ec": "soil_ec_us_cm",
+        "soil_ph": "soil_ph",
+        "soil_n": "soil_n_mg_kg",
+        "soil_p": "soil_p_mg_kg",
+        "soil_k": "soil_k_mg_kg",
+        "par": "par_umol_m2_s",
+    }
+    return {key: value for key, value in charts.items() if metric_supported_for_device_kind(chart_metrics.get(key, key), device_kind)}
 
 
 @app.route("/local/assets/plotly.min.js", methods=["GET"])

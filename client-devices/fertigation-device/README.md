@@ -72,10 +72,11 @@ a guard interval is enforced before another output can turn on. Modbus
 operations are blocked while an actuator output is active.
 
 Automatic detection checks IDs 1 through 10 at 2400, 4800, and 9600 bps. It
-currently identifies **ComWinTop CWT-SOIL NPKPHCTH-S** and **DFRobot SEN0641
-PAR**. A successful test requires a CRC-valid Modbus response. Soil moisture,
-temperature, and pH also receive a basic protocol-range check. A PAR value of
-zero remains valid because darkness can legitimately produce zero irradiance.
+currently identifies the **RS485 soil moisture/temperature/EC 3-in-1** profile
+and **DFRobot SEN0641 PAR**. A successful test requires a CRC-valid Modbus
+response. Soil moisture, temperature, and EC also receive a basic protocol-range
+check. The current FGT profile does not read or publish pH or N/P/K. A PAR value
+of zero remains valid because darkness can legitimately produce zero irradiance.
 The firmware advances the scan one address at a time in the setup portal loop;
 the HTTP callback only starts the operation and reports progress. This keeps
 the captive portal responsive even when every address reaches the Modbus

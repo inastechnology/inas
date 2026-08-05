@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "definition_version": "1.1.0",
+  "definition_version": "1.2.0",
   "device": {
     "kind": "FGT",
     "product_name": "液肥づくり・潅水装置",
@@ -108,70 +108,6 @@
         "kind": "soil_ec",
         "title": "土壌EC推移",
         "empty_message": "土壌ECの時系列データはまだありません。"
-      }
-    },
-    {
-      "id": "soil_ph",
-      "label": "土壌pH",
-      "status_keys": [
-        "soil_ph"
-      ],
-      "unit": "",
-      "digits": 1,
-      "slot_id": "soil",
-      "enabled_path": "fgt.sensors.soil.enabled",
-      "chart": {
-        "kind": "soil_ph",
-        "title": "土壌pH推移",
-        "empty_message": "土壌pHの時系列データはまだありません。"
-      }
-    },
-    {
-      "id": "soil_n",
-      "label": "土壌窒素",
-      "status_keys": [
-        "soil_n_mg_kg"
-      ],
-      "unit": "mg/kg",
-      "digits": 0,
-      "slot_id": "soil",
-      "enabled_path": "fgt.sensors.soil.enabled",
-      "chart": {
-        "kind": "soil_n",
-        "title": "土壌窒素推移",
-        "empty_message": "土壌窒素の時系列データはまだありません。"
-      }
-    },
-    {
-      "id": "soil_p",
-      "label": "土壌リン",
-      "status_keys": [
-        "soil_p_mg_kg"
-      ],
-      "unit": "mg/kg",
-      "digits": 0,
-      "slot_id": "soil",
-      "enabled_path": "fgt.sensors.soil.enabled",
-      "chart": {
-        "kind": "soil_p",
-        "title": "土壌リン推移",
-        "empty_message": "土壌リンの時系列データはまだありません。"
-      }
-    },
-    {
-      "id": "soil_k",
-      "label": "土壌カリウム",
-      "status_keys": [
-        "soil_k_mg_kg"
-      ],
-      "unit": "mg/kg",
-      "digits": 0,
-      "slot_id": "soil",
-      "enabled_path": "fgt.sensors.soil.enabled",
-      "chart": {
-        "kind": "soil_k",
-        "title": "土壌カリウム推移",
-        "empty_message": "土壌カリウムの時系列データはまだありません。"
       }
     },
     {

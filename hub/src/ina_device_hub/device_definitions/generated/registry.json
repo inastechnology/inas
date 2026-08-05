@@ -392,7 +392,7 @@
         ],
         "schema_version": 1
       },
-      "definition_version": "1.1.0",
+      "definition_version": "1.2.0",
       "device": {
         "category": "fertigation",
         "icon": "🧪",
@@ -464,7 +464,10 @@
       ],
       "runtime_config": {
         "fixed_values": {
-          "fgt.enabled": true
+          "fgt.enabled": true,
+          "fgt.sensors.soil.modbus_function": 3,
+          "fgt.sensors.soil.modbus_slave_id": 1,
+          "fgt.sensors.soil.start_register": 0
         },
         "schema_version": 1,
         "send_keys": [
@@ -583,70 +586,6 @@
         },
         {
           "chart": {
-            "empty_message": "土壌pHの時系列データはまだありません。",
-            "kind": "soil_ph",
-            "title": "土壌pH推移"
-          },
-          "digits": 1,
-          "enabled_path": "fgt.sensors.soil.enabled",
-          "id": "soil_ph",
-          "label": "土壌pH",
-          "slot_id": "soil",
-          "status_keys": [
-            "soil_ph"
-          ],
-          "unit": ""
-        },
-        {
-          "chart": {
-            "empty_message": "土壌窒素の時系列データはまだありません。",
-            "kind": "soil_n",
-            "title": "土壌窒素推移"
-          },
-          "digits": 0,
-          "enabled_path": "fgt.sensors.soil.enabled",
-          "id": "soil_n",
-          "label": "土壌窒素",
-          "slot_id": "soil",
-          "status_keys": [
-            "soil_n_mg_kg"
-          ],
-          "unit": "mg/kg"
-        },
-        {
-          "chart": {
-            "empty_message": "土壌リンの時系列データはまだありません。",
-            "kind": "soil_p",
-            "title": "土壌リン推移"
-          },
-          "digits": 0,
-          "enabled_path": "fgt.sensors.soil.enabled",
-          "id": "soil_p",
-          "label": "土壌リン",
-          "slot_id": "soil",
-          "status_keys": [
-            "soil_p_mg_kg"
-          ],
-          "unit": "mg/kg"
-        },
-        {
-          "chart": {
-            "empty_message": "土壌カリウムの時系列データはまだありません。",
-            "kind": "soil_k",
-            "title": "土壌カリウム推移"
-          },
-          "digits": 0,
-          "enabled_path": "fgt.sensors.soil.enabled",
-          "id": "soil_k",
-          "label": "土壌カリウム",
-          "slot_id": "soil",
-          "status_keys": [
-            "soil_k_mg_kg"
-          ],
-          "unit": "mg/kg"
-        },
-        {
-          "chart": {
             "empty_message": "光合成に使える光の時系列データはまだありません。",
             "kind": "par",
             "title": "光合成に使える光推移"
@@ -760,70 +699,6 @@
               "soil_ec_us_cm"
             ],
             "unit": "µS/cm"
-          },
-          {
-            "chart": {
-              "empty_message": "土壌pHの時系列データはまだありません。",
-              "kind": "soil_ph",
-              "title": "土壌pH推移"
-            },
-            "digits": 1,
-            "enabled_path": "fgt.sensors.soil.enabled",
-            "id": "soil_ph",
-            "label": "土壌pH",
-            "slot_id": "soil",
-            "status_keys": [
-              "soil_ph"
-            ],
-            "unit": ""
-          },
-          {
-            "chart": {
-              "empty_message": "土壌窒素の時系列データはまだありません。",
-              "kind": "soil_n",
-              "title": "土壌窒素推移"
-            },
-            "digits": 0,
-            "enabled_path": "fgt.sensors.soil.enabled",
-            "id": "soil_n",
-            "label": "土壌窒素",
-            "slot_id": "soil",
-            "status_keys": [
-              "soil_n_mg_kg"
-            ],
-            "unit": "mg/kg"
-          },
-          {
-            "chart": {
-              "empty_message": "土壌リンの時系列データはまだありません。",
-              "kind": "soil_p",
-              "title": "土壌リン推移"
-            },
-            "digits": 0,
-            "enabled_path": "fgt.sensors.soil.enabled",
-            "id": "soil_p",
-            "label": "土壌リン",
-            "slot_id": "soil",
-            "status_keys": [
-              "soil_p_mg_kg"
-            ],
-            "unit": "mg/kg"
-          },
-          {
-            "chart": {
-              "empty_message": "土壌カリウムの時系列データはまだありません。",
-              "kind": "soil_k",
-              "title": "土壌カリウム推移"
-            },
-            "digits": 0,
-            "enabled_path": "fgt.sensors.soil.enabled",
-            "id": "soil_k",
-            "label": "土壌カリウム",
-            "slot_id": "soil",
-            "status_keys": [
-              "soil_k_mg_kg"
-            ],
-            "unit": "mg/kg"
           },
           {
             "chart": {

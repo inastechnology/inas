@@ -13,7 +13,7 @@ the v1 defaults and remain bounded by firmware limits.
   "ota_check_interval_sec": 21600,
   "debug_log_on_wake": false,
   "fgt": {
-    "enabled": false,
+    "enabled": true,
     "timed_outputs": {
       "enabled": false,
       "water_inlet": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
@@ -47,7 +47,7 @@ the v1 defaults and remain bounded by firmware limits.
       "volume_tolerance_ml": 100
     },
     "sensors": {
-      "soil": {"enabled": true, "modbus_slave_id": 2, "modbus_function": 4, "start_register": 0},
+      "soil": {"enabled": true, "modbus_slave_id": 1, "modbus_function": 3, "start_register": 0},
       "par": {"enabled": true, "modbus_slave_id": 1, "modbus_function": 3, "register": 0, "scale": 1.0},
       "power_settle_ms": 800,
       "flow_pulses_per_liter": 450
@@ -62,9 +62,8 @@ the v1 defaults and remain bounded by firmware limits.
 
 `duration_sec` and `channel_mask` remain in the shared Hub schedule schema for
 backward compatibility; FGT uses its recipe timeout and fixed irrigation output
-instead. Firmware consumes up to four valid daily entries. A fresh device
-defaults to `fgt.enabled=false`, so a generic legacy config cannot start nutrient
-dosing.
+instead. Firmware consumes up to four valid daily entries. Hubの実効Runtime Configは
+`fgt.enabled=true`を固定し、個々の予約と出力時間で実行内容を決める。
 
 When `fgt.timed_outputs.enabled=true`, the timed sequence replaces the nutrient
 recipe for every enabled FGT schedule. Each fixed output accepts `on_sec` and
@@ -72,7 +71,8 @@ recipe for every enabled FGT schedule. Each fixed output accepts `on_sec` and
 `repeat_count` must be zero to disable an output, or both must be positive to
 enable it. Enabled outputs run sequentially in terminal order. The planned sum
 of ON and intervening OFF intervals must not exceed `fgt.limits.max_batch_sec`.
-The top-level `fgt.enabled` remains the master unattended-operation switch.
+The top-level `fgt.enabled` is fixed to `true` by the Hub and is not a user-facing
+operation switch.
 
 FGT v1 accepts only `frequency.mode="daily"`. Interval and weekday entries are
 ignored rather than accidentally being executed every day.
@@ -110,8 +110,13 @@ The normal status payload includes:
   `emergency_stop`, `io_ok`;
 - commanded outputs: `water_inlet_on`, `nutrient_a_on`, `nutrient_b_on`,
   `mixer_on`, `irrigation_on`;
-- shared RS485 measurement names used by WRS: soil moisture, temperature, EC,
-  pH, N/P/K, and PAR.
+- current FGT RS485 measurements: soil moisture, temperature, EC, and PAR;
+- `soil_sensor_profile="moisture_temperature_ec"` identifies the current
+  three-register soil profile.
+
+FGT 0.2.1以降は土壌センサーから先頭3レジスタだけを読み、`soil_ph`、
+`soil_n_mg_kg`、`soil_p_mg_kg`、`soil_k_mg_kg`を送信しない。0.2.0以前が送った
+これらの項目は現行FGTハードウェアで未対応のため、Hubは計測値として採用しない。
 
 Hub UI wording must use the farmer-facing phase labels rather than these raw
 field names. Raw fields belong in advanced diagnostics.

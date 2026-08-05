@@ -37,8 +37,14 @@ uint32_t store_crc(const RegistryStore &store)
         sizeof(store) - sizeof(store.crc32));
 }
 
-bool read_store(const char *path, RegistryStore *store_out)
+bool read_store(const char *path,
+                RegistryStore *store_out,
+                bool *legacy_soil_profile_migrated = nullptr)
 {
+    if (legacy_soil_profile_migrated != nullptr)
+    {
+        *legacy_soil_profile_migrated = false;
+    }
     if (path == nullptr || store_out == nullptr ||
         !LittleFS.exists(path))
     {
@@ -59,10 +65,20 @@ bool read_store(const char *path, RegistryStore *store_out)
         store_out->magic != kRegistryMagic ||
         store_out->version != kRegistryStoreVersion ||
         store_out->registry_size != sizeof(store_out->registry) ||
-        store_out->crc32 != store_crc(*store_out) ||
-        !fgt::rs485_registry_valid(store_out->registry))
+        store_out->crc32 != store_crc(*store_out))
     {
         return false;
+    }
+    const bool migrated =
+        fgt::rs485_registry_normalize_legacy_soil_register_counts(
+            store_out->registry);
+    if (!fgt::rs485_registry_valid(store_out->registry))
+    {
+        return false;
+    }
+    if (legacy_soil_profile_migrated != nullptr)
+    {
+        *legacy_soil_profile_migrated = migrated;
     }
     return true;
 }
@@ -191,10 +207,20 @@ void app_fgt_rs485_devices_init()
             "FGT RS485 device registry allocation failed.");
         return;
     }
-    if (read_store(kRegistryFile, store.get()))
+    bool legacy_soil_profile_migrated = false;
+    if (read_store(
+            kRegistryFile,
+            store.get(),
+            &legacy_soil_profile_migrated))
     {
         s_registry = store->registry;
         s_has_saved_registry = true;
+        if (legacy_soil_profile_migrated)
+        {
+            write_store(s_registry);
+            Serial.println(
+                "Migrated FGT soil sensor registry to the 3-register moisture/temperature/EC profile.");
+        }
     }
     else if (read_store(kRegistryBackupFile, store.get()))
     {

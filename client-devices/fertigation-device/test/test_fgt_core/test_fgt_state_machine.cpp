@@ -369,12 +369,12 @@ static void test_sensor_identification_uses_reserved_par_address_hint()
 
 static void test_soil_measurement_plausibility()
 {
-    TEST_ASSERT_TRUE(soil_measurement_values_plausible(352, 241, 64));
+    TEST_ASSERT_TRUE(soil_measurement_values_plausible(352, 241, 640));
     TEST_ASSERT_TRUE(soil_measurement_values_plausible(
         0, static_cast<uint16_t>(static_cast<int16_t>(-100)), 0));
-    TEST_ASSERT_FALSE(soil_measurement_values_plausible(1001, 241, 64));
-    TEST_ASSERT_FALSE(soil_measurement_values_plausible(352, 851, 64));
-    TEST_ASSERT_FALSE(soil_measurement_values_plausible(352, 241, 141));
+    TEST_ASSERT_FALSE(soil_measurement_values_plausible(1001, 241, 640));
+    TEST_ASSERT_FALSE(soil_measurement_values_plausible(352, 851, 640));
+    TEST_ASSERT_FALSE(soil_measurement_values_plausible(352, 241, 20001));
 }
 
 static Rs485DeviceConfig registry_device(
@@ -391,7 +391,7 @@ static Rs485DeviceConfig registry_device(
     device.function_code = 0x03;
     device.start_register = 0;
     device.register_count =
-        type == Rs485DeviceType::soil ? 7 : 1;
+        type == Rs485DeviceType::soil ? kSoilRegisterCount : 1;
     device.scale = 1.0F;
     strncpy(device.name, name, sizeof(device.name) - 1);
     strncpy(device.location, "RS485 branch 1",
@@ -452,6 +452,25 @@ static void test_rs485_registry_updates_and_removes_devices()
     TEST_ASSERT_EQUAL_UINT8(1, registry.count);
     TEST_ASSERT_EQUAL_UINT8(2, registry.devices[0].slave_id);
     TEST_ASSERT_TRUE(rs485_registry_valid(registry));
+}
+
+static void test_rs485_registry_migrates_legacy_seven_register_soil_profile()
+{
+    Rs485DeviceRegistry registry = {};
+    registry.count = 1;
+    registry.devices[0] = registry_device(
+        Rs485DeviceType::soil, 1, 4800, "soil");
+    registry.devices[0].register_count = kLegacySoilRegisterCount;
+
+    TEST_ASSERT_FALSE(rs485_registry_valid(registry));
+    TEST_ASSERT_TRUE(
+        rs485_registry_normalize_legacy_soil_register_counts(registry));
+    TEST_ASSERT_EQUAL_UINT8(
+        kSoilRegisterCount,
+        registry.devices[0].register_count);
+    TEST_ASSERT_TRUE(rs485_registry_valid(registry));
+    TEST_ASSERT_FALSE(
+        rs485_registry_normalize_legacy_soil_register_counts(registry));
 }
 
 static void test_firmware_manifest_scanner_accepts_split_chunks()
@@ -537,6 +556,7 @@ int main(int argc, char **argv)
     RUN_TEST(test_soil_measurement_plausibility);
     RUN_TEST(test_rs485_registry_rejects_duplicate_bus_address);
     RUN_TEST(test_rs485_registry_updates_and_removes_devices);
+    RUN_TEST(test_rs485_registry_migrates_legacy_seven_register_soil_profile);
     RUN_TEST(test_firmware_manifest_scanner_accepts_split_chunks);
     RUN_TEST(test_firmware_manifest_scanner_rejects_missing_manifest);
     return UNITY_END();

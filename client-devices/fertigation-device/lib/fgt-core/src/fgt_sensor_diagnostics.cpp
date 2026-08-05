@@ -49,13 +49,13 @@ SensorIdentification identify_commissioning_sensor(
 
 bool soil_measurement_values_plausible(uint16_t raw_moisture,
                                        uint16_t raw_temperature,
-                                       uint16_t raw_ph)
+                                       uint16_t raw_ec)
 {
     const int16_t signed_temperature = static_cast<int16_t>(raw_temperature);
     return raw_moisture <= 1000 &&
            signed_temperature >= -400 &&
            signed_temperature <= 850 &&
-           raw_ph <= 140;
+           raw_ec <= 20000;
 }
 
 const char *sensor_identification_confidence_name(

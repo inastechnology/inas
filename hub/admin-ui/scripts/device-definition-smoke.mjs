@@ -88,6 +88,10 @@ try {
     if (kind === "FGT") {
       const text = await page.$eval(".priority-panel", (panel) => panel.innerText);
       assert.match(text, /未取得/, "an enabled FGT sensor without a sample must remain visible as waiting");
+      assert.match(text, /44\.0 %/);
+      assert.match(text, /21\.6 ℃/);
+      assert.match(text, /740 µS\/cm/);
+      assert.doesNotMatch(text, /土壌pH|土壌窒素|土壌リン|土壌カリウム/);
     }
     await page.screenshot({ path: `/tmp/ina-device-definition-${kind.toLowerCase()}-monitoring.png`, fullPage: true });
   }
