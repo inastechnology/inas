@@ -23,7 +23,9 @@ Cross-project specification:
 - Generate timelapse content and schedule periodic jobs.
 - Publish Instagram Reels from timelapse output when configured.
 - Serve a local Flask-based admin UI.
-- Register OTA firmware artifacts and deliver `firmware.bin` over HTTP.
+- Register a raw `firmware.bin` or an INAS `.inasfw` release module for OTA. For
+  `.inasfw`, the Hub verifies the package and stores/delivers only its
+  `firmware.bin`.
 
 ## Design Notes
 

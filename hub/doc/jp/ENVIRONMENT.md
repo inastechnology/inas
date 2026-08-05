@@ -109,14 +109,14 @@ Client ID・Secret不正などCloudflare Accessがorigin到達前に拒否する
 
 - `GET /operations/api/v1/health`
 - `GET /operations/api/v1/devices?device_kind=WTR&state=active`
-- `POST /operations/api/v1/devices/firmware-artifacts/<device_kind>/<version>`（bodyはfirmware binary）
+- `POST /operations/api/v1/devices/firmware-artifacts/<device_kind>/<version>`（bodyは`firmware.bin`または`.inasfw`）
 - `POST /operations/api/v1/devices/firmware-rollouts`（既定`dry_run=true`）
 
 - `FIRMWARE_HOSTNAME` (推奨) — OTA 対象デバイスから HTTP で到達できる hub の hostname または IP address。未設定なら OS 環境変数 `HOSTNAME`、さらに未設定なら OS hostname を使います。
 - `FIRMWARE_PORT` (任意) — OTA firmware 配信 port。未設定なら `HUB_HTTP_PORT`、既定は `39151`。
 - `FIRMWARE_BASE_URL` (任意) — URL を完全に固定したい場合の明示 override。例: `http://<hubのドメイン名またはIPアドレス>:39151`。
 
-firmware binary は `WORK_DIR/firmware/<device_kind>/<version>/firmware.bin` に保存され、hub は `GET /firmware/<device_kind>/<version>/firmware.bin` で配信します。現状のデバイス実装は `http://` のみを受け付けるため、hub も OTA offer では `http://` URL だけを許可します。HTTPS はデバイス側に証明書検証を入れてから有効化します。
+`firmware.bin` は `WORK_DIR/firmware/<device_kind>/<version>/firmware.bin` に保存され、hub は `GET /firmware/<device_kind>/<version>/firmware.bin` で配信します。`.inasfw` を登録した場合は、リリースモジュールの種別、`app0` 定義、SHA-256、機種・バージョンの整合性を検証し、内部の `firmware.bin` だけを保存します。bootloader、partition table、LittleFSなど、ほかの領域はHub OTAには使用しません。現状のデバイス実装は `http://` のみを受け付けるため、hub も OTA offer では `http://` URL だけを許可します。HTTPS はデバイス側に証明書検証を入れてから有効化します。
 
 artifact URL は `FIRMWARE_BASE_URL` があればその値を使い、未設定なら `http://<FIRMWARE_HOSTNAME または HOSTNAME>:<FIRMWARE_PORT または HUB_HTTP_PORT>` から生成します。Cloudflare Access/Tunnel の public hostname は HTTPS/認証付きの UI 入口なので、現状の OTA download URL には使いません。
 
@@ -128,7 +128,7 @@ curl -X POST \
   --data-binary @firmware.bin
 ```
 
-この API は firmware binary 内の `INAS_FW_MANIFEST_V1` を読み、URL path の `device_kind` / `version` と埋め込み値が一致する場合だけ登録します。`build_id`、`project`、`target`、`framework` も埋め込み manifest から artifact metadata に保存します。size と sha256 は hub が自動計算し、artifact URL を `${resolved_firmware_base_url}/firmware/WTR/1.1.0/firmware.bin` として登録します。MQTT は retained OTA offer と OTA status の制御だけに使い、firmware 本体は hub の HTTP server から配信します。
+`.inasfw` を送る場合は、`--data-binary @device-version-target.inasfw` に置き換えます。この API は、最終的に使用する `firmware.bin` 内の `INAS_FW_MANIFEST_V1` を読み、URL path の `device_kind` / `version` と埋め込み値が一致する場合だけ登録します。`build_id`、`project`、`target`、`framework` も埋め込み manifest から artifact metadata に保存します。size と sha256 は、取り出した `firmware.bin` をもとにhubが自動計算し、artifact URL を `${resolved_firmware_base_url}/firmware/WTR/1.1.0/firmware.bin` として登録します。MQTT は retained OTA offer と OTA status の制御だけに使い、firmware 本体は hub の HTTP server から配信します。
 
 ## Instagram 関連（任意）
 

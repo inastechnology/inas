@@ -21,6 +21,7 @@ from ina_device_hub.firmware_manifest import (
 from ina_device_hub.firmware_manifest import (
     validate_firmware_manifest as _validate_firmware_manifest,
 )
+from ina_device_hub.firmware_release_module import FirmwareUploadValidationError, normalize_firmware_upload
 from ina_device_hub.general_log import logger
 from ina_device_hub.setting import setting
 
@@ -156,7 +157,15 @@ class OTAUpdateService:
         return saved
 
     def upsert_firmware_binary(self, device_kind: str, version: str, content: bytes, metadata: dict | None = None):
-        saved = self.artifact_repository.upsert_binary(device_kind, version, content, metadata=metadata)
+        max_upload_bytes = int((setting().get("security") or {}).get("firmware_max_upload_bytes", 16 * 1024 * 1024))
+        try:
+            upload = normalize_firmware_upload(content, max_upload_bytes=max_upload_bytes)
+            if upload.release_module is not None:
+                upload.validate_embedded_manifest(extract_firmware_manifest(upload.firmware_binary))
+        except FirmwareUploadValidationError as exc:
+            raise FirmwareArtifactValidationError(str(exc)) from exc
+
+        saved = self.artifact_repository.upsert_binary(device_kind, version, upload.firmware_binary, metadata=metadata)
         self.sync_retained_offers(device_kind=saved["device_kind"], target_firmware_version=saved["version"])
         return saved
 

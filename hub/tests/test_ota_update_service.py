@@ -1,8 +1,10 @@
 import hashlib
+import io
 import json
 import os
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import call, patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
@@ -322,6 +324,33 @@ class OTAUpdateServiceTest(unittest.TestCase):
         self.assertEqual(artifact["firmware_metadata"]["project"], "watering-device")
         self.assertEqual(artifact["firmware_metadata"]["target"], "seeed_xiao_esp32s3")
 
+    def test_uploaded_inasfw_saves_only_its_firmware_binary(self):
+        firmware = _firmware_binary(device_kind="WTR", version="1.1.0", build_id="2026-07-01T00:00:00Z+abcdef0")
+        release_module = _inasfw(firmware, device_kind="WTR", version="1.1.0")
+        self.artifact_repository.firmware_root = os.path.join(self.tmp_dir.name, "firmware")
+
+        artifact = self.service.upsert_firmware_binary("WTR", "1.1.0", release_module)
+
+        firmware_path = os.path.join(self.tmp_dir.name, "firmware", "WTR", "1.1.0", "firmware.bin")
+        with open(firmware_path, "rb") as file:
+            self.assertEqual(file.read(), firmware)
+        self.assertEqual(artifact["size"], len(firmware))
+        self.assertEqual(artifact["sha256"], hashlib.sha256(firmware).hexdigest())
+
+    def test_uploaded_inasfw_rejects_firmware_checksum_mismatch(self):
+        firmware = _firmware_binary(device_kind="WTR", version="1.1.0")
+        release_module = _inasfw(firmware, device_kind="WTR", version="1.1.0", firmware_checksum="0" * 64)
+
+        with self.assertRaisesRegex(ValueError, "firmware.bin checksum mismatch"):
+            self.service.upsert_firmware_binary("WTR", "1.1.0", release_module)
+
+    def test_uploaded_inasfw_rejects_release_metadata_mismatch(self):
+        firmware = _firmware_binary(device_kind="WTR", version="1.1.0")
+        release_module = _inasfw(firmware, device_kind="FGT", version="1.1.0")
+
+        with self.assertRaisesRegex(ValueError, "release module device_kind mismatch"):
+            self.service.upsert_firmware_binary("WTR", "1.1.0", release_module)
+
     def test_uploaded_firmware_binary_requires_embedded_manifest(self):
         with self.assertRaisesRegex(ValueError, "manifest marker"):
             self.service.upsert_firmware_binary("WTR", "1.1.0", b"test-firmware-binary")
@@ -463,6 +492,24 @@ def _firmware_binary(
         "INAS_FW_MANIFEST_V1_END\n"
     ).encode("ascii")
     return b"\xe9ESP32BIN" + manifest + b"\x00firmware-body"
+
+
+def _inasfw(firmware: bytes, *, device_kind: str, version: str, firmware_checksum: str | None = None):
+    manifest = {
+        "schema_version": 1,
+        "module_type": "inas-device-firmware",
+        "module_id": "test-device",
+        "device_kind": device_kind,
+        "firmware_version": version,
+        "regions": [{"id": "app0", "file": "firmware.bin"}],
+        "checksums": {"firmware.bin": firmware_checksum or hashlib.sha256(firmware).hexdigest()},
+    }
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("test-device/release-module.json", json.dumps(manifest))
+        archive.writestr("test-device/bootloader.bin", b"must-not-be-stored")
+        archive.writestr("test-device/firmware.bin", firmware)
+    return output.getvalue()
 
 
 def _ota_request_message(device_id: str, firmware_version: str, device_kind: str = "WTR"):

@@ -1,7 +1,10 @@
 import hashlib
+import io
+import json
 import os
 import tempfile
 import unittest
+import zipfile
 from datetime import UTC, datetime, timedelta, timezone
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
@@ -173,6 +176,24 @@ class WebServerOTATest(unittest.TestCase):
         self.assertEqual(metadata["version"], "1.2.0")
         self.assertEqual(metadata["build_id"], "2026-07-03T10:31:34+0900+f31d9e6")
         self.assertEqual(metadata["project"], "watering-device")
+        self.assertEqual(metadata["upload_format"], "bin")
+
+    def test_inspect_inasfw_reads_only_embedded_firmware_manifest(self):
+        firmware = _firmware_binary(device_kind="FGT", version="0.2.0", project="fertigation-device", target="seeed_xiao_esp32c6")
+        release_module = _inasfw(firmware, device_kind="FGT", version="0.2.0")
+
+        response = self.client.post(
+            "/local/api/firmware-artifacts/inspect",
+            data={"firmware": (io.BytesIO(release_module), "fertigation-device-0.2.0.inasfw")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        metadata = response.get_json()
+        self.assertEqual(metadata["device_kind"], "FGT")
+        self.assertEqual(metadata["version"], "0.2.0")
+        self.assertEqual(metadata["project"], "fertigation-device")
+        self.assertEqual(metadata["upload_format"], "inasfw")
 
     def test_upload_rejects_invalid_boolean_form_value(self):
         response = self.client.post(
@@ -494,7 +515,8 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("/static/searchable-select.css", html)
         self.assertIn('id="firmware-upload-form"', html)
         self.assertIn('id="firmware-dropzone"', html)
-        self.assertIn("firmware.bin をここへドロップ", html)
+        self.assertIn("firmware.bin / .inasfw をここへドロップ", html)
+        self.assertIn(".inasfw の場合は中の firmware.bin だけを登録します", html)
         self.assertIn("/static/ui-illustrations/firmware-care.png", html)
         self.assertIn('id="firmware-version" name="version" type="hidden"', html)
         self.assertIn('id="inspect-firmware-manifest"', html)
@@ -795,6 +817,23 @@ def _firmware_binary(
         "INAS_FW_MANIFEST_V1_END\n"
     ).encode("ascii")
     return b"\xe9ESP32BIN" + manifest + b"\x00firmware-body"
+
+
+def _inasfw(firmware: bytes, *, device_kind: str, version: str):
+    manifest = {
+        "schema_version": 1,
+        "module_type": "inas-device-firmware",
+        "module_id": "test-device",
+        "device_kind": device_kind,
+        "firmware_version": version,
+        "regions": [{"id": "app0", "file": "firmware.bin"}],
+        "checksums": {"firmware.bin": hashlib.sha256(firmware).hexdigest()},
+    }
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("test-device/release-module.json", json.dumps(manifest))
+        archive.writestr("test-device/firmware.bin", firmware)
+    return output.getvalue()
 
 
 if __name__ == "__main__":

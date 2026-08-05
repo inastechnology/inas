@@ -27,6 +27,7 @@ compile_commands.json
 *.elf
 *.hex
 *.bin
+*.inasfw
 *.map
 *.uf2
 

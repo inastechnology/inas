@@ -100,6 +100,11 @@ from ina_device_hub.field_record_media_service import (
 )
 from ina_device_hub.field_repository import FieldValidationError, field_repository
 from ina_device_hub.field_status_dashboard import build_field_status_dashboard as _build_field_status_dashboard
+from ina_device_hub.firmware_release_module import (
+    FirmwareUploadTooLargeError,
+    FirmwareUploadValidationError,
+    normalize_firmware_upload,
+)
 from ina_device_hub.hierarchy_api import hierarchy_api
 from ina_device_hub.instagram_client import InstagramClient
 from ina_device_hub.instagram_post_task import reload_instagram_post_task_settings
@@ -4089,9 +4094,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 {% if selected.ota_error %}<div class="notice error">{{ selected.ota_error }}</div>{% endif %}
                 <img src="/static/ui-illustrations/firmware-care.png" alt="機器ソフトウェアを安全に更新するイラスト" loading="lazy">
               </div>
-              <form id="firmware-upload-form" class="firmware-upload-card" enctype="multipart/form-data" data-stateful-form data-pristine-message="firmware.binを選択してください。">
-                <div><h3>新しい更新ファイルを登録</h3><p class="lead">ファイルを置くと、対応機種とバージョンを自動で読み取ります。</p></div>
-                <label class="firmware-dropzone" id="firmware-dropzone" for="firmware-file"><strong>firmware.bin をここへドロップ</strong><span>またはクリックして選択</span><input id="firmware-file" name="firmware" type="file" accept=".bin,application/octet-stream" required></label>
+              <form id="firmware-upload-form" class="firmware-upload-card" enctype="multipart/form-data" data-stateful-form data-pristine-message="F/Wファイルを選択してください。">
+                <div><h3>新しい更新ファイルを登録</h3><p class="lead">ファイルを置くと、対応機種とバージョンを自動で読み取ります。firmware.bin と INASリリースモジュール（.inasfw）に対応し、.inasfw の場合は中の firmware.bin だけを登録します。</p></div>
+                <label class="firmware-dropzone" id="firmware-dropzone" for="firmware-file"><strong>firmware.bin / .inasfw をここへドロップ</strong><span>またはクリックして選択</span><input id="firmware-file" name="firmware" type="file" accept=".bin,.inasfw,application/octet-stream,application/zip" required></label>
                 <div id="firmware-manifest-summary" class="empty">まだファイルが選択されていません。</div>
                 <div class="firmware-meta"><div><span>対応機種</span><strong id="firmware-device-kind-display">-</strong></div><div><span>バージョン</span><strong id="firmware-version-display">-</strong></div><div><span>ビルド</span><strong id="firmware-build-id-display">-</strong></div></div>
                 <input id="firmware-device-kind" name="device_kind" type="hidden" value="{{ selected_device.device_kind if selected_device and selected_device.device_kind else 'WTR' }}">
@@ -5706,7 +5711,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               if (!file) {
                 inspectedFirmwareManifest = null;
                 inspectedFirmwareFileKey = "";
-                setFirmwareManifestSummary("firmware.bin を選択してください", false);
+                setFirmwareManifestSummary("firmware.bin または .inasfw を選択してください", false);
                 return null;
               }
               const currentKey = firmwareFileKey(file);
@@ -5719,7 +5724,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 const manifest = await requestJson(
                   "/local/api/firmware-artifacts/inspect",
                   { method: "POST", body: formData },
-                  "firmware.bin のmanifestを読み取っています...",
+                  "F/Wファイルの情報を読み取っています...",
                 );
                 inspectedFirmwareManifest = manifest;
                 inspectedFirmwareFileKey = currentKey;
@@ -5730,7 +5735,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 document.getElementById("firmware-version-display").textContent = manifest.version || "-";
                 document.getElementById("firmware-build-id-display").textContent = manifest.build_id || "-";
                 setFirmwareManifestSummary(
-                  "読み取り済み: " +
+                  (manifest.upload_format === "inasfw" ? "INASリリースモジュールから firmware.bin を読み取り済み: " : "firmware.bin を読み取り済み: ") +
                     "device_kind=" + (manifest.device_kind || "-") +
                     " / version=" + (manifest.version || "-") +
                     " / build_id=" + (manifest.build_id || "-") +
@@ -5794,7 +5799,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               event.preventDefault();
               const file = document.getElementById("firmware-file").files[0];
               if (!file) {
-                showResult("firmware.bin を選択してください", false);
+                showResult("firmware.bin または .inasfw を選択してください", false);
                 return;
               }
               let manifest;
@@ -5807,7 +5812,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               const deviceKind = (manifest && manifest.device_kind ? manifest.device_kind : "").trim();
               const version = (manifest && manifest.version ? manifest.version : "").trim();
               if (!deviceKind || !version) {
-                showResult("firmware.bin のmanifestからデバイス種別とバージョンを読み取れません", false);
+                showResult("F/Wファイルからデバイス種別とバージョンを読み取れません", false);
                 return;
               }
               const formData = new FormData();
@@ -5821,9 +5826,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 await requestJson(
                   "/local/api/firmware-artifacts/" + encodeURIComponent(deviceKind) + "/" + encodeURIComponent(version) + "/upload",
                   { method: "POST", body: formData },
-                  "firmware.bin をアップロードしています...",
+                  "F/Wファイルをアップロードしています...",
                 );
-                showResult("firmware.bin を登録しました", true);
+                showResult(manifest.upload_format === "inasfw" ? ".inasfw 内の firmware.bin を登録しました" : "firmware.bin を登録しました", true);
                 reloadSoon();
               } catch (error) {
                 showResult(error.message, false);
@@ -9593,17 +9598,20 @@ def list_firmware_artifacts():
 @app.route("/local/api/firmware-artifacts/inspect", methods=["POST"])
 def inspect_firmware_artifact():
     try:
-        firmware_binary = _read_firmware_upload()
+        firmware_upload = normalize_firmware_upload(_read_firmware_upload(), max_upload_bytes=_firmware_upload_limit())
+    except FirmwareUploadTooLargeError as exc:
+        return jsonify({"error": str(exc)}), 413
+    except FirmwareUploadValidationError as exc:
+        return jsonify({"error": str(exc)}), 400
     except FirmwareArtifactValidationError as exc:
         return jsonify({"error": str(exc)}), 413
-    if not firmware_binary:
-        return jsonify({"error": "firmware binary must not be empty"}), 400
 
     try:
-        metadata = extract_firmware_manifest(firmware_binary)
-    except FirmwareArtifactValidationError as exc:
+        metadata = extract_firmware_manifest(firmware_upload.firmware_binary)
+        firmware_upload.validate_embedded_manifest(metadata)
+    except (FirmwareArtifactValidationError, FirmwareUploadValidationError) as exc:
         return jsonify({"error": str(exc)}), 400
-    return jsonify(metadata)
+    return jsonify({**metadata, "upload_format": firmware_upload.source_format})
 
 
 @app.route("/local/api/firmware-artifacts/<version>", methods=["PUT"])
@@ -9637,13 +9645,17 @@ def upload_firmware_artifact(device_kind, version):
 
 
 def _read_firmware_upload():
-    limit = int((setting().get("security") or {}).get("firmware_max_upload_bytes", 16 * 1024 * 1024))
+    limit = _firmware_upload_limit()
     uploaded_file = request.files.get("firmware") or request.files.get("file")
     stream = uploaded_file.stream if uploaded_file is not None else request.stream
     firmware_binary = stream.read(limit + 1)
     if len(firmware_binary) > limit:
-        raise FirmwareArtifactValidationError(f"firmware binary exceeds the {limit}-byte limit")
+        raise FirmwareArtifactValidationError(f"firmware upload exceeds the {limit}-byte limit")
     return firmware_binary
+
+
+def _firmware_upload_limit():
+    return int((setting().get("security") or {}).get("firmware_max_upload_bytes", 16 * 1024 * 1024))
 
 
 @app.route("/firmware/<device_kind>/<version>/firmware.bin", methods=["GET"])
