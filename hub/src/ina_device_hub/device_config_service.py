@@ -310,6 +310,9 @@ class DeviceConfigService:
         else:
             stored_config = validate_device_config(config)
             config = project_runtime_config(record.get("device_kind"), stored_config)
+        return self._publish_runtime_config_payload(device_id, action, config, retain=retain, record_event=record_event)
+
+    def _publish_runtime_config_payload(self, device_id: str, action: str, config: dict, *, retain: bool, record_event: bool):
         topic = f"/{device_id}/kinds/config/{action}"
         payload = json.dumps(config, ensure_ascii=True, separators=(",", ":"))
         result = self.mqtt_client.publish(topic, payload, qos=0, retain=retain)
@@ -335,7 +338,8 @@ class DeviceConfigService:
         return {"topic": topic, "payload": config, "mqtt_rc": result.rc}
 
     def publish_reply(self, device_id: str, record_event: bool = True):
-        published = self.publish_config(device_id, "reply", config=self._config_for_reply(device_id), retain=False, record_event=record_event)
+        config = self._config_for_reply(device_id)
+        published = self._publish_runtime_config_payload(device_id, "reply", config, retain=False, record_event=record_event)
         self.repository.record_config_reply(device_id)
         return published
 

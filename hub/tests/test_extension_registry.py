@@ -61,22 +61,24 @@ class ExtensionRegistryTest(unittest.TestCase):
             "FGT",
             config={
                 "fgt": {
-                    "recipe": {
-                        "total_water_ml": 5000,
-                        "initial_water_ml": 1250,
-                        "nutrient_a_ml": 10,
-                        "nutrient_b_ml": 12.5,
+                    "timed_outputs": {
+                        "nutrient_a": {
+                            "on_sec": 120,
+                            "off_sec": 30,
+                            "repeat_count": 2,
+                        }
                     }
-                }
+                },
+                "sleep_sec": 3600,
             },
         )
 
         self.assertEqual(len(fgt), 1)
-        self.assertEqual(fgt[0]["tabs"][0]["label"], "液肥の流れ")
+        self.assertEqual(fgt[0]["tabs"][0]["label"], "時間指定運転")
         metrics = next(block for block in fgt[0]["tabs"][0]["blocks"] if block["type"] == "metric_grid")
         self.assertEqual(
             [item["display_value"] for item in metrics["items"]],
-            ["5000 mL", "1250 mL", "10 mL", "12.5 mL"],
+            ["120 秒", "30 秒", "2 回", "3600 秒"],
         )
         self.assertEqual([item["id"] for item in build_device_detail_extensions("WTR", config={})], ["jp.inas.development.operation-check"])
 

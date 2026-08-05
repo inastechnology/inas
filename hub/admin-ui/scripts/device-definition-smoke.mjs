@@ -16,7 +16,7 @@ page.on("console", (message) => {
 });
 
 const devices = [
-  ["WTR", "INADS-DEMO-WTR-001", ["ntp_server", "timezone_offset_sec", "moisture_threshold", "force_watering", "debug_log_on_wake", "ota_check_interval_sec", "watering_pattern", "soil_calibration", "env_sensors", "env_calibration", "schedules"]],
+  ["WTR", "INADS-DEMO-WTR-001", ["ntp_server", "timezone_offset_sec", "moisture_threshold", "force_watering", "startup_watering_test", "debug_log_on_wake", "ota_check_interval_sec", "watering_pattern", "soil_calibration", "env_sensors", "env_calibration", "schedules"]],
   ["WRS", "INADS-DEMO-WRS-001", ["ntp_server", "timezone_offset_sec", "sleep_sec", "moisture_threshold", "force_watering", "debug_log_on_wake", "ota_check_interval_sec", "env_sensors", "wrs", "schedules"]],
   ["ENV", "INADS-DEMO-ENV-001", ["ntp_server", "timezone_offset_sec", "sleep_sec", "ota_check_interval_sec", "env_sensors", "env_calibration"]],
   ["SOI", "INADS-DEMO-SOI-001", ["ntp_server", "timezone_offset_sec", "sleep_sec", "ota_check_interval_sec", "soil_calibration"]],
@@ -46,16 +46,27 @@ try {
     assert.equal("mosfet_switches" in preview, false, `${kind} firmware payload must not contain Hub installation metadata`);
 
     if (kind === "FGT") {
-      assert.equal(await page.$$("#fertigation-recipe .switch-output").then((items) => items.length), 5, "FGT must show its five fixed farming steps");
-      assert.equal(await page.$$("#fertigation-recipe [data-definition-path]").then((items) => items.length), 7, "FGT recipe must be editable with farmer-facing fields");
+      assert.equal(await page.$$("#fertigation-recipe .switch-output").then((items) => items.length), 5, "FGT must show its five fixed outputs");
+      assert.equal(await page.$$("#fertigation-recipe [data-definition-path]").then((items) => items.length), 18, "FGT timed outputs must be editable with farmer-facing fields");
       const flowText = await page.$eval("#fertigation-recipe", (section) => section.innerText);
       for (const label of ["水を入れる", "A液を量る", "B液を量る", "タンクを混ぜる", "植物へ送る"]) assert.match(flowText, new RegExp(label));
       assert.doesNotMatch(flowText, /MOSFET|mask|内部ID|modbus|端子/);
-      assert.equal(preview.fgt.enabled, false, "FGT must remain opt-in by default");
-      assert.equal(preview.fgt.recipe.initial_water_ml, 1250);
-      assert.equal(preview.fgt.recipe.rinse_water_ml, 500);
+      assert.equal(preview.fgt.enabled, true);
+      assert.equal(preview.fgt.timed_outputs.enabled, true);
+      assert.deepEqual(preview.fgt.timed_outputs.nutrient_a, { on_sec: 120, off_sec: 0, repeat_count: 1 });
+      assert.deepEqual(preview.fgt.timed_outputs.nutrient_b, { on_sec: 0, off_sec: 0, repeat_count: 0 });
+      assert.equal(preview.sleep_sec, 3600);
+      assert.doesNotMatch(flowText, /mL/);
     }
     await page.screenshot({ path: `/tmp/ina-device-definition-${kind.toLowerCase()}-settings.png`, fullPage: true });
+    if (kind === "FGT") {
+      await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      assert(overflow <= 1, `FGT timed-output settings must not overflow on mobile: ${overflow}px`);
+      await page.screenshot({ path: "/tmp/ina-device-definition-fgt-settings-mobile.png", fullPage: true });
+      await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
+    }
 
     await page.goto(`${baseUrl}/mqtt-devices/${deviceId}?tab=monitoring`, { waitUntil: "networkidle0" });
     assert.equal(await page.$eval('.tab-button[data-tab-key="monitoring"]', (tab) => tab.getAttribute("aria-selected")), "true");

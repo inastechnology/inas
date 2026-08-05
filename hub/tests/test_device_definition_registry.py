@@ -74,6 +74,16 @@ class DeviceDefinitionRegistryTest(unittest.TestCase):
         )
         self.assertEqual(len(definition["output_slots"]), 5)
 
+    def test_fgt_timed_output_fields_use_seconds_and_1800_second_limit(self):
+        definition = get_device_definition("FGT")
+        fields = {field["path"]: field for field in definition["ui"]["configuration_fields"]}
+
+        self.assertNotIn("fgt.recipe.nutrient_a_ml", fields)
+        self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["unit"], "秒")
+        self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["min"], 0)
+        self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["max"], 1800)
+        self.assertEqual(fields["sleep_sec"]["max"], 86400)
+
     def test_supported_but_missing_metrics_remain_visible(self):
         config = {"env_sensors": {"soil": {"enabled": False}, "par": {"enabled": True}}}
         metrics = _build_device_operational_metrics(

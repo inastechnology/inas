@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "fgt_state_machine.h"
+#include "fgt_timed_output_sequence.h"
 #include "hal_rs485_sensor_protocol.h"
 
 constexpr uint8_t APP_FGT_MAX_SCHEDULES = 4;
@@ -41,6 +42,8 @@ typedef struct
     bool debug_log_on_wake;
     bool enabled;
     uint32_t recovery_ack;
+    bool timed_outputs_enabled;
+    fgt::TimedProgram timed_program;
     fgt::Recipe recipe;
     fgt::Limits limits;
     app_fgt_sensor_config_t sensors;

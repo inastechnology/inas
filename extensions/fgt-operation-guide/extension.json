@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "id": "jp.inas.device.fgt-operation-guide",
-  "name": "FGT 液肥づくりガイド",
-  "version": "1.0.0",
-  "description": "FGTの液肥づくり工程と、現在の配合設定を機器詳細に追加します。",
+  "name": "FGT 時間指定運転ガイド",
+  "version": "1.1.0",
+  "description": "FGTの時間指定運転と、現在のポンプ設定を機器詳細に追加します。",
   "compatibility": {
     "hub_extension_api": 1
   },
@@ -15,8 +15,8 @@
       "overview_cards": [
         {
           "id": "mixing-cycle",
-          "title": "液肥づくりの流れ",
-          "description": "水を先に入れ、A液とB液を別々に量り、十分に混ぜてから植物へ送ります。",
+          "title": "ポンプを秒数で運転できます",
+          "description": "各出力にON時間、OFF時間、繰り返し回数を設定します。設定した出力は順番に動きます。",
           "type": "callout",
           "tone": "leaf"
         }
@@ -24,78 +24,78 @@
       "tabs": [
         {
           "id": "fertigation-flow",
-          "label": "液肥の流れ",
-          "title": "今日の液肥づくり",
-          "description": "この機器が行う工程と、現在設定されている1回分の配合をまとめて確認できます。",
+          "label": "時間指定運転",
+          "title": "予約時刻のポンプ運転",
+          "description": "各出力の動きと、現在設定されている秒数をまとめて確認できます。",
           "blocks": [
             {
               "type": "process_flow",
-              "title": "5つの工程",
+              "title": "運転の流れ",
               "items": [
                 {
-                  "title": "水を入れる",
-                  "description": "タンクへ最初の水を入れます。"
+                  "title": "予約時刻に起動",
+                  "description": "時刻同期と最新設定を確認して運転を始めます。"
                 },
                 {
-                  "title": "A液を量る",
-                  "description": "タンクを混ぜながらA液を加えます。"
+                  "title": "設定した出力をON",
+                  "description": "ON時間が0秒の出力は動かしません。"
                 },
                 {
-                  "title": "B液を量る",
-                  "description": "A液と同時に入れず、続けてB液を加えます。"
+                  "title": "必要なら一時停止",
+                  "description": "OFF時間を待ってから次の運転へ進みます。"
                 },
                 {
-                  "title": "仕上げに混ぜる",
-                  "description": "残りの水を入れ、濃度を均一にします。"
+                  "title": "指定回数を繰り返す",
+                  "description": "ONとOFFを設定した回数だけ繰り返します。"
                 },
                 {
-                  "title": "植物へ送る",
-                  "description": "完成した液肥を潅水系統へ送ります。"
+                  "title": "すべてOFFで終了",
+                  "description": "完了後と異常時はすべての出力を停止します。"
                 }
               ]
             },
             {
               "type": "metric_grid",
-              "title": "現在の1回分",
+              "title": "現在のA液ポンプ設定",
               "items": [
                 {
-                  "label": "作る液肥",
+                  "label": "ON時間",
                   "value": {
                     "source": "config",
-                    "path": "fgt.recipe.total_water_ml",
-                    "unit": "mL"
+                    "path": "fgt.timed_outputs.nutrient_a.on_sec",
+                    "unit": "秒"
                   }
                 },
                 {
-                  "label": "最初の水",
+                  "label": "OFF時間",
                   "value": {
                     "source": "config",
-                    "path": "fgt.recipe.initial_water_ml",
-                    "unit": "mL"
+                    "path": "fgt.timed_outputs.nutrient_a.off_sec",
+                    "unit": "秒"
                   }
                 },
                 {
-                  "label": "A液",
+                  "label": "繰り返し",
                   "value": {
                     "source": "config",
-                    "path": "fgt.recipe.nutrient_a_ml",
-                    "unit": "mL"
+                    "path": "fgt.timed_outputs.nutrient_a.repeat_count",
+                    "unit": "回"
                   }
                 },
                 {
-                  "label": "B液",
+                  "label": "通常の起床間隔",
                   "value": {
                     "source": "config",
-                    "path": "fgt.recipe.nutrient_b_ml",
-                    "unit": "mL"
+                    "path": "sleep_sec",
+                    "unit": "秒"
                   }
                 }
               ]
             },
             {
               "type": "callout",
-              "title": "混ぜ残しを防ぐために",
-              "description": "A液とB液は原液のまま同時に入れません。運転後は洗浄用の水を流し、タンクと配管に濃い液肥を残さないようにします。",
+              "title": "異常時はすべて停止します",
+              "description": "複数の出力は同時に動かさず、I/O異常、漏水、非常停止、運転時間超過を検出するとすべてOFFにします。",
               "tone": "water"
             }
           ]

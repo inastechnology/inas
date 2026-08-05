@@ -392,7 +392,7 @@
         ],
         "schema_version": 1
       },
-      "definition_version": "1.0.0",
+      "definition_version": "1.1.0",
       "device": {
         "category": "fertigation",
         "icon": "🧪",
@@ -482,6 +482,22 @@
       ],
       "schema_version": 1,
       "sensor_slots": [
+        {
+          "chart": {
+            "empty_message": "バッテリー電圧の時系列データはまだありません。",
+            "kind": "battery_voltage",
+            "title": "バッテリー電圧推移"
+          },
+          "digits": 3,
+          "enabled_path": "",
+          "id": "battery_voltage",
+          "label": "バッテリー電圧",
+          "slot_id": "power",
+          "status_keys": [
+            "battery_voltage_v"
+          ],
+          "unit": "V"
+        },
         {
           "chart": {
             "empty_message": "今回の給水量の時系列データはまだありません。",
@@ -648,6 +664,22 @@
         "metrics": [
           {
             "chart": {
+              "empty_message": "バッテリー電圧の時系列データはまだありません。",
+              "kind": "battery_voltage",
+              "title": "バッテリー電圧推移"
+            },
+            "digits": 3,
+            "enabled_path": "",
+            "id": "battery_voltage",
+            "label": "バッテリー電圧",
+            "slot_id": "power",
+            "status_keys": [
+              "battery_voltage_v"
+            ],
+            "unit": "V"
+          },
+          {
+            "chart": {
               "empty_message": "今回の給水量の時系列データはまだありません。",
               "kind": "batch_water",
               "title": "今回の給水量推移"
@@ -812,57 +844,142 @@
       "ui": {
         "configuration_fields": [
           {
-            "label": "自動で液肥をつくる",
+            "label": "予約運転を有効にする",
             "path": "fgt.enabled",
             "type": "boolean"
           },
           {
-            "label": "1回に作る液肥",
-            "max": 100000,
-            "min": 100,
-            "path": "fgt.recipe.total_water_ml",
-            "type": "number",
-            "unit": "mL"
+            "label": "各ポンプを秒数で動かす",
+            "path": "fgt.timed_outputs.enabled",
+            "type": "boolean"
           },
           {
-            "label": "最初に入れる水",
-            "max": 100000,
-            "min": 50,
-            "path": "fgt.recipe.initial_water_ml",
-            "type": "number",
-            "unit": "mL"
-          },
-          {
-            "label": "A液",
-            "max": 10000,
+            "label": "給水ポンプ ON時間",
+            "max": 1800,
             "min": 0,
-            "path": "fgt.recipe.nutrient_a_ml",
-            "type": "number",
-            "unit": "mL"
-          },
-          {
-            "label": "B液",
-            "max": 10000,
-            "min": 0,
-            "path": "fgt.recipe.nutrient_b_ml",
-            "type": "number",
-            "unit": "mL"
-          },
-          {
-            "label": "仕上げに混ぜる時間",
-            "max": 3600,
-            "min": 1,
-            "path": "fgt.recipe.final_mix_sec",
+            "path": "fgt.timed_outputs.water_inlet.on_sec",
             "type": "number",
             "unit": "秒"
           },
           {
-            "label": "洗浄に使う水",
-            "max": 100000,
+            "label": "給水ポンプ OFF時間",
+            "max": 1800,
             "min": 0,
-            "path": "fgt.recipe.rinse_water_ml",
+            "path": "fgt.timed_outputs.water_inlet.off_sec",
             "type": "number",
-            "unit": "mL"
+            "unit": "秒"
+          },
+          {
+            "label": "給水ポンプ 繰り返し",
+            "max": 20,
+            "min": 0,
+            "path": "fgt.timed_outputs.water_inlet.repeat_count",
+            "type": "number",
+            "unit": "回"
+          },
+          {
+            "label": "A液ポンプ ON時間",
+            "max": 1800,
+            "min": 0,
+            "path": "fgt.timed_outputs.nutrient_a.on_sec",
+            "type": "number",
+            "unit": "秒"
+          },
+          {
+            "label": "A液ポンプ OFF時間",
+            "max": 1800,
+            "min": 0,
+            "path": "fgt.timed_outputs.nutrient_a.off_sec",
+            "type": "number",
+            "unit": "秒"
+          },
+          {
+            "label": "A液ポンプ 繰り返し",
+            "max": 20,
+            "min": 0,
+            "path": "fgt.timed_outputs.nutrient_a.repeat_count",
+            "type": "number",
+            "unit": "回"
+          },
+          {
+            "label": "B液ポンプ ON時間",
+            "max": 1800,
+            "min": 0,
+            "path": "fgt.timed_outputs.nutrient_b.on_sec",
+            "type": "number",
+            "unit": "秒"
+          },
+          {
+            "label": "B液ポンプ OFF時間",
+            "max": 1800,
+            "min": 0,
+            "path": "fgt.timed_outputs.nutrient_b.off_sec",
+            "type": "number",
+            "unit": "秒"
+          },
+          {
+            "label": "B液ポンプ 繰り返し",
+            "max": 20,
+            "min": 0,
+            "path": "fgt.timed_outputs.nutrient_b.repeat_count",
+            "type": "number",
+            "unit": "回"
+          },
+          {
+            "label": "攪拌ポンプ ON時間",
+            "max": 1800,
+            "min": 0,
+            "path": "fgt.timed_outputs.mixer.on_sec",
+            "type": "number",
+            "unit": "秒"
+          },
+          {
+            "label": "攪拌ポンプ OFF時間",
+            "max": 1800,
+            "min": 0,
+            "path": "fgt.timed_outputs.mixer.off_sec",
+            "type": "number",
+            "unit": "秒"
+          },
+          {
+            "label": "攪拌ポンプ 繰り返し",
+            "max": 20,
+            "min": 0,
+            "path": "fgt.timed_outputs.mixer.repeat_count",
+            "type": "number",
+            "unit": "回"
+          },
+          {
+            "label": "潅水ポンプ ON時間",
+            "max": 1800,
+            "min": 0,
+            "path": "fgt.timed_outputs.irrigation.on_sec",
+            "type": "number",
+            "unit": "秒"
+          },
+          {
+            "label": "潅水ポンプ OFF時間",
+            "max": 1800,
+            "min": 0,
+            "path": "fgt.timed_outputs.irrigation.off_sec",
+            "type": "number",
+            "unit": "秒"
+          },
+          {
+            "label": "潅水ポンプ 繰り返し",
+            "max": 20,
+            "min": 0,
+            "path": "fgt.timed_outputs.irrigation.repeat_count",
+            "type": "number",
+            "unit": "回"
+          },
+          {
+            "label": "通常の起床間隔",
+            "max": 86400,
+            "min": 60,
+            "path": "sleep_sec",
+            "type": "number",
+            "unit": "秒"
           }
         ],
         "schema_version": 1,

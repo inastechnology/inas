@@ -3785,10 +3785,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
               {% if selected.supports_fertigation %}
               <section id="fertigation-recipe" class="setup-stage">
-                <div class="setup-stage-head"><div class="context-help-row"><h3>液肥づくりの流れ</h3><details class="context-help left"><summary aria-label="液肥設備の役割の説明を開く" title="液肥設備の役割">?</summary><div class="context-help-panel" role="note"><strong>液肥設備の役割</strong><p>この機器では5つの役割があらかじめ決まっています。配線番号を選ぶ必要はありません。</p></div></details></div><span class="badge good">用途固定</span></div>
-                <div class="switch-flow-board fertigation-flow" aria-label="液肥づくりの固定工程">
+                <div class="setup-stage-head"><div class="context-help-row"><h3>ポンプの時間設定</h3><details class="context-help left"><summary aria-label="時間指定運転の説明を開く" title="時間指定運転">?</summary><div class="context-help-panel" role="note"><strong>時間指定運転</strong><p>各出力を0〜1800秒で設定できます。ON時間と繰り返し回数を0にすると、その出力は動きません。</p></div></details></div><span class="badge good">秒数指定</span></div>
+                <div class="switch-flow-board fertigation-flow" aria-label="時間指定できるFGT出力">
                   <div class="controller-node">原水</div>
-                  <div class="switch-output-list">{% for output in selected.output_settings.outputs %}<div class="switch-output enabled"><span class="switch-output-dot"></span><span class="switch-output-icon" aria-hidden="true">{{ ['🚰','🅰️','🅱️','🌀','🌱'][loop.index0] }}</span><div><strong>{{ output.name }}</strong><small>{{ output.role_label }}</small></div><span class="terminal">工程 {{ output.number }}</span></div>{% endfor %}</div>
+                  <div class="switch-output-list">{% for output in selected.output_settings.outputs %}<div class="switch-output enabled"><span class="switch-output-dot"></span><span class="switch-output-icon" aria-hidden="true">{{ ['🚰','🅰️','🅱️','🌀','🌱'][loop.index0] }}</span><div><strong>{{ output.name }}</strong><small>{{ output.role_label }}</small></div><span class="terminal">出力 {{ output.number }}</span></div>{% endfor %}</div>
                 </div>
                 <div class="config-toolbar definition-config-fields">
                   {% for field in selected.definition.ui.configuration_fields %}
@@ -3796,7 +3796,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                   {% else %}<div class="config-field"><label>{{ field.label }}</label><div class="threshold-control"><input type="number" data-definition-path="{{ field.path }}" data-definition-type="number" min="{{ field.min }}" max="{{ field.max }}" step="1"><span>{{ field.unit }}</span></div></div>{% endif %}
                   {% endfor %}
                 </div>
-                <details class="context-help left"><summary aria-label="液肥づくりの手順補足を開く" title="液肥づくりの手順補足">?</summary><div class="context-help-panel" role="note"><strong>液肥づくりの手順補足</strong><p>最初に一部の水を入れ、A液とB液を別々に加えながら攪拌し、残りの水で混ぜます。潅水後は洗浄用の水でタンクと配管をすすぎます。</p></div></details>
+                <details class="context-help left"><summary aria-label="ON・OFF設定の補足を開く" title="ON・OFF設定の補足">?</summary><div class="context-help-panel" role="note"><strong>ON・OFFと繰り返し</strong><p>連続運転はON時間と繰り返し1回を設定します。分割運転は、ON時間・OFF時間・繰り返し回数を設定します。出力は順番に動き、同時には動きません。</p></div></details>
               </section>
               {% endif %}
 
@@ -3845,7 +3845,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </section>
 
               <div id="watering-schedules" class="setup-stage schedule-stage"{% if not selected.supports_irrigation and not selected.supports_fertigation %} hidden{% endif %}>
-                <h3>{{ '液肥づくりの予約' if selected.supports_fertigation else '灌水予約' }}</h3>
+                <h3>{{ 'ポンプ運転の予約' if selected.supports_fertigation else '灌水予約' }}</h3>
                 {% if selected.supports_watering_pattern %}
                 <fieldset class="irrigation-mode-picker" aria-describedby="irrigation-mode-help">
                   <legend>灌水モード</legend>
@@ -5045,7 +5045,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const row = document.createElement("div");
             row.className = "schedule-row";
             row.innerHTML = (isFertigationDevice ? [
-              '<div><label>液肥づくりを始める時刻</label><input data-schedule-time type="time" required></div>',
+              '<div><label>ポンプ運転を始める時刻</label><input data-schedule-time type="time" required></div>',
               '<label class="switch-row"><input data-schedule-enabled type="checkbox"> この予約を使う</label>',
               '<input data-schedule-duration type="hidden" value="1">',
               '<select data-schedule-channel hidden><option value="1">固定工程</option></select>',
@@ -7852,10 +7852,7 @@ def field_research_export_api(field_id):
         writer.writerow(
             [
                 row["date"],
-                *[
-                    (row["weather"].get(name[8:]) if name.startswith("weather.") else row["field_records"].get(name[14:]))
-                    for name in metric_names
-                ],
+                *[(row["weather"].get(name[8:]) if name.startswith("weather.") else row["field_records"].get(name[14:])) for name in metric_names],
             ]
         )
     return Response(

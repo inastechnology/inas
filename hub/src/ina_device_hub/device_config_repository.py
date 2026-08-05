@@ -23,6 +23,7 @@ DEVICE_STATE_TRANSITIONS = {
 }
 MAX_STATUS_HISTORY = 2000
 MAX_OTA_STATUS_HISTORY = 100
+MAX_DEVICE_CONFIG_PAYLOAD_BYTES = 8192
 DEVICE_KIND_RE = re.compile(r"^[A-Z]{3}$")
 MOSFET_SWITCH_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
@@ -528,12 +529,15 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         recipe = fgt.get("recipe", {})
         limits = fgt.get("limits", {})
         sensors = fgt.get("sensors", {})
+        timed_outputs = fgt.get("timed_outputs", {})
         if not isinstance(recipe, dict):
             raise DeviceConfigValidationError("fgt.recipe must be an object")
         if not isinstance(limits, dict):
             raise DeviceConfigValidationError("fgt.limits must be an object")
         if not isinstance(sensors, dict):
             raise DeviceConfigValidationError("fgt.sensors must be an object")
+        if not isinstance(timed_outputs, dict):
+            raise DeviceConfigValidationError("fgt.timed_outputs must be an object")
         soil = sensors.get("soil", {})
         par = sensors.get("par", {})
         if not isinstance(soil, dict):
@@ -576,9 +580,34 @@ def validate_device_config(config: dict):  # noqa: PLR0915
         if normalized_fgt_recipe["rinse_water_ml"] > 0 and (normalized_fgt_recipe["rinse_mix_sec"] == 0 or normalized_fgt_recipe["rinse_drain_max_sec"] == 0):
             raise DeviceConfigValidationError("enabled FGT rinse requires rinse_mix_sec and rinse_drain_max_sec")
 
+        normalized_timed_outputs = {"enabled": _optional_bool(timed_outputs, "enabled", False, "fgt.timed_outputs.enabled")}
+        timed_output_duration_sec = 0
+        timed_output_count = 0
+        for output_name in ("water_inlet", "nutrient_a", "nutrient_b", "mixer", "irrigation"):
+            output = timed_outputs.get(output_name, {})
+            if not isinstance(output, dict):
+                raise DeviceConfigValidationError(f"fgt.timed_outputs.{output_name} must be an object")
+            normalized_output = {
+                "on_sec": _optional_int(output, "on_sec", 0, 0, 1800, f"fgt.timed_outputs.{output_name}.on_sec"),
+                "off_sec": _optional_int(output, "off_sec", 0, 0, 1800, f"fgt.timed_outputs.{output_name}.off_sec"),
+                "repeat_count": _optional_int(output, "repeat_count", 0, 0, 20, f"fgt.timed_outputs.{output_name}.repeat_count"),
+            }
+            if (normalized_output["on_sec"] == 0) != (normalized_output["repeat_count"] == 0):
+                raise DeviceConfigValidationError(f"fgt.timed_outputs.{output_name} requires both on_sec and repeat_count, or both zero")
+            if normalized_output["on_sec"] > 0:
+                timed_output_count += 1
+                timed_output_duration_sec += normalized_output["on_sec"] * normalized_output["repeat_count"]
+                timed_output_duration_sec += normalized_output["off_sec"] * (normalized_output["repeat_count"] - 1)
+            normalized_timed_outputs[output_name] = normalized_output
+        if normalized_timed_outputs["enabled"] and timed_output_count == 0:
+            raise DeviceConfigValidationError("enabled fgt.timed_outputs requires at least one output program")
+        if normalized_timed_outputs["enabled"] and timed_output_duration_sec > normalized_fgt_limits["max_batch_sec"]:
+            raise DeviceConfigValidationError("fgt.timed_outputs duration must not exceed fgt.limits.max_batch_sec")
+
         normalized_fgt = {
             "enabled": _optional_bool(fgt, "enabled", False, "fgt.enabled"),
             "recovery_ack": _optional_int(fgt, "recovery_ack", 0, 0, 0xFFFFFFFF, "fgt.recovery_ack"),
+            "timed_outputs": normalized_timed_outputs,
             "recipe": normalized_fgt_recipe,
             "limits": normalized_fgt_limits,
             "sensors": {
@@ -736,8 +765,8 @@ def validate_device_config(config: dict):  # noqa: PLR0915
     if normalized_fgt is not None:
         normalized["fgt"] = normalized_fgt
     payload = json.dumps(normalized, ensure_ascii=True, separators=(",", ":"))
-    if len(payload.encode("utf-8")) >= 4096:
-        raise DeviceConfigValidationError("config payload must be less than 4096 bytes")
+    if len(payload.encode("utf-8")) >= MAX_DEVICE_CONFIG_PAYLOAD_BYTES:
+        raise DeviceConfigValidationError(f"config payload must be less than {MAX_DEVICE_CONFIG_PAYLOAD_BYTES} bytes")
     return normalized
 
 

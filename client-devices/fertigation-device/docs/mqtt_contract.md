@@ -14,6 +14,14 @@ the v1 defaults and remain bounded by firmware limits.
   "debug_log_on_wake": false,
   "fgt": {
     "enabled": false,
+    "timed_outputs": {
+      "enabled": false,
+      "water_inlet": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+      "nutrient_a": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+      "nutrient_b": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+      "mixer": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+      "irrigation": {"on_sec": 0, "off_sec": 0, "repeat_count": 0}
+    },
     "recipe": {
       "total_water_ml": 4500,
       "initial_water_ml": 1250,
@@ -58,6 +66,14 @@ instead. Firmware consumes up to four valid daily entries. A fresh device
 defaults to `fgt.enabled=false`, so a generic legacy config cannot start nutrient
 dosing.
 
+When `fgt.timed_outputs.enabled=true`, the timed sequence replaces the nutrient
+recipe for every enabled FGT schedule. Each fixed output accepts `on_sec` and
+`off_sec` from 0 to 1800 and `repeat_count` from 0 to 20. Both `on_sec` and
+`repeat_count` must be zero to disable an output, or both must be positive to
+enable it. Enabled outputs run sequentially in terminal order. The planned sum
+of ON and intervening OFF intervals must not exceed `fgt.limits.max_batch_sec`.
+The top-level `fgt.enabled` remains the master unattended-operation switch.
+
 FGT v1 accepts only `frequency.mode="daily"`. Interval and weekday entries are
 ignored rather than accidentally being executed every day.
 
@@ -85,6 +101,8 @@ The normal status payload includes:
 - lifecycle: network/config/time/OTA state and next sleep;
 - batch: `batch_due`, `batch_started`, `batch_completed`, `batch_id`;
 - state machine: `fgt_phase`, `fgt_fault`, `fgt_phase_elapsed_ms`;
+- operation: `fgt_operation_mode`, `fgt_timed_output`, and
+  `fgt_timed_repeat_number`;
 - water plan: `inlet_water_ml`, `nutrient_batch_water_target_ml`,
   `rinse_water_target_ml`, and `planned_irrigation_water_ml`;
 - volume: `inlet_water_ml`, `target_water_ml`;

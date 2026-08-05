@@ -164,6 +164,32 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
 
         self.assertEqual(self.notification_service.new_devices, [])
 
+    def test_known_fgt_config_request_replies_with_projected_runtime_config(self):
+        device_id = "INADS-FGT-CONFIG-REQUEST-001"
+        self.service.get_record(device_id)
+        self.repository.record_status(device_id, {"seq": 1, "device_kind": "FGT", "firmware_version": "0.1.0"})
+
+        handled = self.service.handle_mqtt_message(
+            None,
+            {
+                "message_type": "device_config",
+                "device_id": device_id,
+                "category": "config",
+                "action": "request",
+                "payload": b'{"request":"runtime_config"}',
+            },
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual(len(self.mqtt_client.published), 1)
+        payload = json.loads(self.mqtt_client.published[0]["payload"])
+        self.assertEqual(
+            set(payload),
+            {"ntp_server", "timezone_offset_sec", "sleep_sec", "debug_log_on_wake", "ota_check_interval_sec", "fgt", "schedules"},
+        )
+        self.assertNotIn("moisture_threshold", payload)
+        self.assertIsNotNone(self.repository.get(device_id)["last_config_reply_at"])
+
     def test_config_request_publishes_reply_before_logging_inbound_event(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000009"
         deferred_event_logs = []
@@ -313,7 +339,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertEqual(self.notification_service.new_devices[0]["source"], "status")
         self.assertEqual(self.notification_service.new_devices[0]["payload"]["seq"], 123)
 
-    def test_config_validation_requires_schedule_and_payload_under_4096_bytes(self):
+    def test_config_validation_requires_schedule_and_payload_under_8192_bytes(self):
         with self.assertRaises(DeviceConfigValidationError):
             validate_device_config(
                 {
@@ -327,7 +353,7 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         with self.assertRaises(DeviceConfigValidationError):
             validate_device_config(
                 {
-                    "ntp_server": "x" * 4200,
+                    "ntp_server": "x" * 8300,
                     "timezone_offset_sec": 32400,
                     "moisture_threshold": 40,
                     "schedules": [{"hour": 7, "minute": 0, "duration_sec": 1, "channel_mask": 1}],
@@ -393,6 +419,10 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                 "fgt": {
                     "enabled": True,
                     "recovery_ack": 7,
+                    "timed_outputs": {
+                        "enabled": True,
+                        "nutrient_a": {"on_sec": 120, "off_sec": 0, "repeat_count": 1},
+                    },
                     "recipe": {
                         "total_water_ml": 5000,
                         "initial_water_ml": 1250,
@@ -417,6 +447,15 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertEqual(config["sleep_sec"], 180)
         self.assertTrue(config["fgt"]["enabled"])
         self.assertEqual(config["fgt"]["recovery_ack"], 7)
+        self.assertTrue(config["fgt"]["timed_outputs"]["enabled"])
+        self.assertEqual(
+            config["fgt"]["timed_outputs"]["nutrient_a"],
+            {"on_sec": 120, "off_sec": 0, "repeat_count": 1},
+        )
+        self.assertEqual(
+            config["fgt"]["timed_outputs"]["nutrient_b"],
+            {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+        )
         self.assertEqual(config["fgt"]["recipe"]["initial_water_ml"], 1250)
         self.assertEqual(config["fgt"]["sensors"]["soil"]["modbus_slave_id"], 4)
         self.assertFalse(config["fgt"]["sensors"]["par"]["enabled"])
@@ -485,6 +524,31 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                     "fgt": {
                         "recipe": {"nutrient_a_ml": 101},
                         "limits": {"max_nutrient_ml": 100},
+                    },
+                }
+            )
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    **base,
+                    "fgt": {
+                        "timed_outputs": {
+                            "enabled": True,
+                            "nutrient_a": {"on_sec": 120, "repeat_count": 0},
+                        }
+                    },
+                }
+            )
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    **base,
+                    "fgt": {
+                        "timed_outputs": {
+                            "enabled": True,
+                            "nutrient_a": {"on_sec": 1800, "off_sec": 1, "repeat_count": 2},
+                        },
+                        "limits": {"max_batch_sec": 1800},
                     },
                 }
             )

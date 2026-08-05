@@ -6,6 +6,7 @@
 #include "fgt_rs485_device_registry.h"
 #include "fgt_sensor_diagnostics.h"
 #include "fgt_state_machine.h"
+#include "fgt_timed_output_sequence.h"
 
 using namespace fgt;
 
@@ -165,6 +166,118 @@ static void test_batch_timeout_turns_everything_off()
     TEST_ASSERT_EQUAL(Phase::fault, snapshot.phase);
     TEST_ASSERT_EQUAL(Fault::batch_timeout, snapshot.fault);
     TEST_ASSERT_FALSE(machine.active());
+}
+
+static TimedProgram nutrient_a_two_minute_program()
+{
+    TimedProgram program;
+    program.outputs[static_cast<uint8_t>(TimedOutput::nutrient_a)].on_ms = 120000;
+    program.outputs[static_cast<uint8_t>(TimedOutput::nutrient_a)].repeat_count = 1;
+    return program;
+}
+
+static void test_timed_output_runs_only_nutrient_a_for_two_minutes()
+{
+    TimedProgram program = nutrient_a_two_minute_program();
+    TimedOutputSequence sequence;
+    Inputs inputs;
+
+    TEST_ASSERT_TRUE(timed_program_valid(program));
+    TEST_ASSERT_EQUAL_UINT32(120000, timed_program_duration_ms(program));
+    TEST_ASSERT_TRUE(sequence.start(program, inputs, 100));
+
+    TimedSnapshot snapshot = sequence.snapshot(100);
+    TEST_ASSERT_EQUAL(TimedPhase::output_on, snapshot.phase);
+    TEST_ASSERT_EQUAL(TimedOutput::nutrient_a, snapshot.active_output);
+    TEST_ASSERT_TRUE(snapshot.outputs.nutrient_a);
+    TEST_ASSERT_FALSE(snapshot.outputs.water_inlet);
+    TEST_ASSERT_FALSE(snapshot.outputs.nutrient_b);
+    TEST_ASSERT_FALSE(snapshot.outputs.mixer);
+    TEST_ASSERT_FALSE(snapshot.outputs.irrigation);
+
+    snapshot = sequence.tick(inputs, 120099);
+    TEST_ASSERT_TRUE(snapshot.outputs.nutrient_a);
+    snapshot = sequence.tick(inputs, 120100);
+    TEST_ASSERT_EQUAL(TimedPhase::complete, snapshot.phase);
+    TEST_ASSERT_FALSE(sequence.active());
+    TEST_ASSERT_FALSE(snapshot.outputs.nutrient_a);
+}
+
+static void test_timed_output_repeats_on_off_pattern()
+{
+    TimedProgram program;
+    TimedOutputProgram &irrigation =
+        program.outputs[static_cast<uint8_t>(TimedOutput::irrigation)];
+    irrigation.on_ms = 2000;
+    irrigation.off_ms = 1000;
+    irrigation.repeat_count = 3;
+    TimedOutputSequence sequence;
+    Inputs inputs;
+
+    TEST_ASSERT_EQUAL_UINT32(8000, timed_program_duration_ms(program));
+    TEST_ASSERT_TRUE(sequence.start(program, inputs, 0));
+    TEST_ASSERT_EQUAL_UINT8(1, sequence.snapshot(0).repeat_number);
+
+    TimedSnapshot snapshot = sequence.tick(inputs, 2000);
+    TEST_ASSERT_EQUAL(TimedPhase::output_off, snapshot.phase);
+    TEST_ASSERT_FALSE(snapshot.outputs.irrigation);
+    snapshot = sequence.tick(inputs, 3000);
+    TEST_ASSERT_EQUAL(TimedPhase::output_on, snapshot.phase);
+    TEST_ASSERT_EQUAL_UINT8(2, snapshot.repeat_number);
+    TEST_ASSERT_TRUE(snapshot.outputs.irrigation);
+    snapshot = sequence.tick(inputs, 5000);
+    TEST_ASSERT_EQUAL(TimedPhase::output_off, snapshot.phase);
+    snapshot = sequence.tick(inputs, 6000);
+    TEST_ASSERT_EQUAL_UINT8(3, snapshot.repeat_number);
+    snapshot = sequence.tick(inputs, 8000);
+    TEST_ASSERT_EQUAL(TimedPhase::complete, snapshot.phase);
+}
+
+static void test_timed_output_runs_programs_sequentially()
+{
+    TimedProgram program;
+    program.outputs[static_cast<uint8_t>(TimedOutput::nutrient_a)] = {100, 0, 1};
+    program.outputs[static_cast<uint8_t>(TimedOutput::nutrient_b)] = {100, 0, 1};
+    TimedOutputSequence sequence;
+    Inputs inputs;
+
+    TEST_ASSERT_TRUE(sequence.start(program, inputs, 0));
+    TimedSnapshot snapshot = sequence.tick(inputs, 100);
+    TEST_ASSERT_TRUE(snapshot.outputs.nutrient_b);
+    TEST_ASSERT_FALSE(snapshot.outputs.nutrient_a);
+    TEST_ASSERT_FALSE(snapshot.outputs.nutrient_a && snapshot.outputs.nutrient_b);
+    snapshot = sequence.tick(inputs, 200);
+    TEST_ASSERT_EQUAL(TimedPhase::complete, snapshot.phase);
+}
+
+static void test_timed_output_rejects_invalid_or_oversized_programs()
+{
+    TimedProgram program;
+    TEST_ASSERT_FALSE(timed_program_valid(program));
+    program.outputs[0] = {1000, 0, 0};
+    TEST_ASSERT_FALSE(timed_program_valid(program));
+    program.outputs[0] = {kTimedOutputMaxIntervalMs + 1UL, 0, 1};
+    TEST_ASSERT_FALSE(timed_program_valid(program));
+    program.outputs[0] = {100000, 0, kTimedOutputMaxRepeats};
+    TEST_ASSERT_FALSE(timed_program_valid(program));
+}
+
+static void test_timed_output_fault_turns_everything_off()
+{
+    TimedProgram program = nutrient_a_two_minute_program();
+    TimedOutputSequence sequence;
+    Inputs inputs;
+
+    TEST_ASSERT_TRUE(sequence.start(program, inputs, 0));
+    inputs.emergency_stop = true;
+    const TimedSnapshot snapshot = sequence.tick(inputs, 1);
+    TEST_ASSERT_EQUAL(TimedPhase::fault, snapshot.phase);
+    TEST_ASSERT_EQUAL(Fault::emergency_stop, snapshot.fault);
+    TEST_ASSERT_FALSE(snapshot.outputs.water_inlet);
+    TEST_ASSERT_FALSE(snapshot.outputs.nutrient_a);
+    TEST_ASSERT_FALSE(snapshot.outputs.nutrient_b);
+    TEST_ASSERT_FALSE(snapshot.outputs.mixer);
+    TEST_ASSERT_FALSE(snapshot.outputs.irrigation);
 }
 
 static void test_commissioning_allows_only_one_output()
@@ -410,6 +523,11 @@ int main(int argc, char **argv)
     RUN_TEST(test_zero_nutrients_and_rinse_skip_optional_phases);
     RUN_TEST(test_global_faults_turn_everything_off);
     RUN_TEST(test_batch_timeout_turns_everything_off);
+    RUN_TEST(test_timed_output_runs_only_nutrient_a_for_two_minutes);
+    RUN_TEST(test_timed_output_repeats_on_off_pattern);
+    RUN_TEST(test_timed_output_runs_programs_sequentially);
+    RUN_TEST(test_timed_output_rejects_invalid_or_oversized_programs);
+    RUN_TEST(test_timed_output_fault_turns_everything_off);
     RUN_TEST(test_commissioning_allows_only_one_output);
     RUN_TEST(test_commissioning_guard_period_starts_after_off);
     RUN_TEST(test_commissioning_auto_off_and_duration_limits);

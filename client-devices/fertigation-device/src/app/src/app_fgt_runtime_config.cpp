@@ -8,7 +8,7 @@
 
 #define APP_FGT_RUNTIME_CONFIG_FILE "/.fgt_runtime_config"
 #define APP_FGT_RUNTIME_CONFIG_STORE_MAGIC 0x46475443UL
-#define APP_FGT_RUNTIME_CONFIG_STORE_VERSION 1
+#define APP_FGT_RUNTIME_CONFIG_STORE_VERSION 2
 
 #ifndef APP_FGT_SOIL_RS485_ENABLED
 #define APP_FGT_SOIL_RS485_ENABLED 1
@@ -116,6 +116,8 @@ static app_fgt_runtime_config_t default_config()
     // Unattended nutrient dosing requires an explicit Hub opt-in. A generic
     // config reply or a freshly flashed device must remain actuator-safe.
     config.enabled = false;
+    config.timed_outputs_enabled = false;
+    config.timed_program = fgt::TimedProgram{};
     config.recipe = fgt::Recipe{};
     config.limits = fgt::Limits{};
     config.sensors = default_sensors();
@@ -128,7 +130,8 @@ static bool content_is_valid(const app_fgt_runtime_config_t &config)
         config.ota_check_interval_sec < APP_FGT_MIN_OTA_CHECK_INTERVAL_SEC ||
         config.ota_check_interval_sec > APP_FGT_MAX_OTA_CHECK_INTERVAL_SEC ||
         config.schedule_count > APP_FGT_MAX_SCHEDULES || config.sensors.flow_pulses_per_liter == 0 ||
-        !fgt::recipe_valid(config.recipe, config.limits))
+        !fgt::recipe_valid(config.recipe, config.limits) ||
+        (config.timed_outputs_enabled && !fgt::timed_program_valid(config.timed_program)))
     {
         return false;
     }
@@ -140,6 +143,27 @@ static bool content_is_valid(const app_fgt_runtime_config_t &config)
         }
     }
     return true;
+}
+
+static void parse_timed_output(JsonObjectConst json, fgt::TimedOutputProgram &program)
+{
+    program.on_ms = seconds_to_ms(json["on_sec"], program.on_ms, 0, 1800);
+    program.off_ms = seconds_to_ms(json["off_sec"], program.off_ms, 0, 1800);
+    program.repeat_count = static_cast<uint8_t>(bounded_u32(
+        json["repeat_count"], program.repeat_count, 0, fgt::kTimedOutputMaxRepeats));
+}
+
+static void parse_timed_outputs(JsonObjectConst json, fgt::TimedProgram &program)
+{
+    static const char *keys[fgt::kTimedOutputCount] = {
+        "water_inlet", "nutrient_a", "nutrient_b", "mixer", "irrigation"};
+    for (uint8_t i = 0; i < fgt::kTimedOutputCount; ++i)
+    {
+        if (json[keys[i]].is<JsonObjectConst>())
+        {
+            parse_timed_output(json[keys[i]].as<JsonObjectConst>(), program.outputs[i]);
+        }
+    }
 }
 
 static void parse_recipe(JsonObjectConst json, fgt::Recipe &recipe)
@@ -240,6 +264,15 @@ bool app_fgt_runtime_config_apply_json(const uint8_t *payload, size_t length)
         next.recovery_ack = bounded_u32(fgt_json["recovery_ack"], next.recovery_ack, 0, UINT32_MAX);
         if (fgt_json["recipe"].is<JsonObjectConst>()) parse_recipe(fgt_json["recipe"].as<JsonObjectConst>(), next.recipe);
         if (fgt_json["limits"].is<JsonObjectConst>()) parse_limits(fgt_json["limits"].as<JsonObjectConst>(), next.limits);
+        next.timed_outputs_enabled = false;
+        next.timed_program = fgt::TimedProgram{};
+        next.timed_program.max_sequence_ms = next.limits.max_batch_ms;
+        if (fgt_json["timed_outputs"].is<JsonObjectConst>())
+        {
+            JsonObjectConst timed_json = fgt_json["timed_outputs"].as<JsonObjectConst>();
+            next.timed_outputs_enabled = timed_json["enabled"] | next.timed_outputs_enabled;
+            parse_timed_outputs(timed_json, next.timed_program);
+        }
         if (fgt_json["sensors"].is<JsonObjectConst>()) parse_sensors(fgt_json["sensors"].as<JsonObjectConst>(), next.sensors);
     }
 

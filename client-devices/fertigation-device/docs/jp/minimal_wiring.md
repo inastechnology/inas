@@ -284,7 +284,32 @@ INAS F/Wマニフェストのプロジェクト、機器種別、対象ボード
 
 ## 時間設定
 
-物理流量・液面入力は使用せず、Runtime Configの秒数で工程を終了する。
+単純な潅水や動作確認では`fgt.timed_outputs.enabled=true`にし、各出力を秒数で
+設定する。連続運転はON時間と繰り返し1回、分割運転はON時間、OFF時間、
+繰り返し回数を設定する。ON時間と繰り返し回数を両方0にした出力は動かない。
+ON時間とOFF時間はそれぞれ0〜1800秒、繰り返しは0〜20回で、複数出力を
+設定した場合も出力番号順に1つずつ動く。
+
+例としてA液ポンプだけを2分動かす設定は次のとおり。
+
+```json
+{
+  "fgt": {
+    "enabled": true,
+    "timed_outputs": {
+      "enabled": true,
+      "water_inlet": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+      "nutrient_a": {"on_sec": 120, "off_sec": 0, "repeat_count": 1},
+      "nutrient_b": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+      "mixer": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+      "irrigation": {"on_sec": 0, "off_sec": 0, "repeat_count": 0}
+    }
+  }
+}
+```
+
+従来の液肥レシピ運転では、物理流量・液面入力を使用せず、Runtime Configの
+次の秒数で工程を終了する。
 このPIN配置には漏水・非常停止入力もないため、監視下の水だけの試験に限定し、
 ポンプ12 V系を直接遮断する外部非常停止を用意する。無人運転や液肥投入用の
 安全構成ではない。

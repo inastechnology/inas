@@ -1073,8 +1073,17 @@ def main():
             for switch_id, name, terminal, channel_mask, controlled_load in device["switches"]
         ]
         if device["kind"] == "FGT":
+            config["sleep_sec"] = 3600
             config["fgt"] = {
                 "enabled": True,
+                "timed_outputs": {
+                    "enabled": True,
+                    "water_inlet": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+                    "nutrient_a": {"on_sec": 120, "off_sec": 0, "repeat_count": 1},
+                    "nutrient_b": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+                    "mixer": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+                    "irrigation": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
+                },
                 "recipe": {
                     "total_water_ml": 5000,
                     "initial_water_ml": 1250,

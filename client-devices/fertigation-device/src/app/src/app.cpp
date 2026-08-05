@@ -14,6 +14,7 @@
 #include "app_fgt_runtime_config.h"
 #include "app_network.h"
 #include "fgt_state_machine.h"
+#include "fgt_timed_output_sequence.h"
 #include "hal_battery_monitor.h"
 #include "hal_direct_gpio.h"
 #include "hal_power_switch.h"
@@ -75,8 +76,10 @@ struct FgtCycleState
     const char *skip_reason = "none";
     time_t schedule_epoch_utc = 0;
     uint32_t batch_id = 0;
+    bool timed_outputs_mode = false;
     fgt::Inputs inputs = {};
     fgt::Snapshot state = {};
+    fgt::TimedSnapshot timed_state = {};
     FgtSensorSample sensors = {};
 };
 
@@ -187,10 +190,16 @@ protected:
     {
         (void)config_received;
         const app_fgt_runtime_config_t &config = app_fgt_runtime_config_get();
-        Serial.printf("FGT config: valid=%s enabled=%s schedules=%u water=%lu initial=%lu A=%lu B=%lu rinse=%lu recovery_ack=%lu local_rs485=%s devices=%u\n",
+        const fgt::TimedOutputProgram &timed_a =
+            config.timed_program.outputs[static_cast<uint8_t>(fgt::TimedOutput::nutrient_a)];
+        Serial.printf("FGT config: valid=%s enabled=%s timed=%s schedules=%u timed_A=%lu/%lu/%u water=%lu initial=%lu A=%lu B=%lu rinse=%lu recovery_ack=%lu local_rs485=%s devices=%u\n",
                       config.valid ? "true" : "false",
                       config.enabled ? "true" : "false",
+                      config.timed_outputs_enabled ? "true" : "false",
                       static_cast<unsigned int>(config.schedule_count),
+                      static_cast<unsigned long>(timed_a.on_ms / 1000UL),
+                      static_cast<unsigned long>(timed_a.off_ms / 1000UL),
+                      static_cast<unsigned int>(timed_a.repeat_count),
                       static_cast<unsigned long>(config.recipe.total_water_ml),
                       static_cast<unsigned long>(config.recipe.initial_water_ml),
                       static_cast<unsigned long>(config.recipe.nutrient_a_ml),
@@ -220,6 +229,7 @@ protected:
         const app_fgt_runtime_config_t &config = app_fgt_runtime_config_get();
         m_cycle = {};
         m_cycle.config_valid = app_fgt_runtime_config_is_valid();
+        m_cycle.timed_outputs_mode = config.timed_outputs_enabled;
         force_actuators_off();
         read_sensors();
         m_cycle.inputs = read_physical_inputs();
@@ -265,7 +275,8 @@ protected:
         }
         else if (m_cycle.batch_due)
         {
-            run_batch(config, due_epoch);
+            if (config.timed_outputs_enabled) run_timed_outputs(config, due_epoch);
+            else run_batch(config, due_epoch);
         }
         else if (m_cycle.recovery_required)
         {
@@ -356,12 +367,34 @@ protected:
         doc["recovery_required"] = m_cycle.recovery_required;
         doc["journal_error"] = m_cycle.journal_error;
         doc["output_error"] = m_cycle.output_error;
-        doc["fgt_phase"] = fgt::phase_name(m_cycle.state.phase);
-        doc["fgt_fault"] = fgt::fault_name(m_cycle.state.fault);
-        doc["fgt_phase_elapsed_ms"] = m_cycle.state.phase_elapsed_ms;
-        doc["fgt_batch_elapsed_ms"] = m_cycle.state.batch_elapsed_ms;
+        const fgt::Outputs &commanded_outputs = m_cycle.timed_outputs_mode
+                                                    ? m_cycle.timed_state.outputs
+                                                    : m_cycle.state.outputs;
+        doc["fgt_operation_mode"] = m_cycle.timed_outputs_mode ? "timed_outputs" : "recipe";
+        doc["fgt_phase"] = m_cycle.timed_outputs_mode
+                               ? fgt::timed_phase_name(m_cycle.timed_state.phase)
+                               : fgt::phase_name(m_cycle.state.phase);
+        doc["fgt_fault"] = fgt::fault_name(m_cycle.timed_outputs_mode
+                                                ? m_cycle.timed_state.fault
+                                                : m_cycle.state.fault);
+        doc["fgt_phase_elapsed_ms"] = m_cycle.timed_outputs_mode
+                                          ? m_cycle.timed_state.phase_elapsed_ms
+                                          : m_cycle.state.phase_elapsed_ms;
+        doc["fgt_batch_elapsed_ms"] = m_cycle.timed_outputs_mode
+                                          ? m_cycle.timed_state.sequence_elapsed_ms
+                                          : m_cycle.state.batch_elapsed_ms;
+        const bool timed_output_selected =
+            m_cycle.timed_outputs_mode &&
+            (m_cycle.timed_state.phase == fgt::TimedPhase::output_on ||
+             m_cycle.timed_state.phase == fgt::TimedPhase::output_off);
+        doc["fgt_timed_output"] = timed_output_selected
+                                      ? fgt::timed_output_name(m_cycle.timed_state.active_output)
+                                      : "none";
+        doc["fgt_timed_repeat_number"] = m_cycle.timed_outputs_mode
+                                             ? m_cycle.timed_state.repeat_number
+                                             : 0;
         doc["inlet_water_ml"] = m_cycle.inputs.inlet_water_ml;
-        doc["target_water_ml"] = m_cycle.state.target_water_ml;
+        doc["target_water_ml"] = m_cycle.timed_outputs_mode ? 0 : m_cycle.state.target_water_ml;
         doc["nutrient_batch_water_target_ml"] = config.recipe.total_water_ml;
         doc["rinse_water_target_ml"] = config.recipe.rinse_water_ml;
         doc["planned_irrigation_water_ml"] = config.recipe.total_water_ml + config.recipe.rinse_water_ml;
@@ -370,11 +403,11 @@ protected:
         doc["leak_detected"] = m_cycle.inputs.leak_detected;
         doc["emergency_stop"] = m_cycle.inputs.emergency_stop;
         doc["io_ok"] = m_cycle.inputs.io_ok;
-        doc["water_inlet_on"] = m_cycle.state.outputs.water_inlet;
-        doc["nutrient_a_on"] = m_cycle.state.outputs.nutrient_a;
-        doc["nutrient_b_on"] = m_cycle.state.outputs.nutrient_b;
-        doc["mixer_on"] = m_cycle.state.outputs.mixer;
-        doc["irrigation_on"] = m_cycle.state.outputs.irrigation;
+        doc["water_inlet_on"] = commanded_outputs.water_inlet;
+        doc["nutrient_a_on"] = commanded_outputs.nutrient_a;
+        doc["nutrient_b_on"] = commanded_outputs.nutrient_b;
+        doc["mixer_on"] = commanded_outputs.mixer;
+        doc["irrigation_on"] = commanded_outputs.irrigation;
         doc["battery_voltage_ok"] = m_cycle.sensors.battery_ok;
         doc["battery_adc_mv"] = m_cycle.sensors.battery.adc_millivolts;
         doc["battery_voltage_v"] = m_cycle.sensors.battery.battery_volts;
@@ -461,6 +494,7 @@ protected:
 private:
     FgtCycleState m_cycle = {};
     fgt::StateMachine m_machine;
+    fgt::TimedOutputSequence m_timed_sequence;
 
     void read_sensors()
     {
@@ -618,6 +652,68 @@ private:
 
         force_actuators_off();
         m_cycle.batch_completed = m_cycle.state.phase == fgt::Phase::complete;
+        if (m_cycle.batch_completed)
+        {
+            if (!app_fgt_journal_mark_finished())
+            {
+                m_cycle.journal_error = true;
+                m_cycle.batch_completed = false;
+            }
+        }
+        else
+        {
+            m_cycle.recovery_required = true;
+        }
+    }
+
+    void run_timed_outputs(const app_fgt_runtime_config_t &config, time_t due_epoch)
+    {
+        m_cycle.inputs = read_physical_inputs();
+        const uint32_t started_ms = millis();
+        if (!m_timed_sequence.start(config.timed_program, m_cycle.inputs, started_ms))
+        {
+            m_cycle.timed_state = m_timed_sequence.snapshot(started_ms);
+            m_cycle.batch_skipped = true;
+            m_cycle.skip_reason = "timed_preflight_failed";
+            return;
+        }
+
+        m_cycle.batch_id = esp_random();
+        if (!app_fgt_journal_mark_started(due_epoch, m_cycle.batch_id))
+        {
+            m_cycle.journal_error = true;
+            m_cycle.batch_skipped = true;
+            m_cycle.skip_reason = "journal_write_failed";
+            force_actuators_off();
+            return;
+        }
+        m_cycle.batch_started = true;
+        m_cycle.schedule_epoch_utc = due_epoch;
+        m_cycle.timed_state = m_timed_sequence.snapshot(started_ms);
+
+        if (!apply_outputs(m_cycle.timed_state.outputs))
+        {
+            m_cycle.output_error = true;
+            m_cycle.inputs.io_ok = false;
+            m_cycle.timed_state = m_timed_sequence.tick(m_cycle.inputs, millis());
+        }
+
+        while (m_timed_sequence.active())
+        {
+            app_network_loop();
+            delay(kControlTickMs);
+            m_cycle.inputs = read_physical_inputs();
+            m_cycle.timed_state = m_timed_sequence.tick(m_cycle.inputs, millis());
+            if (!apply_outputs(m_cycle.timed_state.outputs))
+            {
+                m_cycle.output_error = true;
+                m_cycle.inputs.io_ok = false;
+                m_cycle.timed_state = m_timed_sequence.tick(m_cycle.inputs, millis());
+            }
+        }
+
+        force_actuators_off();
+        m_cycle.batch_completed = m_cycle.timed_state.phase == fgt::TimedPhase::complete;
         if (m_cycle.batch_completed)
         {
             if (!app_fgt_journal_mark_finished())

@@ -1,6 +1,6 @@
 {
   "name": "fgt-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Hardware-independent FGT batch state machine",
   "build": {"srcDir": "src"}
 }

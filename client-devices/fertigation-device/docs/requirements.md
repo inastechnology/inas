@@ -2,7 +2,9 @@
 
 ## Product boundary
 
-FGT prepares one diluted A/B fertilizer batch and irrigates a colocated crop.
+FGT prepares one diluted A/B fertilizer batch and irrigates a colocated crop,
+or runs its fixed actuator outputs as a bounded timed sequence for simple
+irrigation and maintenance use.
 It is a separate `device_kind` because its safety state, runtime configuration,
 and status payload materially differ from WRS. It is not a crop-specific device;
 strawberry is the first installation profile.
@@ -45,6 +47,20 @@ Version 1 assumptions:
 11. Add rinse water, mix, and discharge it through the irrigation path.
 12. Stop every output and record completion before sleeping.
 
+## Timed-output operation
+
+Timed-output operation is an explicit alternative to the nutrient recipe. Each
+fixed output has an ON time from 0 to 1800 seconds, an OFF time from 0 to 1800
+seconds, and a repeat count from 0 to 20. An ON time and repeat count of zero
+disable that output. Enabled output programs run sequentially in fixed terminal
+order, so only one output is ever active. The complete sequence remains bounded
+by `max_batch_sec` and uses the same interruption journal as a nutrient batch.
+
+This mode is not nutrient dosing. It permits a selected fixed output, including
+the A pump, to operate independently so an installation can use that pump for a
+plain timed irrigation task without running fill, B-pump, mixing, delivery, or
+rinse phases.
+
 The irrigation plan must count both nutrient-batch water and rinse water. With
 the v1 defaults, 4.5 L prepares the batch and 0.5 L rinses the tank and line;
 the plant receives approximately 5.0 L plus the small calibrated A/B stock
@@ -58,7 +74,9 @@ minimal direct-wired prototype already implements every physical safety input.
 - All actuator commands are OFF during boot, OTA, sleep, configuration failure,
   I/O failure, leak, emergency stop, and fault handling.
 - A and B concentrate pumps can never be active simultaneously.
-- A or B dosing requires the mixer to be active and the tank not to be empty.
+- Recipe-mode A or B dosing requires the mixer to be active and the tank not to
+  be empty. Timed-output operation is a separate, single-output mode and never
+  runs two fixed outputs together.
 - Water inlet and irrigation are never active simultaneously.
 - Water flow must progress while the inlet is commanded; otherwise stop within
   the configured no-flow timeout.
@@ -80,3 +98,5 @@ minimal direct-wired prototype already implements every physical safety input.
 - Status includes phase, fault, commanded outputs, target/observed water volume,
   schedule, batch identifier, and RS485 sensor health/readings.
 - Saved configuration is CRC-protected and invalid content falls back safely.
+- Tests prove timed outputs run sequentially, enforce 0-to-1800-second bounds,
+  support ON/OFF repetition, and stop every output on a fault.
