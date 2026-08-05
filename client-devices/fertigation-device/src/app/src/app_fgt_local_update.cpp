@@ -64,8 +64,10 @@ const char kUpdatePage[] PROGMEM = R"HTML(
     .notice{border:1px solid #f2cc8f;background:#fff8e8;border-radius:12px;padding:14px 16px;margin:16px 0}.notice strong{color:#7a4b00}
     label{display:block;font-weight:700;margin:12px 0 6px}input{width:100%;padding:10px;border:1px solid #b8c4cb;border-radius:7px;background:#fff}
     button{border:0;border-radius:7px;padding:11px 15px;background:var(--green);color:#fff;font:inherit;font-weight:700;cursor:pointer;margin-top:14px}
-    button:disabled{opacity:.45;cursor:not-allowed}.status{margin-top:14px;padding:12px;border-radius:8px;background:#eef2f4}.ok{background:#e7f6ef;color:#125b46}.error{background:#feeceb;color:#8f1d18}
-    progress{width:100%;height:22px;margin-top:14px}code{overflow-wrap:anywhere}
+    button:disabled{opacity:.45;cursor:not-allowed}.status{margin-top:14px;padding:12px;border-radius:8px;background:#eef2f4}.ok{background:#e7f6ef;color:#125b46}.warn{background:#fff2cc;color:#7a4b00}.error{background:#feeceb;color:#8f1d18}
+    progress{width:100%;height:22px;margin-top:14px}code{overflow-wrap:anywhere}.hint{font-size:13px;color:var(--muted);margin:7px 0 0}
+    details{margin-top:14px;border:1px solid var(--line);border-radius:9px;padding:10px 12px}summary{cursor:pointer;font-weight:700}
+    .browser-link{display:inline-block;margin-top:10px;padding:10px 12px;border-radius:7px;background:#52616b;color:#fff;text-decoration:none;font-weight:700}
   </style>
 </head>
 <body><main>
@@ -79,7 +81,18 @@ const char kUpdatePage[] PROGMEM = R"HTML(
   </section>
   <section class="card">
     <label for="firmware">FGT firmware.bin</label>
-    <input id="firmware" type="file" accept=".bin,application/octet-stream">
+    <input id="firmware" name="firmware" type="file" aria-describedby="fileHelp">
+    <p id="fileHelp" class="hint">安全確認はアップロード時に行います。ファイル一覧にはすべての種類が表示されるため、必ず展開済みのfirmware.binを選択してください。</p>
+    <details id="pickerHelp">
+      <summary>「ファイルを選択」が反応しない場合</summary>
+      <ol>
+        <li>AP接続時に自動表示されたログイン画面を閉じます。</li>
+        <li><code>INAS-FGT-setup</code>へのWi-Fi接続は維持します。</li>
+        <li>SafariまたはChromeを通常起動し、<code>http://192.168.4.1/fgt/firmware-update</code>を直接開きます。</li>
+        <li>事前にスマホ本体の「ファイル」または「ダウンロード」へ保存した<code>firmware.bin</code>を選びます。</li>
+      </ol>
+      <a class="browser-link" href="http://192.168.4.1/fgt/firmware-update" target="_blank" rel="noopener">標準ブラウザでこの画面を開く</a>
+    </details>
     <button id="updateButton" onclick="startUpdate()">更新を開始</button>
     <progress id="progress" max="100" value="0"></progress>
     <div id="status" class="status">ファイルを選択してください。</div>
@@ -98,6 +111,8 @@ const fileInput=document.getElementById('firmware');
 const button=document.getElementById('updateButton');
 const progress=document.getElementById('progress');
 const statusBox=document.getElementById('status');
+const pickerHelp=document.getElementById('pickerHelp');
+let pickerAttempt=0;
 function show(message,type=''){statusBox.className=`status ${type}`;statusBox.textContent=message}
 function errorText(code){
   const messages={
@@ -144,6 +159,24 @@ function startUpdate(){
   xhr.onerror=()=>{show('APとの通信が切断されました。LEDが高速点滅している場合は再起動を待ってください。','error')};
   xhr.send(data);
 }
+fileInput.addEventListener('click',()=>{
+  if(fileInput.disabled)return;
+  const attempt=++pickerAttempt;
+  window.setTimeout(()=>{
+    if(attempt!==pickerAttempt||fileInput.files.length>0||document.hidden)return;
+    pickerHelp.open=true;
+    show('端末のファイル画面が開かない場合は、APの簡易ログイン画面を閉じ、SafariまたはChromeからこのURLを直接開いてください。','warn');
+  },1500);
+});
+fileInput.addEventListener('change',()=>{
+  ++pickerAttempt;
+  const file=fileInput.files[0];
+  if(!file){
+    show('ファイルは選択されていません。','warn');
+    return;
+  }
+  show(`選択済み: ${file.name}（${file.size} bytes）`);
+});
 async function refresh(){
   try{
     const response=await fetch('/api/fgt/firmware-update/status',{cache:'no-store'});

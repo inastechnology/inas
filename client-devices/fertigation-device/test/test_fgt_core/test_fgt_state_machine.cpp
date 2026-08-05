@@ -244,6 +244,16 @@ static void test_sensor_identification_does_not_treat_zero_par_as_soil()
                       identification.confidence);
 }
 
+static void test_sensor_identification_uses_reserved_par_address_hint()
+{
+    const SensorIdentification identification =
+        identify_commissioning_sensor(
+            true, true, true, true, true);
+    TEST_ASSERT_EQUAL(CommissioningSensorType::par, identification.type);
+    TEST_ASSERT_EQUAL(SensorIdentificationConfidence::medium,
+                      identification.confidence);
+}
+
 static void test_soil_measurement_plausibility()
 {
     TEST_ASSERT_TRUE(soil_measurement_values_plausible(352, 241, 64));
@@ -405,6 +415,7 @@ int main(int argc, char **argv)
     RUN_TEST(test_commissioning_auto_off_and_duration_limits);
     RUN_TEST(test_sensor_identification_prefers_soil_signature);
     RUN_TEST(test_sensor_identification_does_not_treat_zero_par_as_soil);
+    RUN_TEST(test_sensor_identification_uses_reserved_par_address_hint);
     RUN_TEST(test_soil_measurement_plausibility);
     RUN_TEST(test_rs485_registry_rejects_duplicate_bus_address);
     RUN_TEST(test_rs485_registry_updates_and_removes_devices);

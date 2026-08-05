@@ -7,8 +7,19 @@ SensorIdentification identify_commissioning_sensor(
     bool soil_measurement_supported,
     bool soil_secondary_values_present,
     bool soil_signature_read,
-    bool soil_signature_present)
+    bool soil_signature_present,
+    bool par_address_hint)
 {
+    // The FGT commissioning topology reserves Modbus address 3 for the PAR
+    // sensor. Some SEN0641 revisions answer multi-register reads with non-zero
+    // values, so those generic reads cannot override the configured address.
+    if (par_address_hint)
+    {
+        return {
+            CommissioningSensorType::par,
+            SensorIdentificationConfidence::medium,
+        };
+    }
     if (!soil_measurement_supported)
     {
         return {

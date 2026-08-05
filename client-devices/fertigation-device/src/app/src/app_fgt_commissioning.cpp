@@ -4,8 +4,13 @@
 #include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
 #include <errno.h>
+#include <esp_attr.h>
+#include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <freertos/task.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -38,6 +43,7 @@ constexpr uint8_t kAutoScanMaxId = 10;
 constexpr uint16_t kSensorAddressRegister = 0x07D0;
 constexpr uint32_t kSensorPowerSettleMs = 800;
 constexpr uint32_t kAddressChangeVerifyDelayMs = 500;
+constexpr size_t kSensorCommunicationLogSize = 4096;
 constexpr uint32_t kAutoScanBauds[] = {4800, 2400, 9600};
 
 const char *const kOutputLabels[] = {
@@ -61,6 +67,7 @@ struct DetectedSensor
     CommissioningSensorReading reading = {};
     uint8_t slave_id = 0;
     uint32_t baud = 0;
+    const char *identification_basis = "unknown";
 };
 
 enum class AutoDetectionPhase : uint8_t
@@ -83,6 +90,10 @@ struct AutoDetectionOperation
     size_t sensor_count = 0;
     size_t passed_count = 0;
     DetectedSensor sensors[30] = {};
+    char communication_log[kSensorCommunicationLogSize] = {};
+    size_t communication_log_length = 0;
+    size_t communication_transaction_count = 0;
+    bool communication_log_truncated = false;
 };
 
 hal_direct_gpio_t s_commissioning_io = {};
@@ -96,6 +107,29 @@ SemaphoreHandle_t s_operation_mutex = nullptr;
 fgt::CommissioningInterlock s_interlock(APP_FGT_COMMISSIONING_SWITCH_GUARD_MS,
                                         APP_FGT_COMMISSIONING_MAX_ON_MS);
 AutoDetectionOperation s_auto_detection = {};
+
+constexpr uint32_t kRegistrationDiagnosticMagic = 0x46475444UL;
+
+struct RegistrationResetMarker
+{
+    uint32_t magic;
+    uint32_t active;
+    uint32_t slave_id;
+    uint32_t baud;
+    uint32_t stack_low_water_mark_bytes;
+    uint32_t free_heap_bytes;
+};
+
+RTC_NOINIT_ATTR RegistrationResetMarker s_registration_reset_marker;
+esp_reset_reason_t s_portal_reset_reason = ESP_RST_UNKNOWN;
+bool s_registration_interrupted = false;
+uint32_t s_registration_stack_before_bytes = 0;
+uint32_t s_registration_stack_after_bytes = 0;
+uint32_t s_registration_heap_before_bytes = 0;
+uint32_t s_registration_heap_after_bytes = 0;
+uint32_t s_registration_sensor_id = 0;
+uint32_t s_registration_sensor_baud = 0;
+const char *s_registration_last_result = "not_attempted";
 
 const char kCommissioningPage[] PROGMEM = R"HTML(
 <!doctype html>
@@ -128,6 +162,8 @@ const char kCommissioningPage[] PROGMEM = R"HTML(
     .measurement span{display:block;color:var(--muted);font-size:12px}.measurement strong{display:block;margin-top:2px;font-size:16px}.empty{padding:18px;text-align:center;color:var(--muted);border:1px dashed #b8c4cb;border-radius:9px}
     .configured-list{display:grid;gap:12px;margin-top:14px}.configured{border:1px solid #b7d8ca;border-radius:11px;padding:14px;background:#f5fbf8}
     .configured-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}.configured .confirm{color:var(--ink)}
+    .error-box{display:none;border:1px solid #f4a7a1;background:#fff0ef;color:#8f1d18;border-radius:10px;padding:12px 14px;margin-top:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+    .error-box.visible{display:block}
     pre{white-space:pre-wrap;overflow-wrap:anywhere;min-height:90px;background:#0f1720;color:#d7f7e9;border-radius:8px;padding:12px;font-size:13px}
     details{margin-top:8px}summary{cursor:pointer;color:var(--muted)}
     @media(max-width:760px){.grid{grid-template-columns:1fr}.outputs{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:repeat(2,1fr)}.measurements{grid-template-columns:repeat(2,1fr)}.configured-grid{grid-template-columns:1fr}}
@@ -152,6 +188,17 @@ const char kCommissioningPage[] PROGMEM = R"HTML(
         <button class="secondary" onclick="refreshStatus()">状態を更新</button>
         <button class="secondary" onclick="location.href='/fgt/firmware-update'">F/Wアップデート</button>
       </div>
+    </section>
+
+    <section class="card wide">
+      <h2>障害診断</h2>
+      <p>登録時にAPが切れた場合は、再接続してこの欄を開き、表示内容をそのまま共有してください。パスワードは含みません。</p>
+      <div id="diagnosticSummary" class="status"><span class="pill">読込中</span></div>
+      <div id="operationError" class="error-box" role="alert"></div>
+      <details>
+        <summary>共有用診断データを表示</summary>
+        <pre id="diagnosticDetails">診断情報を取得中です。</pre>
+      </details>
     </section>
 
     <section class="card wide">
@@ -209,15 +256,27 @@ const char kCommissioningPage[] PROGMEM = R"HTML(
       <p class="hint">対応機種: ComWinTop CWT-SOIL NPKPHCTH-S、DFRobot SEN0641 PAR。ID 1〜10、2400/4800/9600 bpsを自動確認します。</p>
       <div id="sensorSummary" class="status"></div>
       <div id="sensorList" class="sensor-list"><div class="empty">まだセンサーを検出していません。</div></div>
+      <details id="sensorCommunicationLogDetails">
+        <summary>共有用センサー通信ログを表示</summary>
+        <p class="hint">検出時のModbusアドレス、通信速度、Function、レジスタ、応答値、判定根拠です。Wi-Fi/MQTTのパスワードは含みません。</p>
+        <div class="actions">
+          <button class="secondary" onclick="copySensorCommunicationLog()">通信ログをコピー</button>
+        </div>
+        <pre id="sensorCommunicationLog">まだ通信ログはありません。</pre>
+        <p id="sensorCommunicationLogCopyStatus" class="hint"></p>
+      </details>
       <section class="notice">
         <strong>登録は1台ずつ行います。</strong>
-        登録するセンサーだけをRS485バスへ接続して自動検出し、名前と接続場所を入力してください。
+        登録するセンサーだけをRS485バスへ接続して自動検出し、種別、名前、接続場所を確認してください。
+        自動判定が実機ラベルと違う場合は、登録前に正しい種別へ変更できます。
         保存後に次のセンサーへつなぎ替えます。
       </section>
       <div class="row">
+        <div><label for="deviceType">登録するセンサー種別</label><select id="deviceType" onchange="updateRegistrationTypeHint()" disabled><option value="soil">土壌センサー</option><option value="par">PAR（日射）センサー</option></select></div>
         <div><label for="deviceName">センサー名</label><input id="deviceName" maxlength="20" placeholder="例: 育苗ベンチ土壌"></div>
         <div><label for="deviceLocation">接続場所・用途</label><input id="deviceLocation" maxlength="30" placeholder="例: ハウス東側 RS485分岐1"></div>
       </div>
+      <p id="deviceTypeHint" class="hint">1台だけ検出すると、自動判定された種別を確認・訂正できます。</p>
       <div class="actions">
         <button id="registerDeviceButton" data-sensor-action onclick="registerDetectedDevice()" disabled>検出した1台を登録</button>
       </div>
@@ -253,18 +312,66 @@ const result=document.getElementById('result');
 const value=id=>document.getElementById(id).value;
 let detectedSensors=[];
 let configuredDevices=[];
+let sensorCommunicationLog='';
 const escapeHtml=text=>String(text??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 function form(data){const p=new URLSearchParams();Object.entries(data).forEach(([k,v])=>p.set(k,String(v)));return p}
+function setSensorCommunicationLog(log,truncated=false){
+  sensorCommunicationLog=String(log||'');
+  document.getElementById('sensorCommunicationLog').textContent=sensorCommunicationLog||'まだ通信ログはありません。';
+  document.getElementById('sensorCommunicationLogCopyStatus').textContent=truncated?'ログ上限に達したため末尾が省略されています。':'';
+}
+async function copySensorCommunicationLog(){
+  if(!sensorCommunicationLog){
+    document.getElementById('sensorCommunicationLogCopyStatus').textContent='コピーできる通信ログがまだありません。';
+    return;
+  }
+  let copied=false;
+  try{
+    if(navigator.clipboard&&window.isSecureContext){
+      await navigator.clipboard.writeText(sensorCommunicationLog);
+      copied=true;
+    }
+  }catch(error){}
+  if(!copied){
+    const area=document.createElement('textarea');
+    area.value=sensorCommunicationLog;
+    area.setAttribute('readonly','');
+    area.style.position='fixed';
+    area.style.opacity='0';
+    document.body.appendChild(area);
+    area.select();
+    try{copied=document.execCommand('copy')}catch(error){}
+    area.remove();
+  }
+  document.getElementById('sensorCommunicationLogCopyStatus').textContent=copied?'通信ログをコピーしました。':'自動コピーできませんでした。ログ本文を長押しして選択・コピーしてください。';
+}
+function showOperationError(message){
+  const box=document.getElementById('operationError');
+  box.textContent=message||'';
+  box.classList.toggle('visible',Boolean(message));
+}
 async function call(path,data){
   result.textContent='処理中...';
+  showOperationError('');
   try{
     const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:form(data)});
     const body=await response.json();
     result.textContent=JSON.stringify(body,null,2);
-    if(!body.ok)result.closest('details').open=true;
+    if(typeof body.communication_log==='string'){
+      setSensorCommunicationLog(body.communication_log,Boolean(body.communication_log_truncated));
+    }
+    if(!response.ok||!body.ok){
+      showOperationError(`処理に失敗しました: ${body.code||response.status}\n${body.message||'詳細は共有用診断データを確認してください。'}${body.storage_detail?`\n保存処理: ${body.storage_detail}`:''}`);
+      result.closest('details').open=true;
+    }
     await refreshStatus();
     return body;
-  }catch(error){result.textContent='通信エラー: '+error;return null}
+  }catch(error){
+    const message='通信が切断されました: '+error+'\nFGTのAPへ再接続してこの画面を開き直し、「共有用診断データ」を共有してください。';
+    result.textContent=message;
+    showOperationError(message);
+    return null;
+  }
 }
 async function refreshStatus(){
   try{
@@ -281,6 +388,39 @@ async function refreshStatus(){
     const updating=s.firmware_update_running?'<span class="pill danger">F/W更新中</span>':'';
     const loopback=s.rs485_internal_loopback_ok?'<span class="pill ok">UART内部試験 OK</span>':'<span class="pill danger">UART内部試験 NG</span>';
     document.getElementById('status').innerHTML=`<span class="pill ${s.active_output>0?'danger':'ok'}">${active}</span><span class="pill ${s.guard_remaining_ms>0?'warn':'ok'}">${guard}</span><span class="pill">${power}</span><span class="pill">センサー通信 ${s.rs485_ready?'準備完了':'未準備'}</span>${loopback}${detection}${updating}`;
+    const resetDanger=['panic','interrupt_watchdog','task_watchdog','watchdog','brownout'].includes(s.reset_reason);
+    const interrupted=s.registration_interrupted;
+    document.getElementById('diagnosticSummary').innerHTML=
+      `<span class="pill ${interrupted||resetDanger?'danger':'ok'}">再起動理由: ${escapeHtml(s.reset_reason)}</span>`+
+      `<span class="pill ${interrupted?'danger':s.registration_last_result==='ok'?'ok':'warn'}">直前の登録: ${escapeHtml(s.registration_last_result)}</span>`+
+      `<span class="pill ${s.async_tcp_stack_low_water_mark_bytes<2048?'danger':'ok'}">HTTP最小空きスタック ${s.async_tcp_stack_low_water_mark_bytes} bytes</span>`+
+      `<span class="pill">空きヒープ ${s.free_heap_bytes} bytes</span>`;
+    document.getElementById('diagnosticDetails').textContent=JSON.stringify({
+      firmware_version:s.firmware_version,
+      firmware_build_id:s.firmware_build_id,
+      reset_reason:s.reset_reason,
+      reset_reason_code:s.reset_reason_code,
+      registration_interrupted:s.registration_interrupted,
+      registration_last_result:s.registration_last_result,
+      registration_storage_error:s.registration_storage_error,
+      registration_sensor_id:s.registration_sensor_id,
+      registration_sensor_baud:s.registration_sensor_baud,
+      registration_stack_before_bytes:s.registration_stack_before_bytes,
+      registration_stack_after_bytes:s.registration_stack_after_bytes,
+      registration_heap_before_bytes:s.registration_heap_before_bytes,
+      registration_heap_after_bytes:s.registration_heap_after_bytes,
+      async_tcp_stack_size_bytes:s.async_tcp_stack_size_bytes,
+      async_tcp_stack_low_water_mark_bytes:s.async_tcp_stack_low_water_mark_bytes,
+      free_heap_bytes:s.free_heap_bytes,
+      registry_store_bytes:s.registry_store_bytes
+    },null,2);
+    if(interrupted){
+      showOperationError('直前のセンサー登録処理中にFGTが再起動しました。共有用診断データを共有してください。');
+      document.getElementById('diagnosticDetails').closest('details').open=true;
+    }else if(resetDanger){
+      showOperationError(`FGTの再起動理由は ${s.reset_reason} です。共有用診断データを共有してください。`);
+      document.getElementById('diagnosticDetails').closest('details').open=true;
+    }
     document.querySelectorAll('[data-output]').forEach(button=>button.disabled=s.firmware_update_running||s.active_output>0||s.guard_remaining_ms>0||!s.io_ready);
     document.querySelectorAll('[data-sensor-action]').forEach(button=>button.disabled=s.firmware_update_running||s.active_output>0||s.sensor_detection_running);
     updateRegisterButton(s.firmware_update_running||s.active_output>0||s.sensor_detection_running);
@@ -315,6 +455,31 @@ function suggestedAddress(sensor){
 function updateRegisterButton(operationBlocked=false){
   const sensor=detectedSensors.length===1?detectedSensors[0]:null;
   document.getElementById('registerDeviceButton').disabled=operationBlocked||!sensor||Boolean(configuredAddressConflict(sensor));
+}
+function updateRegistrationTypeHint(){
+  const selector=document.getElementById('deviceType');
+  const hint=document.getElementById('deviceTypeHint');
+  const sensor=detectedSensors.length===1?detectedSensors[0]:null;
+  if(!sensor){
+    selector.disabled=true;
+    hint.textContent='1台だけ検出すると、自動判定された種別を確認・訂正できます。';
+    return;
+  }
+  selector.disabled=false;
+  const typeNames={soil:'土壌センサー',par:'PAR（日射）センサー'};
+  const basisNames={
+    reserved_par_address_3:'予約アドレス3に基づく判定',
+    single_register_response_only:'1レジスタだけ応答',
+    nonzero_soil_signature_registers:'土壌判定用レジスタが非ゼロ',
+    nonzero_secondary_measurements:'追加測定レジスタが非ゼロ',
+    single_measurement_values_only:'追加測定値なし'
+  };
+  const automatic=typeNames[sensor.sensor_type]||sensor.sensor_type;
+  const selected=typeNames[selector.value]||selector.value;
+  const basis=basisNames[sensor.identification_basis]||sensor.identification_basis||'判定根拠なし';
+  hint.textContent=selector.value===sensor.sensor_type
+    ?`自動判定: ${automatic}（${basis}）。実機ラベルと違う場合は変更してください。`
+    :`手動訂正: 自動判定「${automatic}」から「${selected}」へ変更して登録します。登録前に選択種別のレジスタを再読取します。`;
 }
 async function loadConfiguredDevices(){
   try{
@@ -359,11 +524,13 @@ async function registerDetectedDevice(){
   const name=value('deviceName').trim();
   const location=value('deviceLocation').trim();
   if(!name||!location){result.textContent='センサー名と接続場所・用途を入力してください。';result.closest('details').open=true;return}
-  const body=await call('/api/fgt/commissioning/devices/register',{sensor_index:0,name,location});
+  const body=await call('/api/fgt/commissioning/devices/register',{sensor_index:0,sensor_type:value('deviceType'),name,location});
   if(body&&body.ok){
     document.getElementById('deviceName').value='';
     document.getElementById('deviceLocation').value='';
     detectedSensors=[];
+    document.getElementById('deviceType').disabled=true;
+    updateRegistrationTypeHint();
     document.getElementById('sensorSummary').innerHTML='<span class="pill ok">登録完了</span>';
     document.getElementById('sensorList').innerHTML='<div class="empty">次のセンサーへつなぎ替え、「センサーを自動検出して試験」を実行してください。</div>';
     document.getElementById('addressSensor').innerHTML='<option value="">先に自動検出してください</option>';
@@ -395,6 +562,7 @@ function renderSensors(){
     summary.innerHTML='<span class="pill danger">センサー未検出</span>';
     list.innerHTML='<div class="empty">応答するセンサーがありません。電源、A/B、GND、アドレス重複を確認してください。</div>';
     updateAddressRegistryOptions();
+    updateRegistrationTypeHint();
     updateRegisterButton();
     return;
   }
@@ -409,15 +577,22 @@ function renderSensors(){
     }
   }
   list.innerHTML=detectedSensors.map((sensor,index)=>{
-    const confidence=sensor.identification_confidence==='tentative'
-      ?'<span class="pill warn">機種推定</span>'
-      :'<span class="pill ok">自動識別</span>';
+    const confidence=sensor.identification_basis==='reserved_par_address_3'
+      ?'<span class="pill ok">ID 3からPAR判定</span>'
+      :sensor.identification_confidence==='tentative'
+        ?'<span class="pill warn">機種推定</span>'
+        :'<span class="pill ok">自動識別</span>';
     const test=sensor.test_pass
       ?'<span class="pill ok">値取得OK</span>'
       :'<span class="pill danger">要確認</span>';
     const measurements=(sensor.measurements||[]).map(item=>`<div class="measurement"><span>${item.label}</span><strong>${item.value} ${item.unit||''}</strong></div>`).join('');
     return `<article class="sensor"><div class="sensor-head"><div><h3>${sensor.name}</h3><div class="sensor-meta">${sensor.model}・アドレス ${sensor.id}</div></div><div>${test}${confidence}</div></div><div class="measurements">${measurements}</div><p class="hint">${sensor.test_message}</p><div class="actions"><button data-sensor-action onclick="testSensor(${index})">このセンサーの値を再取得</button></div></article>`;
   }).join('');
+  if(detectedSensors.length===1){
+    const selectorType=document.getElementById('deviceType');
+    selectorType.value=detectedSensors[0].sensor_type;
+  }
+  updateRegistrationTypeHint();
   detectedSensors.forEach((sensor,index)=>{
     const option=document.createElement('option');
     option.value=String(index);
@@ -445,6 +620,7 @@ async function detectSensors(){
   const button=document.getElementById('detectButton');
   button.disabled=true;
   detectedSensors=[];
+  setSensorCommunicationLog('');
   updateRegisterButton(true);
   document.getElementById('sensorSummary').innerHTML='<span class="pill warn">自動検出中…最大約10秒</span>';
   try{
@@ -455,6 +631,9 @@ async function detectSensors(){
       const response=await fetch('/api/fgt/commissioning/sensors/detect/status',{cache:'no-store'});
       if(response.status===409)continue;
       const body=await response.json();
+      if(typeof body.communication_log==='string'){
+        setSensorCommunicationLog(body.communication_log,Boolean(body.communication_log_truncated));
+      }
       if(body.state==='running'){
         document.getElementById('sensorSummary').innerHTML=`<span class="pill warn">自動検出中 ${body.completed_steps}/${body.total_steps}</span><span class="pill">${body.found}台応答</span>`;
         continue;
@@ -521,6 +700,59 @@ bool auto_detection_running()
            s_auto_detection.phase == AutoDetectionPhase::scanning;
 }
 
+void append_sensor_communication_log(const char *format, ...)
+{
+    if (format == nullptr || s_auto_detection.communication_log_truncated)
+    {
+        return;
+    }
+    const size_t capacity =
+        sizeof(s_auto_detection.communication_log);
+    const size_t remaining =
+        capacity - s_auto_detection.communication_log_length;
+    if (remaining <= 1)
+    {
+        s_auto_detection.communication_log_truncated = true;
+        return;
+    }
+
+    va_list arguments;
+    va_start(arguments, format);
+    const int written = vsnprintf(
+        s_auto_detection.communication_log +
+            s_auto_detection.communication_log_length,
+        remaining,
+        format,
+        arguments);
+    va_end(arguments);
+    if (written < 0)
+    {
+        return;
+    }
+    if (static_cast<size_t>(written) >= remaining)
+    {
+        static constexpr char kTruncatedMarker[] =
+            "\n[LOG] result=TRUNCATED\n";
+        const size_t marker_length = sizeof(kTruncatedMarker) - 1;
+        if (capacity > marker_length + 1)
+        {
+            const size_t marker_offset =
+                capacity - marker_length - 1;
+            memcpy(
+                s_auto_detection.communication_log + marker_offset,
+                kTruncatedMarker,
+                marker_length);
+            s_auto_detection.communication_log[capacity - 1] = '\0';
+            s_auto_detection.communication_log_length =
+                capacity - 1;
+        }
+        s_auto_detection.communication_log_truncated = true;
+        return;
+    }
+    s_auto_detection.communication_log_length +=
+        static_cast<size_t>(written);
+}
+
 void reset_auto_detection()
 {
     s_auto_detection.phase = AutoDetectionPhase::idle;
@@ -530,6 +762,10 @@ void reset_auto_detection()
     s_auto_detection.next_id = 1;
     s_auto_detection.sensor_count = 0;
     s_auto_detection.passed_count = 0;
+    s_auto_detection.communication_log[0] = '\0';
+    s_auto_detection.communication_log_length = 0;
+    s_auto_detection.communication_transaction_count = 0;
+    s_auto_detection.communication_log_truncated = false;
 }
 
 void cancel_auto_detection()
@@ -590,6 +826,53 @@ void send_error(AsyncWebServerRequest *request,
     doc["code"] = code;
     doc["message"] = message;
     send_json(request, status, doc);
+}
+
+void send_sensor_communication_error(
+    AsyncWebServerRequest *request,
+    int status,
+    const char *code,
+    const char *message)
+{
+    JsonDocument doc;
+    doc["ok"] = false;
+    doc["code"] = code;
+    doc["message"] = message;
+    doc["communication_log"] =
+        s_auto_detection.communication_log;
+    doc["communication_log_truncated"] =
+        s_auto_detection.communication_log_truncated;
+    send_json(request, status, doc);
+}
+
+const char *reset_reason_name(esp_reset_reason_t reason)
+{
+    switch (reason)
+    {
+    case ESP_RST_POWERON:
+        return "power_on";
+    case ESP_RST_EXT:
+        return "external_reset";
+    case ESP_RST_SW:
+        return "software_reset";
+    case ESP_RST_PANIC:
+        return "panic";
+    case ESP_RST_INT_WDT:
+        return "interrupt_watchdog";
+    case ESP_RST_TASK_WDT:
+        return "task_watchdog";
+    case ESP_RST_WDT:
+        return "watchdog";
+    case ESP_RST_DEEPSLEEP:
+        return "deep_sleep";
+    case ESP_RST_BROWNOUT:
+        return "brownout";
+    case ESP_RST_SDIO:
+        return "sdio";
+    case ESP_RST_UNKNOWN:
+    default:
+        return "unknown";
+    }
 }
 
 bool reject_during_firmware_update(
@@ -688,6 +971,38 @@ void handle_status(AsyncWebServerRequest *request)
     doc["guard_remaining_ms"] = state.guard_remaining_ms;
     doc["guard_ms"] = APP_FGT_COMMISSIONING_SWITCH_GUARD_MS;
     doc["max_on_ms"] = APP_FGT_COMMISSIONING_MAX_ON_MS;
+    doc["firmware_version"] = APP_FIRMWARE_VERSION;
+    doc["firmware_build_id"] = APP_FIRMWARE_BUILD_ID;
+    doc["reset_reason"] =
+        reset_reason_name(s_portal_reset_reason);
+    doc["reset_reason_code"] =
+        static_cast<int>(s_portal_reset_reason);
+    doc["registration_interrupted"] =
+        s_registration_interrupted;
+    doc["registration_last_result"] =
+        s_registration_last_result;
+    doc["registration_storage_error"] =
+        app_fgt_rs485_devices_last_storage_error();
+    doc["registration_sensor_id"] =
+        s_registration_sensor_id;
+    doc["registration_sensor_baud"] =
+        s_registration_sensor_baud;
+    doc["registration_stack_before_bytes"] =
+        s_registration_stack_before_bytes;
+    doc["registration_stack_after_bytes"] =
+        s_registration_stack_after_bytes;
+    doc["registration_heap_before_bytes"] =
+        s_registration_heap_before_bytes;
+    doc["registration_heap_after_bytes"] =
+        s_registration_heap_after_bytes;
+    doc["async_tcp_stack_size_bytes"] =
+        CONFIG_ASYNC_TCP_STACK_SIZE;
+    doc["async_tcp_stack_low_water_mark_bytes"] =
+        static_cast<uint32_t>(
+            uxTaskGetStackHighWaterMark(nullptr));
+    doc["free_heap_bytes"] = ESP.getFreeHeap();
+    doc["registry_store_bytes"] =
+        app_fgt_rs485_devices_registry_size();
     release_operation();
     send_json(request, 200, doc);
 }
@@ -1092,6 +1407,51 @@ bool prepare_sensor_operation(AsyncWebServerRequest *request)
     return true;
 }
 
+bool read_sensor_registers_with_log(
+    uint8_t slave_id,
+    uint8_t function_code,
+    uint16_t start_register,
+    uint16_t register_count,
+    uint16_t *values,
+    size_t value_capacity)
+{
+    const bool ok = hal_rs485_modbus_read_registers(
+        slave_id,
+        function_code,
+        start_register,
+        register_count,
+        values,
+        value_capacity);
+    ++s_auto_detection.communication_transaction_count;
+    append_sensor_communication_log(
+        "[%03u] baud=%lu id=%u FC%02u reg=0x%04X count=%u result=%s",
+        static_cast<unsigned int>(
+            s_auto_detection.communication_transaction_count),
+        static_cast<unsigned long>(s_rs485_baud),
+        static_cast<unsigned int>(slave_id),
+        static_cast<unsigned int>(function_code),
+        static_cast<unsigned int>(start_register),
+        static_cast<unsigned int>(register_count),
+        ok ? "OK" : "NO_VALID_RESPONSE");
+    if (ok)
+    {
+        append_sensor_communication_log(" values=[");
+        for (size_t i = 0; i < register_count; ++i)
+        {
+            append_sensor_communication_log(
+                "%s%u",
+                i == 0 ? "" : ",",
+                static_cast<unsigned int>(values[i]));
+        }
+        append_sensor_communication_log("]\n");
+    }
+    else
+    {
+        append_sensor_communication_log("\n");
+    }
+    return ok;
+}
+
 bool read_sensor_measurement(fgt::CommissioningSensorType type,
                              uint8_t slave_id,
                              CommissioningSensorReading *reading)
@@ -1103,7 +1463,7 @@ bool read_sensor_measurement(fgt::CommissioningSensorType type,
     *reading = {};
     const uint16_t count =
         type == fgt::CommissioningSensorType::soil ? 7 : 1;
-    reading->communication_ok = hal_rs485_modbus_read_registers(
+    reading->communication_ok = read_sensor_registers_with_log(
         slave_id, 0x03, 0x0000, count, reading->values, 7);
     if (!reading->communication_ok)
     {
@@ -1130,6 +1490,7 @@ void add_measurement(JsonArray measurements,
 void add_sensor_json(JsonObject sensor,
                      fgt::CommissioningSensorType type,
                      fgt::SensorIdentificationConfidence confidence,
+                     const char *identification_basis,
                      uint8_t slave_id,
                      uint32_t baud,
                      const CommissioningSensorReading &reading)
@@ -1141,6 +1502,10 @@ void add_sensor_json(JsonObject sensor,
     sensor["baud"] = baud;
     sensor["identification_confidence"] =
         fgt::sensor_identification_confidence_name(confidence);
+    sensor["identification_basis"] =
+        identification_basis == nullptr
+            ? "unknown"
+            : identification_basis;
     sensor["communication_ok"] = reading.communication_ok;
     sensor["values_plausible"] = reading.values_plausible;
     sensor["test_pass"] =
@@ -1196,15 +1561,18 @@ void add_sensor_json(JsonObject sensor,
 
 bool identify_sensor(uint8_t slave_id,
                      fgt::SensorIdentification *identification,
-                     CommissioningSensorReading *reading)
+                     CommissioningSensorReading *reading,
+                     const char **identification_basis)
 {
-    if (identification == nullptr || reading == nullptr)
+    if (identification == nullptr ||
+        reading == nullptr ||
+        identification_basis == nullptr)
     {
         return false;
     }
 
     uint16_t primary_value = 0;
-    if (!hal_rs485_modbus_read_registers(
+    if (!read_sensor_registers_with_log(
             slave_id, 0x03, 0x0000, 1, &primary_value, 1))
     {
         return false;
@@ -1212,7 +1580,7 @@ bool identify_sensor(uint8_t slave_id,
 
     uint16_t soil_values[7] = {};
     const bool soil_measurement_supported =
-        hal_rs485_modbus_read_registers(
+        read_sensor_registers_with_log(
             slave_id, 0x03, 0x0000, 7, soil_values, 7);
     const bool soil_secondary_values_present =
         soil_measurement_supported &&
@@ -1223,7 +1591,7 @@ bool identify_sensor(uint8_t slave_id,
     uint16_t signature[3] = {};
     const bool soil_signature_read =
         soil_measurement_supported &&
-        hal_rs485_modbus_read_registers(
+        read_sensor_registers_with_log(
             slave_id, 0x03, 0x0022, 3, signature, 3);
     const bool soil_signature_present =
         soil_signature_read &&
@@ -1233,7 +1601,35 @@ bool identify_sensor(uint8_t slave_id,
         soil_measurement_supported,
         soil_secondary_values_present,
         soil_signature_read,
-        soil_signature_present);
+        soil_signature_present,
+        slave_id == 3);
+    if (slave_id == 3)
+    {
+        *identification_basis = "reserved_par_address_3";
+    }
+    else if (!soil_measurement_supported)
+    {
+        *identification_basis = "single_register_response_only";
+    }
+    else if (soil_signature_read && soil_signature_present)
+    {
+        *identification_basis = "nonzero_soil_signature_registers";
+    }
+    else if (soil_secondary_values_present)
+    {
+        *identification_basis = "nonzero_secondary_measurements";
+    }
+    else
+    {
+        *identification_basis = "single_measurement_values_only";
+    }
+    append_sensor_communication_log(
+        "[IDENTIFY] id=%u automatic_type=%s confidence=%s basis=%s\n",
+        static_cast<unsigned int>(slave_id),
+        sensor_type_key(identification->type),
+        fgt::sensor_identification_confidence_name(
+            identification->confidence),
+        *identification_basis);
 
     *reading = {};
     reading->communication_ok = true;
@@ -1310,10 +1706,15 @@ void add_auto_detection_json(JsonDocument &doc)
         add_sensor_json(sensor,
                         detected.identification.type,
                         detected.identification.confidence,
+                        detected.identification_basis,
                         detected.slave_id,
                         detected.baud,
                         detected.reading);
     }
+    doc["communication_log"] =
+        s_auto_detection.communication_log;
+    doc["communication_log_truncated"] =
+        s_auto_detection.communication_log_truncated;
 
     if (s_auto_detection.phase == AutoDetectionPhase::complete &&
         s_auto_detection.sensor_count == 0)
@@ -1387,6 +1788,14 @@ void handle_sensor_detect(AsyncWebServerRequest *request)
     s_auto_detection.power_ready_ms =
         s_auto_detection.started_ms +
         (power_was_on ? 0 : kSensorPowerSettleMs);
+    append_sensor_communication_log(
+        "# FGT RS485 sensor communication log\n"
+        "firmware_version=%s firmware_build_id=%s\n"
+        "scan_bauds=[4800,2400,9600] scan_ids=1-10 "
+        "par_reserved_id=3\n"
+        "NO_VALID_RESPONSE=timeout_or_crc_or_exception_or_malformed\n",
+        APP_FIRMWARE_VERSION,
+        APP_FIRMWARE_BUILD_ID);
     JsonDocument doc;
     add_auto_detection_json(doc);
     release_operation();
@@ -1435,14 +1844,22 @@ void auto_detection_tick(uint32_t now_ms)
     if (s_auto_detection.next_id == 1 &&
         !ensure_rs485_baud(baud))
     {
+        append_sensor_communication_log(
+            "[SETUP] baud=%lu result=RS485_INIT_FAILED\n",
+            static_cast<unsigned long>(baud));
         s_auto_detection.phase = AutoDetectionPhase::failed;
         return;
     }
 
     fgt::SensorIdentification identification = {};
     CommissioningSensorReading reading = {};
+    const char *identification_basis = "unknown";
     const uint8_t id = s_auto_detection.next_id;
-    if (identify_sensor(id, &identification, &reading) &&
+    if (identify_sensor(
+            id,
+            &identification,
+            &reading,
+            &identification_basis) &&
         s_auto_detection.sensor_count <
             sizeof(s_auto_detection.sensors) /
                 sizeof(s_auto_detection.sensors[0]))
@@ -1453,6 +1870,7 @@ void auto_detection_tick(uint32_t now_ms)
         detected.reading = reading;
         detected.slave_id = id;
         detected.baud = baud;
+        detected.identification_basis = identification_basis;
         if (reading.communication_ok && reading.values_plausible)
         {
             ++s_auto_detection.passed_count;
@@ -1474,6 +1892,14 @@ void auto_detection_tick(uint32_t now_ms)
         if (s_auto_detection.baud_index >= baud_count)
         {
             s_auto_detection.phase = AutoDetectionPhase::complete;
+            append_sensor_communication_log(
+                "[COMPLETE] found=%u passed=%u elapsed_ms=%lu\n",
+                static_cast<unsigned int>(
+                    s_auto_detection.sensor_count),
+                static_cast<unsigned int>(
+                    s_auto_detection.passed_count),
+                static_cast<unsigned long>(
+                    millis() - s_auto_detection.started_ms));
             Serial.printf(
                 "FGT commissioning sensor detection complete: found=%u passed=%u elapsed=%lu ms\n",
                 static_cast<unsigned int>(
@@ -1527,7 +1953,9 @@ int registry_result_status(fgt::Rs485RegistryResult result)
 
 void send_registry_result(
     AsyncWebServerRequest *request,
-    fgt::Rs485RegistryResult result)
+    fgt::Rs485RegistryResult result,
+    const char *automatic_sensor_type = nullptr,
+    const char *registered_sensor_type = nullptr)
 {
     JsonDocument doc;
     doc["ok"] = result == fgt::Rs485RegistryResult::ok;
@@ -1535,6 +1963,25 @@ void send_registry_result(
     if (result != fgt::Rs485RegistryResult::ok)
     {
         doc["message"] = registry_error_message(result);
+        if (result == fgt::Rs485RegistryResult::storage_error)
+        {
+            doc["storage_detail"] =
+                app_fgt_rs485_devices_last_storage_error();
+        }
+    }
+    if (automatic_sensor_type != nullptr &&
+        registered_sensor_type != nullptr)
+    {
+        doc["automatic_sensor_type"] =
+            automatic_sensor_type;
+        doc["registered_sensor_type"] =
+            registered_sensor_type;
+        doc["manual_override"] =
+            strcmp(
+                automatic_sensor_type,
+                registered_sensor_type) != 0;
+        doc["communication_log"] =
+            s_auto_detection.communication_log;
     }
     send_json(request, registry_result_status(result), doc);
 }
@@ -1562,11 +2009,14 @@ void handle_configured_device_register(
         return;
     }
     uint32_t sensor_index = 0;
+    fgt::CommissioningSensorType selected_type =
+        fgt::CommissioningSensorType::par;
     char name[fgt::kRs485DeviceNameSize] = {};
     char location[fgt::kRs485DeviceLocationSize] = {};
     if (!parse_uint(
             request, "sensor_index", 0,
             fgt::kMaxRs485Devices - 1, &sensor_index) ||
+        !parse_sensor_type(request, &selected_type) ||
         !parse_text(request, "name", name, sizeof(name), true) ||
         !parse_text(
             request, "location", location, sizeof(location), true))
@@ -1584,8 +2034,7 @@ void handle_configured_device_register(
     if (s_auto_detection.phase != AutoDetectionPhase::complete ||
         s_auto_detection.sensor_count != 1 ||
         sensor_index != 0 ||
-        !s_auto_detection.sensors[0].reading.communication_ok ||
-        !s_auto_detection.sensors[0].reading.values_plausible)
+        !s_auto_detection.sensors[0].reading.communication_ok)
     {
         release_operation();
         send_error(
@@ -1596,10 +2045,48 @@ void handle_configured_device_register(
 
     const DetectedSensor &detected =
         s_auto_detection.sensors[sensor_index];
+    append_sensor_communication_log(
+        "[REGISTER] automatic_type=%s selected_type=%s "
+        "manual_override=%s\n",
+        sensor_type_key(detected.identification.type),
+        sensor_type_key(selected_type),
+        detected.identification.type == selected_type
+            ? "false"
+            : "true");
+    if (!ensure_rs485_baud(detected.baud))
+    {
+        release_operation();
+        send_sensor_communication_error(
+            request, 500, "rs485_not_ready",
+            "Failed to initialize RS485 for the selected sensor type.");
+        return;
+    }
+    CommissioningSensorReading selected_reading = {};
+    if (!read_sensor_measurement(
+            selected_type,
+            detected.slave_id,
+            &selected_reading) ||
+        !selected_reading.communication_ok)
+    {
+        release_operation();
+        send_sensor_communication_error(
+            request, 502, "selected_sensor_type_no_response",
+            "The sensor did not answer the measurement read for the selected type.");
+        return;
+    }
+    if (!selected_reading.values_plausible)
+    {
+        release_operation();
+        send_sensor_communication_error(
+            request, 422, "selected_sensor_type_values_out_of_range",
+            "The sensor answered, but the values are outside the selected sensor type range.");
+        return;
+    }
+
     fgt::Rs485DeviceConfig device = {};
     device.enabled = true;
     device.type = registry_device_type(
-        detected.identification.type);
+        selected_type);
     device.slave_id = detected.slave_id;
     device.baud = detected.baud;
     device.function_code = 0x03;
@@ -1610,10 +2097,63 @@ void handle_configured_device_register(
     memcpy(device.name, name, sizeof(device.name));
     memcpy(device.location, location, sizeof(device.location));
 
+    s_registration_stack_before_bytes =
+        static_cast<uint32_t>(
+            uxTaskGetStackHighWaterMark(nullptr));
+    s_registration_stack_after_bytes = 0;
+    s_registration_heap_before_bytes = ESP.getFreeHeap();
+    s_registration_heap_after_bytes = 0;
+    s_registration_sensor_id = device.slave_id;
+    s_registration_sensor_baud = device.baud;
+    s_registration_last_result = "running";
+    s_registration_interrupted = false;
+    s_registration_reset_marker.magic =
+        kRegistrationDiagnosticMagic;
+    s_registration_reset_marker.slave_id =
+        device.slave_id;
+    s_registration_reset_marker.baud =
+        device.baud;
+    s_registration_reset_marker.stack_low_water_mark_bytes =
+        s_registration_stack_before_bytes;
+    s_registration_reset_marker.free_heap_bytes =
+        s_registration_heap_before_bytes;
+    s_registration_reset_marker.active = 1;
+    Serial.printf(
+        "FGT sensor registration start: id=%u baud=%lu "
+        "stack_low_water=%lu heap_free=%lu registry_store=%u\n",
+        static_cast<unsigned int>(device.slave_id),
+        static_cast<unsigned long>(device.baud),
+        static_cast<unsigned long>(
+            s_registration_stack_before_bytes),
+        static_cast<unsigned long>(
+            s_registration_heap_before_bytes),
+        static_cast<unsigned int>(
+            app_fgt_rs485_devices_registry_size()));
+
     const fgt::Rs485RegistryResult result =
         app_fgt_rs485_devices_add(device);
+    s_registration_stack_after_bytes =
+        static_cast<uint32_t>(
+            uxTaskGetStackHighWaterMark(nullptr));
+    s_registration_heap_after_bytes = ESP.getFreeHeap();
+    s_registration_last_result =
+        fgt::rs485_registry_result_name(result);
+    s_registration_reset_marker.active = 0;
+    Serial.printf(
+        "FGT sensor registration result: result=%s "
+        "storage=%s stack_low_water=%lu heap_free=%lu\n",
+        s_registration_last_result,
+        app_fgt_rs485_devices_last_storage_error(),
+        static_cast<unsigned long>(
+            s_registration_stack_after_bytes),
+        static_cast<unsigned long>(
+            s_registration_heap_after_bytes));
     release_operation();
-    send_registry_result(request, result);
+    send_registry_result(
+        request,
+        result,
+        sensor_type_key(detected.identification.type),
+        sensor_type_key(selected_type));
 }
 
 void handle_configured_device_update(
@@ -1737,9 +2277,12 @@ void handle_sensor_test(AsyncWebServerRequest *request)
     add_sensor_json(sensor,
                     type,
                     parse_identification_confidence(request),
+                    "manual_retest",
                     static_cast<uint8_t>(slave_id),
                     baud,
                     reading);
+    doc["communication_log"] =
+        s_auto_detection.communication_log;
     release_operation();
     send_json(request, 200, doc);
 }
@@ -1831,7 +2374,7 @@ void handle_modbus_change_address(AsyncWebServerRequest *request)
     }
 
     uint16_t current_id = 0;
-    const bool precheck_ok = hal_rs485_modbus_read_registers(
+    const bool precheck_ok = read_sensor_registers_with_log(
         static_cast<uint8_t>(old_id),
         0x03,
         kSensorAddressRegister,
@@ -1847,6 +2390,8 @@ void handle_modbus_change_address(AsyncWebServerRequest *request)
         doc["message"] =
             "Address register could not be read or did not match the current slave ID. Nothing was written.";
         doc["read_value"] = current_id;
+        doc["communication_log"] =
+            s_auto_detection.communication_log;
         send_json(request, 409, doc);
         return;
     }
@@ -1855,6 +2400,16 @@ void handle_modbus_change_address(AsyncWebServerRequest *request)
         static_cast<uint8_t>(old_id),
         kSensorAddressRegister,
         static_cast<uint16_t>(new_id));
+    ++s_auto_detection.communication_transaction_count;
+    append_sensor_communication_log(
+        "[%03u] baud=%lu id=%u FC06 reg=0x%04X value=%u result=%s\n",
+        static_cast<unsigned int>(
+            s_auto_detection.communication_transaction_count),
+        static_cast<unsigned long>(s_rs485_baud),
+        static_cast<unsigned int>(old_id),
+        static_cast<unsigned int>(kSensorAddressRegister),
+        static_cast<unsigned int>(new_id),
+        write_echo_ok ? "ECHO_OK" : "NO_VALID_ECHO");
     if (!write_echo_ok)
     {
         release_operation();
@@ -1863,13 +2418,15 @@ void handle_modbus_change_address(AsyncWebServerRequest *request)
         doc["code"] = "write_unconfirmed";
         doc["message"] =
             "FC06 echo was not verified. The write result is unknown and was not retried.";
+        doc["communication_log"] =
+            s_auto_detection.communication_log;
         send_json(request, 502, doc);
         return;
     }
 
     delay(kAddressChangeVerifyDelayMs);
     uint16_t verified_id = 0;
-    const bool verification_ok = hal_rs485_modbus_read_registers(
+    const bool verification_ok = read_sensor_registers_with_log(
         static_cast<uint8_t>(new_id),
         0x03,
         kSensorAddressRegister,
@@ -1915,12 +2472,15 @@ void handle_modbus_change_address(AsyncWebServerRequest *request)
     doc["verified_value"] = verified_id;
     doc["registered_sensor"] = registered_index >= 0;
     doc["configuration_saved"] = configuration_saved;
+    doc["communication_log"] =
+        s_auto_detection.communication_log;
     if (doc["verification_ok"].as<bool>())
     {
         JsonObject sensor = doc["sensor"].to<JsonObject>();
         add_sensor_json(sensor,
                         type,
                         parse_identification_confidence(request),
+                        "manual_address_change",
                         static_cast<uint8_t>(new_id),
                         baud,
                         reading);
@@ -1948,6 +2508,43 @@ void handle_modbus_change_address(AsyncWebServerRequest *request)
 
 void commissioning_begin()
 {
+    s_portal_reset_reason = esp_reset_reason();
+    s_registration_interrupted =
+        s_registration_reset_marker.magic ==
+            kRegistrationDiagnosticMagic &&
+        s_registration_reset_marker.active == 1;
+    if (s_registration_interrupted)
+    {
+        s_registration_sensor_id =
+            s_registration_reset_marker.slave_id;
+        s_registration_sensor_baud =
+            s_registration_reset_marker.baud;
+        s_registration_stack_before_bytes =
+            s_registration_reset_marker
+                .stack_low_water_mark_bytes;
+        s_registration_heap_before_bytes =
+            s_registration_reset_marker.free_heap_bytes;
+        s_registration_stack_after_bytes = 0;
+        s_registration_heap_after_bytes = 0;
+        s_registration_last_result =
+            "interrupted_by_reset";
+        Serial.printf(
+            "FGT previous sensor registration was interrupted: "
+            "reset=%s id=%lu baud=%lu stack_low_water=%lu "
+            "heap_free=%lu\n",
+            reset_reason_name(s_portal_reset_reason),
+            static_cast<unsigned long>(
+                s_registration_sensor_id),
+            static_cast<unsigned long>(
+                s_registration_sensor_baud),
+            static_cast<unsigned long>(
+                s_registration_stack_before_bytes),
+            static_cast<unsigned long>(
+                s_registration_heap_before_bytes));
+    }
+    s_registration_reset_marker.magic =
+        kRegistrationDiagnosticMagic;
+    s_registration_reset_marker.active = 0;
     app_fgt_rs485_devices_init();
     hal_rs485_modbus_set_diagnostics(true);
     Serial.println(

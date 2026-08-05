@@ -29,7 +29,8 @@ SensorIdentification identify_commissioning_sensor(
     bool soil_measurement_supported,
     bool soil_secondary_values_present,
     bool soil_signature_read,
-    bool soil_signature_present);
+    bool soil_signature_present,
+    bool par_address_hint = false);
 
 bool soil_measurement_values_plausible(uint16_t raw_moisture,
                                        uint16_t raw_temperature,
