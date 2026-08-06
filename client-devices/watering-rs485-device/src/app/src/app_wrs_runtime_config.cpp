@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -21,6 +22,11 @@ typedef struct
     app_wrs_runtime_config_t config;
     uint32_t crc32;
 } app_wrs_runtime_config_store_t;
+
+static_assert(
+    offsetof(app_wrs_runtime_config_store_t, crc32) + sizeof(uint32_t) ==
+        sizeof(app_wrs_runtime_config_store_t),
+    "WRS runtime config store unexpectedly has CRC tail padding");
 
 static void copy_string(char *dest, size_t dest_size, const char *src)
 {
@@ -427,8 +433,9 @@ bool app_wrs_runtime_config_load_saved()
         return false;
     }
 
-    const uint32_t expected_crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
-                                                   sizeof(store) - sizeof(store.crc32));
+    const uint32_t expected_crc32 = AppUtils::crc32(
+        reinterpret_cast<const uint8_t *>(&store),
+        offsetof(app_wrs_runtime_config_store_t, crc32));
     if (store.crc32 != expected_crc32 || !content_is_valid(store.config))
     {
         Serial.println("Saved WRS runtime config is invalid");
@@ -453,8 +460,9 @@ bool app_wrs_runtime_config_save_current()
     store.config_size = sizeof(app_wrs_runtime_config_t);
     store.config = s_runtime_config;
     store.config.received_from_mqtt = false;
-    store.crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
-                                  sizeof(store) - sizeof(store.crc32));
+    store.crc32 = AppUtils::crc32(
+        reinterpret_cast<const uint8_t *>(&store),
+        offsetof(app_wrs_runtime_config_store_t, crc32));
 
     File file = LittleFS.open(APP_WRS_RUNTIME_CONFIG_FILE, "w");
     if (!file)

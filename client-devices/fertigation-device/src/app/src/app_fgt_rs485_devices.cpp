@@ -25,6 +25,11 @@ struct RegistryStore
     uint32_t crc32 = 0;
 };
 
+static_assert(
+    offsetof(RegistryStore, crc32) + sizeof(uint32_t) ==
+        sizeof(RegistryStore),
+    "FGT RS485 registry store unexpectedly has CRC tail padding");
+
 fgt::Rs485DeviceRegistry s_registry = {};
 bool s_initialized = false;
 bool s_has_saved_registry = false;
@@ -34,7 +39,7 @@ uint32_t store_crc(const RegistryStore &store)
 {
     return AppUtils::crc32(
         reinterpret_cast<const uint8_t *>(&store),
-        sizeof(store) - sizeof(store.crc32));
+        offsetof(RegistryStore, crc32));
 }
 
 bool read_store(const char *path,

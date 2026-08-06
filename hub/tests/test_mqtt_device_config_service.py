@@ -44,9 +44,19 @@ class _MqttClient:
 class _NotificationService:
     def __init__(self):
         self.new_devices = []
+        self.health_alerts = []
 
     def notify_new_device(self, device_id, record, source, payload=None):
         self.new_devices.append({"device_id": device_id, "record": record, "source": source, "payload": payload})
+
+    def notify_health_alert(self, alert_type, device_id, record, details):
+        self.health_alerts.append(
+            {
+                "alert_type": alert_type,
+                "device_id": device_id,
+                "details": details,
+            }
+        )
 
 
 class MqttDeviceConfigServiceTest(unittest.TestCase):
@@ -189,6 +199,42 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         )
         self.assertNotIn("moisture_threshold", payload)
         self.assertIsNotNone(self.repository.get(device_id)["last_config_reply_at"])
+
+    def test_fgt_operational_error_notifies_immediately_and_deduplicates(self):
+        device_id = "INADS-FGT-OPERATIONAL-ERROR-001"
+        self.service.get_record(device_id)
+        self.repository.set_state(device_id, "active", approved_by="test")
+        error_status = {
+            "device_kind": "FGT",
+            "runtime_config_valid": True,
+            "journal_error": True,
+            "recovery_required": True,
+            "batch_skip_reason": "recovery_required",
+        }
+
+        self.service.record_status(device_id, error_status)
+        self.service.record_status(device_id, error_status)
+
+        self.assertEqual(len(self.notification_service.health_alerts), 1)
+        alert = self.notification_service.health_alerts[0]
+        self.assertEqual(alert["alert_type"], "device_operational_error")
+        self.assertEqual(
+            alert["details"]["reasons"],
+            ["journal_error", "recovery_required"],
+        )
+
+        self.service.record_status(
+            device_id,
+            {
+                "device_kind": "FGT",
+                "runtime_config_valid": True,
+                "journal_error": False,
+                "recovery_required": False,
+                "fgt_fault": "none",
+            },
+        )
+        self.service.record_status(device_id, error_status)
+        self.assertEqual(len(self.notification_service.health_alerts), 2)
 
     def test_config_request_publishes_reply_before_logging_inbound_event(self):
         device_id = "INADS-00000000-0000-4000-8000-000000000009"

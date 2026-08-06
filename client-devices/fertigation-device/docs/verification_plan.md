@@ -17,6 +17,12 @@ operation with an external hard disconnect for the 12 V actuator rail.
   leak, emergency stop, and whole-batch timeout.
 - Reset from fault only when the tank and safety inputs permit it.
 - Phase and fault string stability for MQTT/UI consumers.
+- Journal start and completion records survive a restart and reject changed
+  state bytes.
+- Deployed 0.2.1 journal CRC records load through the read-only compatibility
+  path, while new records ignore ABI tail padding.
+- A single missed schedule catches up within six hours, OTA deferral remains
+  pending, and older schedules are never replayed.
 
 ## Build regression
 
@@ -44,4 +50,6 @@ current minimal direct-wired prototype.
   pull-downs and master-enable chain keep all five actuator gates OFF.
 - Simulate every float, leak, and emergency input.
 - Power-cycle during every phase and verify no automatic continuation.
+- Power-cycle after a completed timed-output run and verify that the next
+  schedule still runs exactly once.
 - Run water-only batches before any fertilizer test.

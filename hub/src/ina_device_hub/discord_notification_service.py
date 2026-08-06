@@ -363,6 +363,13 @@ def format_health_alert_notification(alert_type: str, device_id: str, record: di
     title, instruction, tab, emoji, color = {
         "device_offline": ("機器の接続を確認してください", "電源、通信環境、最終接続時刻を確認します。", "maintenance", "📡", 0xC44D42),
         "watering_missing": ("水やり状況を確認してください", "タンク、ポンプ、配管と直近の水やり記録を確認します。", "overview", "💧", 0x397B8F),
+        "device_operational_error": (
+            "機器が予定動作を実行できませんでした",
+            "安全停止の理由を確認し、必要な復旧後に取り逃した作業を確認してください。",
+            "maintenance",
+            "🚨",
+            0xC44D42,
+        ),
         "soil_calibration_suggested": (
             "土の水分表示を調整できます",
             "乾いた状態と湿った状態を確認し、必要なら案内に沿って調整します。",
@@ -383,6 +390,11 @@ def format_health_alert_notification(alert_type: str, device_id: str, record: di
         fields.append({"name": "最後に確認できた時刻", "value": str(details["last_seen_at"]), "inline": False})
     if details.get("last_watering_at"):
         fields.append({"name": "最後の水やり", "value": str(details["last_watering_at"]), "inline": False})
+    if details.get("reasons"):
+        labels = details.get("reason_labels") or details["reasons"]
+        fields.append({"name": "検出内容", "value": ", ".join(str(item) for item in labels)[:1024], "inline": False})
+    if details.get("batch_skip_reason"):
+        fields.append({"name": "実行しなかった理由", "value": str(details["batch_skip_reason"])[:1024], "inline": False})
     return {
         "username": "INA Device Hub",
         "allowed_mentions": {"parse": []},
@@ -476,6 +488,8 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
         title = "【死活監視】デバイスの接続が途絶えています"
     elif alert_type == "watering_missing":
         title = "【死活監視】水やりが一定期間確認できません"
+    elif alert_type == "device_operational_error":
+        title = "【運転異常】予定動作を実行できませんでした"
     elif alert_type == "soil_calibration_suggested":
         title = "【水分計】校正値の見直し候補があります"
     else:
@@ -506,6 +520,10 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
         lines.append(f"未水やり日数: {details['days_since_watering']:.1f} 日")
     if details.get("watering_threshold_days") is not None:
         lines.append(f"しきい値: {details['watering_threshold_days']} 日")
+    if details.get("reasons"):
+        lines.append(f"検出内容: {', '.join(str(item) for item in details['reasons'])}")
+    if details.get("batch_skip_reason"):
+        lines.append(f"実行しなかった理由: {details['batch_skip_reason']}")
     if details.get("soil_raw_before_watering") is not None:
         lines.append(f"灌水前 raw: {details['soil_raw_before_watering']}")
     if details.get("soil_raw_after_watering") is not None:

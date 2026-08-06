@@ -23,10 +23,36 @@ from ina_device_hub.device_definition_registry import (
     list_device_definitions,
     project_runtime_config,
 )
-from ina_device_hub.web_server import _build_device_operational_metrics, _build_device_output_settings, _build_scheduled_operation_state
+from ina_device_hub.web_server import (
+    _build_device_operational_metrics,
+    _build_device_output_settings,
+    _build_device_summary,
+    _build_scheduled_operation_state,
+    _build_watering_history,
+    _field_device_class,
+)
 
 
 class DeviceDefinitionRegistryTest(unittest.TestCase):
+    def test_device_summary_exposes_operational_error_for_list_and_field_views(self):
+        summary = _build_device_summary(
+            "fgt-1",
+            {
+                "name": "液肥コントローラー",
+                "device_kind": "FGT",
+                "state": "active",
+                "last_status": {
+                    "device_kind": "FGT",
+                    "journal_error": True,
+                    "recovery_required": True,
+                },
+            },
+            datetime(2026, 8, 6, tzinfo=UTC),
+        )
+
+        self.assertEqual(summary["operational_error"]["reason_labels"], ["運転履歴を読み取れません", "安全確認後の復旧待ちです"])
+        self.assertEqual(_field_device_class(summary), "danger")
+
     def test_all_firmware_projects_are_registered(self):
         definitions = {item["device"]["kind"]: item for item in list_device_definitions()}
         self.assertEqual(set(definitions), {"WTR", "WRS", "ENV", "SOI", "FGT"})
@@ -87,6 +113,38 @@ class DeviceDefinitionRegistryTest(unittest.TestCase):
         self.assertEqual(fields["fgt.timed_outputs.nutrient_a.repeat_count"]["max"], 99)
         self.assertEqual(fields["fgt.timed_outputs.nutrient_a.repeat_count"]["output_id"], "nutrient_a")
         self.assertEqual(fields["sleep_sec"]["max"], 86400)
+
+    def test_fgt_completed_batch_is_shown_in_watering_history(self):
+        history = _build_watering_history(
+            [
+                {
+                    "received_at": "2026-08-06T06:52:00+09:00",
+                    "payload": {
+                        "device_kind": "FGT",
+                        "batch_started": True,
+                        "batch_completed": True,
+                        "fgt_batch_elapsed_ms": 120014,
+                        "fgt_operation_mode": "timed_outputs",
+                        "fgt_timed_output": "none",
+                        "soil_moisture_percent": 41.5,
+                    },
+                }
+            ],
+            config={
+                "fgt": {
+                    "timed_outputs": {
+                        "enabled": True,
+                        "nutrient_a": {"on_sec": 120, "repeat_count": 1},
+                    }
+                }
+            },
+        )
+
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["label"], "潅水完了")
+        self.assertEqual(history[0]["duration"], "2分")
+        self.assertEqual(history[0]["channel"], "A液ポンプ")
+        self.assertEqual(history[0]["soil"], "41.5%")
 
     def test_fgt_runtime_projection_always_enables_scheduled_operation(self):
         stored = {

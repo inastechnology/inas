@@ -13,6 +13,7 @@
 #include "app_fgt_rs485_devices.h"
 #include "app_fgt_runtime_config.h"
 #include "app_network.h"
+#include "fgt_schedule_policy.h"
 #include "fgt_state_machine.h"
 #include "fgt_timed_output_sequence.h"
 #include "hal_battery_monitor.h"
@@ -21,7 +22,6 @@
 #include "hal_rs485_bus.h"
 #include "hal_rs485_sensor_protocol.h"
 
-static constexpr uint32_t kScheduleDueGraceSec = 15UL * 60UL;
 static constexpr uint32_t kControlTickMs = 20;
 static constexpr uint16_t kWaterOutput = 1U << 0;
 static constexpr uint16_t kNutrientAOutput = 1U << 1;
@@ -70,11 +70,13 @@ struct FgtCycleState
     bool batch_started = false;
     bool batch_completed = false;
     bool batch_skipped = false;
+    bool batch_catch_up = false;
     bool recovery_required = false;
     bool journal_error = false;
     bool output_error = false;
     const char *skip_reason = "none";
     time_t schedule_epoch_utc = 0;
+    uint32_t batch_delay_sec = 0;
     uint32_t batch_id = 0;
     bool timed_outputs_mode = false;
     fgt::Inputs inputs = {};
@@ -257,7 +259,18 @@ protected:
                             app_fgt_runtime_config_find_due_schedule(now_utc, last_executed, &due_schedule, &due_epoch);
         m_cycle.schedule_epoch_utc = due_epoch;
 
-        if (m_cycle.batch_due && now_utc - due_epoch > static_cast<time_t>(kScheduleDueGraceSec))
+        const fgt::ScheduledBatchDecision schedule_decision =
+            m_cycle.batch_due
+                ? fgt::decide_scheduled_batch(
+                      now_utc,
+                      due_epoch,
+                      context.ota_update_attempted,
+                      app_fgt_journal_has_persisted_state())
+                : fgt::ScheduledBatchDecision{};
+        m_cycle.batch_delay_sec = schedule_decision.delay_sec;
+
+        if (m_cycle.batch_due &&
+            schedule_decision.action == fgt::ScheduledBatchAction::skip_too_old)
         {
             m_cycle.batch_skipped = true;
             m_cycle.skip_reason = "schedule_too_old";
@@ -268,13 +281,17 @@ protected:
             }
             m_cycle.batch_due = false;
         }
-        else if (m_cycle.batch_due && context.ota_update_attempted)
+        else if (m_cycle.batch_due &&
+                 schedule_decision.action == fgt::ScheduledBatchAction::defer_for_ota)
         {
             m_cycle.batch_skipped = true;
             m_cycle.skip_reason = "ota_update_attempted";
         }
         else if (m_cycle.batch_due)
         {
+            m_cycle.batch_catch_up =
+                schedule_decision.action ==
+                fgt::ScheduledBatchAction::run_catch_up;
             if (config.timed_outputs_enabled) run_timed_outputs(config, due_epoch);
             else run_batch(config, due_epoch);
         }
@@ -299,6 +316,15 @@ protected:
         else
         {
             result.next_sleep_sec = context.network_retry_sleep_sec;
+        }
+        if (m_cycle.batch_skipped &&
+            strcmp(m_cycle.skip_reason, "ota_update_attempted") == 0)
+        {
+            // A due irrigation deferred by an OTA check must be retried at the
+            // earliest normal wake, rather than waiting a full sleep interval.
+            result.next_sleep_sec = min(
+                result.next_sleep_sec,
+                APP_FGT_MIN_SLEEP_SEC);
         }
         result.publish_debug_log = config.valid && config.debug_log_on_wake;
         return result;
@@ -361,6 +387,8 @@ protected:
         doc["batch_started"] = m_cycle.batch_started;
         doc["batch_completed"] = m_cycle.batch_completed;
         doc["batch_skipped"] = m_cycle.batch_skipped;
+        doc["batch_catch_up"] = m_cycle.batch_catch_up;
+        doc["batch_delay_sec"] = m_cycle.batch_delay_sec;
         doc["batch_skip_reason"] = m_cycle.skip_reason;
         doc["batch_id"] = m_cycle.batch_id;
         doc["schedule_epoch_utc"] = static_cast<int64_t>(m_cycle.schedule_epoch_utc);
@@ -385,7 +413,8 @@ protected:
                                           : m_cycle.state.batch_elapsed_ms;
         const bool timed_output_selected =
             m_cycle.timed_outputs_mode &&
-            (m_cycle.timed_state.phase == fgt::TimedPhase::output_on ||
+            (m_cycle.batch_started ||
+             m_cycle.timed_state.phase == fgt::TimedPhase::output_on ||
              m_cycle.timed_state.phase == fgt::TimedPhase::output_off);
         doc["fgt_timed_output"] = timed_output_selected
                                       ? fgt::timed_output_name(m_cycle.timed_state.active_output)

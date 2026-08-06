@@ -51,6 +51,7 @@ from ina_device_hub.device_definition_registry import (
     value_at_path,
 )
 from ina_device_hub.device_event_log import list_device_events
+from ina_device_hub.device_operational_alert import device_operational_error_details
 from ina_device_hub.device_output_capabilities import (
     device_output_capabilities,
     equipment_type_from_notes,
@@ -878,6 +879,7 @@ def _build_mqtt_admin_view(
     ]
     return {
         "devices": device_summaries,
+        "operational_error_count": sum(1 for device in device_summaries if device.get("operational_error")),
         "field_zones": _build_field_zones(device_summaries, selected_device_id),
         "selected": _build_selected_device_view(
             selected_device_id,
@@ -910,7 +912,7 @@ def _build_field_zones(device_summaries, selected_device_id):
                     "id": device["id"],
                     "name": device["name"],
                     "kind_label": device["kind_label"],
-                    "watering": device["watering_label"],
+                    "watering": "運転異常" if device.get("operational_error") else device["watering_label"],
                     "soil": device["soil_moisture"],
                     "last_seen_age": device["last_seen_age"],
                     "class": _field_device_class(device),
@@ -934,6 +936,8 @@ def _build_field_zones(device_summaries, selected_device_id):
 
 
 def _field_device_class(device):
+    if device.get("operational_error"):
+        return "danger"
     if device.get("state_class") in {"danger", "warn"}:
         return device["state_class"]
     if device.get("watering_class") == "good":
@@ -1050,6 +1054,7 @@ def _build_device_summary(device_id, record, now):
         "next_wake": _format_next_wake(record.get("last_status_at"), payload.get("next_sleep_sec")),
         "firmware": record.get("firmware_version") or "未取得",
         "target_firmware": record.get("target_firmware_version") or "設定なし",
+        "operational_error": device_operational_error_details(payload),
         "operational_metrics": _build_device_operational_metrics(record, payload, config, now, watering)[:3],
     }
 
@@ -1122,13 +1127,14 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "ota_state": _ota_state_label(record.get("ota_state")),
         "ota_class": _ota_state_class(record.get("ota_state")),
         "ota_error": record.get("ota_error") or "",
+        "operational_error": device_operational_error_details(payload),
         "operational_heading": "現在の潅水判断" if device_kind in {"WTR", "WRS"} else "液肥づくりの現在地" if device_kind == "FGT" else "現在の計測・稼働状況",
         "operational_metrics": _build_device_operational_metrics(record, payload, config, now, watering),
         "monitoring_charts": _build_device_monitoring_charts(device_kind, statuses, config),
         "schedules": _format_schedules_for_ui(config.get("schedules") or [], config, scheduled_operation=scheduled_operation),
         "scheduled_operation": scheduled_operation,
         "config_summary": _format_config_summary(config),
-        "watering_history": _build_watering_history(statuses),
+        "watering_history": _build_watering_history(statuses, config=config),
         "wake_history": _build_wake_history(statuses),
         "ota_history": _build_ota_history(ota_statuses),
         "readiness_checks": readiness_checks,
@@ -1768,22 +1774,29 @@ def _latest_status_payload(record):
     return {}
 
 
-def _build_watering_history(statuses, limit=8):
+def _build_watering_history(statuses, limit=24, *, config=None):
     history = []
     for entry in reversed(statuses or []):
         payload = entry.get("payload") if isinstance(entry, dict) else None
         if not isinstance(payload, dict) or not _has_watering_information(payload):
             continue
         watering = _watering_state(payload)
+        duration_sec = _watering_duration_sec(payload)
         history.append(
             {
                 "time": _format_datetime(entry.get("received_at")),
                 "label": watering["label"],
                 "class": watering["class"],
-                "duration": _format_duration(payload.get("watering_duration_sec")),
-                "channel": _format_channel_mask(payload.get("channel_mask")),
-                "soil": _format_percent(payload.get("last_soil_moisture")),
+                "duration": _format_duration(duration_sec),
+                "channel": _watering_channel(payload, config),
+                "soil": _format_percent(
+                    payload.get("soil_moisture_percent")
+                    if payload.get("soil_moisture_percent") is not None
+                    else payload.get("last_soil_moisture")
+                ),
                 "threshold": _format_percent(payload.get("threshold")),
+                "reason": payload.get("batch_skip_reason") or payload.get("watering_stop_reason") or "",
+                "catch_up": payload.get("batch_catch_up") is True,
             }
         )
         if len(history) >= limit:
@@ -1927,7 +1940,7 @@ def _watering_trend_points(statuses):
         received_at = _to_local_plot_time(entry.get("received_at")) if isinstance(entry, dict) else None
         if received_at is None or not isinstance(payload, dict) or not _has_watering_information(payload):
             continue
-        duration_sec = payload.get("watering_duration_sec")
+        duration_sec = _watering_duration_sec(payload)
         duration_minutes = round(float(duration_sec) / 60, 2) if isinstance(duration_sec, int | float) else 0
         watering = _watering_state(payload)
         points.append(
@@ -1936,8 +1949,12 @@ def _watering_trend_points(statuses):
                 "duration_minutes": duration_minutes,
                 "duration_label": _format_duration(duration_sec),
                 "state": watering["label"],
-                "channel": _format_channel_mask(payload.get("channel_mask")),
-                "soil": _format_percent(payload.get("last_soil_moisture")),
+                "channel": _watering_channel(payload),
+                "soil": _format_percent(
+                    payload.get("soil_moisture_percent")
+                    if payload.get("soil_moisture_percent") is not None
+                    else payload.get("last_soil_moisture")
+                ),
                 "threshold": _format_percent(payload.get("threshold")),
             }
         )
@@ -2054,6 +2071,11 @@ def _has_watering_information(payload):
             "channel_mask",
             "last_soil_moisture",
             "threshold",
+            "batch_due",
+            "batch_started",
+            "batch_completed",
+            "batch_skipped",
+            "fgt_batch_elapsed_ms",
         )
     )
 
@@ -2061,13 +2083,64 @@ def _has_watering_information(payload):
 def _watering_state(payload):
     if not payload:
         return {"label": "未取得", "class": "muted"}
+    if payload.get("batch_completed") is True:
+        return {"label": "潅水完了", "class": "good"}
+    if payload.get("batch_skipped") is True:
+        return {"label": "実行せず", "class": "warn"}
+    if payload.get("batch_started") is True:
+        return {"label": "潅水開始", "class": "good"}
+    if payload.get("batch_due") is True:
+        return {"label": "潅水予定", "class": "warn"}
     if payload.get("watering_started") is True:
         return {"label": "灌水中", "class": "good"}
     if payload.get("watering_due") is True:
         return {"label": "灌水予定", "class": "warn"}
-    if "watering_started" in payload or "watering_due" in payload or "last_soil_moisture" in payload:
+    if (
+        "watering_started" in payload
+        or "watering_due" in payload
+        or "last_soil_moisture" in payload
+        or "batch_started" in payload
+        or "batch_due" in payload
+    ):
         return {"label": "待機中", "class": "ok"}
     return {"label": "未取得", "class": "muted"}
+
+
+def _watering_duration_sec(payload):
+    duration_sec = payload.get("watering_duration_sec")
+    if isinstance(duration_sec, int | float) and not isinstance(duration_sec, bool):
+        return duration_sec
+    elapsed_ms = payload.get("fgt_batch_elapsed_ms")
+    if isinstance(elapsed_ms, int | float) and not isinstance(elapsed_ms, bool):
+        return float(elapsed_ms) / 1000
+    return None
+
+
+def _watering_channel(payload, config=None):
+    timed_output = str(payload.get("fgt_timed_output") or "").strip()
+    if timed_output and timed_output != "none":
+        return _fgt_output_label(timed_output)
+    timed_outputs = ((config or {}).get("fgt") or {}).get("timed_outputs") or {}
+    enabled_outputs = [
+        output_id
+        for output_id in ("water_inlet", "nutrient_a", "nutrient_b", "mixer", "irrigation")
+        if isinstance(timed_outputs.get(output_id), dict)
+        and timed_outputs[output_id].get("on_sec", 0) > 0
+        and timed_outputs[output_id].get("repeat_count", 0) > 0
+    ]
+    if payload.get("fgt_operation_mode") == "timed_outputs" and len(enabled_outputs) == 1:
+        return _fgt_output_label(enabled_outputs[0])
+    return _format_channel_mask(payload.get("channel_mask"))
+
+
+def _fgt_output_label(output_id):
+    return {
+        "water_inlet": "給水ポンプ",
+        "nutrient_a": "A液ポンプ",
+        "nutrient_b": "B液ポンプ",
+        "mixer": "攪拌ポンプ",
+        "irrigation": "潅水ポンプ",
+    }.get(output_id, output_id)
 
 
 def _device_kind_label(device_kind):
@@ -3226,8 +3299,26 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             background: #fff;
             overflow: hidden;
           }
+          .device-tile.has-operational-error { border-color: #e11d48; box-shadow: inset 4px 0 0 #e11d48; }
           .device-tile[aria-current="true"] { border-color: var(--blue); box-shadow: inset 3px 0 0 var(--blue); }
+          .device-tile.has-operational-error[aria-current="true"] { border-color: #e11d48; box-shadow: inset 4px 0 0 #e11d48; }
           .device-tile-link { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 14px 14px 52px; color: inherit; }
+          .device-operational-alert {
+            display: grid;
+            gap: 5px;
+            border: 1px solid #e11d48;
+            border-left-width: 5px;
+            border-radius: 7px;
+            background: var(--red-bg);
+            color: var(--red);
+            padding: 12px 14px;
+          }
+          .device-operational-alert strong { font-size: 15px; }
+          .device-operational-alert span { line-height: 1.55; }
+          .device-operational-alert a { color: var(--red); font-weight: 800; text-decoration: underline; }
+          .device-operational-alert.catalog-alert { margin: 12px 0; }
+          .device-operational-alert.tile-alert { grid-column: 1 / -1; padding: 9px 11px; }
+          .priority-panel > .device-operational-alert { margin-bottom: 16px; }
           .device-delete-button { position: absolute; right: 14px; bottom: 12px; min-height: 30px; border-color: var(--line); color: var(--muted); background: #fff; font-size: 12px; }
           .device-delete-button:hover { border-color: #fecdd3; color: var(--red); background: var(--red-bg); }
           .camera-edit-link { position: absolute; left: 14px; bottom: 12px; display: inline-flex; align-items: center; min-height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; color: var(--text); background: #fff; font-size: 12px; text-decoration: none; }
@@ -3735,19 +3826,31 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <input id="device-list-search" name="q" type="search" value="{{ device_query }}" placeholder="機器名、ID、種別、設置場所を検索" aria-label="機器を検索" autocomplete="off">
               <button type="submit">検索</button>
             </form>
+            {% if admin_view.operational_error_count %}
+            <div class="device-operational-alert catalog-alert" role="alert">
+              <strong>運転異常：{{ admin_view.operational_error_count }}台の機器で予定した動作を実行できませんでした</strong>
+              <span>赤く表示された機器を開き、原因と対処を確認してください。</span>
+            </div>
+            {% endif %}
             <p class="device-result-summary" id="device-result-summary">{{ (device_catalog.total | int) + (camera_devices | length) }}件中 {{ (admin_view.devices | length) + (camera_devices | length) }}件を表示 / {{ device_catalog.page }}ページ</p>
             {% if admin_view.devices or camera_devices %}
             <div class="device-grid" id="device-list-grid">
               {% for device in admin_view.devices %}
-              <article class="device-tile" aria-current="{{ 'true' if device.id == selected_device_id else 'false' }}" data-device-id="{{ device.id }}">
+              <article class="device-tile{% if device.operational_error %} has-operational-error{% endif %}" aria-current="{{ 'true' if device.id == selected_device_id else 'false' }}" data-device-id="{{ device.id }}">
                 <a class="device-tile-link" href="{{ device_link_prefix }}{{ device.id }}">
                 <div>
                   <div class="device-title">{{ device.name }}</div>
                   <div class="device-sub">{{ device.kind_label }} / {{ device.location }}</div>
                 </div>
                 <div>
-                  <span class="badge {{ device.state_class }}">Hub登録：{{ device.state_label }}</span>
+                  <span class="badge {{ 'danger' if device.operational_error else device.state_class }}">{{ '運転異常' if device.operational_error else 'Hub登録：' ~ device.state_label }}</span>
                 </div>
+                {% if device.operational_error %}
+                <div class="device-operational-alert tile-alert" role="alert">
+                  <strong>予定した動作を実行できませんでした</strong>
+                  <span>{{ device.operational_error.reason_labels | join(' / ') }}　原因と対処を確認する →</span>
+                </div>
+                {% endif %}
                 <div class="tile-metrics">
                   {% for metric in device.operational_metrics %}<div class="mini"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>{% endfor %}
                 </div>
@@ -3784,6 +3887,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           {% if is_detail_page and admin_view.selected %}
           {% set selected = admin_view.selected %}
           <section class="panel priority-panel">
+            {% if selected.operational_error %}
+            <div class="device-operational-alert" role="alert">
+              <strong>運転異常：予定した動作を実行できませんでした</strong>
+              <span>{{ selected.operational_error.reason_labels | join(' / ') }}{% if selected.operational_error.batch_skip_reason %} / 実行しなかった理由: {{ selected.operational_error.batch_skip_reason }}{% endif %}</span>
+              <a href="{{ device_link_prefix }}{{ selected.id }}?tab=maintenance#operational-error-details">原因と対処を確認する →</a>
+            </div>
+            {% endif %}
             <div class="device-identity"><div class="detail-header">
               <div>
                 <h2>{{ selected.title }}</h2>
@@ -3812,7 +3922,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               <button type="button" class="tab-button" data-tab-key="monitoring" data-tab-target="tab-monitoring" role="tab" aria-controls="tab-monitoring" aria-selected="false" tabindex="-1">現在値・履歴</button>
               <button type="button" class="tab-button" data-tab-key="settings" data-tab-target="tab-config" role="tab" aria-controls="tab-config" aria-selected="false" tabindex="-1">動作設定</button>
               <button type="button" class="tab-button" data-tab-key="firmware" data-tab-target="tab-firmware" role="tab" aria-controls="tab-firmware" aria-selected="false" tabindex="-1">機器を更新</button>
-              <button type="button" class="tab-button" data-tab-key="maintenance" data-tab-target="tab-maintenance" role="tab" aria-controls="tab-maintenance" aria-selected="false" tabindex="-1">保守・管理</button>
+              <button type="button" class="tab-button" data-tab-key="maintenance" data-tab-target="tab-maintenance" role="tab" aria-controls="tab-maintenance" aria-selected="false" tabindex="-1">保守・管理{% if selected.operational_error %} ⚠{% endif %}</button>
               {% for extension in selected.ui_extensions %}{% for extension_tab in extension.tabs %}<button type="button" class="tab-button extension-tab-button" data-tab-key="{{ extension_tab.key }}" data-tab-target="{{ extension_tab.dom_id }}" role="tab" aria-controls="{{ extension_tab.dom_id }}" aria-selected="false" tabindex="-1">{{ extension_tab.label }}</button>{% endfor %}{% endfor %}
             </div>
 
@@ -4217,6 +4327,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                     <span>対象: {{ item.channel }}</span>
                     <span>土壌水分: {{ item.soil }}</span>
                     <span>しきい値: {{ item.threshold }}</span>
+                    {% if item.catch_up %}<span>予約後の追いつき実行</span>{% endif %}
+                    {% if item.reason %}<span>理由: {{ item.reason }}</span>{% endif %}
                   </div>
                 </div>
                 {% endfor %}
@@ -4351,6 +4463,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               </details>
             </div>
             <p class="lead">機器の利用状態、接続履歴、管理者向けデータを必要なときだけ確認します。通信で困ったときは「?」を開いてください。</p>
+            {% if selected.operational_error %}
+            <div id="operational-error-details" class="device-operational-alert" role="alert"><strong>予定した動作を実行できませんでした</strong><span>{{ selected.operational_error.reason_labels | join(' / ') }}{% if selected.operational_error.batch_skip_reason %}<br>実行しなかった理由: {{ selected.operational_error.batch_skip_reason }}{% endif %}</span></div>
+            {% endif %}
             <details>
               <summary>機器の利用状態を変更</summary>
               <div class="detail-body">

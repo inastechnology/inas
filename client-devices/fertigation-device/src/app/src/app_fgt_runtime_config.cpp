@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <LittleFS.h>
+#include <stddef.h>
 #include <string.h>
 
 #include "app_utils.h"
@@ -52,6 +53,11 @@ typedef struct
     app_fgt_runtime_config_t config;
     uint32_t crc32;
 } app_fgt_runtime_config_store_t;
+
+static_assert(
+    offsetof(app_fgt_runtime_config_store_t, crc32) + sizeof(uint32_t) ==
+        sizeof(app_fgt_runtime_config_store_t),
+    "FGT runtime config store unexpectedly has CRC tail padding");
 
 static app_fgt_runtime_config_t s_runtime_config = {};
 
@@ -320,7 +326,9 @@ bool app_fgt_runtime_config_load_saved()
     app_fgt_runtime_config_store_t store = {};
     const size_t read_size = file.read(reinterpret_cast<uint8_t *>(&store), sizeof(store));
     file.close();
-    const uint32_t expected = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store), sizeof(store) - sizeof(store.crc32));
+    const uint32_t expected = AppUtils::crc32(
+        reinterpret_cast<const uint8_t *>(&store),
+        offsetof(app_fgt_runtime_config_store_t, crc32));
     if (read_size != sizeof(store) || store.magic != APP_FGT_RUNTIME_CONFIG_STORE_MAGIC ||
         store.version != APP_FGT_RUNTIME_CONFIG_STORE_VERSION || store.config_size != sizeof(store.config) ||
         store.crc32 != expected || !content_is_valid(store.config))
@@ -342,7 +350,9 @@ bool app_fgt_runtime_config_save_current()
     store.config_size = sizeof(store.config);
     store.config = s_runtime_config;
     store.config.received_from_mqtt = false;
-    store.crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store), sizeof(store) - sizeof(store.crc32));
+    store.crc32 = AppUtils::crc32(
+        reinterpret_cast<const uint8_t *>(&store),
+        offsetof(app_fgt_runtime_config_store_t, crc32));
     File file = LittleFS.open(APP_FGT_RUNTIME_CONFIG_FILE, "w");
     if (!file) return false;
     const size_t written = file.write(reinterpret_cast<const uint8_t *>(&store), sizeof(store));

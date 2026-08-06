@@ -291,7 +291,9 @@ static void app_initial_setting_apply_form(AsyncWebServerRequest *request)
     }
 
     appConfig.mqtt_port = mqtt_port;
-    appConfig.crc32 = AppUtils().crc32((const uint8_t *)&appConfig, sizeof(AppConfig) - sizeof(uint32_t));
+    appConfig.crc32 = AppUtils().crc32(
+        reinterpret_cast<const uint8_t *>(&appConfig),
+        appConfig.crc_data_size());
     Serial.println("Saving setup form configuration...");
     appConfig.show();
     appConfig.save();

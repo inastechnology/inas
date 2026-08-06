@@ -12,6 +12,10 @@ from ina_device_hub.device_config_repository import (
 )
 from ina_device_hub.device_definition_registry import project_runtime_config
 from ina_device_hub.device_event_log import append_device_event
+from ina_device_hub.device_operational_alert import (
+    device_operational_error_details,
+    device_operational_error_signature,
+)
 from ina_device_hub.discord_notification_service import discord_notification_service
 from ina_device_hub.general_log import logger
 from ina_device_hub.local_edge_runtime import local_edge_runtime
@@ -26,6 +30,8 @@ class DeviceConfigService:
         self.event_log_dispatcher = event_log_dispatcher or _dispatch_event_log
         self.runtime_config_cache = runtime_config_cache
         self.mqtt_client = None
+        self._operational_alert_signatures = {}
+        self._operational_alert_lock = threading.Lock()
 
     def attach_mqtt_client(self, mqtt_client):
         self.mqtt_client = mqtt_client
@@ -232,6 +238,7 @@ class DeviceConfigService:
         self._cache_effective_runtime_config(record)
         if is_new_device:
             self._notify_new_device(device_id, record, "status", payload=status)
+        self._notify_device_operational_error(device_id, record, status)
         _log_device_status(device_id, record["last_status_at"], status)
         safe_record_status_measurements(device_id, status, record["last_status_at"])
         append_device_event(
@@ -244,6 +251,31 @@ class DeviceConfigService:
             occurred_at=record["last_status_at"],
         )
         return record
+
+    def _notify_device_operational_error(self, device_id: str, record: dict, status: dict):
+        signature = device_operational_error_signature(status)
+        if record.get("state") != "active":
+            with self._operational_alert_lock:
+                self._operational_alert_signatures.pop(device_id, None)
+            return
+        with self._operational_alert_lock:
+            previous = self._operational_alert_signatures.get(device_id)
+            self._operational_alert_signatures[device_id] = signature
+        if signature is None or signature == previous:
+            return
+        details = device_operational_error_details(status) or {}
+        try:
+            self.notification_service.notify_health_alert(
+                "device_operational_error",
+                device_id,
+                record,
+                details,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to notify device operational error for device_id=%s",
+                device_id,
+            )
 
     def update_metadata(self, device_id: str, metadata: dict):
         return self.repository.update_metadata(device_id, metadata)

@@ -876,6 +876,28 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertNotIn("接続デバイス", html)
         self.assertEqual(self.fake_device_config_service.get_all_calls, 0)
 
+    def test_device_list_makes_operational_error_immediately_visible(self):
+        self.fake_device_config_service.records = {
+            "FGT-001": {
+                "name": "液肥コントローラー",
+                "device_kind": "FGT",
+                "state": "active",
+                "last_status": {
+                    "device_kind": "FGT",
+                    "journal_error": True,
+                    "recovery_required": True,
+                },
+            }
+        }
+
+        response = self.client.get("/mqtt-devices")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("運転異常：1台の機器で予定した動作を実行できませんでした", html)
+        self.assertIn("運転履歴を読み取れません / 安全確認後の復旧待ちです", html)
+        self.assertIn('class="device-tile has-operational-error"', html)
+
     def test_field_catalog_filters_and_paginates_without_rendering_all_fields(self):
         for index in range(20):
             self.field_repository.upsert(

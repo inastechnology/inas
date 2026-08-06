@@ -193,6 +193,24 @@ class DiscordNotificationServiceTest(unittest.TestCase):
         self.assertIn("電源、通信環境", card["description"])
         self.assertNotIn("topic:", str(payload))
 
+    def test_operational_error_card_shows_failure_reason(self):
+        payload = format_health_alert_notification(
+            "device_operational_error",
+            "device-fgt",
+            {"name": "潅水デバイス", "location": "ライチ圃場"},
+            {
+                "reasons": ["journal_error", "recovery_required"],
+                "reason_labels": ["運転履歴を読み取れません", "安全確認後の復旧待ちです"],
+                "batch_skip_reason": "recovery_required",
+            },
+            base_url="https://hub.example.com",
+        )
+
+        card = payload["embeds"][0]
+        self.assertEqual(card["url"], "https://hub.example.com/mqtt-devices/device-fgt?tab=maintenance")
+        self.assertIn("予定動作を実行できませんでした", card["title"])
+        self.assertIn("運転履歴を読み取れません", str(card["fields"]))
+
     def test_singleton_accessor_reuses_one_service(self):
         previous = discord_notification_service.__dict__["__instance"]
         service = object()

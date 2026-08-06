@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -41,6 +42,13 @@ public:
         memset(this, 0, sizeof(AppConfig));
     }
 
+    size_t crc_data_size() const
+    {
+        return static_cast<size_t>(
+            reinterpret_cast<const uint8_t *>(&crc32) -
+            reinterpret_cast<const uint8_t *>(this));
+    }
+
     /// @brief Initialize the configuration
     /// @note Please call this function before using the configuration
     /// @return void
@@ -78,7 +86,7 @@ public:
         apply_network_defaults();
 
         // set crc32
-        crc32 = AppUtils().crc32((const uint8_t *)this, sizeof(AppConfig) - sizeof(uint32_t));
+        crc32 = AppUtils().crc32((const uint8_t *)this, crc_data_size());
     }
 
     /// @brief Restore build-time defaults while keeping the device identity when possible
@@ -100,7 +108,7 @@ public:
             device_id[sizeof(device_id) - 1] = '\0';
         }
 
-        crc32 = AppUtils().crc32((const uint8_t *)this, sizeof(AppConfig) - sizeof(uint32_t));
+        crc32 = AppUtils().crc32((const uint8_t *)this, crc_data_size());
     }
 
     /// @brief Clear saved Wi-Fi / MQTT connection settings while preserving device identity
@@ -113,7 +121,7 @@ public:
         mqtt_port = APP_MQTT_BROKER_PORT;
         mqtt_username[0] = '\0';
         mqtt_password[0] = '\0';
-        crc32 = AppUtils().crc32((const uint8_t *)this, sizeof(AppConfig) - sizeof(uint32_t));
+        crc32 = AppUtils().crc32((const uint8_t *)this, crc_data_size());
     }
 
     /// @brief Apply build-time network defaults (Wi-Fi / MQTT)
@@ -200,7 +208,7 @@ public:
         }
 
         // validate the CRC32
-        const uint32_t expected_crc32 = AppUtils().crc32((const uint8_t *)this, sizeof(AppConfig) - sizeof(uint32_t));
+        const uint32_t expected_crc32 = AppUtils().crc32((const uint8_t *)this, crc_data_size());
         if (crc32 != expected_crc32)
         {
             Serial.printf("Invalid config: CRC mismatch actual=0x%08X expected=0x%08X\n", crc32, expected_crc32);
@@ -243,5 +251,9 @@ public:
     }
 };
 #pragma pack(pop)
+
+static_assert(
+    offsetof(AppConfig, crc32) + sizeof(uint32_t) == sizeof(AppConfig),
+    "AppConfig unexpectedly has CRC tail padding");
 
 extern AppConfig appConfig;

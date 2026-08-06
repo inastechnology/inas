@@ -2,32 +2,14 @@
 
 #include <LittleFS.h>
 
-#include "app_utils.h"
-
 static constexpr const char *kJournalFile = "/.fgt_batch_journal";
-static constexpr uint32_t kJournalMagic = 0x4647544AUL;
-static constexpr uint16_t kJournalVersion = 1;
-
-typedef struct
-{
-    uint32_t magic;
-    uint16_t version;
-    uint16_t state_size;
-    app_fgt_journal_state_t state;
-    uint32_t crc32;
-} app_fgt_journal_store_t;
 
 static app_fgt_journal_state_t s_state = {};
+static bool s_has_persisted_state = false;
 
 static bool save_state()
 {
-    app_fgt_journal_store_t store = {};
-    store.magic = kJournalMagic;
-    store.version = kJournalVersion;
-    store.state_size = sizeof(store.state);
-    store.state = s_state;
-    store.state.valid = true;
-    store.crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store), sizeof(store) - sizeof(store.crc32));
+    const fgt::JournalRecord store = fgt::make_journal_record(s_state);
     File file = LittleFS.open(kJournalFile, "w");
     if (!file)
     {
@@ -38,6 +20,7 @@ static bool save_state()
     if (written == sizeof(store))
     {
         s_state = store.state;
+        s_has_persisted_state = true;
         return true;
     }
     return false;
@@ -46,6 +29,7 @@ static bool save_state()
 void app_fgt_journal_init()
 {
     s_state = {};
+    s_has_persisted_state = false;
     if (!LittleFS.exists(kJournalFile))
     {
         s_state.valid = true;
@@ -56,21 +40,28 @@ void app_fgt_journal_init()
     {
         return;
     }
-    app_fgt_journal_store_t store = {};
+    fgt::JournalRecord store = {};
     const size_t read_size = file.read(reinterpret_cast<uint8_t *>(&store), sizeof(store));
     file.close();
-    const uint32_t expected = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store), sizeof(store) - sizeof(store.crc32));
-    if (read_size == sizeof(store) && store.magic == kJournalMagic &&
-        store.version == kJournalVersion && store.state_size == sizeof(store.state) && store.crc32 == expected)
+    app_fgt_journal_state_t loaded = {};
+    if (fgt::decode_journal_record(
+            reinterpret_cast<const uint8_t *>(&store),
+            read_size,
+            &loaded) != fgt::JournalDecodeResult::invalid)
     {
-        s_state = store.state;
-        s_state.valid = true;
+        s_state = loaded;
+        s_has_persisted_state = true;
     }
 }
 
 const app_fgt_journal_state_t &app_fgt_journal_get()
 {
     return s_state;
+}
+
+bool app_fgt_journal_has_persisted_state()
+{
+    return s_has_persisted_state;
 }
 
 bool app_fgt_journal_mark_started(time_t schedule_epoch_utc, uint32_t batch_id)

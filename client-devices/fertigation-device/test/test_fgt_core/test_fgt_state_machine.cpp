@@ -1,9 +1,12 @@
 #include <unity.h>
+#include <initializer_list>
 #include <string.h>
 
 #include "fgt_commissioning_interlock.h"
 #include "fgt_firmware_manifest_validator.h"
+#include "fgt_journal_record.h"
 #include "fgt_rs485_device_registry.h"
+#include "fgt_schedule_policy.h"
 #include "fgt_sensor_diagnostics.h"
 #include "fgt_state_machine.h"
 #include "fgt_timed_output_sequence.h"
@@ -540,6 +543,117 @@ static void test_firmware_manifest_scanner_rejects_missing_manifest()
         "arduino"));
 }
 
+static JournalState journal_state(bool in_progress)
+{
+    JournalState state = {};
+    state.valid = true;
+    state.in_progress = in_progress;
+    state.schedule_epoch_utc = static_cast<time_t>(1785984600);
+    state.recovery_ack = 17;
+    state.batch_id = 12345;
+    return state;
+}
+
+static void test_journal_started_and_finished_records_survive_restart_decode()
+{
+    for (bool in_progress : {true, false})
+    {
+        const JournalRecord stored = make_journal_record(
+            journal_state(in_progress));
+        JournalState loaded = {};
+        TEST_ASSERT_EQUAL(
+            JournalDecodeResult::current,
+            decode_journal_record(
+                reinterpret_cast<const uint8_t *>(&stored),
+                sizeof(stored),
+                &loaded));
+        TEST_ASSERT_TRUE(loaded.valid);
+        TEST_ASSERT_EQUAL(in_progress, loaded.in_progress);
+        TEST_ASSERT_EQUAL_INT64(
+            journal_state(in_progress).schedule_epoch_utc,
+            loaded.schedule_epoch_utc);
+        TEST_ASSERT_EQUAL_UINT32(17, loaded.recovery_ack);
+        TEST_ASSERT_EQUAL_UINT32(12345, loaded.batch_id);
+    }
+}
+
+static void test_journal_crc_ignores_tail_padding_and_rejects_state_corruption()
+{
+    JournalRecord stored = make_journal_record(journal_state(false));
+    TEST_ASSERT_GREATER_THAN(
+        journal_crc_length() + sizeof(stored.crc32),
+        sizeof(stored));
+    uint8_t *bytes = reinterpret_cast<uint8_t *>(&stored);
+    bytes[sizeof(stored) - 1] ^= 0x5A;
+
+    JournalState loaded = {};
+    TEST_ASSERT_EQUAL(
+        JournalDecodeResult::current,
+        decode_journal_record(bytes, sizeof(stored), &loaded));
+
+    stored.state.batch_id ^= 1U;
+    TEST_ASSERT_EQUAL(
+        JournalDecodeResult::invalid,
+        decode_journal_record(bytes, sizeof(stored), &loaded));
+}
+
+static void test_journal_accepts_deployed_legacy_crc_for_migration()
+{
+    JournalRecord legacy = make_journal_record(journal_state(false));
+    legacy.crc32 = 0;
+    legacy.crc32 = journal_crc32(
+        reinterpret_cast<const uint8_t *>(&legacy),
+        sizeof(legacy) - sizeof(legacy.crc32));
+
+    JournalState loaded = {};
+    TEST_ASSERT_EQUAL(
+        JournalDecodeResult::legacy_crc,
+        decode_journal_record(
+            reinterpret_cast<const uint8_t *>(&legacy),
+            sizeof(legacy),
+            &loaded));
+    TEST_ASSERT_EQUAL_UINT32(12345, loaded.batch_id);
+}
+
+static void test_schedule_policy_catches_up_once_within_six_hours()
+{
+    const time_t due = 100000;
+    TEST_ASSERT_EQUAL(
+        ScheduledBatchAction::run_on_time,
+        decide_scheduled_batch(due + kScheduleOnTimeGraceSec, due, false, true).action);
+    const ScheduledBatchDecision catch_up =
+        decide_scheduled_batch(due + kScheduleOnTimeGraceSec + 1, due, false, true);
+    TEST_ASSERT_EQUAL(ScheduledBatchAction::run_catch_up, catch_up.action);
+    TEST_ASSERT_EQUAL_UINT32(kScheduleOnTimeGraceSec + 1, catch_up.delay_sec);
+    TEST_ASSERT_EQUAL(
+        ScheduledBatchAction::skip_too_old,
+        decide_scheduled_batch(due + kScheduleCatchUpLimitSec + 1, due, false, true).action);
+}
+
+static void test_schedule_policy_does_not_catch_up_without_persisted_history()
+{
+    const time_t due = 100000;
+    TEST_ASSERT_EQUAL(
+        ScheduledBatchAction::skip_too_old,
+        decide_scheduled_batch(
+            due + kScheduleOnTimeGraceSec + 1,
+            due,
+            false,
+            false)
+            .action);
+}
+
+static void test_schedule_policy_retries_due_batch_quickly_after_ota()
+{
+    const time_t due = 100000;
+    TEST_ASSERT_EQUAL(
+        ScheduledBatchAction::defer_for_ota,
+        decide_scheduled_batch(due + 3600, due, true, true).action);
+    TEST_ASSERT_EQUAL(
+        ScheduledBatchAction::skip_too_old,
+        decide_scheduled_batch(due + kScheduleCatchUpLimitSec + 1, due, true, true).action);
+}
+
 int main(int argc, char **argv)
 {
     UNITY_BEGIN();
@@ -565,5 +679,11 @@ int main(int argc, char **argv)
     RUN_TEST(test_rs485_registry_migrates_legacy_seven_register_soil_profile);
     RUN_TEST(test_firmware_manifest_scanner_accepts_split_chunks);
     RUN_TEST(test_firmware_manifest_scanner_rejects_missing_manifest);
+    RUN_TEST(test_journal_started_and_finished_records_survive_restart_decode);
+    RUN_TEST(test_journal_crc_ignores_tail_padding_and_rejects_state_corruption);
+    RUN_TEST(test_journal_accepts_deployed_legacy_crc_for_migration);
+    RUN_TEST(test_schedule_policy_catches_up_once_within_six_hours);
+    RUN_TEST(test_schedule_policy_does_not_catch_up_without_persisted_history);
+    RUN_TEST(test_schedule_policy_retries_due_batch_quickly_after_ota);
     return UNITY_END();
 }

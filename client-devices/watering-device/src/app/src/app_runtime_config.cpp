@@ -142,6 +142,16 @@ static_assert(offsetof(app_runtime_config_v3_t, schedules) > offsetof(app_runtim
               "Unexpected app_runtime_config_v3_t layout; check migration");
 static_assert(offsetof(app_runtime_config_v4_t, schedules) > offsetof(app_runtime_config_v4_t, ota_check_interval_sec),
               "Unexpected app_runtime_config_v4_t layout; check migration");
+static_assert(offsetof(app_runtime_config_store_v1_t, crc32) + sizeof(uint32_t) == sizeof(app_runtime_config_store_v1_t),
+              "WTR v1 runtime config store unexpectedly has CRC tail padding");
+static_assert(offsetof(app_runtime_config_store_v2_t, crc32) + sizeof(uint32_t) == sizeof(app_runtime_config_store_v2_t),
+              "WTR v2 runtime config store unexpectedly has CRC tail padding");
+static_assert(offsetof(app_runtime_config_store_v3_t, crc32) + sizeof(uint32_t) == sizeof(app_runtime_config_store_v3_t),
+              "WTR v3 runtime config store unexpectedly has CRC tail padding");
+static_assert(offsetof(app_runtime_config_store_v4_t, crc32) + sizeof(uint32_t) == sizeof(app_runtime_config_store_v4_t),
+              "WTR v4 runtime config store unexpectedly has CRC tail padding");
+static_assert(offsetof(app_runtime_config_store_t, crc32) + sizeof(uint32_t) == sizeof(app_runtime_config_store_t),
+              "WTR runtime config store unexpectedly has CRC tail padding");
 
 static void app_runtime_config_copy_string(char *dest, size_t dest_size, const char *src)
 {
@@ -911,8 +921,9 @@ bool app_runtime_config_load_saved()
             return false;
         }
 
-        const uint32_t expected_crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
-                                                       sizeof(store) - sizeof(store.crc32));
+        const uint32_t expected_crc32 = AppUtils::crc32(
+            reinterpret_cast<const uint8_t *>(&store),
+            offsetof(app_runtime_config_store_v1_t, crc32));
         if (store.crc32 != expected_crc32)
         {
             Serial.printf("Saved runtime config v1 CRC mismatch actual=0x%08X expected=0x%08X\n",
@@ -950,8 +961,9 @@ bool app_runtime_config_load_saved()
             return false;
         }
 
-        const uint32_t expected_crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
-                                                       sizeof(store) - sizeof(store.crc32));
+        const uint32_t expected_crc32 = AppUtils::crc32(
+            reinterpret_cast<const uint8_t *>(&store),
+            offsetof(app_runtime_config_store_v2_t, crc32));
         if (store.crc32 != expected_crc32)
         {
             Serial.printf("Saved runtime config v2 CRC mismatch actual=0x%08X expected=0x%08X\n",
@@ -989,8 +1001,9 @@ bool app_runtime_config_load_saved()
             return false;
         }
 
-        const uint32_t expected_crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
-                                                       sizeof(store) - sizeof(store.crc32));
+        const uint32_t expected_crc32 = AppUtils::crc32(
+            reinterpret_cast<const uint8_t *>(&store),
+            offsetof(app_runtime_config_store_v3_t, crc32));
         if (store.crc32 != expected_crc32)
         {
             Serial.printf("Saved runtime config v3 CRC mismatch actual=0x%08X expected=0x%08X\n",
@@ -1028,8 +1041,9 @@ bool app_runtime_config_load_saved()
             return false;
         }
 
-        const uint32_t expected_crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
-                                                       sizeof(store) - sizeof(store.crc32));
+        const uint32_t expected_crc32 = AppUtils::crc32(
+            reinterpret_cast<const uint8_t *>(&store),
+            offsetof(app_runtime_config_store_v4_t, crc32));
         if (store.crc32 != expected_crc32)
         {
             Serial.printf("Saved runtime config v4 CRC mismatch actual=0x%08X expected=0x%08X\n",
@@ -1072,8 +1086,9 @@ bool app_runtime_config_load_saved()
         return false;
     }
 
-    const uint32_t expected_crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
-                                                   sizeof(store) - sizeof(store.crc32));
+    const uint32_t expected_crc32 = AppUtils::crc32(
+        reinterpret_cast<const uint8_t *>(&store),
+        offsetof(app_runtime_config_store_t, crc32));
     if (store.crc32 != expected_crc32)
     {
         Serial.printf("Saved runtime config CRC mismatch actual=0x%08X expected=0x%08X\n",
@@ -1107,8 +1122,9 @@ bool app_runtime_config_save_current()
     store.config_size = sizeof(app_runtime_config_t);
     store.config = s_runtime_config;
     store.config.received_from_mqtt = false;
-    store.crc32 = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&store),
-                                  sizeof(store) - sizeof(store.crc32));
+    store.crc32 = AppUtils::crc32(
+        reinterpret_cast<const uint8_t *>(&store),
+        offsetof(app_runtime_config_store_t, crc32));
 
     File file = LittleFS.open(APP_RUNTIME_CONFIG_FILE, "w");
     if (!file)

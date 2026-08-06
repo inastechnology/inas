@@ -100,7 +100,8 @@ The normal status payload includes:
 
 - identity: `device_kind`, firmware version/build, sequence identifier;
 - lifecycle: network/config/time/OTA state and next sleep;
-- batch: `batch_due`, `batch_started`, `batch_completed`, `batch_id`;
+- batch: `batch_due`, `batch_started`, `batch_completed`, `batch_id`,
+  `batch_catch_up`, and `batch_delay_sec`;
 - state machine: `fgt_phase`, `fgt_fault`, `fgt_phase_elapsed_ms`;
 - operation: `fgt_operation_mode`, `fgt_timed_output`, and
   `fgt_timed_repeat_number`;
@@ -121,3 +122,10 @@ FGT 0.2.1以降は土壌センサーから先頭3レジスタだけを読み、`
 
 Hub UI wording must use the farmer-facing phase labels rather than these raw
 field names. Raw fields belong in advanced diagnostics.
+
+FGT 0.2.3以降は、通常の15分以内の実行猶予を過ぎても、予約時刻から6時間以内で
+あれば、正常に読める保存履歴がある場合に限って最新の未実行予約を1回だけ追いつき実行する。6時間を超えた予約は安全のため
+`schedule_too_old`として実行済みにし、複数回まとめて再生しない。OTA確認と予約が
+重なった場合は予約を完了扱いにせず、通常の最短sleepで再確認する。安全入力異常、
+出力異常、実行途中の再起動は従来どおり自動再開せず、明示的な復旧確認を必要とする。
+初回起動や履歴を消去した機器は古い予約を追いつき実行しない。
