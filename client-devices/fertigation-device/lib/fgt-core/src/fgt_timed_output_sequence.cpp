@@ -42,8 +42,8 @@ bool timed_program_valid(const TimedProgram &program)
         {
             return false;
         }
-        const bool fully_disabled = output.on_ms == 0 && output.repeat_count == 0;
-        if (!fully_disabled && !output_program_enabled(output)) return false;
+        const bool disabled = output.repeat_count == 0;
+        if (!disabled && !output_program_enabled(output)) return false;
         any_enabled = any_enabled || output_program_enabled(output);
     }
     const uint32_t duration_ms = timed_program_duration_ms(program);

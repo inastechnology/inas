@@ -195,6 +195,28 @@ class WebServerOTATest(unittest.TestCase):
         self.assertEqual(metadata["project"], "fertigation-device")
         self.assertEqual(metadata["upload_format"], "inasfw")
 
+    def test_upload_inasfw_registers_and_serves_only_embedded_firmware_binary(self):
+        firmware = _firmware_binary(device_kind="FGT", version="0.2.2", project="fertigation-device", target="seeed_xiao_esp32c6")
+        release_module = _inasfw(firmware, device_kind="FGT", version="0.2.2")
+
+        response = self.client.post(
+            "/local/api/firmware-artifacts/FGT/0.2.2/upload",
+            data={"firmware": (io.BytesIO(release_module), "fertigation-device-0.2.2.inasfw")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        artifact = response.get_json()
+        self.assertEqual(artifact["device_kind"], "FGT")
+        self.assertEqual(artifact["version"], "0.2.2")
+        self.assertEqual(artifact["size"], len(firmware))
+        self.assertEqual(artifact["sha256"], hashlib.sha256(firmware).hexdigest())
+
+        download = self.client.get("/firmware/FGT/0.2.2/firmware.bin")
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(download.data, firmware)
+        download.close()
+
     def test_upload_rejects_invalid_boolean_form_value(self):
         response = self.client.post(
             "/local/api/firmware-artifacts/WTR/1.1.0/upload?force=maybe",
@@ -515,12 +537,17 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("/static/searchable-select.css", html)
         self.assertIn('id="firmware-upload-form"', html)
         self.assertIn('id="firmware-dropzone"', html)
-        self.assertIn("firmware.bin / .inasfw をここへドロップ", html)
-        self.assertIn(".inasfw の場合は中の firmware.bin だけを登録します", html)
+        self.assertIn(".inasfw ファイルをここへドロップ", html)
+        self.assertIn("INAS更新ファイル（.inasfw）", html)
+        self.assertIn('accept=".inasfw,application/zip"', html)
+        self.assertNotIn("firmware.bin / .inasfw をここへドロップ", html)
         self.assertIn("/static/ui-illustrations/firmware-care.png", html)
         self.assertIn('id="firmware-version" name="version" type="hidden"', html)
         self.assertIn('id="inspect-firmware-manifest"', html)
-        self.assertIn("ファイルを置くと、対応機種とバージョンを自動で読み取ります", html)
+        self.assertIn("INAS更新ファイル（.inasfw）を置くと、対応機種とバージョンを自動で読み取ります", html)
+        self.assertIn('id="firmware-artifact-rows"', html)
+        self.assertIn('id="firmware-artifact-count"', html)
+        self.assertIn("配信ファイルを開く", html)
         self.assertIn("2026-07-01T00:00:00Z+abcdef0", html)
         self.assertIn("/local/api/firmware-artifacts/", html)
         self.assertIn("OTA Status History", html)

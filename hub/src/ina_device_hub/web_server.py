@@ -3327,6 +3327,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .firmware-meta > div { padding: 9px; border-radius: 6px; background: #f5f7f5; }
           .firmware-meta span { display: block; color: var(--muted); font-size: 10px; }
           .firmware-meta strong { display: block; margin-top: 3px; overflow-wrap: anywhere; font-size: 12px; }
+          #firmware-maintenance, #firmware-artifact-details { min-width: 0; max-width: 100%; }
+          #firmware-artifact-details .detail-body { max-width: 100%; overflow-x: auto; }
+          #firmware-artifact-details table { min-width: 1080px; }
           .config-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
           .config-field { min-width: 180px; flex: 1; }
           .threshold-control { display: grid; grid-template-columns: 1fr 86px; gap: 8px; align-items: center; }
@@ -3381,6 +3384,21 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .switch-output strong, .switch-output small { display: block; }
           .switch-output small { margin-top: 2px; color: var(--muted); }
           .switch-output .terminal { color: #315f4c; font-size: 11px; font-weight: 800; }
+          .pump-program-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 14px; }
+          .pump-program-card { overflow: hidden; border: 1px solid #d3ded6; border-radius: 11px; background: #fff; transition: border-color .15s ease, box-shadow .15s ease, opacity .15s ease; }
+          .pump-program-card.enabled { border-color: #74a98a; box-shadow: 0 8px 22px rgba(38, 105, 72, .09); }
+          .pump-program-card.disabled { opacity: .72; background: #f5f7f5; }
+          .pump-program-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; }
+          .pump-program-identity { display: grid; grid-template-columns: 40px minmax(0, 1fr); align-items: center; gap: 9px; min-width: 0; }
+          .pump-program-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px; background: #e8f4ec; font-size: 23px; }
+          .pump-program-identity strong, .pump-program-identity small { display: block; }
+          .pump-program-identity small { margin-top: 2px; color: var(--muted); font-size: 11px; }
+          .pump-program-toggle { flex: 0 0 auto; }
+          .pump-program-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 12px; border-top: 1px solid #dce5df; background: #f6fbf7; }
+          .pump-program-settings[hidden] { display: none !important; }
+          .pump-program-settings .config-field { min-width: 0; }
+          .pump-program-settings .threshold-control { grid-template-columns: minmax(0, 1fr) auto; }
+          .definition-global-fields { margin-top: 12px; }
           .output-warning { grid-column: 1 / -1; margin: 0; }
           .config-dialog { width: min(760px, calc(100vw - 28px)); max-height: min(86vh, 840px); overflow: auto; padding: 0; border: 0; border-radius: 12px; box-shadow: 0 24px 70px rgba(20, 42, 30, .26); }
           .config-dialog.builder-dialog { width: min(1040px, calc(100vw - 28px)); }
@@ -3614,6 +3632,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .builder-port-symbol { width: 48px; height: 48px; }
             .equipment-type-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .switch-output::before { display: none; }
+            .pump-program-list, .pump-program-settings { grid-template-columns: 1fr; }
             .device-guide img { max-height: 190px; border-top: 1px solid #c9d8ce; border-left: 0; }
             .device-identity img { width: 100%; max-height: 180px; }
           }
@@ -3915,19 +3934,30 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
               {% if selected.supports_fertigation %}
               <section id="fertigation-recipe" class="setup-stage">
-                <div class="setup-stage-head"><div class="context-help-row"><h3>ポンプの時間設定</h3><details class="context-help left"><summary aria-label="時間指定運転の説明を開く" title="時間指定運転">?</summary><div class="context-help-panel" role="note"><strong>時間指定運転</strong><p>各出力を0〜1800秒で設定できます。ON時間と繰り返し回数を0にすると、その出力は動きません。</p></div></details></div><span class="badge good">秒数指定</span></div>
+                <div class="setup-stage-head"><div class="context-help-row"><h3>ポンプの時間設定</h3><details class="context-help left"><summary aria-label="時間指定運転の説明を開く" title="時間指定運転">?</summary><div class="context-help-panel" role="note"><strong>時間指定運転</strong><p>使用するポンプだけを有効にします。無効なポンプは繰り返し0回として保存され、保持した時間設定は再度有効にしたときに使えます。</p></div></details></div><span class="badge good">ポンプごとに設定</span></div>
                 <p id="scheduled-operation-inline-warning" class="notice warn"{% if not selected.scheduled_operation.warning %} hidden{% endif %}>{{ selected.scheduled_operation.warning }}</p>
-                <div class="switch-flow-board fertigation-flow" aria-label="時間指定できるFGT出力">
-                  <div class="controller-node">原水</div>
-                  <div class="switch-output-list">{% for output in selected.output_settings.outputs %}<div class="switch-output {{ 'enabled' if output.enabled else 'disabled' }}"><span class="switch-output-dot"></span><span class="switch-output-icon" aria-hidden="true">{{ ['🚰','🅰️','🅱️','🌀','🌱'][loop.index0] }}</span><div><strong>{{ output.name }}</strong><small>{{ output.role_label }}{% if output.program_summary %} / {{ output.program_summary }}{% endif %}</small></div><span class="terminal">出力 {{ output.number }}</span></div>{% endfor %}</div>
-                </div>
-                <div class="config-toolbar definition-config-fields">
+                <div class="config-toolbar definition-config-fields definition-global-fields">
                   {% for field in selected.definition.ui.configuration_fields %}
-                  {% if field.type == 'boolean' %}<label class="switch-row"><input type="checkbox" data-definition-path="{{ field.path }}" data-definition-type="boolean">{{ field.label }}</label>
-                  {% else %}<div class="config-field"><label>{{ field.label }}</label><div class="threshold-control"><input type="number" data-definition-path="{{ field.path }}" data-definition-type="number" min="{{ field.min }}" max="{{ field.max }}" step="1"><span>{{ field.unit }}</span></div></div>{% endif %}
+                  {% if not field.output_id %}{% if field.type == 'boolean' %}<label class="switch-row"><input type="checkbox" data-definition-path="{{ field.path }}" data-definition-type="boolean">{{ field.label }}</label>
+                  {% else %}<div class="config-field"><label>{{ field.label }}</label><div class="threshold-control"><input type="number" data-definition-path="{{ field.path }}" data-definition-type="number" min="{{ field.min }}" max="{{ field.max }}" step="1"><span>{{ field.unit }}</span></div></div>{% endif %}{% endif %}
                   {% endfor %}
                 </div>
-                <details class="context-help left"><summary aria-label="ON・OFF設定の補足を開く" title="ON・OFF設定の補足">?</summary><div class="context-help-panel" role="note"><strong>ON・OFFと繰り返し</strong><p>連続運転はON時間と繰り返し1回を設定します。分割運転は、ON時間・OFF時間・繰り返し回数を設定します。出力は順番に動き、同時には動きません。</p></div></details>
+                <div class="pump-program-list" aria-label="ポンプごとの時間設定">
+                  {% for output in selected.output_settings.outputs %}
+                  <article class="pump-program-card {{ 'enabled' if output.enabled else 'disabled' }}" data-timed-output-card="{{ output.switch_id }}">
+                    <div class="pump-program-head">
+                      <div class="pump-program-identity"><span class="pump-program-icon" aria-hidden="true">{{ ['🚰','🅰️','🅱️','🌀','🌱'][loop.index0] }}</span><span><strong>{{ output.role_label }}ポンプ</strong><small>{{ output.name }} / <span data-timed-output-summary>{{ output.program_summary }}</span></small></span></div>
+                      <label class="switch-row pump-program-toggle" for="timed-output-enabled-{{ output.switch_id }}"><input id="timed-output-enabled-{{ output.switch_id }}" type="checkbox" data-timed-output-enabled aria-controls="timed-output-settings-{{ output.switch_id }}"{% if output.enabled %} checked{% endif %}>使用する</label>
+                    </div>
+                    <div id="timed-output-settings-{{ output.switch_id }}" class="pump-program-settings" data-timed-output-settings{% if not output.enabled %} hidden{% endif %}>
+                      {% for field in selected.definition.ui.configuration_fields %}{% if field.output_id == output.switch_id %}
+                      <div class="config-field"><label for="timed-output-{{ output.switch_id }}-{{ loop.index }}">{{ field.short_label or field.label }}</label><div class="threshold-control"><input id="timed-output-{{ output.switch_id }}-{{ loop.index }}" type="number" data-definition-path="{{ field.path }}" data-definition-type="number" data-timed-output-field{% if field.path.endswith('.on_sec') %} data-timed-output-on-sec{% elif field.path.endswith('.repeat_count') %} data-timed-output-repeat-count{% endif %} min="{{ field.min }}" max="{{ field.max }}" step="1"><span>{{ field.unit }}</span></div></div>
+                      {% endif %}{% endfor %}
+                    </div>
+                  </article>
+                  {% endfor %}
+                </div>
+                <details class="context-help left"><summary aria-label="ON・OFF設定の補足を開く" title="ON・OFF設定の補足">?</summary><div class="context-help-panel" role="note"><strong>ON・OFFと繰り返し</strong><p>有効なポンプはON時間1〜1800秒、OFF時間0〜1800秒、繰り返し1〜99回で設定します。無効にすると繰り返しは0回になります。出力は順番に動き、同時には動きません。</p></div></details>
               </section>
               {% endif %}
 
@@ -4230,9 +4260,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 {% if selected.ota_error %}<div class="notice error">{{ selected.ota_error }}</div>{% endif %}
                 <img src="/static/ui-illustrations/firmware-care.png" alt="機器ソフトウェアを安全に更新するイラスト" loading="lazy">
               </div>
-              <form id="firmware-upload-form" class="firmware-upload-card" enctype="multipart/form-data" data-stateful-form data-pristine-message="F/Wファイルを選択してください。">
-                <div><h3>新しい更新ファイルを登録</h3><p class="lead">ファイルを置くと、対応機種とバージョンを自動で読み取ります。firmware.bin と INASリリースモジュール（.inasfw）に対応し、.inasfw の場合は中の firmware.bin だけを登録します。</p></div>
-                <label class="firmware-dropzone" id="firmware-dropzone" for="firmware-file"><strong>firmware.bin / .inasfw をここへドロップ</strong><span>またはクリックして選択</span><input id="firmware-file" name="firmware" type="file" accept=".bin,.inasfw,application/octet-stream,application/zip" required></label>
+              <form id="firmware-upload-form" class="firmware-upload-card" enctype="multipart/form-data" data-stateful-form data-pristine-message=".inasfw ファイルを選択してください。" data-invalid-message=".inasfw ファイルの読み取りが完了していません。" data-current-device-kind="{{ selected_device.device_kind if selected_device and selected_device.device_kind else '' }}">
+                <div><h3>新しい更新ファイルを登録</h3><p class="lead">INAS更新ファイル（.inasfw）を置くと、対応機種とバージョンを自動で読み取ります。</p></div>
+                <label class="firmware-dropzone" id="firmware-dropzone" for="firmware-file"><strong>.inasfw ファイルをここへドロップ</strong><span>またはクリックして選択</span><input id="firmware-file" name="firmware" type="file" accept=".inasfw,application/zip"></label>
                 <div id="firmware-manifest-summary" class="empty">まだファイルが選択されていません。</div>
                 <div class="firmware-meta"><div><span>対応機種</span><strong id="firmware-device-kind-display">-</strong></div><div><span>バージョン</span><strong id="firmware-version-display">-</strong></div><div><span>ビルド</span><strong id="firmware-build-id-display">-</strong></div></div>
                 <input id="firmware-device-kind" name="device_kind" type="hidden" value="{{ selected_device.device_kind if selected_device and selected_device.device_kind else 'WTR' }}">
@@ -4265,14 +4295,14 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           <section id="firmware-maintenance" class="panel">
             <h2>登録済み更新ファイル</h2>
-            <details>
-              <summary>配信ファイルの詳細を表示</summary>
+            <details id="firmware-artifact-details">
+              <summary>配信ファイルの詳細を表示（<span id="firmware-artifact-count">{{ firmware_artifacts|length }}</span>件）</summary>
               <div class="detail-body">
                 <table>
-                  <thead><tr><th>キー</th><th>バージョン</th><th>種別</th><th>ビルドID</th><th>Manifest</th><th>状態</th><th>サイズ</th><th>SHA-256</th><th>URL</th><th>更新日時</th></tr></thead>
-                  <tbody>
+                  <thead><tr><th>キー</th><th>バージョン</th><th>種別</th><th>ビルドID</th><th>Manifest</th><th>状態</th><th>サイズ</th><th>SHA-256</th><th>配信先</th><th>更新日時</th></tr></thead>
+                  <tbody id="firmware-artifact-rows">
                     {% for key, artifact in firmware_artifacts.items() %}
-                    <tr>
+                    <tr data-firmware-artifact-key="{{ key }}">
                       <td>{{ key }}</td>
                       <td>{{ artifact.version }}</td>
                       <td>{{ artifact.device_kind }}</td>
@@ -4281,10 +4311,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                       <td>{{ artifact.rollout_state }}</td>
                       <td>{{ artifact.size }}</td>
                       <td>{{ artifact.sha256 }}</td>
-                      <td><a href="{{ artifact.url }}" target="_blank" rel="noopener" aria-label="更新ファイルを新しいタブで開く">{{ artifact.url }} ↗</a></td>
+                      <td><a href="{{ artifact.url }}" target="_blank" rel="noopener" aria-label="更新ファイルを新しいタブで開く">配信ファイルを開く ↗</a></td>
                       <td>{{ artifact.updated_at }}</td>
                     </tr>
                     {% endfor %}
+                    {% if not firmware_artifacts %}<tr data-firmware-artifact-empty><td colspan="10">登録済みファイルはありません。</td></tr>{% endif %}
                   </tbody>
                 </table>
               </div>
@@ -5399,6 +5430,57 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             }));
           }
 
+          function updateTimedOutputCard(card, { deriveToggle = false, toggleChanged = false } = {}) {
+            const toggle = card.querySelector("[data-timed-output-enabled]");
+            const settings = card.querySelector("[data-timed-output-settings]");
+            const fields = Array.from(card.querySelectorAll("[data-timed-output-field]"));
+            const onSec = card.querySelector("[data-timed-output-on-sec]");
+            const repeatCount = card.querySelector("[data-timed-output-repeat-count]");
+            if (!toggle || !settings || !onSec || !repeatCount) return;
+            if (deriveToggle) toggle.checked = Number(repeatCount.value || 0) > 0;
+            if (toggleChanged && toggle.checked) {
+              const previousOnSec = Number(onSec.dataset.lastEnabledValue || 0);
+              const previousRepeatCount = Number(repeatCount.dataset.lastEnabledValue || 0);
+              if (Number(onSec.value || 0) <= 0) onSec.value = String(previousOnSec > 0 ? previousOnSec : 1);
+              if (Number(repeatCount.value || 0) <= 0) repeatCount.value = String(previousRepeatCount >= 1 && previousRepeatCount <= 99 ? previousRepeatCount : 1);
+            } else if (toggleChanged && !toggle.checked) {
+              const currentOnSec = Number(onSec.value || 0);
+              const currentRepeatCount = Number(repeatCount.value || 0);
+              if (currentOnSec > 0) onSec.dataset.lastEnabledValue = String(currentOnSec);
+              if (currentRepeatCount > 0) repeatCount.dataset.lastEnabledValue = String(currentRepeatCount);
+              repeatCount.value = "0";
+            }
+            const enabled = toggle.checked;
+            settings.hidden = !enabled;
+            fields.forEach((field) => { field.disabled = !enabled; });
+            toggle.setAttribute("aria-expanded", String(enabled));
+            card.classList.toggle("enabled", enabled);
+            card.classList.toggle("disabled", !enabled);
+            const summary = card.querySelector("[data-timed-output-summary]");
+            if (summary) {
+              summary.textContent = enabled
+                ? String(Number(onSec.value || 0)) + "秒 × " + String(Number(repeatCount.value || 0)) + "回"
+                : "無効（時間設定は保持）";
+            }
+          }
+
+          function syncTimedOutputControlsFromValues() {
+            document.querySelectorAll("[data-timed-output-card]").forEach((card) => {
+              const onSec = card.querySelector("[data-timed-output-on-sec]");
+              const repeatCount = card.querySelector("[data-timed-output-repeat-count]");
+              if (Number(onSec?.value || 0) > 0) onSec.dataset.lastEnabledValue = onSec.value;
+              if (Number(repeatCount?.value || 0) > 0) repeatCount.dataset.lastEnabledValue = repeatCount.value;
+              updateTimedOutputCard(card, { deriveToggle: true });
+            });
+          }
+
+          function bindTimedOutputControls() {
+            document.querySelectorAll("[data-timed-output-card]").forEach((card) => {
+              card.querySelector("[data-timed-output-enabled]")?.addEventListener("input", () => updateTimedOutputCard(card, { toggleChanged: true }));
+              card.querySelectorAll("[data-timed-output-field]").forEach((field) => field.addEventListener("input", () => updateTimedOutputCard(card)));
+            });
+          }
+
           function renderRuntimeConfigForm(config) {
             config = applyRuntimeConfigFixedValues(config || {});
             const threshold = Number.isInteger(config.moisture_threshold) ? config.moisture_threshold : 35;
@@ -5512,6 +5594,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               if (input.dataset.definitionType === "boolean") input.checked = Boolean(value);
               else if (value !== undefined && value !== null) input.value = String(value);
             });
+            syncTimedOutputControlsFromValues();
 
             const editor = document.getElementById("schedule-editor");
             if (editor) {
@@ -5808,6 +5891,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const runtimeConfigForm = document.getElementById("runtime-config-form");
           if (runtimeConfigForm) {
             bindEnvSensorWorkbench();
+            bindTimedOutputControls();
             renderRuntimeConfigForm(initialRuntimeConfig);
             runtimeConfigForm.dispatchEvent(new CustomEvent("stateful-form-reset"));
             runtimeConfigForm.addEventListener("submit", async (event) => {
@@ -5913,6 +5997,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const firmwareManifestSummary = document.getElementById("firmware-manifest-summary");
             const inspectFirmwareManifestButton = document.getElementById("inspect-firmware-manifest");
             const firmwareDropzone = document.getElementById("firmware-dropzone");
+            const firmwareArtifactDetails = document.getElementById("firmware-artifact-details");
+            const firmwareArtifactRows = document.getElementById("firmware-artifact-rows");
+            const firmwareArtifactCount = document.getElementById("firmware-artifact-count");
+            const firmwareTargetSelect = document.getElementById("target-firmware-version");
 
             function firmwareFileKey(file) {
               return file ? [file.name, file.size, file.lastModified].join(":") : "";
@@ -5925,26 +6013,116 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               firmwareManifestSummary.classList.toggle("error", ok === false);
             }
 
+            function setFirmwareFileValidity(message = "") {
+              if (!firmwareFileInput) return;
+              firmwareFileInput.setCustomValidity(message);
+              firmwareFileInput.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+
+            function firmwareManifestLabel(metadata) {
+              const details = ["project", "target", "framework"]
+                .filter((key) => metadata && metadata[key])
+                .map((key) => key + "=" + metadata[key]);
+              return details.join(" / ") || (metadata ? "取得済み" : "未取得");
+            }
+
+            function firmwareArtifactOptionLabel(artifact) {
+              let label = artifact.version || "version未設定";
+              if (artifact.build_id) label += " / build " + artifact.build_id;
+              if (artifact.rollout_state) label += " / " + artifact.rollout_state;
+              return label;
+            }
+
+            function formatFirmwareArtifactDate(value) {
+              const parsed = value ? new Date(value) : null;
+              return parsed && !Number.isNaN(parsed.getTime()) ? parsed.toLocaleString("ja-JP") : (value || "-");
+            }
+
+            function addFirmwareArtifactCell(row, value) {
+              const cell = document.createElement("td");
+              cell.textContent = value === null || value === undefined || value === "" ? "-" : String(value);
+              row.appendChild(cell);
+              return cell;
+            }
+
+            function showRegisteredFirmwareArtifact(artifact) {
+              if (!firmwareArtifactRows || !artifact) return;
+              const key = (artifact.device_kind || "-") + ":" + (artifact.version || "-");
+              const existing = Array.from(firmwareArtifactRows.querySelectorAll("tr[data-firmware-artifact-key]"))
+                .find((row) => row.dataset.firmwareArtifactKey === key);
+              const row = document.createElement("tr");
+              row.dataset.firmwareArtifactKey = key;
+              addFirmwareArtifactCell(row, key);
+              addFirmwareArtifactCell(row, artifact.version);
+              addFirmwareArtifactCell(row, artifact.device_kind);
+              addFirmwareArtifactCell(row, artifact.build_id || "未取得");
+              addFirmwareArtifactCell(row, firmwareManifestLabel(artifact.firmware_metadata));
+              addFirmwareArtifactCell(row, artifact.rollout_state);
+              addFirmwareArtifactCell(row, artifact.size);
+              addFirmwareArtifactCell(row, artifact.sha256);
+              const linkCell = document.createElement("td");
+              const link = document.createElement("a");
+              link.href = artifact.url;
+              link.target = "_blank";
+              link.rel = "noopener";
+              link.setAttribute("aria-label", "更新ファイルを新しいタブで開く");
+              link.textContent = "配信ファイルを開く ↗";
+              linkCell.appendChild(link);
+              row.appendChild(linkCell);
+              addFirmwareArtifactCell(row, formatFirmwareArtifactDate(artifact.updated_at));
+              firmwareArtifactRows.querySelector("[data-firmware-artifact-empty]")?.remove();
+              if (existing) existing.replaceWith(row);
+              else firmwareArtifactRows.prepend(row);
+              if (firmwareArtifactCount) {
+                firmwareArtifactCount.textContent = String(firmwareArtifactRows.querySelectorAll("tr[data-firmware-artifact-key]").length);
+              }
+              if (firmwareArtifactDetails) firmwareArtifactDetails.open = true;
+
+              const currentDeviceKind = firmwareUploadForm.dataset.currentDeviceKind || "";
+              if (firmwareTargetSelect && artifact.device_kind === currentDeviceKind && artifact.version) {
+                let option = Array.from(firmwareTargetSelect.options).find((candidate) => candidate.value === artifact.version);
+                if (!option) {
+                  option = document.createElement("option");
+                  option.value = artifact.version;
+                  firmwareTargetSelect.appendChild(option);
+                }
+                option.textContent = firmwareArtifactOptionLabel(artifact);
+              }
+            }
+
             async function inspectSelectedFirmware() {
               const file = firmwareFileInput.files[0];
               if (!file) {
                 inspectedFirmwareManifest = null;
                 inspectedFirmwareFileKey = "";
-                setFirmwareManifestSummary("firmware.bin または .inasfw を選択してください", false);
+                setFirmwareFileValidity("");
+                setFirmwareManifestSummary(".inasfw ファイルを選択してください", false);
+                return null;
+              }
+              if (!file.name.toLocaleLowerCase().endsWith(".inasfw")) {
+                inspectedFirmwareManifest = null;
+                inspectedFirmwareFileKey = "";
+                const message = "選択できる更新ファイルは .inasfw 形式です";
+                setFirmwareFileValidity(message);
+                setFirmwareManifestSummary(message, false);
                 return null;
               }
               const currentKey = firmwareFileKey(file);
               if (inspectedFirmwareManifest && inspectedFirmwareFileKey === currentKey) {
+                setFirmwareFileValidity("");
                 return inspectedFirmwareManifest;
               }
               const formData = new FormData();
               formData.append("firmware", file);
+              setFirmwareFileValidity(".inasfw ファイルを読み取っています");
+              setFirmwareManifestSummary(".inasfw ファイルを読み取っています...", null);
               try {
                 const manifest = await requestJson(
                   "/local/api/firmware-artifacts/inspect",
                   { method: "POST", body: formData },
                   "F/Wファイルの情報を読み取っています...",
                 );
+                if (manifest.upload_format !== "inasfw") throw new Error("選択できる更新ファイルは .inasfw 形式です");
                 inspectedFirmwareManifest = manifest;
                 inspectedFirmwareFileKey = currentKey;
                 document.getElementById("firmware-device-kind").value = manifest.device_kind || "";
@@ -5954,7 +6132,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 document.getElementById("firmware-version-display").textContent = manifest.version || "-";
                 document.getElementById("firmware-build-id-display").textContent = manifest.build_id || "-";
                 setFirmwareManifestSummary(
-                  (manifest.upload_format === "inasfw" ? "INASリリースモジュールから firmware.bin を読み取り済み: " : "firmware.bin を読み取り済み: ") +
+                  "INAS更新ファイルを読み取り済み: " +
                     "device_kind=" + (manifest.device_kind || "-") +
                     " / version=" + (manifest.version || "-") +
                     " / build_id=" + (manifest.build_id || "-") +
@@ -5962,6 +6140,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                     " / project=" + (manifest.project || "-"),
                   true,
                 );
+                setFirmwareFileValidity("");
                 return manifest;
               } catch (error) {
                 inspectedFirmwareManifest = null;
@@ -5972,6 +6151,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 document.getElementById("firmware-version-display").textContent = "-";
                 document.getElementById("firmware-build-id-display").textContent = "-";
                 setFirmwareManifestSummary(error.message, false);
+                setFirmwareFileValidity(error.message);
                 throw error;
               }
             }
@@ -5981,6 +6161,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 inspectedFirmwareManifest = null;
                 inspectedFirmwareFileKey = "";
                 firmwareFileInput.value = "";
+                setFirmwareFileValidity("");
               });
               firmwareFileInput.addEventListener("change", () => {
                 inspectSelectedFirmware().catch((error) => showResult(error.message, false));
@@ -6003,7 +6184,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 firmwareFileInput.files = transfer.files;
                 inspectedFirmwareManifest = null;
                 inspectedFirmwareFileKey = "";
-                inspectSelectedFirmware().catch((error) => showResult(error.message, false));
+                firmwareFileInput.dispatchEvent(new Event("change", { bubbles: true }));
               });
             }
             if (inspectFirmwareManifestButton) {
@@ -6018,7 +6199,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               event.preventDefault();
               const file = document.getElementById("firmware-file").files[0];
               if (!file) {
-                showResult("firmware.bin または .inasfw を選択してください", false);
+                showResult(".inasfw ファイルを選択してください", false);
                 return;
               }
               let manifest;
@@ -6041,15 +6222,28 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               formData.append("rollout_state", document.getElementById("firmware-rollout-state").value);
               formData.append("force", document.getElementById("firmware-force").checked ? "true" : "false");
               formData.append("allow_downgrade", document.getElementById("firmware-allow-downgrade").checked ? "true" : "false");
+              firmwareUploadForm.dispatchEvent(new CustomEvent("stateful-form-busy", { detail: true }));
               try {
-                await requestJson(
+                const artifact = await requestJson(
                   "/local/api/firmware-artifacts/" + encodeURIComponent(deviceKind) + "/" + encodeURIComponent(version) + "/upload",
                   { method: "POST", body: formData },
                   "F/Wファイルをアップロードしています...",
                 );
-                showResult(manifest.upload_format === "inasfw" ? ".inasfw 内の firmware.bin を登録しました" : "firmware.bin を登録しました", true);
-                reloadSoon();
+                showRegisteredFirmwareArtifact(artifact);
+                firmwareUploadForm.reset();
+                inspectedFirmwareManifest = null;
+                inspectedFirmwareFileKey = "";
+                document.getElementById("firmware-device-kind-display").textContent = "-";
+                document.getElementById("firmware-version-display").textContent = "-";
+                document.getElementById("firmware-build-id-display").textContent = "-";
+                setFirmwareFileValidity("");
+                const successMessage = ".inasfw を登録しました。一覧と更新候補へ反映済みです";
+                setFirmwareManifestSummary(deviceKind + " / " + version + " を登録しました", true);
+                firmwareUploadForm.dispatchEvent(new CustomEvent("stateful-form-reset", { detail: { message: successMessage, kind: "ok" } }));
+                showResult(successMessage, true);
+                firmwareArtifactDetails?.scrollIntoView({ behavior: "smooth", block: "nearest" });
               } catch (error) {
+                firmwareUploadForm.dispatchEvent(new CustomEvent("stateful-form-busy", { detail: false }));
                 showResult(error.message, false);
               }
             });

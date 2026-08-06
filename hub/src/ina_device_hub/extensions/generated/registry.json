@@ -114,7 +114,7 @@
           ],
           "overview_cards": [
             {
-              "description": "各出力にON時間、OFF時間、繰り返し回数を設定します。設定した出力は順番に動きます。",
+              "description": "使用するポンプを選び、ON時間、OFF時間、繰り返し回数を設定します。有効なポンプは順番に動きます。",
               "id": "mixing-cycle",
               "title": "ポンプを秒数で運転できます",
               "tone": "leaf",
@@ -131,15 +131,15 @@
                       "title": "予約時刻に起動"
                     },
                     {
-                      "description": "ON時間が0秒の出力は動かしません。",
-                      "title": "設定した出力をON"
+                      "description": "使用しないポンプは繰り返し0回として動かしません。",
+                      "title": "有効なポンプをON"
                     },
                     {
                       "description": "OFF時間を待ってから次の運転へ進みます。",
                       "title": "必要なら一時停止"
                     },
                     {
-                      "description": "ONとOFFを設定した回数だけ繰り返します。",
+                      "description": "ONとOFFを1〜99回の範囲で設定した回数だけ繰り返します。",
                       "title": "指定回数を繰り返す"
                     },
                     {
@@ -203,7 +203,7 @@
           ]
         }
       },
-      "version": "1.1.0"
+      "version": "1.2.0"
     }
   },
   "schema_version": 1

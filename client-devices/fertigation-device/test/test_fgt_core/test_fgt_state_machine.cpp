@@ -254,11 +254,17 @@ static void test_timed_output_rejects_invalid_or_oversized_programs()
 {
     TimedProgram program;
     TEST_ASSERT_FALSE(timed_program_valid(program));
+    program = nutrient_a_two_minute_program();
     program.outputs[0] = {1000, 0, 0};
+    TEST_ASSERT_TRUE(timed_program_valid(program));
+    program.outputs[0] = {0, 0, 1};
     TEST_ASSERT_FALSE(timed_program_valid(program));
+    program.outputs[0] = {0, 0, 0};
     program.outputs[0] = {kTimedOutputMaxIntervalMs + 1UL, 0, 1};
     TEST_ASSERT_FALSE(timed_program_valid(program));
-    program.outputs[0] = {100000, 0, kTimedOutputMaxRepeats};
+    program.outputs[0] = {1, 0, kTimedOutputMaxRepeats};
+    TEST_ASSERT_TRUE(timed_program_valid(program));
+    program.outputs[0] = {1, 0, static_cast<uint8_t>(kTimedOutputMaxRepeats + 1U)};
     TEST_ASSERT_FALSE(timed_program_valid(program));
 }
 

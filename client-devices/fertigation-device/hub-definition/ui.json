@@ -22,7 +22,7 @@
     "no_schedule_label": "予約なし",
     "ready_hint": "有効な予約を設定時刻に実行します",
     "no_schedule_hint": "有効な予約がありません",
-    "missing_output_warning": "潅水ポンプのON時間と繰り返し回数が0のため、予約時刻に潅水されません。",
+    "missing_output_warning": "A液ポンプなどは設定どおり動作しますが、潅水ポンプが無効またはON時間が0のため、予約時刻に植物へ送水されません。",
     "settings_anchor": "fertigation-recipe"
   },
   "configuration_fields": [
@@ -34,14 +34,18 @@
     {
       "path": "fgt.timed_outputs.water_inlet.on_sec",
       "label": "給水ポンプ ON時間",
+      "short_label": "ON時間",
+      "output_id": "water_inlet",
       "type": "number",
       "unit": "秒",
-      "min": 0,
+      "min": 1,
       "max": 1800
     },
     {
       "path": "fgt.timed_outputs.water_inlet.off_sec",
       "label": "給水ポンプ OFF時間",
+      "short_label": "OFF時間",
+      "output_id": "water_inlet",
       "type": "number",
       "unit": "秒",
       "min": 0,
@@ -50,22 +54,28 @@
     {
       "path": "fgt.timed_outputs.water_inlet.repeat_count",
       "label": "給水ポンプ 繰り返し",
+      "short_label": "繰り返し回数",
+      "output_id": "water_inlet",
       "type": "number",
       "unit": "回",
-      "min": 0,
-      "max": 20
+      "min": 1,
+      "max": 99
     },
     {
       "path": "fgt.timed_outputs.nutrient_a.on_sec",
       "label": "A液ポンプ ON時間",
+      "short_label": "ON時間",
+      "output_id": "nutrient_a",
       "type": "number",
       "unit": "秒",
-      "min": 0,
+      "min": 1,
       "max": 1800
     },
     {
       "path": "fgt.timed_outputs.nutrient_a.off_sec",
       "label": "A液ポンプ OFF時間",
+      "short_label": "OFF時間",
+      "output_id": "nutrient_a",
       "type": "number",
       "unit": "秒",
       "min": 0,
@@ -74,22 +84,28 @@
     {
       "path": "fgt.timed_outputs.nutrient_a.repeat_count",
       "label": "A液ポンプ 繰り返し",
+      "short_label": "繰り返し回数",
+      "output_id": "nutrient_a",
       "type": "number",
       "unit": "回",
-      "min": 0,
-      "max": 20
+      "min": 1,
+      "max": 99
     },
     {
       "path": "fgt.timed_outputs.nutrient_b.on_sec",
       "label": "B液ポンプ ON時間",
+      "short_label": "ON時間",
+      "output_id": "nutrient_b",
       "type": "number",
       "unit": "秒",
-      "min": 0,
+      "min": 1,
       "max": 1800
     },
     {
       "path": "fgt.timed_outputs.nutrient_b.off_sec",
       "label": "B液ポンプ OFF時間",
+      "short_label": "OFF時間",
+      "output_id": "nutrient_b",
       "type": "number",
       "unit": "秒",
       "min": 0,
@@ -98,22 +114,28 @@
     {
       "path": "fgt.timed_outputs.nutrient_b.repeat_count",
       "label": "B液ポンプ 繰り返し",
+      "short_label": "繰り返し回数",
+      "output_id": "nutrient_b",
       "type": "number",
       "unit": "回",
-      "min": 0,
-      "max": 20
+      "min": 1,
+      "max": 99
     },
     {
       "path": "fgt.timed_outputs.mixer.on_sec",
       "label": "攪拌ポンプ ON時間",
+      "short_label": "ON時間",
+      "output_id": "mixer",
       "type": "number",
       "unit": "秒",
-      "min": 0,
+      "min": 1,
       "max": 1800
     },
     {
       "path": "fgt.timed_outputs.mixer.off_sec",
       "label": "攪拌ポンプ OFF時間",
+      "short_label": "OFF時間",
+      "output_id": "mixer",
       "type": "number",
       "unit": "秒",
       "min": 0,
@@ -122,22 +144,28 @@
     {
       "path": "fgt.timed_outputs.mixer.repeat_count",
       "label": "攪拌ポンプ 繰り返し",
+      "short_label": "繰り返し回数",
+      "output_id": "mixer",
       "type": "number",
       "unit": "回",
-      "min": 0,
-      "max": 20
+      "min": 1,
+      "max": 99
     },
     {
       "path": "fgt.timed_outputs.irrigation.on_sec",
       "label": "潅水ポンプ ON時間",
+      "short_label": "ON時間",
+      "output_id": "irrigation",
       "type": "number",
       "unit": "秒",
-      "min": 0,
+      "min": 1,
       "max": 1800
     },
     {
       "path": "fgt.timed_outputs.irrigation.off_sec",
       "label": "潅水ポンプ OFF時間",
+      "short_label": "OFF時間",
+      "output_id": "irrigation",
       "type": "number",
       "unit": "秒",
       "min": 0,
@@ -146,10 +174,12 @@
     {
       "path": "fgt.timed_outputs.irrigation.repeat_count",
       "label": "潅水ポンプ 繰り返し",
+      "short_label": "繰り返し回数",
+      "output_id": "irrigation",
       "type": "number",
       "unit": "回",
-      "min": 0,
-      "max": 20
+      "min": 1,
+      "max": 99
     },
     {
       "path": "sleep_sec",

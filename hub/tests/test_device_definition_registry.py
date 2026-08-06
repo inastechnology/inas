@@ -81,8 +81,11 @@ class DeviceDefinitionRegistryTest(unittest.TestCase):
         self.assertNotIn("fgt.enabled", fields)
         self.assertNotIn("fgt.recipe.nutrient_a_ml", fields)
         self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["unit"], "秒")
-        self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["min"], 0)
+        self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["min"], 1)
         self.assertEqual(fields["fgt.timed_outputs.nutrient_a.on_sec"]["max"], 1800)
+        self.assertEqual(fields["fgt.timed_outputs.nutrient_a.repeat_count"]["min"], 1)
+        self.assertEqual(fields["fgt.timed_outputs.nutrient_a.repeat_count"]["max"], 99)
+        self.assertEqual(fields["fgt.timed_outputs.nutrient_a.repeat_count"]["output_id"], "nutrient_a")
         self.assertEqual(fields["sleep_sec"]["max"], 86400)
 
     def test_fgt_runtime_projection_always_enables_scheduled_operation(self):
@@ -131,7 +134,8 @@ class DeviceDefinitionRegistryTest(unittest.TestCase):
         self.assertFalse(state["ready"])
         self.assertEqual(state["value"], "設定不足")
         self.assertIn("irrigation", state["missing_output_ids"])
-        self.assertIn("予約時刻に潅水されません", state["warning"])
+        self.assertIn("A液ポンプなどは設定どおり動作", state["warning"])
+        self.assertIn("予約時刻に植物へ送水されません", state["warning"])
         self.assertFalse(state["enable_control_available"])
 
     def test_fgt_output_cards_distinguish_programmed_and_zero_second_outputs(self):

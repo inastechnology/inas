@@ -590,11 +590,11 @@ def validate_device_config(config: dict):  # noqa: PLR0915
             normalized_output = {
                 "on_sec": _optional_int(output, "on_sec", 0, 0, 1800, f"fgt.timed_outputs.{output_name}.on_sec"),
                 "off_sec": _optional_int(output, "off_sec", 0, 0, 1800, f"fgt.timed_outputs.{output_name}.off_sec"),
-                "repeat_count": _optional_int(output, "repeat_count", 0, 0, 20, f"fgt.timed_outputs.{output_name}.repeat_count"),
+                "repeat_count": _optional_int(output, "repeat_count", 0, 0, 99, f"fgt.timed_outputs.{output_name}.repeat_count"),
             }
-            if (normalized_output["on_sec"] == 0) != (normalized_output["repeat_count"] == 0):
-                raise DeviceConfigValidationError(f"fgt.timed_outputs.{output_name} requires both on_sec and repeat_count, or both zero")
-            if normalized_output["on_sec"] > 0:
+            if normalized_output["repeat_count"] > 0 and normalized_output["on_sec"] == 0:
+                raise DeviceConfigValidationError(f"fgt.timed_outputs.{output_name} requires on_sec when repeat_count is positive")
+            if normalized_output["repeat_count"] > 0:
                 timed_output_count += 1
                 timed_output_duration_sec += normalized_output["on_sec"] * normalized_output["repeat_count"]
                 timed_output_duration_sec += normalized_output["off_sec"] * (normalized_output["repeat_count"] - 1)

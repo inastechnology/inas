@@ -46,7 +46,7 @@ try {
     assert.equal("mosfet_switches" in preview, false, `${kind} firmware payload must not contain Hub installation metadata`);
 
     if (kind === "FGT") {
-      assert.equal(await page.$$("#fertigation-recipe .switch-output").then((items) => items.length), 5, "FGT must show its five fixed outputs");
+      assert.equal(await page.$$("#fertigation-recipe .pump-program-card").then((items) => items.length), 5, "FGT must show its five fixed pump controls");
       assert.equal(await page.$$("#fertigation-recipe [data-definition-path]").then((items) => items.length), 17, "FGT timed outputs must be editable with farmer-facing fields");
       assert.equal(await page.$('[data-definition-path="fgt.enabled"]'), null, "FGT scheduled operation must not expose an overall off switch");
       const flowText = await page.$eval("#fertigation-recipe", (section) => section.innerText);
@@ -58,12 +58,27 @@ try {
       assert.deepEqual(preview.fgt.timed_outputs.nutrient_b, { on_sec: 0, off_sec: 0, repeat_count: 0 });
       assert.equal(preview.sleep_sec, 3600);
       assert.doesNotMatch(flowText, /mL/);
-      assert.match(await page.$eval("#scheduled-operation-inline-warning", (warning) => warning.innerText), /予約時刻に潅水されません/);
-      assert.equal(await page.$$("#fertigation-recipe .switch-output.enabled").then((items) => items.length), 1);
-      assert.equal(await page.$$("#fertigation-recipe .switch-output.disabled").then((items) => items.length), 4);
+      assert.match(await page.$eval("#scheduled-operation-inline-warning", (warning) => warning.innerText), /A液ポンプなどは設定どおり動作/);
+      assert.equal(await page.$$("#fertigation-recipe .pump-program-card.enabled").then((items) => items.length), 1);
+      assert.equal(await page.$$("#fertigation-recipe .pump-program-card.disabled").then((items) => items.length), 4);
+      assert.equal(await page.$eval('[data-timed-output-card="nutrient_a"] [data-timed-output-enabled]', (input) => input.checked), true);
+      assert.equal(await page.$eval('[data-timed-output-card="nutrient_a"] [data-timed-output-settings]', (settings) => settings.hidden), false);
+      const irrigationRepeatSelector = '[data-timed-output-card="irrigation"] [data-timed-output-repeat-count]';
+      assert.deepEqual(await page.$eval(irrigationRepeatSelector, (input) => ({ disabled: input.disabled, max: input.max, min: input.min, value: input.value })), {
+        disabled: true,
+        max: "99",
+        min: "1",
+        value: "0",
+      });
+      await page.click('[data-timed-output-card="irrigation"] [data-timed-output-enabled]');
+      assert.equal(await page.$eval('[data-timed-output-card="irrigation"] [data-timed-output-settings]', (settings) => settings.hidden), false);
+      assert.deepEqual(await page.$eval(irrigationRepeatSelector, (input) => ({ disabled: input.disabled, value: input.value })), { disabled: false, value: "1" });
+      await page.click('[data-timed-output-card="irrigation"] [data-timed-output-enabled]');
+      assert.equal(await page.$eval('[data-timed-output-card="irrigation"] [data-timed-output-settings]', (settings) => settings.hidden), true);
+      assert.deepEqual(await page.$eval(irrigationRepeatSelector, (input) => ({ disabled: input.disabled, value: input.value })), { disabled: true, value: "0" });
       await page.$eval("#save-runtime-json", (button) => button.click());
       await page.waitForSelector("#scheduled-operation-warning-dialog[open]");
-      assert.match(await page.$eval("#scheduled-operation-warning-dialog", (dialog) => dialog.innerText), /潅水ポンプのON時間/);
+      assert.match(await page.$eval("#scheduled-operation-warning-dialog", (dialog) => dialog.innerText), /潅水ポンプが無効/);
       assert.equal(await page.$("#scheduled-operation-enable-before-save"), null, "FGT operation is always enabled and needs no checkbox");
       await page.click("[data-cancel-scheduled-operation-warning]");
     }

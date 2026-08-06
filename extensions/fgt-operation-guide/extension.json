@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "jp.inas.device.fgt-operation-guide",
   "name": "FGT 時間指定運転ガイド",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "FGTの時間指定運転と、現在のポンプ設定を機器詳細に追加します。",
   "compatibility": {
     "hub_extension_api": 1
@@ -16,7 +16,7 @@
         {
           "id": "mixing-cycle",
           "title": "ポンプを秒数で運転できます",
-          "description": "各出力にON時間、OFF時間、繰り返し回数を設定します。設定した出力は順番に動きます。",
+          "description": "使用するポンプを選び、ON時間、OFF時間、繰り返し回数を設定します。有効なポンプは順番に動きます。",
           "type": "callout",
           "tone": "leaf"
         }
@@ -37,8 +37,8 @@
                   "description": "時刻同期と最新設定を確認して運転を始めます。"
                 },
                 {
-                  "title": "設定した出力をON",
-                  "description": "ON時間が0秒の出力は動かしません。"
+                  "title": "有効なポンプをON",
+                  "description": "使用しないポンプは繰り返し0回として動かしません。"
                 },
                 {
                   "title": "必要なら一時停止",
@@ -46,7 +46,7 @@
                 },
                 {
                   "title": "指定回数を繰り返す",
-                  "description": "ONとOFFを設定した回数だけ繰り返します。"
+                  "description": "ONとOFFを1〜99回の範囲で設定した回数だけ繰り返します。"
                 },
                 {
                   "title": "すべてOFFで終了",

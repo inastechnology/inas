@@ -8,7 +8,7 @@ namespace fgt
 {
 
 constexpr uint8_t kTimedOutputCount = 5;
-constexpr uint8_t kTimedOutputMaxRepeats = 20;
+constexpr uint8_t kTimedOutputMaxRepeats = 99;
 constexpr uint32_t kTimedOutputMaxIntervalMs = 1800000UL;
 
 enum class TimedOutput : uint8_t

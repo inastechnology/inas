@@ -52,10 +52,12 @@ Version 1 assumptions:
 
 Timed-output operation is an explicit alternative to the nutrient recipe. Each
 fixed output has an ON time from 0 to 1800 seconds, an OFF time from 0 to 1800
-seconds, and a repeat count from 0 to 20. An ON time and repeat count of zero
-disable that output. Enabled output programs run sequentially in fixed terminal
-order, so only one output is ever active. The complete sequence remains bounded
-by `max_batch_sec` and uses the same interruption journal as a nutrient batch.
+seconds, and a repeat count of 0 (disabled) or 1 to 99 (enabled). A zero repeat
+count disables that output while preserving its ON/OFF values; an enabled
+output requires a positive ON time. Enabled output programs run sequentially
+in fixed terminal order, so only one output is ever active. The complete
+sequence remains bounded by `max_batch_sec` and uses the same interruption
+journal as a nutrient batch.
 
 This mode is not nutrient dosing. It permits a selected fixed output, including
 the A pump, to operate independently so an installation can use that pump for a

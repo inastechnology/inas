@@ -13,6 +13,47 @@ page.on("pageerror", (error) => browserErrors.push(error.message));
 page.on("console", (message) => {
   if (message.type() === "error") browserErrors.push(message.text());
 });
+let firmwareRegistrationRequests = 0;
+await page.setRequestInterception(true);
+page.on("request", (request) => {
+  const url = new URL(request.url());
+  if (url.pathname === "/local/api/firmware-artifacts/inspect") {
+    request.respond({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        device_kind: "WTR",
+        version: "9.9.9",
+        build_id: "device-detail-smoke",
+        project: "watering-device",
+        target: "seeed_xiao_esp32s3",
+        framework: "arduino",
+        upload_format: "inasfw",
+      }),
+    });
+    return;
+  }
+  if (url.pathname === "/local/api/firmware-artifacts/WTR/9.9.9/upload") {
+    firmwareRegistrationRequests += 1;
+    request.respond({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        device_kind: "WTR",
+        version: "9.9.9",
+        build_id: "device-detail-smoke",
+        rollout_state: "active",
+        size: 123456,
+        sha256: "a".repeat(64),
+        url: `${baseUrl}/firmware/WTR/9.9.9/firmware.bin`,
+        updated_at: "2026-08-06T03:00:00+00:00",
+        firmware_metadata: { project: "watering-device", target: "seeed_xiao_esp32s3", framework: "arduino" },
+      }),
+    });
+    return;
+  }
+  request.continue();
+});
 
 async function waitForCharts(count) {
   await page.waitForFunction(
@@ -306,7 +347,35 @@ try {
   assert(await page.$("#firmware-upload-form"));
   assert(await page.$("#firmware-dropzone"), "firmware registration must start with a drag-and-drop target");
   assert(await page.$('img[src$="/firmware-care.png"]'), "firmware flow must include its visual guide");
+  assert.match(await page.$eval("#firmware-dropzone", (dropzone) => dropzone.innerText || ""), /\.inasfw ファイルをここへドロップ/);
+  assert.doesNotMatch(await page.$eval("#tab-firmware", (panel) => panel.innerText || ""), /firmware\.bin/);
+  assert.equal(await page.$eval('#firmware-upload-form [data-stateful-submit]', (button) => button.disabled), true);
+  await page.$eval("#firmware-dropzone", (dropzone) => {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(new File(["smoke release module"], "watering-device-9.9.9.inasfw", { type: "application/zip", lastModified: 1 }));
+    dropzone.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  await page.waitForFunction(() => document.getElementById("firmware-manifest-summary")?.classList.contains("ok"));
+  assert.match(await page.$eval("#firmware-manifest-summary", (summary) => summary.innerText || ""), /INAS更新ファイルを読み取り済み/);
+  assert.equal(await page.$eval('#firmware-upload-form [data-stateful-submit]', (button) => button.disabled), false, "a successfully inspected .inasfw file must be registerable");
+  const firmwarePageUrl = page.url();
+  await page.click('#firmware-upload-form [data-stateful-submit]');
+  await page.waitForSelector('#firmware-artifact-rows tr[data-firmware-artifact-key="WTR:9.9.9"]');
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  assert.equal(page.url(), firmwarePageUrl, "registration must not reload or leave the firmware page");
+  assert.equal(firmwareRegistrationRequests, 1);
+  assert.equal(await page.$eval("#firmware-artifact-details", (details) => details.open), true, "the refreshed artifact list must be visible after registration");
+  assert.match(await page.$eval('#firmware-artifact-rows tr[data-firmware-artifact-key="WTR:9.9.9"]', (row) => row.innerText || ""), /9\.9\.9.*device-detail-smoke.*配信ファイルを開く/s);
+  assert.equal(await page.$eval('#target-firmware-version option[value="9.9.9"]', (option) => option.textContent?.includes("device-detail-smoke")), true, "the registered release must immediately appear in the update candidates");
+  assert.equal(await page.$eval('#firmware-upload-form [data-stateful-submit]', (button) => button.disabled), true, "the cleared upload form must return to its initial state");
+  assert.match(await page.$eval('#firmware-upload-form [data-stateful-feedback]', (status) => status.innerText || ""), /一覧と更新候補へ反映済み/);
   await page.screenshot({ path: "/tmp/ina-device-wtr-firmware.png", fullPage: true });
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const firmwareMobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  assert(firmwareMobileOverflow <= 1, `mobile firmware registration must not overflow horizontally: ${firmwareMobileOverflow}px`);
+  await page.screenshot({ path: "/tmp/ina-device-wtr-firmware-mobile.png", fullPage: true });
+  await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
 
   await page.goto(`${baseUrl}/mqtt-devices/INADS-DEMO-WTR-003?tab=maintenance`, { waitUntil: "networkidle0" });
   await assertSelectedTab("maintenance");
@@ -387,7 +456,8 @@ try {
   await assertSelectedTab(extensionTabKey);
   assert.equal(await page.$$(".extension-process-step").then((items) => items.length), 5);
   const extensionText = await page.$eval(".extension-shell", (panel) => panel.innerText || "");
-  assert.match(extensionText, /予約時刻に起動.*設定した出力をON.*必要なら一時停止.*指定回数を繰り返す.*すべてOFFで終了/s);
+  assert.match(extensionText, /予約時刻に起動.*有効なポンプをON.*必要なら一時停止.*指定回数を繰り返す.*すべてOFFで終了/s);
+  assert.match(extensionText, /繰り返し0回.*1〜99回/s);
   assert.match(extensionText, /ON時間\s*120 秒/);
   assert.match(extensionText, /通常の起床間隔\s*3600 秒/);
   await page.screenshot({ path: "/tmp/ina-device-fgt-extension.png", fullPage: true });
@@ -420,14 +490,15 @@ try {
       "/tmp/ina-device-wtr-overview.png",
       "/tmp/ina-device-operation-check-extension.png",
       "/tmp/ina-device-operation-check-extension-mobile.png",
-    "/tmp/ina-device-wtr-settings.png",
-    "/tmp/ina-device-builder-dialog.png",
-    "/tmp/ina-device-route-new-tab-link.png",
+      "/tmp/ina-device-wtr-settings.png",
+      "/tmp/ina-device-builder-dialog.png",
+      "/tmp/ina-device-route-new-tab-link.png",
       "/tmp/ina-device-wtr-settings-mobile.png",
       "/tmp/ina-device-calibration-guide.png",
       "/tmp/ina-device-wtr-irrigation-mode.png",
       "/tmp/ina-device-wtr-irrigation-mode-mobile.png",
       "/tmp/ina-device-wtr-firmware.png",
+      "/tmp/ina-device-wtr-firmware-mobile.png",
       "/tmp/ina-device-pending-maintenance.png",
       "/tmp/ina-device-env-monitoring.png",
       "/tmp/ina-device-env-sensor-workbench.png",

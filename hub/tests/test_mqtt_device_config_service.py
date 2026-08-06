@@ -421,7 +421,9 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                     "recovery_ack": 7,
                     "timed_outputs": {
                         "enabled": True,
+                        "water_inlet": {"on_sec": 30, "off_sec": 5, "repeat_count": 0},
                         "nutrient_a": {"on_sec": 120, "off_sec": 0, "repeat_count": 1},
+                        "mixer": {"on_sec": 1, "off_sec": 0, "repeat_count": 99},
                     },
                     "recipe": {
                         "total_water_ml": 5000,
@@ -452,6 +454,11 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
             config["fgt"]["timed_outputs"]["nutrient_a"],
             {"on_sec": 120, "off_sec": 0, "repeat_count": 1},
         )
+        self.assertEqual(
+            config["fgt"]["timed_outputs"]["water_inlet"],
+            {"on_sec": 30, "off_sec": 5, "repeat_count": 0},
+        )
+        self.assertEqual(config["fgt"]["timed_outputs"]["mixer"]["repeat_count"], 99)
         self.assertEqual(
             config["fgt"]["timed_outputs"]["nutrient_b"],
             {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
@@ -525,6 +532,18 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
                     "fgt": {
                         "recipe": {"nutrient_a_ml": 101},
                         "limits": {"max_nutrient_ml": 100},
+                    },
+                }
+            )
+        with self.assertRaises(DeviceConfigValidationError):
+            validate_device_config(
+                {
+                    **base,
+                    "fgt": {
+                        "timed_outputs": {
+                            "enabled": True,
+                            "nutrient_a": {"on_sec": 1, "repeat_count": 100},
+                        }
                     },
                 }
             )

@@ -1,7 +1,7 @@
 DEVICE_ID := fertigation-device
 DEVICE_KIND := FGT
 DEVICE_NAME := FGT Fertigation Device
-DEVICE_VERSION := 0.2.1
+DEVICE_VERSION := 0.2.2
 PIO_ENV := seeed_xiao_esp32c6
 ESP_CHIP := esp32c6
 FLASH_SIZE := 4MB

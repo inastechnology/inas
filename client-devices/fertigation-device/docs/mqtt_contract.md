@@ -67,10 +67,11 @@ instead. Firmware consumes up to four valid daily entries. Hubの実効Runtime C
 
 When `fgt.timed_outputs.enabled=true`, the timed sequence replaces the nutrient
 recipe for every enabled FGT schedule. Each fixed output accepts `on_sec` and
-`off_sec` from 0 to 1800 and `repeat_count` from 0 to 20. Both `on_sec` and
-`repeat_count` must be zero to disable an output, or both must be positive to
-enable it. Enabled outputs run sequentially in terminal order. The planned sum
-of ON and intervening OFF intervals must not exceed `fgt.limits.max_batch_sec`.
+`off_sec` from 0 to 1800 and `repeat_count` from 0 to 99. A zero repeat count
+disables the output and its saved ON/OFF values are ignored; repeat counts from
+1 to 99 require a positive ON time. Enabled outputs run sequentially in terminal
+order. The planned sum of ON and intervening OFF intervals must not exceed
+`fgt.limits.max_batch_sec`.
 The top-level `fgt.enabled` is fixed to `true` by the Hub and is not a user-facing
 operation switch.
 
