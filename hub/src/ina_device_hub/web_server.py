@@ -3618,6 +3618,17 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             padding: 12px;
             background: #fff;
           }
+          .schedule-row.has-spacing-conflict { border-color: #d97706; box-shadow: inset 4px 0 0 #d97706; background: #fffbeb; }
+          .schedule-row.is-spacing-target [data-schedule-time] { border-color: #b45309; background: #fff7ed; box-shadow: 0 0 0 2px rgba(217, 119, 6, .2); }
+          .schedule-row-warning { grid-column: 1 / -1; margin: 0; padding: 9px 11px; border-radius: 7px; color: #7c2d12; background: #ffedd5; font-size: 12px; font-weight: 750; line-height: 1.55; }
+          .schedule-spacing-guide { display: grid; gap: 8px; margin: 12px 0; padding: 13px 14px; border: 1px solid #ead7a5; border-radius: 9px; color: #665122; background: #fffdf3; }
+          .schedule-spacing-guide strong { color: #5b4514; }
+          .schedule-spacing-guide p { margin: 0; font-size: 12px; line-height: 1.55; }
+          .schedule-spacing-warning { margin: 10px 0; padding: 14px 16px; border: 2px solid #d97706; border-radius: 10px; color: #713f12; background: #fff7ed; }
+          .schedule-spacing-warning:focus { outline: 3px solid rgba(217, 119, 6, .25); outline-offset: 3px; }
+          .schedule-spacing-warning strong { display: block; margin-bottom: 5px; font-size: 15px; }
+          .schedule-spacing-warning p { margin: 0; line-height: 1.55; }
+          .schedule-spacing-warning ul { display: grid; gap: 7px; margin: 10px 0 0; padding-left: 20px; }
           .icon-button { min-width: 38px; }
           .chart-card { display: grid; gap: 10px; }
           .device-chart-heading {
@@ -4156,6 +4167,15 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 <input id="watering-pattern-off-sec" type="number" value="0" hidden>
                 <input id="watering-pattern-repeat-count" type="number" value="0" hidden>
                 {% endif %}
+                <div class="schedule-spacing-guide">
+                  <strong>予約の間には、運転時間＋5分の余裕が必要です</strong>
+                  <p>{{ '有効なポンプを順番に動かす全工程' if selected.supports_fertigation else '水を出す・止める動きを含む1回の灌水' }}が終わってから、次の予約まで5分以上空けます。間隔が足りない予約は保存できません。</p>
+                </div>
+                <div id="schedule-spacing-warning" class="schedule-spacing-warning" role="alert" aria-live="assertive" tabindex="-1" hidden>
+                  <strong>予約時刻を見直してください</strong>
+                  <p id="schedule-spacing-warning-summary"></p>
+                  <ul id="schedule-spacing-warning-list"></ul>
+                </div>
                 <div id="schedule-editor" class="schedule-editor"></div>
                 <div class="actions">
                   <button type="button" id="add-schedule">＋ {{ '液肥づくり' if selected.supports_fertigation else '水やり' }}予約を追加</button>
@@ -4580,7 +4600,10 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const runtimeConfigFixedValues = (((deviceDefinition || {}).runtime_config || {}).fixed_values || {});
           const scheduledOperationDefinition = (((deviceDefinition || {}).ui || {}).scheduled_operation || null);
           const supportsWateringPattern = deviceRuntimeSendKeys.includes("watering_pattern");
-          const isFertigationDevice = ((deviceDefinition || {}).device || {}).kind === "FGT";
+          const deviceKind = ((deviceDefinition || {}).device || {}).kind || "";
+          const isFertigationDevice = deviceKind === "FGT";
+          const isIrrigationScheduleDevice = ["WTR", "WRS", "FGT"].includes(deviceKind);
+          const scheduleSafetyBufferSec = 5 * 60;
           const deviceOutputCapabilities = {{ (admin_view.selected.output_settings.outputs if admin_view.selected else []) | tojson }};
           const unsupportedOutputSettings = {{ (admin_view.selected.output_settings.unsupported if admin_view.selected else []) | tojson }};
           let plotlyLoadPromise = null;
@@ -5354,6 +5377,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               '<div data-frequency-panel="weekdays"><label>曜日</label><select data-schedule-weekdays multiple size="4"><option value="0">日</option><option value="1">月</option><option value="2">火</option><option value="3">水</option><option value="4">木</option><option value="5">金</option><option value="6">土</option></select></div>',
               '<button type="button" class="icon-button" data-remove-schedule aria-label="予約を削除">－ <span>削除</span></button>',
             ]).join("");
+            const spacingWarning = document.createElement("p");
+            spacingWarning.className = "schedule-row-warning";
+            spacingWarning.dataset.scheduleSpacingMessage = "";
+            spacingWarning.hidden = true;
+            row.appendChild(spacingWarning);
             const frequency = scheduleFrequency(schedule || {});
             row.querySelector("[data-schedule-time]").value = scheduleToTime(schedule || {});
             row.querySelector("[data-schedule-duration]").value = String((schedule || {}).duration_sec || 1);
@@ -5857,6 +5885,238 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             return Object.fromEntries(deviceRuntimeSendKeys.filter((key) => key in effectiveConfig).map((key) => [key, structuredClone(effectiveConfig[key])]));
           }
 
+          function irrigationOperationDuration(config, schedule) {
+            if (isFertigationDevice) {
+              const fgt = config?.fgt || {};
+              const timedOutputs = fgt.timed_outputs || {};
+              if (timedOutputs.enabled === true) {
+                const durationSec = ["water_inlet", "nutrient_a", "nutrient_b", "mixer", "irrigation"].reduce((total, outputId) => {
+                  const output = timedOutputs[outputId] || {};
+                  const onSec = Math.max(0, Number(output.on_sec) || 0);
+                  const offSec = Math.max(0, Number(output.off_sec) || 0);
+                  const repeatCount = Math.max(0, Number(output.repeat_count) || 0);
+                  return total + onSec * repeatCount + offSec * Math.max(0, repeatCount - 1);
+                }, 0);
+                return { durationSec, source: "fgt_timed_outputs", label: "ポンプ全工程" };
+              }
+              return {
+                durationSec: Math.max(0, Number((fgt.limits || {}).max_batch_sec) || 1800),
+                source: "fgt_max_batch",
+                label: "最大工程時間",
+              };
+            }
+            const pattern = config?.watering_pattern || {};
+            if (pattern.enabled === true) {
+              const onSec = Math.max(0, Number(pattern.on_sec) || 0);
+              const offSec = Math.max(0, Number(pattern.off_sec) || 0);
+              const repeatCount = Math.max(0, Number(pattern.repeat_count) || 0);
+              return {
+                durationSec: onSec * repeatCount + offSec * Math.max(0, repeatCount - 1),
+                source: "watering_pattern",
+                label: "分割灌水の開始から終了まで",
+              };
+            }
+            return {
+              durationSec: Math.max(0, Number(schedule?.duration_sec) || 0),
+              source: "schedule",
+              label: "灌水時間",
+            };
+          }
+
+          function parseScheduleDate(value) {
+            const match = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(String(value || ""));
+            if (!match) return null;
+            const timestamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+            const parsed = new Date(timestamp);
+            if (
+              parsed.getUTCFullYear() !== Number(match[1])
+              || parsed.getUTCMonth() !== Number(match[2]) - 1
+              || parsed.getUTCDate() !== Number(match[3])
+            ) return null;
+            return timestamp;
+          }
+
+          function scheduleOccursOnDay(schedule, dayTimestamp) {
+            const frequency = schedule?.frequency || {};
+            const mode = frequency.mode || "daily";
+            if (mode === "daily") return true;
+            if (mode === "weekdays") return (frequency.weekdays || []).map(Number).includes(new Date(dayTimestamp).getUTCDay());
+            if (mode === "interval") {
+              const startTimestamp = parseScheduleDate(frequency.start_date);
+              const intervalDays = Number(frequency.interval_days);
+              if (startTimestamp === null || !Number.isInteger(intervalDays) || intervalDays <= 0 || dayTimestamp < startTimestamp) return false;
+              return Math.round((dayTimestamp - startTimestamp) / 86400000) % intervalDays === 0;
+            }
+            return false;
+          }
+
+          function scheduleClock(schedule) {
+            return `${String(Number(schedule?.hour) || 0).padStart(2, "0")}:${String(Number(schedule?.minute) || 0).padStart(2, "0")}`;
+          }
+
+          function clockWithDayOffset(clock, dayOffset) {
+            if (dayOffset === 0) return clock;
+            if (dayOffset === 1) return `翌日 ${clock}`;
+            return `${dayOffset}日後 ${clock}`;
+          }
+
+          function formatScheduleSpacingDuration(seconds) {
+            seconds = Math.max(0, Math.round(Number(seconds) || 0));
+            const hours = Math.floor(seconds / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            const remainingSeconds = seconds % 60;
+            return [
+              hours ? `${hours}時間` : "",
+              minutes ? `${minutes}分` : "",
+              remainingSeconds ? `${remainingSeconds}秒` : "",
+            ].filter(Boolean).join("") || "0秒";
+          }
+
+          function irrigationScheduleSpacingConflicts(config) {
+            if (!isIrrigationScheduleDevice || !Array.isArray(config?.schedules)) return [];
+            const schedules = config.schedules;
+            const enabledSchedules = schedules.map((schedule, index) => ({ schedule, index })).filter(({ schedule }) => schedule && schedule.enabled !== false);
+            if (!enabledSchedules.length) return [];
+
+            const intervalStarts = enabledSchedules
+              .filter(({ schedule }) => (schedule.frequency || {}).mode === "interval")
+              .map(({ schedule }) => parseScheduleDate((schedule.frequency || {}).start_date))
+              .filter((timestamp) => timestamp !== null);
+            const defaultCycleStart = Date.UTC(2024, 0, 7);
+            const cycleStart = intervalStarts.length ? Math.max(...intervalStarts) : defaultCycleStart;
+            const cycleDays = 1000;
+            const occurrences = [];
+            for (let dayOffset = 0; dayOffset <= cycleDays + 32; dayOffset += 1) {
+              const dayTimestamp = cycleStart + dayOffset * 86400000;
+              enabledSchedules.forEach(({ schedule, index }) => {
+                if (!scheduleOccursOnDay(schedule, dayTimestamp)) return;
+                occurrences.push({
+                  scheduleIndex: index,
+                  timestampSec: dayOffset * 86400 + (Number(schedule.hour) || 0) * 3600 + (Number(schedule.minute) || 0) * 60,
+                  dayOffset,
+                });
+              });
+            }
+            occurrences.sort((left, right) => left.timestampSec - right.timestampSec || left.scheduleIndex - right.scheduleIndex);
+
+            const conflictsByPair = new Map();
+            for (let index = 0; index < occurrences.length - 1; index += 1) {
+              const current = occurrences[index];
+              const following = occurrences[index + 1];
+              if (current.timestampSec >= cycleDays * 86400) break;
+              const duration = irrigationOperationDuration(config, schedules[current.scheduleIndex]);
+              const requiredGapSec = duration.durationSec + scheduleSafetyBufferSec;
+              const gapSec = following.timestampSec - current.timestampSec;
+              if (!Number.isFinite(requiredGapSec) || gapSec >= requiredGapSec) continue;
+              const suggestedTimestampSec = Math.ceil((current.timestampSec + requiredGapSec) / 60) * 60;
+              const suggestedClockSec = ((suggestedTimestampSec % 86400) + 86400) % 86400;
+              const suggestedDayOffset = Math.floor(suggestedTimestampSec / 86400) - Math.floor(current.timestampSec / 86400);
+              const conflict = {
+                sourceIndex: current.scheduleIndex,
+                nextIndex: following.scheduleIndex,
+                sourceTime: scheduleClock(schedules[current.scheduleIndex]),
+                nextTime: scheduleClock(schedules[following.scheduleIndex]),
+                nextDayOffset: following.dayOffset - current.dayOffset,
+                gapSec,
+                operationDurationSec: duration.durationSec,
+                durationSource: duration.source,
+                durationLabel: duration.label,
+                requiredGapSec,
+                shortageSec: requiredGapSec - gapSec,
+                suggestedTime: `${String(Math.floor(suggestedClockSec / 3600)).padStart(2, "0")}:${String(Math.floor((suggestedClockSec % 3600) / 60)).padStart(2, "0")}`,
+                suggestedDayOffset,
+                maximumOperationDurationSec: Math.max(0, gapSec - scheduleSafetyBufferSec),
+              };
+              const pairKey = `${conflict.sourceIndex}:${conflict.nextIndex}`;
+              const previous = conflictsByPair.get(pairKey);
+              if (!previous || conflict.gapSec < previous.gapSec) conflictsByPair.set(pairKey, conflict);
+            }
+            return Array.from(conflictsByPair.values()).sort((left, right) => left.sourceIndex - right.sourceIndex || left.nextIndex - right.nextIndex);
+          }
+
+          function scheduleSpacingInstruction(conflict) {
+            const nextLabel = clockWithDayOffset(conflict.nextTime, conflict.nextDayOffset);
+            const suggestedLabel = clockWithDayOffset(conflict.suggestedTime, conflict.suggestedDayOffset);
+            const shortage = formatScheduleSpacingDuration(conflict.shortageSec);
+            let correction = `次の予約を ${suggestedLabel} 以降に変更してください。`;
+            if (conflict.maximumOperationDurationSec > 0) {
+              const settingName = conflict.durationSource === "schedule" ? "直前の灌水時間" : conflict.durationSource === "watering_pattern" ? "分割灌水のON・OFF時間や回数" : conflict.durationSource === "fgt_max_batch" ? "最大工程時間" : "各ポンプのON・OFF時間や回数";
+              correction = `次の予約を ${suggestedLabel} 以降にするか、${settingName}を ${formatScheduleSpacingDuration(conflict.maximumOperationDurationSec)} 以下にしてください。`;
+            }
+            return `${conflict.sourceTime} の${conflict.durationLabel}は ${formatScheduleSpacingDuration(conflict.operationDurationSec)}。次の ${nextLabel} までは ${formatScheduleSpacingDuration(conflict.gapSec)} しかなく、あと ${shortage} 足りません。${correction}`;
+          }
+
+          function refreshScheduleSpacingValidation(config) {
+            const panel = document.getElementById("schedule-spacing-warning");
+            if (!panel) return [];
+            const rows = Array.from(document.querySelectorAll("#schedule-editor .schedule-row"));
+            rows.forEach((row) => {
+              row.classList.remove("has-spacing-conflict", "is-spacing-target");
+              const input = row.querySelector("[data-schedule-time]");
+              input?.removeAttribute("aria-invalid");
+              input?.removeAttribute("aria-describedby");
+              const message = row.querySelector("[data-schedule-spacing-message]");
+              if (message) {
+                message.hidden = true;
+                message.textContent = "";
+                message.removeAttribute("id");
+              }
+            });
+
+            const conflicts = irrigationScheduleSpacingConflicts(config);
+            panel.hidden = conflicts.length === 0;
+            const summary = document.getElementById("schedule-spacing-warning-summary");
+            const list = document.getElementById("schedule-spacing-warning-list");
+            if (!conflicts.length) {
+              if (summary) summary.textContent = "";
+              if (list) list.replaceChildren();
+              return conflicts;
+            }
+
+            if (summary) summary.textContent = `${conflicts.length}組の予約で、「運転時間＋5分」の間隔を確保できません。このままでは保存・機器送信できません。`;
+            if (list) {
+              list.replaceChildren(...conflicts.map((conflict) => {
+                const item = document.createElement("li");
+                item.textContent = scheduleSpacingInstruction(conflict);
+                return item;
+              }));
+            }
+            const targetMessages = new Map();
+            conflicts.forEach((conflict) => {
+              rows[conflict.sourceIndex]?.classList.add("has-spacing-conflict");
+              rows[conflict.nextIndex]?.classList.add("has-spacing-conflict", "is-spacing-target");
+              const messages = targetMessages.get(conflict.nextIndex) || [];
+              messages.push(`開始時刻を ${clockWithDayOffset(conflict.suggestedTime, conflict.suggestedDayOffset)} 以降へ変更してください（あと ${formatScheduleSpacingDuration(conflict.shortageSec)} 必要です）。`);
+              targetMessages.set(conflict.nextIndex, messages);
+            });
+            targetMessages.forEach((messages, rowIndex) => {
+              const row = rows[rowIndex];
+              const message = row?.querySelector("[data-schedule-spacing-message]");
+              const input = row?.querySelector("[data-schedule-time]");
+              if (!message || !input) return;
+              message.id = `schedule-spacing-row-${rowIndex}`;
+              message.textContent = messages.join(" ");
+              message.hidden = false;
+              input.setAttribute("aria-invalid", "true");
+              input.setAttribute("aria-describedby", message.id);
+            });
+            return conflicts;
+          }
+
+          function guideToScheduleSpacingConflict(config) {
+            const conflicts = refreshScheduleSpacingValidation(config);
+            if (!conflicts.length) return false;
+            activateDetailTab("tab-config");
+            const firstConflict = conflicts[0];
+            const rows = Array.from(document.querySelectorAll("#schedule-editor .schedule-row"));
+            const targetInput = rows[firstConflict.nextIndex]?.querySelector("[data-schedule-time]");
+            const panel = document.getElementById("schedule-spacing-warning");
+            panel?.scrollIntoView({ behavior: "smooth", block: "center" });
+            window.setTimeout(() => (targetInput || panel)?.focus(), 250);
+            showResult("予約間隔が不足しているため保存できません。橙色の予約時刻または運転時間を直してください。", false);
+            return true;
+          }
+
           function scheduledOperationWarnings(config) {
             const spec = scheduledOperationDefinition;
             if (!spec) return [];
@@ -5966,6 +6226,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             const otaIntervalDisplay = document.getElementById("ota-interval-display");
             if (otaIntervalDisplay) otaIntervalDisplay.textContent = formatDurationSeconds(config.ota_check_interval_sec);
             refreshScheduledOperationWarning(config);
+            refreshScheduleSpacingValidation(config);
           }
 
           async function saveRuntimeConfig(push, source) {
@@ -5986,8 +6247,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 return;
               }
             }
+            if (source === "json") renderRuntimeConfigForm(config);
+            if (guideToScheduleSpacingConflict(config)) return;
             config = await confirmScheduledOperationWarnings(config, push);
             if (!config) return;
+            if (guideToScheduleSpacingConflict(config)) return;
             renderRuntimeConfigForm(config);
             const textarea = document.getElementById("runtime-config-json");
             if (textarea) textarea.value = JSON.stringify(projectRuntimeConfig(config), null, 2);
@@ -9866,7 +10130,12 @@ def update_device_config(device_id):
     except DeviceStateConflictError as exc:
         return jsonify({"error": str(exc)}), 409
     except DeviceConfigValidationError as exc:
-        return jsonify({"error": str(exc)}), 400
+        payload = {"error": str(exc)}
+        if exc.code:
+            payload["code"] = exc.code
+        if exc.details:
+            payload["details"] = exc.details
+        return jsonify(payload), 400
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
 
@@ -9879,6 +10148,13 @@ def push_device_config(device_id):
         published = device_config_service().publish_push(device_id)
     except DeviceStateConflictError as exc:
         return jsonify({"error": str(exc)}), 409
+    except DeviceConfigValidationError as exc:
+        payload = {"error": str(exc)}
+        if exc.code:
+            payload["code"] = exc.code
+        if exc.details:
+            payload["details"] = exc.details
+        return jsonify(payload), 400
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
 

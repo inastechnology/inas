@@ -294,7 +294,7 @@ class DeviceConfigService:
 
     def _effective_runtime_config(self, record: dict):
         if record["state"] == "active" and record.get("config"):
-            stored = validate_device_config(record["config"])
+            stored = validate_device_config(record["config"], device_kind=record.get("device_kind"))
             return project_runtime_config(record.get("device_kind"), stored)
         return project_runtime_config(record.get("device_kind"), self.default_config())
 
@@ -340,7 +340,7 @@ class DeviceConfigService:
         if config is None:
             config = self._cache_effective_runtime_config(record)
         else:
-            stored_config = validate_device_config(config)
+            stored_config = validate_device_config(config, device_kind=record.get("device_kind"))
             config = project_runtime_config(record.get("device_kind"), stored_config)
         return self._publish_runtime_config_payload(device_id, action, config, retain=retain, record_event=record_event)
 

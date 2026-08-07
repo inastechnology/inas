@@ -784,6 +784,30 @@ class WebServerOTATest(unittest.TestCase):
         )
         self.assertEqual(target_response.status_code, 409)
 
+    def test_irrigation_schedule_spacing_warning_is_rendered_and_api_blocks_save(self):
+        device_id = "INADS-WTR-SPACING-001"
+        self.device_service.get_record(device_id)
+        self.device_repository.record_status(device_id, {"seq": 1, "device_kind": "WTR"})
+
+        html = self.client.get(f"/mqtt-devices/{device_id}?tab=settings").get_data(as_text=True)
+
+        self.assertIn('id="schedule-spacing-warning"', html)
+        self.assertIn("予約の間には、運転時間＋5分の余裕が必要です", html)
+        self.assertIn("橙色の予約時刻または運転時間を直してください", html)
+
+        config = self.device_service.default_config()
+        config["schedules"] = [
+            {"hour": 6, "minute": 0, "duration_sec": 600, "channel_mask": 1, "frequency": {"mode": "daily"}},
+            {"hour": 6, "minute": 14, "duration_sec": 60, "channel_mask": 1, "frequency": {"mode": "daily"}},
+        ]
+        response = self.client.put(f"/local/api/mqtt-devices/{device_id}/runtime-config", json=config)
+
+        self.assertEqual(response.status_code, 400)
+        body = response.get_json()
+        self.assertEqual(body["code"], "irrigation_schedule_spacing")
+        self.assertEqual(body["details"][0]["shortage_sec"], 60)
+        self.assertIn("次の予約を 06:15 以降", body["error"])
+
     def test_mqtt_device_times_are_rendered_in_local_time(self):
         utc_received_at = "2026-07-02T21:30:15+00:00"
         original_local_timezone = web_server._local_timezone

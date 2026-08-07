@@ -6,6 +6,10 @@ from collections import deque
 from datetime import UTC, datetime
 from functools import lru_cache
 
+from ina_device_hub.irrigation_schedule_validation import (
+    find_irrigation_schedule_spacing_conflicts,
+    schedule_spacing_error_message,
+)
 from ina_device_hub.json_repository_io import atomic_write_json, serialized_repository_write
 from ina_device_hub.setting import setting
 
@@ -29,7 +33,10 @@ MOSFET_SWITCH_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
 class DeviceConfigValidationError(ValueError):
-    pass
+    def __init__(self, message: str, *, code: str | None = None, details: list[dict] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.details = details or []
 
 
 class DeviceRecordValidationError(ValueError):
@@ -76,10 +83,10 @@ class DeviceConfigRepository:
 
     @serialized_repository_write("device_config_path")
     def upsert(self, device_id: str, config: dict):
-        validated = validate_device_config(config)
         record = self._get_or_new_record(device_id)
         if record.get("state") == "retired":
             raise DeviceStateConflictError("retired devices are read-only")
+        validated = validate_device_config(config, device_kind=record.get("device_kind"))
         record["config"] = validated
         record["runtime_config"] = validated
         record["updated_at"] = _utc_now()
@@ -264,14 +271,14 @@ class DeviceConfigRepository:
 
 
 def _is_yyyy_mm_dd(value: str):
-    parts = value.split("-")
-    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+    except (TypeError, ValueError):
         return False
-    year, month, day = (int(part) for part in parts)
-    return 1970 <= year <= 2099 and 1 <= month <= 12 and 1 <= day <= 31
+    return 1970 <= parsed.year <= 2099
 
 
-def validate_device_config(config: dict):  # noqa: PLR0915
+def validate_device_config(config: dict, *, device_kind: str | None = None):  # noqa: PLR0915
     if not isinstance(config, dict):
         raise DeviceConfigValidationError("config must be an object")
 
@@ -764,6 +771,13 @@ def validate_device_config(config: dict):  # noqa: PLR0915
     }
     if normalized_fgt is not None:
         normalized["fgt"] = normalized_fgt
+    spacing_conflicts = find_irrigation_schedule_spacing_conflicts(normalized, device_kind)
+    if spacing_conflicts:
+        raise DeviceConfigValidationError(
+            schedule_spacing_error_message(spacing_conflicts[0]),
+            code="irrigation_schedule_spacing",
+            details=spacing_conflicts,
+        )
     payload = json.dumps(normalized, ensure_ascii=True, separators=(",", ":"))
     if len(payload.encode("utf-8")) >= MAX_DEVICE_CONFIG_PAYLOAD_BYTES:
         raise DeviceConfigValidationError(f"config payload must be less than {MAX_DEVICE_CONFIG_PAYLOAD_BYTES} bytes")
