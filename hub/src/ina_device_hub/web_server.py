@@ -1684,7 +1684,8 @@ def _build_device_monitoring_charts(device_kind, statuses, config=None):
     definition_metrics = definition.get("status", {}).get("metrics") or []
     if definition_metrics:
         specs = []
-        if device_kind in {"WTR", "WRS"}:
+        device_category = str((definition.get("device") or {}).get("category") or "")
+        if device_category in {"watering", "fertigation"}:
             specs.append(("watering", "潅水推移", "潅水に関する時系列データはまだありません。"))
         payloads = [entry.get("payload") for entry in statuses or [] if isinstance(entry, dict) and isinstance(entry.get("payload"), dict)]
         for metric in definition_metrics:
@@ -2062,7 +2063,7 @@ def _build_ota_history(ota_statuses, limit=8):
 
 
 def _has_watering_information(payload):
-    return any(
+    if any(
         key in payload
         for key in (
             "watering_due",
@@ -2071,13 +2072,13 @@ def _has_watering_information(payload):
             "channel_mask",
             "last_soil_moisture",
             "threshold",
-            "batch_due",
-            "batch_started",
-            "batch_completed",
-            "batch_skipped",
-            "fgt_batch_elapsed_ms",
         )
-    )
+    ):
+        return True
+    if any(payload.get(key) is True for key in ("batch_due", "batch_started", "batch_completed", "batch_skipped")):
+        return True
+    elapsed_ms = payload.get("fgt_batch_elapsed_ms")
+    return isinstance(elapsed_ms, int | float) and not isinstance(elapsed_ms, bool) and elapsed_ms > 0
 
 
 def _watering_state(payload):

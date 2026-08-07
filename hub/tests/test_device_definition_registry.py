@@ -146,6 +146,25 @@ class DeviceDefinitionRegistryTest(unittest.TestCase):
         self.assertEqual(history[0]["channel"], "A液ポンプ")
         self.assertEqual(history[0]["soil"], "41.5%")
 
+    def test_fgt_idle_status_is_not_shown_as_watering_history(self):
+        history = _build_watering_history(
+            [
+                {
+                    "received_at": "2026-08-06T07:00:00+09:00",
+                    "payload": {
+                        "device_kind": "FGT",
+                        "batch_due": False,
+                        "batch_started": False,
+                        "batch_completed": False,
+                        "batch_skipped": False,
+                        "fgt_batch_elapsed_ms": 0,
+                    },
+                }
+            ]
+        )
+
+        self.assertEqual(history, [])
+
     def test_fgt_runtime_projection_always_enables_scheduled_operation(self):
         stored = {
             "fgt": {

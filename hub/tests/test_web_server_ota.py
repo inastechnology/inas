@@ -669,6 +669,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("26.7 %", html)
         self.assertIn("25.0 ℃", html)
         self.assertIn("81 µS/cm", html)
+        self.assertIn('data-chart-kind="watering"', html)
         self.assertNotIn('data-chart-kind="soil_ph"', html)
         self.assertNotIn('data-chart-kind="soil_n"', html)
         self.assertNotIn('data-chart-kind="soil_p"', html)
@@ -680,10 +681,47 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("soil_moisture", charts)
         self.assertIn("soil_temperature", charts)
         self.assertIn("soil_ec", charts)
+        self.assertIsNone(charts["watering"])
         self.assertNotIn("soil_ph", charts)
         self.assertNotIn("soil_n", charts)
         self.assertNotIn("soil_p", charts)
         self.assertNotIn("soil_k", charts)
+
+    def test_fgt_timed_operation_shows_duration_history_without_calibrated_ml(self):
+        device_id = "INADS-00000000-0000-4000-8000-00000000021f"
+        self.device_repository.record_status(
+            device_id,
+            {
+                "seq": 1,
+                "device_kind": "FGT",
+                "firmware_version": "0.2.3",
+                "batch_due": True,
+                "batch_started": True,
+                "batch_completed": True,
+                "fgt_batch_elapsed_ms": 120000,
+                "fgt_operation_mode": "timed_outputs",
+                "fgt_timed_output": "irrigation",
+                "inlet_water_ml": 0,
+            },
+        )
+
+        response = self.client.get(f"/mqtt-devices/{device_id}?tab=monitoring")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        watering_chart_marker = 'data-chart-kind="watering"'
+        ml_chart_marker = 'data-chart-kind="batch_water"'
+        self.assertIn(watering_chart_marker, html)
+        self.assertIn(ml_chart_marker, html)
+        self.assertLess(html.index(watering_chart_marker), html.index(ml_chart_marker))
+        self.assertIn("直近の灌水記録", html)
+        self.assertIn("実行時間: 2分", html)
+
+        charts_response = self.client.get(f"/local/api/mqtt-devices/{device_id}/charts")
+        self.assertEqual(charts_response.status_code, 200)
+        charts = charts_response.get_json()
+        self.assertIn("Plotly.newPlot", charts["watering"])
+        self.assertIn('"y":[2.0]', charts["watering"])
 
     def test_single_purpose_sensor_pages_show_only_supported_equipment_cards(self):
         soil_device_id = "INADS-00000000-0000-4000-8000-000000000207"
