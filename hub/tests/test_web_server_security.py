@@ -107,6 +107,57 @@ class WebServerSecurityTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_cloudflare_write_accepts_configured_public_origin_when_tunnel_rewrites_host(self):
+        headers = self._headers()
+        headers.update(
+            {
+                "Origin": "https://hub.example.com",
+                "X-Forwarded-Host": "127.0.0.1:39151",
+                "X-Forwarded-Proto": "http",
+            }
+        )
+        environment = {
+            **self.environment,
+            "CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME": "hub.example.com",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=False),
+            patch.object(
+                user_context,
+                "_verify_access_token",
+                return_value={"email": "worker@example.com"},
+            ),
+        ):
+            response = self.client.post("/not-found", headers=headers)
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_cloudflare_write_rejects_origin_other_than_configured_public_origin(self):
+        headers = self._headers()
+        headers.update(
+            {
+                "Origin": "https://attacker.example.com",
+                "X-Forwarded-Host": "127.0.0.1:39151",
+                "X-Forwarded-Proto": "http",
+            }
+        )
+        environment = {
+            **self.environment,
+            "CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME": "hub.example.com",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=False),
+            patch.object(
+                user_context,
+                "_verify_access_token",
+                return_value={"email": "worker@example.com"},
+            ),
+        ):
+            response = self.client.post("/not-found", headers=headers)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("same-origin", response.get_data(as_text=True))
+
     def test_operator_cannot_modify_device_or_firmware_administration(self):
         with (
             patch.dict(os.environ, self.environment, clear=False),

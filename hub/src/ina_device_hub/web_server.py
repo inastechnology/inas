@@ -347,11 +347,26 @@ def _is_same_origin_request() -> bool:
     if not origin:
         return False
     parsed = urlsplit(origin)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.path.rstrip("/")
+    ):
+        return False
     forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",", 1)[0].strip()
     scheme = forwarded_proto or request.scheme
     forwarded_host = request.headers.get("X-Forwarded-Host", "").split(",", 1)[0].strip()
     host = forwarded_host or request.host
-    return parsed.scheme == scheme and parsed.netloc == host and not parsed.path.rstrip("/")
+    if parsed.scheme.lower() == scheme.lower() and parsed.netloc.lower() == host.lower():
+        return True
+
+    public_base_url = cloudflare_public_base_url()
+    browser_origin = f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+    return bool(public_base_url and browser_origin == public_base_url.lower())
 
 
 @app.route("/healthz", methods=["GET"])
