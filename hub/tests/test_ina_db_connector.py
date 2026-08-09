@@ -71,6 +71,24 @@ class InaDBConnectorTest(unittest.TestCase):
         worker.join(timeout=1)
         self.assertFalse(worker.is_alive())
 
+    def test_background_sync_mode_does_not_block_after_local_commit(self):
+        connector = object.__new__(ina_db_connector.InaDBConnector)
+        connector.conn = MagicMock()
+        connector._sync_on_write = False
+
+        connector._sync_after_commit()
+
+        connector.conn.sync.assert_not_called()
+
+    def test_explicit_sync_mode_syncs_after_local_commit(self):
+        connector = object.__new__(ina_db_connector.InaDBConnector)
+        connector.conn = MagicMock()
+        connector._sync_on_write = True
+
+        connector._sync_after_commit()
+
+        connector.conn.sync.assert_called_once_with()
+
     def test_remote_replica_uses_configured_background_sync_interval(self):
         connection = object()
         with patch.object(ina_db_connector.libsql, "connect", return_value=connection) as connect:

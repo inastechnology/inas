@@ -181,9 +181,12 @@ with `HUB_URL=http://127.0.0.1:39252 npm run smoke`.
 
 ## systemd Operation
 
-This repository includes a systemd template unit and installer:
+This repository includes systemd units for the Hub, backups, Cloudflare Tunnel,
+and a one-minute self-healing healthcheck:
 
 - `systemd/inas-device-hub@.service`
+- `systemd/inas-device-hub-healthcheck@.service`
+- `systemd/inas-device-hub-healthcheck@.timer`
 - `scripts/install_service.sh`
 
 Install or update while preserving an existing `.env` and MQTT configuration:
@@ -191,6 +194,11 @@ Install or update while preserving an existing `.env` and MQTT configuration:
 ```bash
 sudo ./scripts/install_service.sh
 ```
+
+Remote libSQL replicas use `TURSO_SYNC_INTERVAL` background synchronization.
+Keep `TURSO_SYNC_ON_WRITE=false` for field Hubs so a slow remote sync cannot
+block local HTTP startup or sensor writes. Set it to `true` only when every
+write must wait for immediate remote acknowledgement.
 
 Install with custom user or directory:
 
@@ -215,7 +223,28 @@ Check service state:
 ```bash
 systemctl status inas-device-hub@main
 journalctl -u inas-device-hub@main -f
+systemctl status inas-device-hub-healthcheck@main.timer
+journalctl -u inas-device-hub-healthcheck@main -f
 ```
+
+The healthcheck calls the Local Hub `/readyz` endpoint and separately checks
+MQTT, the default gateway, DNS/external TCP, Cloudflare Tunnel readiness, and
+registered camera TCP ports. After consecutive failures it restarts only the
+affected service, then escalates a persistent Wi-Fi failure from reconnecting
+the connection to restarting NetworkManager. When
+`HEALTHCHECK_REBOOT_AFTER_FAILURES` is set, a persistent Hub, MQTT, network, or
+Tunnel failure reboots the host; the default remains disabled (`0`). Camera-only
+failures notify without causing a reboot loop. The existing Discord webhook
+receives incidents, post-reboot recovery, boot confirmation, and periodic
+healthy heartbeats without recording the webhook or camera credentials in the
+journal. `HEALTHCHECK_BOOT_GRACE_SECONDS` prevents slow initial database sync
+from being mistaken for a hung Hub and causing a reboot loop.
+
+For field diagnosis, `systemd/inas-journald-persistent.conf` can be installed as
+`/etc/systemd/journald.conf.d/60-inas-persistent.conf`. Remove that drop-in and
+restart `systemd-journald` after evidence collection to return to the OS default.
+`systemd/inas-wifi-powersave-off.conf` is the NetworkManager drop-in used to
+keep Wi-Fi power saving disabled on an always-on Hub.
 
 Helper scripts:
 

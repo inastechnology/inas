@@ -201,6 +201,73 @@ FIELD_ENVIRONMENT_TYPE_OPTIONS = (
 )
 FIELD_ENVIRONMENT_TYPE_LABELS = dict(FIELD_ENVIRONMENT_TYPE_OPTIONS)
 FIELD_CATALOG_PAGE_SIZE = 18
+_RS485_SENSOR_METRIC_SPECS = (
+    {
+        "chart_kind": "soil_moisture",
+        "device_value_key": "moisture_percent",
+        "metric": "soil_moisture_percent",
+        "label": "土壌水分",
+        "unit": "%",
+        "digits": 1,
+    },
+    {
+        "chart_kind": "soil_temperature",
+        "device_value_key": "temperature_c",
+        "metric": "soil_temperature_c",
+        "label": "地温",
+        "unit": "℃",
+        "digits": 1,
+    },
+    {
+        "chart_kind": "soil_ec",
+        "device_value_key": "ec_us_cm",
+        "metric": "soil_ec_us_cm",
+        "label": "土壌EC",
+        "unit": "µS/cm",
+        "digits": 0,
+    },
+    {
+        "chart_kind": "soil_ph",
+        "device_value_key": "ph",
+        "metric": "soil_ph",
+        "label": "土壌pH",
+        "unit": "",
+        "digits": 1,
+    },
+    {
+        "chart_kind": "soil_n",
+        "device_value_key": "n_mg_kg",
+        "metric": "soil_n_mg_kg",
+        "label": "土壌窒素",
+        "unit": "mg/kg",
+        "digits": 0,
+    },
+    {
+        "chart_kind": "soil_p",
+        "device_value_key": "p_mg_kg",
+        "metric": "soil_p_mg_kg",
+        "label": "土壌リン",
+        "unit": "mg/kg",
+        "digits": 0,
+    },
+    {
+        "chart_kind": "soil_k",
+        "device_value_key": "k_mg_kg",
+        "metric": "soil_k_mg_kg",
+        "label": "土壌カリウム",
+        "unit": "mg/kg",
+        "digits": 0,
+    },
+    {
+        "chart_kind": "par",
+        "device_value_key": "par_umol_m2_s",
+        "metric": "par_umol_m2_s",
+        "label": "光合成に使える光",
+        "unit": "µmol/m²/s",
+        "digits": 0,
+    },
+)
+_RS485_TRACE_COLORS = ("#047857", "#2563eb", "#c2410c", "#7c3aed", "#0e7490", "#be123c", "#4d7c0f", "#a16207")
 
 
 @app.before_request
@@ -1130,6 +1197,7 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "operational_error": device_operational_error_details(payload),
         "operational_heading": "現在の潅水判断" if device_kind in {"WTR", "WRS"} else "液肥づくりの現在地" if device_kind == "FGT" else "現在の計測・稼働状況",
         "operational_metrics": _build_device_operational_metrics(record, payload, config, now, watering),
+        "rs485_sensor_groups": _build_rs485_sensor_groups(payload, device_kind),
         "monitoring_charts": _build_device_monitoring_charts(device_kind, statuses, config),
         "schedules": _format_schedules_for_ui(config.get("schedules") or [], config, scheduled_operation=scheduled_operation),
         "scheduled_operation": scheduled_operation,
@@ -1679,6 +1747,101 @@ def _format_measurement_value(value, unit, digits):
     return f"{formatted} {unit}".strip()
 
 
+def _build_rs485_sensor_groups(payload, device_kind):
+    devices = payload.get("rs485_devices") if isinstance(payload, dict) else None
+    if not isinstance(devices, list):
+        return []
+
+    groups = []
+    for position, device in enumerate(devices):
+        if not isinstance(device, dict):
+            continue
+        state_label, state_class = _rs485_sensor_state(device)
+        measurements = []
+        if device.get("enabled") is not False and device.get("ok") is not False:
+            for spec in _RS485_SENSOR_METRIC_SPECS:
+                if not metric_supported_for_device_kind(spec["metric"], device_kind):
+                    continue
+                value = device.get(spec["device_value_key"])
+                if not isinstance(value, int | float) or isinstance(value, bool):
+                    continue
+                measurements.append(
+                    {
+                        "label": spec["label"],
+                        "value": _format_measurement_value(value, spec["unit"], spec["digits"]),
+                        "history_anchor": f"{spec['chart_kind'].replace('_', '-')}-chart",
+                    }
+                )
+        groups.append(
+            {
+                "name": _rs485_sensor_name(device, position),
+                "location": str(device.get("location") or "").strip() or "設置場所未設定",
+                "state_label": state_label,
+                "state_class": state_class,
+                "measurements": measurements,
+            }
+        )
+    return groups
+
+
+def _rs485_sensor_state(device):
+    if device.get("enabled") is False:
+        return "停止中", "muted"
+    if device.get("attempted") is False:
+        return "次回計測待ち", "muted"
+    if device.get("bus_ready") is False or device.get("ok") is False:
+        return "読取エラー", "danger"
+    if device.get("ok") is True:
+        return "正常", "good"
+    return "状態未取得", "muted"
+
+
+def _rs485_sensor_name(device, position):
+    name = str(device.get("name") or "").strip()
+    if name:
+        return name
+    sensor_type = str(device.get("type") or "").strip().lower()
+    type_label = "土壌センサー" if sensor_type == "soil" else "光センサー" if sensor_type == "par" else "RS485センサー"
+    return f"{type_label}{position + 1}"
+
+
+def _rs485_sensor_series_label(device, position):
+    name = _rs485_sensor_name(device, position)
+    location = str(device.get("location") or "").strip()
+    return f"{name}（{location}）" if location else name
+
+
+def _rs485_sensor_identity(device, position):
+    index = device.get("index")
+    if isinstance(index, int | str) and not isinstance(index, bool):
+        return "index", str(index)
+    slave_id = device.get("modbus_slave_id")
+    if isinstance(slave_id, int | str) and not isinstance(slave_id, bool):
+        return "bus", str(device.get("type") or ""), str(device.get("baud") or ""), str(slave_id)
+    return "position", str(position)
+
+
+def _rs485_metric_series(statuses, device_value_key):
+    series_by_sensor = {}
+    for entry in statuses or []:
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        received_at = _to_local_plot_time(entry.get("received_at")) if isinstance(entry, dict) else None
+        devices = payload.get("rs485_devices") if isinstance(payload, dict) else None
+        if received_at is None or not isinstance(devices, list):
+            continue
+        for position, device in enumerate(devices):
+            if not isinstance(device, dict) or device.get("enabled") is False or device.get("ok") is False:
+                continue
+            value = device.get(device_value_key)
+            if not isinstance(value, int | float) or isinstance(value, bool):
+                continue
+            identity = _rs485_sensor_identity(device, position)
+            series = series_by_sensor.setdefault(identity, {"name": "", "points": []})
+            series["name"] = _rs485_sensor_series_label(device, position)
+            series["points"].append({"time": received_at, "value": value})
+    return list(series_by_sensor.values())
+
+
 def _build_device_monitoring_charts(device_kind, statuses, config=None):
     definition = get_device_definition(device_kind)
     definition_metrics = definition.get("status", {}).get("metrics") or []
@@ -1791,9 +1954,7 @@ def _build_watering_history(statuses, limit=24, *, config=None):
                 "duration": _format_duration(duration_sec),
                 "channel": _watering_channel(payload, config),
                 "soil": _format_percent(
-                    payload.get("soil_moisture_percent")
-                    if payload.get("soil_moisture_percent") is not None
-                    else payload.get("last_soil_moisture")
+                    payload.get("soil_moisture_percent") if payload.get("soil_moisture_percent") is not None else payload.get("last_soil_moisture")
                 ),
                 "threshold": _format_percent(payload.get("threshold")),
                 "reason": payload.get("batch_skip_reason") or payload.get("watering_stop_reason") or "",
@@ -1844,24 +2005,40 @@ def _build_watering_trend_chart(statuses, include_plotlyjs=False, *, deferred=Fa
 
 
 def _build_soil_moisture_chart(statuses, include_plotlyjs=False):
-    points = _soil_moisture_points(statuses)
+    sensor_series = _rs485_metric_series(statuses, "moisture_percent")
+    points = [point for series in sensor_series for point in series["points"]] if sensor_series else _soil_moisture_points(statuses)
     if not points:
         return None
 
     fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=[point["time"] for point in points],
-            y=[point["soil_moisture"] for point in points],
-            mode="lines+markers",
-            name="土壌水分",
-            line={"color": "#047857", "width": 3},
-            marker={"size": 7},
-            customdata=[[point["state"], point["threshold_label"]] for point in points],
-            hovertemplate=("%{x|%Y-%m-%d %H:%M}<br>土壌水分: %{y}%<br>状態: %{customdata[0]}<br>しきい値: %{customdata[1]}<extra></extra>"),
+    if sensor_series:
+        for index, series in enumerate(sensor_series):
+            series_points = series["points"]
+            fig.add_trace(
+                go.Scatter(
+                    x=[point["time"] for point in series_points],
+                    y=[point["value"] for point in series_points],
+                    mode="lines+markers",
+                    name=series["name"],
+                    line={"color": _RS485_TRACE_COLORS[index % len(_RS485_TRACE_COLORS)], "width": 3},
+                    marker={"size": 7},
+                    hovertemplate="%{fullData.name}<br>%{x|%Y-%m-%d %H:%M}<br>土壌水分: %{y}%<extra></extra>",
+                )
+            )
+    else:
+        fig.add_trace(
+            go.Scatter(
+                x=[point["time"] for point in points],
+                y=[point["soil_moisture"] for point in points],
+                mode="lines+markers",
+                name="土壌水分",
+                line={"color": "#047857", "width": 3},
+                marker={"size": 7},
+                customdata=[[point["state"], point["threshold_label"]] for point in points],
+                hovertemplate=("%{x|%Y-%m-%d %H:%M}<br>土壌水分: %{y}%<br>状態: %{customdata[0]}<br>しきい値: %{customdata[1]}<extra></extra>"),
+            )
         )
-    )
-    threshold_points = [point for point in points if point["threshold"] is not None]
+    threshold_points = [point for point in _soil_moisture_points(statuses) if point["threshold"] is not None]
     if threshold_points:
         fig.add_trace(
             go.Scatter(
@@ -1887,24 +2064,51 @@ def _build_soil_moisture_chart(statuses, include_plotlyjs=False):
     return _plotly_div(fig, "soil-moisture-chart", include_plotlyjs=include_plotlyjs)
 
 
-def _build_metric_trend_chart(statuses, *, aliases, title, unit, color, div_id, include_plotlyjs=False, y_range=None):
-    points = _metric_trend_points(statuses, aliases)
+def _build_metric_trend_chart(
+    statuses,
+    *,
+    aliases,
+    title,
+    unit,
+    color,
+    div_id,
+    include_plotlyjs=False,
+    y_range=None,
+    rs485_value_key=None,
+):
+    sensor_series = _rs485_metric_series(statuses, rs485_value_key) if rs485_value_key else []
+    points = [point for series in sensor_series for point in series["points"]] if sensor_series else _metric_trend_points(statuses, aliases)
     if not points:
         return None
 
     unit_suffix = f" {unit}" if unit else ""
     fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=[point["time"] for point in points],
-            y=[point["value"] for point in points],
-            mode="lines+markers",
-            name=title,
-            line={"color": color, "width": 3},
-            marker={"size": 7},
-            hovertemplate=f"%{{x|%Y-%m-%d %H:%M}}<br>{title}: %{{y}}{unit_suffix}<extra></extra>",
+    if sensor_series:
+        for index, series in enumerate(sensor_series):
+            series_points = series["points"]
+            fig.add_trace(
+                go.Scatter(
+                    x=[point["time"] for point in series_points],
+                    y=[point["value"] for point in series_points],
+                    mode="lines+markers",
+                    name=series["name"],
+                    line={"color": _RS485_TRACE_COLORS[index % len(_RS485_TRACE_COLORS)], "width": 3},
+                    marker={"size": 7},
+                    hovertemplate=f"%{{fullData.name}}<br>%{{x|%Y-%m-%d %H:%M}}<br>{title}: %{{y}}{unit_suffix}<extra></extra>",
+                )
+            )
+    else:
+        fig.add_trace(
+            go.Scatter(
+                x=[point["time"] for point in points],
+                y=[point["value"] for point in points],
+                mode="lines+markers",
+                name=title,
+                line={"color": color, "width": 3},
+                marker={"size": 7},
+                hovertemplate=f"%{{x|%Y-%m-%d %H:%M}}<br>{title}: %{{y}}{unit_suffix}<extra></extra>",
+            )
         )
-    )
     fig.update_layout(
         title=title,
         height=360,
@@ -1912,7 +2116,8 @@ def _build_metric_trend_chart(statuses, *, aliases, title, unit, color, div_id, 
         paper_bgcolor="#ffffff",
         plot_bgcolor="#ffffff",
         yaxis_title=f"{title}（{unit}）" if unit else title,
-        showlegend=False,
+        showlegend=bool(sensor_series),
+        legend={"orientation": "h", "y": -0.24} if sensor_series else None,
     )
     _configure_time_axis(fig, points)
     if y_range:
@@ -1952,9 +2157,7 @@ def _watering_trend_points(statuses):
                 "state": watering["label"],
                 "channel": _watering_channel(payload),
                 "soil": _format_percent(
-                    payload.get("soil_moisture_percent")
-                    if payload.get("soil_moisture_percent") is not None
-                    else payload.get("last_soil_moisture")
+                    payload.get("soil_moisture_percent") if payload.get("soil_moisture_percent") is not None else payload.get("last_soil_moisture")
                 ),
                 "threshold": _format_percent(payload.get("threshold")),
             }
@@ -2096,13 +2299,7 @@ def _watering_state(payload):
         return {"label": "灌水中", "class": "good"}
     if payload.get("watering_due") is True:
         return {"label": "灌水予定", "class": "warn"}
-    if (
-        "watering_started" in payload
-        or "watering_due" in payload
-        or "last_soil_moisture" in payload
-        or "batch_started" in payload
-        or "batch_due" in payload
-    ):
+    if "watering_started" in payload or "watering_due" in payload or "last_soil_moisture" in payload or "batch_started" in payload or "batch_due" in payload:
         return {"label": "待機中", "class": "ok"}
     return {"label": "未取得", "class": "muted"}
 
@@ -3656,6 +3853,18 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             text-decoration: none;
           }
           .chart-settings-link:hover, .chart-settings-link:focus-visible { border-color: var(--blue); color: var(--blue); }
+          .rs485-sensor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+          .rs485-sensor-card { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+          .rs485-sensor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 13px 14px; background: #f8fafc; }
+          .rs485-sensor-head strong, .rs485-sensor-head small { display: block; }
+          .rs485-sensor-head small { margin-top: 3px; color: var(--muted); }
+          .rs485-sensor-measurements { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
+          .rs485-sensor-measurement { min-height: 76px; padding: 11px 12px; color: inherit; background: #fff; text-decoration: none; }
+          .rs485-sensor-measurement:hover { color: var(--green); background: #f3faf5; text-decoration: none; }
+          .rs485-sensor-measurement span, .rs485-sensor-measurement strong { display: block; }
+          .rs485-sensor-measurement span { color: var(--muted); font-size: 12px; }
+          .rs485-sensor-measurement strong { margin-top: 5px; font-size: 18px; }
+          .rs485-sensor-no-value { grid-column: 1 / -1; margin: 0; padding: 12px 14px; color: var(--muted); background: #fff; }
           .range-controls {
             display: flex;
             flex-wrap: wrap;
@@ -4307,6 +4516,24 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             </section>
 
             <section id="tab-monitoring" class="tab-panel" role="tabpanel" hidden>
+          {% if selected.rs485_sensor_groups %}
+          <section class="panel" aria-label="接続センサーの現在値">
+            <div class="field-head">
+              <div><h2>接続センサーの現在値</h2><p class="lead">センサー名と設置場所ごとに、最後に受信した状態を表示します。</p></div>
+              <span class="badge good">{{ selected.rs485_sensor_groups|length }} 台</span>
+            </div>
+            <div class="rs485-sensor-grid">
+              {% for sensor in selected.rs485_sensor_groups %}
+              <article class="rs485-sensor-card">
+                <div class="rs485-sensor-head"><span><strong>{{ sensor.name }}</strong><small>{{ sensor.location }}</small></span><span class="badge {{ sensor.state_class }}">{{ sensor.state_label }}</span></div>
+                <div class="rs485-sensor-measurements">
+                  {% for measurement in sensor.measurements %}<a class="rs485-sensor-measurement" href="#{{ measurement.history_anchor }}" aria-label="{{ sensor.name }}の{{ measurement.label }}の履歴を見る"><span>{{ measurement.label }}</span><strong>{{ measurement.value }}</strong></a>{% else %}<p class="rs485-sensor-no-value">有効な計測値はまだありません。</p>{% endfor %}
+                </div>
+              </article>
+              {% endfor %}
+            </div>
+          </section>
+          {% endif %}
           {% if selected.monitoring_charts %}
           <div class="section-grid">
             {% for chart in selected.monitoring_charts %}
@@ -9951,6 +10178,9 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
     ):  # noqa: PLR0915
         if payload.get(key) is not None and metric_supported_for_device_kind(key, device_kind):
             values[key] = payload.get(key)
+    rs485_devices = _field_rs485_sensor_values(payload, device_kind)
+    if rs485_devices:
+        values["rs485_devices"] = rs485_devices
     try:
         latest_measurements = sensor_measurement_repository().latest_for_device(device_id, limit=30)
     except Exception:
@@ -9991,6 +10221,27 @@ def _field_latest_sensor_value(device_id: str, record: dict | None, placement: d
         "received_at": (record or {}).get("last_status_at"),
         "values": values,
     }
+
+
+def _field_rs485_sensor_values(payload: dict, device_kind: str | None):
+    devices = payload.get("rs485_devices") if isinstance(payload, dict) else None
+    if not isinstance(devices, list):
+        return []
+
+    metadata_keys = ("index", "enabled", "attempted", "bus_ready", "ok", "type", "name", "location", "modbus_slave_id", "baud")
+    result = []
+    for device in devices:
+        if not isinstance(device, dict):
+            continue
+        sensor = {key: device[key] for key in metadata_keys if key in device}
+        for spec in _RS485_SENSOR_METRIC_SPECS:
+            if not metric_supported_for_device_kind(spec["metric"], device_kind):
+                continue
+            value_key = spec["device_value_key"]
+            if device.get(value_key) is not None:
+                sensor[value_key] = device[value_key]
+        result.append(sensor)
+    return result
 
 
 def _field_status_event(device_id: str, status_entry: dict):
@@ -10292,6 +10543,14 @@ def _build_mqtt_device_chart_payload(statuses, device_kind=None):
     charts = {
         "watering": watering_chart,
         "soil_moisture": _build_soil_moisture_chart(statuses, include_plotlyjs=False),
+        "battery_voltage": _build_metric_trend_chart(
+            statuses,
+            aliases=("battery_voltage_v",),
+            title="バッテリー電圧推移",
+            unit="V",
+            color="#475569",
+            div_id="battery-voltage-chart",
+        ),
         "air_temperature": _build_metric_trend_chart(
             statuses,
             aliases=("air_temperature_c",),
@@ -10316,6 +10575,7 @@ def _build_mqtt_device_chart_payload(statuses, device_kind=None):
             unit="℃",
             color="#b45309",
             div_id="soil-temperature-chart",
+            rs485_value_key="temperature_c",
         ),
         "soil_ec": _build_metric_trend_chart(
             statuses,
@@ -10324,6 +10584,7 @@ def _build_mqtt_device_chart_payload(statuses, device_kind=None):
             unit="uS/cm",
             color="#7c3aed",
             div_id="soil-ec-chart",
+            rs485_value_key="ec_us_cm",
         ),
         "soil_ph": _build_metric_trend_chart(
             statuses,
@@ -10333,6 +10594,7 @@ def _build_mqtt_device_chart_payload(statuses, device_kind=None):
             color="#0f766e",
             div_id="soil-ph-chart",
             y_range=(0, 14),
+            rs485_value_key="ph",
         ),
         "soil_n": _build_metric_trend_chart(
             statuses,
@@ -10341,6 +10603,7 @@ def _build_mqtt_device_chart_payload(statuses, device_kind=None):
             unit="mg/kg",
             color="#15803d",
             div_id="soil-n-chart",
+            rs485_value_key="n_mg_kg",
         ),
         "soil_p": _build_metric_trend_chart(
             statuses,
@@ -10349,6 +10612,7 @@ def _build_mqtt_device_chart_payload(statuses, device_kind=None):
             unit="mg/kg",
             color="#0369a1",
             div_id="soil-p-chart",
+            rs485_value_key="p_mg_kg",
         ),
         "soil_k": _build_metric_trend_chart(
             statuses,
@@ -10357,6 +10621,7 @@ def _build_mqtt_device_chart_payload(statuses, device_kind=None):
             unit="mg/kg",
             color="#be123c",
             div_id="soil-k-chart",
+            rs485_value_key="k_mg_kg",
         ),
         "batch_water": _build_metric_trend_chart(
             statuses,
@@ -10381,11 +10646,13 @@ def _build_mqtt_device_chart_payload(statuses, device_kind=None):
             unit="umol/m2/s",
             color="#ca8a04",
             div_id="par-chart",
+            rs485_value_key="par_umol_m2_s",
         ),
     }
     chart_metrics = {
         "air_temperature": "air_temperature_c",
         "air_humidity": "air_humidity_percent",
+        "battery_voltage": "battery_voltage_v",
         "soil_moisture": "soil_moisture_percent",
         "soil_temperature": "soil_temperature_c",
         "soil_ec": "soil_ec_us_cm",

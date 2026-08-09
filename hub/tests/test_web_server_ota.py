@@ -687,6 +687,90 @@ class WebServerOTATest(unittest.TestCase):
         self.assertNotIn("soil_p", charts)
         self.assertNotIn("soil_k", charts)
 
+    def test_fgt_detail_and_charts_show_every_registered_rs485_sensor(self):
+        device_id = "INADS-00000000-0000-4000-8000-00000000022f"
+        for seq, north, south in ((1, 25.1, 26.8), (2, 36.8, 63.2)):
+            self.device_repository.record_status(
+                device_id,
+                {
+                    "seq": seq,
+                    "device_kind": "FGT",
+                    "firmware_version": "0.2.3",
+                    "soil_rs485_ok": True,
+                    "soil_moisture_percent": north,
+                    "soil_temperature_c": 30.2,
+                    "soil_ec_us_cm": 109,
+                    "par_ok": True,
+                    "par_umol_m2_s": 840,
+                    "rs485_devices": [
+                        {
+                            "index": 0,
+                            "enabled": True,
+                            "attempted": True,
+                            "bus_ready": True,
+                            "ok": True,
+                            "type": "soil",
+                            "name": "土壌センサー1",
+                            "location": "ライチ北",
+                            "moisture_percent": north,
+                            "temperature_c": 30.2,
+                            "ec_us_cm": 109,
+                        },
+                        {
+                            "index": 1,
+                            "enabled": True,
+                            "attempted": True,
+                            "bus_ready": True,
+                            "ok": True,
+                            "type": "soil",
+                            "name": "土壌センサー2",
+                            "location": "ライチ南",
+                            "moisture_percent": south,
+                            "temperature_c": 34.9,
+                            "ec_us_cm": 174,
+                        },
+                        {
+                            "index": 2,
+                            "enabled": True,
+                            "attempted": True,
+                            "bus_ready": True,
+                            "ok": True,
+                            "type": "par",
+                            "name": "光センサー",
+                            "location": "納屋",
+                            "par_umol_m2_s": 840,
+                        },
+                    ],
+                },
+            )
+
+        response = self.client.get(f"/mqtt-devices/{device_id}?tab=monitoring")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("接続センサーの現在値", html)
+        self.assertIn("土壌センサー1", html)
+        self.assertIn("ライチ北", html)
+        self.assertIn("土壌センサー2", html)
+        self.assertIn("ライチ南", html)
+        self.assertIn("63.2 %", html)
+        self.assertIn("光センサー", html)
+        self.assertIn("840 µmol/m²/s", html)
+        self.assertIn("3 台", html)
+
+        charts_response = self.client.get(f"/local/api/mqtt-devices/{device_id}/charts")
+        self.assertEqual(charts_response.status_code, 200)
+        charts = charts_response.get_json()
+        north_label = json.dumps("土壌センサー1（ライチ北）", ensure_ascii=True)[1:-1]
+        south_label = json.dumps("土壌センサー2（ライチ南）", ensure_ascii=True)[1:-1]
+        par_label = json.dumps("光センサー（納屋）", ensure_ascii=True)[1:-1]
+        self.assertIn(north_label, charts["soil_moisture"])
+        self.assertIn(south_label, charts["soil_moisture"])
+        self.assertIn("63.2", charts["soil_moisture"])
+        self.assertIn(south_label, charts["soil_temperature"])
+        self.assertIn(south_label, charts["soil_ec"])
+        self.assertIn(par_label, charts["par"])
+
     def test_fgt_timed_operation_shows_duration_history_without_calibrated_ml(self):
         device_id = "INADS-00000000-0000-4000-8000-00000000021f"
         self.device_repository.record_status(

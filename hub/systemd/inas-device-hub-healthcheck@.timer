@@ -1,0 +1,12 @@
+[Unit]
+Description=Run INAS Device Hub healthcheck for %I
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=1min
+AccuracySec=5s
+RandomizedDelaySec=5s
+Unit=inas-device-hub-healthcheck@%i.service
+
+[Install]
+WantedBy=timers.target

@@ -118,6 +118,32 @@ class AgriActionServiceTest(unittest.TestCase):
 
         self.assertEqual(candidates[0]["action_type"], "observation")
 
+    def test_field_action_candidates_use_dashboard_median(self):
+        candidates = build_action_candidates(
+            {
+                "field": {
+                    "growth_targets": {"soil_moisture_percent": {"min": 30, "max": 70}},
+                    "control_policy": {"allowed_actions": ["watering"]},
+                },
+                "latest_sensor_values": [
+                    {"device_id": "soi-1", "values": {"soil_moisture_percent": 80}},
+                    {"device_id": "soi-2", "values": {"soil_moisture_percent": 20}},
+                ],
+                "dashboard": {
+                    "metrics": [
+                        {
+                            "metric": "soil_moisture_percent",
+                            "value": 50,
+                            "source_count": 2,
+                        }
+                    ]
+                },
+            }
+        )
+
+        self.assertEqual(candidates[0]["action_type"], "observation")
+        self.assertEqual(candidates[0]["evidence"]["latest_values"]["soil_moisture_percent"], 50)
+
     def test_watering_readiness_requires_layout_route_to_planting(self):
         action = {
             "action_type": "watering",

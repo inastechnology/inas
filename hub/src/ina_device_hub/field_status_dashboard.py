@@ -1,7 +1,17 @@
 """Build field status metrics independently from HTTP rendering concerns."""
 
+import math
 from datetime import UTC, datetime
+from statistics import median
 from urllib.parse import urlencode
+
+_RS485_VALUE_KEYS = {
+    "soil_moisture_percent": ("moisture_percent", "soil_moisture_percent"),
+    "soil_temperature_c": ("temperature_c", "soil_temperature_c", "soil_temp_c"),
+    "soil_ec_us_cm": ("ec_us_cm", "soil_ec_us_cm"),
+    "soil_ph": ("ph", "soil_ph"),
+    "par_umol_m2_s": ("par_umol_m2_s",),
+}
 
 METRIC_SPECS = (
     {
@@ -76,7 +86,7 @@ def build_field_status_dashboard(field: dict, latest_sensor_values: list, active
 
 
 def _build_metric(field: dict, spec: dict, default_targets: dict, latest_sensor_values: list, active_plantings: list):
-    observation = _latest_observation(latest_sensor_values, spec["aliases"])
+    observation = _median_observation(latest_sensor_values, spec)
     value = observation.get("value") if observation else None
     if value is None:
         return None
@@ -111,6 +121,8 @@ def _build_metric(field: dict, spec: dict, default_targets: dict, latest_sensor_
         "state_label": state_label,
         "device_id": observation.get("device_id") if observation else "",
         "scope_label": observation.get("scope_label") if observation else "",
+        "source_count": observation.get("source_count") if observation else 0,
+        "source_summary": observation.get("source_summary") if observation else "",
         "observed_at": observation.get("observed_at") if observation else "",
         "observed_at_display": _format_datetime(observation.get("observed_at")) if observation else "",
         "target_url": _target_settings_url(field, spec["metric"], target_planting, active_plantings),
@@ -176,31 +188,96 @@ def _target_settings_url(field: dict, metric: str, target_planting: dict | None,
     return f"/fields/{field_id}/layout?{urlencode(query)}"
 
 
-def _latest_observation(latest_sensor_values: list, aliases: tuple):
+def _median_observation(latest_sensor_values: list, spec: dict):
     candidates = []
     for index, item in enumerate(latest_sensor_values or []):
         if not isinstance(item, dict):
             continue
-        values = item.get("values") if isinstance(item.get("values"), dict) else {}
-        value = _first_number(values, aliases)
-        if value is None:
-            continue
         observed_at = item.get("updated_at") or item.get("received_at") or ""
-        candidates.append(
-            {
-                "value": value,
-                "device_id": item.get("device_id") or "",
-                "scope_label": item.get("scope_label") or "",
-                "target_placement_ids": item.get("target_placement_ids") or [],
-                "observed_at": observed_at,
-                "sort_key": (_datetime_sort_key(observed_at), index),
-            }
-        )
+        for sensor_index, sensor_value in enumerate(_sensor_values(item, spec)):
+            candidates.append(
+                {
+                    "value": sensor_value["value"],
+                    "device_id": item.get("device_id") or "",
+                    "sensor_label": sensor_value.get("sensor_label") or "",
+                    "scope_label": item.get("scope_label") or "",
+                    "target_placement_ids": item.get("target_placement_ids") or [],
+                    "observed_at": observed_at,
+                    "sort_key": (_datetime_sort_key(observed_at), index, sensor_index),
+                }
+            )
     if not candidates:
         return None
-    selected = max(candidates, key=lambda item: item["sort_key"])
-    selected.pop("sort_key", None)
-    return selected
+
+    latest = max(candidates, key=lambda item: item["sort_key"])
+    device_ids = _unique_nonempty(candidate["device_id"] for candidate in candidates)
+    scope_labels = _unique_nonempty(candidate["scope_label"] for candidate in candidates)
+    target_placement_ids = _unique_nonempty(placement_id for candidate in candidates for placement_id in candidate["target_placement_ids"])
+    source_count = len(candidates)
+    device_id = device_ids[0] if len(device_ids) == 1 else ""
+    scope_label = scope_labels[0] if len(scope_labels) == 1 else ("圃場内" if scope_labels else "")
+    return {
+        "value": float(median(candidate["value"] for candidate in candidates)),
+        "device_id": device_id,
+        "scope_label": scope_label,
+        "target_placement_ids": target_placement_ids,
+        "observed_at": latest["observed_at"],
+        "source_count": source_count,
+        "source_summary": _source_summary(candidates, device_ids, scope_label),
+    }
+
+
+def _sensor_values(item: dict, spec: dict):
+    values = item.get("values") if isinstance(item.get("values"), dict) else {}
+    if spec["metric"] in _RS485_VALUE_KEYS and isinstance(values.get("rs485_devices"), list):
+        return _rs485_sensor_values(values, spec["metric"])
+
+    if spec["metric"] == "soil_moisture_percent":
+        probe_values = []
+        for position, key in enumerate(("soil_moisture_1_pct", "soil_moisture_2_pct"), start=1):
+            value = _number(values.get(key))
+            if value is not None:
+                probe_values.append({"value": value, "sensor_label": f"土壌水分センサー{position}"})
+        if probe_values:
+            return probe_values
+
+    value = _first_number(values, spec["aliases"])
+    return [{"value": value, "sensor_label": ""}] if value is not None else []
+
+
+def _rs485_sensor_values(values: dict, metric: str):
+    value_keys = _RS485_VALUE_KEYS.get(metric)
+    devices = values.get("rs485_devices")
+    if value_keys is None or not isinstance(devices, list):
+        return []
+
+    result = []
+    for position, device in enumerate(devices):
+        if not isinstance(device, dict) or device.get("enabled") is False or device.get("bus_ready") is False or device.get("ok") is False:
+            continue
+        value = _first_number(device, value_keys)
+        if value is None:
+            continue
+        name = str(device.get("name") or "").strip()
+        location = str(device.get("location") or "").strip()
+        sensor_type = str(device.get("type") or "").strip().lower()
+        fallback = "土壌センサー" if sensor_type == "soil" else "光センサー" if sensor_type == "par" else "RS485センサー"
+        label = name or f"{fallback}{position + 1}"
+        result.append({"value": value, "sensor_label": f"{label}（{location}）" if location else label})
+    return result
+
+
+def _source_summary(candidates: list, device_ids: list, scope_label: str):
+    if len(candidates) == 1:
+        candidate = candidates[0]
+        parts = [candidate.get("device_id"), candidate.get("sensor_label"), scope_label]
+    else:
+        parts = [device_ids[0] if len(device_ids) == 1 else "", f"{len(candidates)}センサーの中央値", scope_label]
+    return " / ".join(str(part) for part in parts if part)
+
+
+def _unique_nonempty(values):
+    return list(dict.fromkeys(value for value in values if value not in (None, "")))
 
 
 def _datetime_sort_key(value):
@@ -236,9 +313,10 @@ def _number(value):
     if isinstance(value, bool) or value in (None, ""):
         return None
     try:
-        return float(value)
+        parsed = float(value)
     except (TypeError, ValueError):
         return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def _first_number(values: dict, aliases: tuple):

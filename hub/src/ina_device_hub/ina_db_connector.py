@@ -18,7 +18,7 @@ from ina_device_hub.setting import setting
 
 def commit_and_sync(func):
     """
-    関数実行後、必ず commit と sync を実行するデコレーター
+    関数実行後にlocal commitを行い、設定時のみ明示的にremote syncする。
     """
 
     @wraps(func)
@@ -32,9 +32,9 @@ def commit_and_sync(func):
                 print("Error occurred:", e)
                 raise
             finally:
-                print("Commit and sync")
+                print("Commit local transaction")
                 self.conn.commit()
-                _sync_if_supported(self.conn)
+                self._sync_after_commit()
 
     return wrapper
 
@@ -78,11 +78,16 @@ class InaDBConnector:
         db_path = turso_settings.get("local_db_path")
         url = turso_settings.get("database_url")
         auth_token = turso_settings.get("auth_token")
+        self._sync_on_write = bool(turso_settings.get("sync_on_write"))
         self.conn = _connect_database(db_path, url, auth_token, turso_settings.get("sync_interval", 600))
-        if _is_sync_url(url):
+        if _is_sync_url(url) and self._sync_on_write:
             self.conn.sync()
         self.ensure_device_event_table()
         self.ensure_sensor_measurement_tables()
+
+    def _sync_after_commit(self):
+        if getattr(self, "_sync_on_write", False):
+            _sync_if_supported(self.conn)
 
     @contextmanager
     def operation(self):
@@ -116,7 +121,7 @@ class InaDBConnector:
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_device_events_device_id ON device_events (device_id)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_device_events_event_type ON device_events (event_type)")
         self.conn.commit()
-        _sync_if_supported(self.conn)
+        self._sync_after_commit()
 
     @serialized_operation
     def ensure_sensor_measurement_tables(self):
@@ -158,7 +163,7 @@ class InaDBConnector:
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_sensor_measurements_metric_time ON sensor_measurements (metric, measured_at)")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_sensor_measurements_device_metric_time ON sensor_measurements (device_id, metric, measured_at)")
         self.conn.commit()
-        _sync_if_supported(self.conn)
+        self._sync_after_commit()
 
     @commit_and_sync
     def upsert_sensor_measurement_definition(self, definition: dict):

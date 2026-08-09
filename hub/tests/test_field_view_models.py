@@ -159,6 +159,81 @@ class FieldViewModelsTest(unittest.TestCase):
         self.assertEqual(metrics["soil_temperature_c"]["minimum"], 12)
         self.assertEqual(dashboard["counts"]["attention"], 1)
 
+    def test_status_dashboard_uses_median_of_every_valid_fgt_sensor(self):
+        dashboard = build_field_status_dashboard(
+            {"id": "field-1", "growth_targets": {"soil_moisture_percent": {"min": 40, "max": 70}}},
+            [
+                {
+                    "device_id": "FGT-001",
+                    "scope_label": "ライチ区画",
+                    "updated_at": "2026-08-09T01:00:00+00:00",
+                    "values": {
+                        "soil_moisture_percent": 26,
+                        "rs485_devices": [
+                            {
+                                "index": 0,
+                                "enabled": True,
+                                "ok": True,
+                                "type": "soil",
+                                "name": "土壌センサー1",
+                                "location": "北",
+                                "moisture_percent": 26,
+                                "temperature_c": 30,
+                                "ec_us_cm": 100,
+                            },
+                            {
+                                "index": 1,
+                                "enabled": True,
+                                "ok": True,
+                                "type": "soil",
+                                "name": "土壌センサー2",
+                                "location": "南",
+                                "moisture_percent": 64,
+                                "temperature_c": 34,
+                                "ec_us_cm": 180,
+                            },
+                            {
+                                "index": 2,
+                                "enabled": True,
+                                "ok": False,
+                                "type": "soil",
+                                "name": "読取エラー",
+                                "moisture_percent": 95,
+                            },
+                        ],
+                    },
+                }
+            ],
+        )
+
+        metrics = {metric["metric"]: metric for metric in dashboard["metrics"]}
+        moisture = metrics["soil_moisture_percent"]
+        self.assertEqual(moisture["value"], 45)
+        self.assertEqual(moisture["source_count"], 2)
+        self.assertEqual(moisture["source_summary"], "FGT-001 / 2センサーの中央値 / ライチ区画")
+        self.assertEqual(metrics["soil_temperature_c"]["value"], 32)
+        self.assertEqual(metrics["soil_ec_us_cm"]["value"], 140)
+
+    def test_status_dashboard_uses_both_numbered_soil_moisture_probes(self):
+        dashboard = build_field_status_dashboard(
+            {},
+            [
+                {
+                    "device_id": "SOI-001",
+                    "received_at": "2026-08-09T01:00:00+00:00",
+                    "values": {
+                        "soil_moisture_percent": 20,
+                        "soil_moisture_1_pct": 20,
+                        "soil_moisture_2_pct": 60,
+                    },
+                }
+            ],
+        )
+
+        moisture = next(metric for metric in dashboard["metrics"] if metric["metric"] == "soil_moisture_percent")
+        self.assertEqual(moisture["value"], 40)
+        self.assertEqual(moisture["source_count"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

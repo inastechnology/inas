@@ -196,7 +196,10 @@ def build_action_candidates(field_context: dict):
     policy = field.get("control_policy") if isinstance(field.get("control_policy"), dict) else {}
     targets = field.get("growth_targets") if isinstance(field.get("growth_targets"), dict) else {}
     allowed_actions = set(policy.get("allowed_actions") or ["watering"])
-    latest_values = _latest_metric_values(field_context.get("latest_sensor_values") or [])
+    dashboard = field_context.get("dashboard")
+    latest_values = (
+        _dashboard_metric_values(dashboard) if isinstance(dashboard, dict) else _latest_metric_values(field_context.get("latest_sensor_values") or [])
+    )
     candidates = []
 
     moisture_candidate = _build_range_candidate(
@@ -434,6 +437,18 @@ def _latest_metric_values(latest_sensor_values):
             number = _number(value)
             if number is not None:
                 metrics[_canonical_metric(key)] = number
+    return metrics
+
+
+def _dashboard_metric_values(dashboard):
+    metrics = {}
+    for item in dashboard.get("metrics") or []:
+        if not isinstance(item, dict):
+            continue
+        metric = item.get("metric")
+        value = _number(item.get("value"))
+        if metric and value is not None:
+            metrics[metric] = value
     return metrics
 
 

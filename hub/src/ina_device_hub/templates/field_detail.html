@@ -421,7 +421,7 @@
               <div class="range-card-header"><div><div class="range-card-title">{{ metric.label }}</div><div class="range-value">{{ metric.value_display }}<small>{{ metric.unit }}</small></div></div><span class="state-label">{{ metric.state_label }}</span></div>
               <div><div class="range-track">{% if metric.minimum is not none or metric.maximum is not none %}<span class="target-zone" style="left:{{ metric.target_left_pct }}%;width:{{ metric.target_width_pct }}%"></span>{% endif %}<span class="value-marker" style="left:{{ metric.marker_pct }}%"></span></div><div class="range-scale"><span>{{ metric.domain_min_display }}</span><span>{{ metric.domain_max_display }} {{ metric.unit }}</span></div></div>
               <div class="target-scale">{% if metric.minimum is not none or metric.maximum is not none %}目標 {{ metric.minimum_display }} - {{ metric.maximum_display }} {{ metric.unit }}{% else %}目標未設定{% endif %}</div>
-              <p class="range-source">{{ metric.device_id }} / {{ metric.scope_label }} / {{ metric.observed_at_display }}</p>
+              <p class="range-source">{{ metric.source_summary }}{% if metric.source_summary %} / {% endif %}{{ metric.observed_at_display }}</p>
               <span class="range-card-action">目標値を設定 <span aria-hidden="true">&#8250;</span></span>
             </a>
             {% endfor %}

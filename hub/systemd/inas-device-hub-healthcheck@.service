@@ -1,0 +1,29 @@
+[Unit]
+Description=INAS Device Hub healthcheck and recovery for %I
+Wants=network-online.target inas-device-hub@%i.service
+After=network-online.target NetworkManager.service inas-device-hub@%i.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@@INAS_HUB_DIR@@
+ExecStart=@@INAS_HUB_DIR@@/.venv/bin/python @@INAS_HUB_DIR@@/scripts/healthcheck_service.py --instance %i --env-file @@INAS_HUB_DIR@@/.env
+Environment=PYTHONUNBUFFERED=1
+User=root
+UMask=0077
+StateDirectory=ina-device-hub-healthcheck
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_NET_RAW
+ReadWritePaths=/var/lib/ina-device-hub-healthcheck
+TimeoutStartSec=2min
+Restart=on-failure
+RestartSec=30s

@@ -27,9 +27,11 @@ from ina_device_hub.web_server import (
     _build_device_operational_metrics,
     _build_device_output_settings,
     _build_device_summary,
+    _build_rs485_sensor_groups,
     _build_scheduled_operation_state,
     _build_watering_history,
     _field_device_class,
+    _rs485_metric_series,
 )
 
 
@@ -191,6 +193,87 @@ class DeviceDefinitionRegistryTest(unittest.TestCase):
 
         self.assertTrue({"soil_moisture", "soil_temperature", "soil_ec"} <= metric_ids)
         self.assertTrue({"soil_ph", "soil_n", "soil_p", "soil_k"}.isdisjoint(metric_ids))
+
+    def test_fgt_rs485_sensor_groups_include_every_registered_sensor(self):
+        groups = _build_rs485_sensor_groups(
+            {
+                "device_kind": "FGT",
+                "rs485_devices": [
+                    {
+                        "index": 0,
+                        "enabled": True,
+                        "attempted": True,
+                        "bus_ready": True,
+                        "ok": True,
+                        "type": "soil",
+                        "name": "土壌センサー1",
+                        "location": "ライチ北",
+                        "moisture_percent": 36.8,
+                        "temperature_c": 30.2,
+                        "ec_us_cm": 109,
+                        "ph": 4.4,
+                    },
+                    {
+                        "index": 1,
+                        "enabled": True,
+                        "attempted": True,
+                        "bus_ready": True,
+                        "ok": True,
+                        "type": "soil",
+                        "name": "土壌センサー2",
+                        "location": "ライチ南",
+                        "moisture_percent": 63.2,
+                        "temperature_c": 34.9,
+                        "ec_us_cm": 174,
+                    },
+                    {
+                        "index": 2,
+                        "enabled": True,
+                        "attempted": True,
+                        "bus_ready": True,
+                        "ok": True,
+                        "type": "par",
+                        "name": "光センサー",
+                        "location": "納屋",
+                        "par_umol_m2_s": 840,
+                    },
+                ],
+            },
+            "FGT",
+        )
+
+        self.assertEqual([group["name"] for group in groups], ["土壌センサー1", "土壌センサー2", "光センサー"])
+        self.assertEqual([item["value"] for item in groups[1]["measurements"]], ["63.2 %", "34.9 ℃", "174 µS/cm"])
+        self.assertEqual(groups[2]["measurements"][0]["value"], "840 µmol/m²/s")
+        self.assertNotIn("土壌pH", {item["label"] for item in groups[0]["measurements"]})
+
+    def test_rs485_metric_series_keeps_sensor_names_and_excludes_failed_reads(self):
+        statuses = [
+            {
+                "received_at": "2026-08-06T10:53:00+09:00",
+                "payload": {
+                    "rs485_devices": [
+                        {"index": 0, "enabled": True, "ok": True, "name": "土壌センサー1", "location": "ライチ北", "moisture_percent": 25.1},
+                        {"index": 1, "enabled": True, "ok": True, "name": "土壌センサー2", "location": "ライチ南", "moisture_percent": 26.8},
+                    ]
+                },
+            },
+            {
+                "received_at": "2026-08-06T11:52:00+09:00",
+                "payload": {
+                    "rs485_devices": [
+                        {"index": 0, "enabled": True, "ok": False, "name": "土壌センサー1", "location": "ライチ北", "moisture_percent": 0.0},
+                        {"index": 1, "enabled": True, "ok": True, "name": "土壌センサー2", "location": "ライチ南", "moisture_percent": 63.2},
+                    ]
+                },
+            },
+        ]
+
+        series = _rs485_metric_series(statuses, "moisture_percent")
+
+        self.assertEqual([item["name"] for item in series], ["土壌センサー1（ライチ北）", "土壌センサー2（ライチ南）"])
+        self.assertEqual([point["value"] for point in series[0]["points"]], [25.1])
+        self.assertEqual([point["value"] for point in series[1]["points"]], [26.8, 63.2])
 
     def test_fgt_scheduled_operation_warns_when_irrigation_output_is_zero(self):
         definition = get_device_definition("FGT")

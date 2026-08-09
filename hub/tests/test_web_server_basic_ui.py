@@ -1082,7 +1082,7 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn("現在の圃場", primary.decode("utf-8"))
         self.assertIn('class="record-calendar"', remainder.decode("utf-8"))
 
-    def test_field_status_dashboard_uses_latest_value_and_flags_target_miss(self):
+    def test_field_status_dashboard_uses_sensor_median_and_flags_target_miss(self):
         dashboard = web_server._build_field_status_dashboard(
             {
                 "growth_targets": {
@@ -1095,13 +1095,13 @@ class WebServerBasicUITest(unittest.TestCase):
                     "device_id": "SOI-old",
                     "scope_label": "1番畝",
                     "updated_at": "2026-07-14T01:00:00+00:00",
-                    "values": {"soil_moisture_percent": 48, "soil_ph": 6.0},
+                    "values": {"soil_moisture_percent": 28, "soil_ph": 6.0},
                 },
                 {
                     "device_id": "SOI-new",
                     "scope_label": "2番畝",
                     "updated_at": "2026-07-14T02:00:00+00:00",
-                    "values": {"last_soil_moisture": 29, "soil_ph": 6.2},
+                    "values": {"last_soil_moisture": 30, "soil_ph": 6.2},
                 },
             ],
         )
@@ -1111,7 +1111,10 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(dashboard["overall_state"], "attention")
         self.assertEqual(dashboard["counts"]["attention"], 1)
         self.assertEqual(moisture["value"], 29)
-        self.assertEqual(moisture["device_id"], "SOI-new")
+        self.assertEqual(moisture["device_id"], "")
+        self.assertEqual(moisture["source_count"], 2)
+        self.assertEqual(moisture["source_summary"], "2センサーの中央値 / 圃場内")
+        self.assertEqual(moisture["observed_at"], "2026-07-14T02:00:00+00:00")
         self.assertEqual(moisture["state"], "low")
         self.assertEqual(moisture["marker_pct"], 29)
         self.assertEqual(moisture["target_left_pct"], 35)
@@ -1573,6 +1576,48 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(selected["location_href"], f"/fields/{field['id']}")
         latest = web_server._field_latest_sensor_value("ENV-001", record)
         self.assertEqual(latest["values"]["air_temperature_c"], 24.5)
+
+    def test_field_latest_sensor_value_keeps_supported_fgt_rs485_sensors(self):
+        record = {
+            "name": "液肥管理機",
+            "device_kind": "FGT",
+            "last_status_at": "2026-08-09T01:00:00+00:00",
+            "last_status": {
+                "device_kind": "FGT",
+                "soil_moisture_percent": 26.4,
+                "rs485_devices": [
+                    {
+                        "index": 0,
+                        "enabled": True,
+                        "ok": True,
+                        "type": "soil",
+                        "name": "土壌センサー1",
+                        "location": "北",
+                        "moisture_percent": 26.4,
+                        "temperature_c": 30.2,
+                        "ec_us_cm": 109,
+                        "ph": 4.4,
+                    },
+                    {
+                        "index": 1,
+                        "enabled": True,
+                        "ok": True,
+                        "type": "soil",
+                        "name": "土壌センサー2",
+                        "location": "南",
+                        "moisture_percent": 63.2,
+                        "temperature_c": 34.9,
+                        "ec_us_cm": 174,
+                    },
+                ],
+            },
+        }
+
+        latest = web_server._field_latest_sensor_value("FGT-001", record)
+
+        sensors = latest["values"]["rs485_devices"]
+        self.assertEqual([sensor["moisture_percent"] for sensor in sensors], [26.4, 63.2])
+        self.assertNotIn("ph", sensors[0])
 
     def test_planting_calendar_edit_completion_and_question_flow(self):
         self.fake_user_preference_repository.records["local-user@ina.local"] = {

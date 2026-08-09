@@ -61,6 +61,7 @@ try:
 except KeyError as e:
     sys.exit(f"Please set {e} in .env file")
 TURSO_SYNC_INTERVAL = _int_env("TURSO_SYNC_INTERVAL", 600)
+TURSO_SYNC_ON_WRITE = _bool_env("TURSO_SYNC_ON_WRITE", False)
 
 try:
     LOCAL_STORAGE_BASE_DIR = os.environ["LOCAL_STORAGE_BASE_DIR"]
@@ -224,6 +225,7 @@ DEFAULT_SETTINGS = {
         "auth_token": TURSO_AUTH_TOKEN,
         "local_db_path": os.path.join(os.path.expanduser(WORK_DIR), "ina.db"),
         "sync_interval": TURSO_SYNC_INTERVAL,
+        "sync_on_write": TURSO_SYNC_ON_WRITE,
     },
     "storage_bucket": {
         "endpoint_url": S3_ENDPOINT_URL,

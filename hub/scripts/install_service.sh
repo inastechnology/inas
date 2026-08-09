@@ -14,6 +14,10 @@ TARGET_UNIT="/etc/systemd/system/${SERVICE_NAME}@.service"
 CLOUDFLARE_TUNNEL_SERVICE_NAME="inas-cloudflare-tunnel"
 CLOUDFLARE_TUNNEL_UNIT_SRC="$REPO_ROOT/systemd/${CLOUDFLARE_TUNNEL_SERVICE_NAME}.service"
 CLOUDFLARE_TUNNEL_TARGET_UNIT="/etc/systemd/system/${CLOUDFLARE_TUNNEL_SERVICE_NAME}.service"
+HEALTHCHECK_SERVICE_SRC="$REPO_ROOT/systemd/${SERVICE_NAME}-healthcheck@.service"
+HEALTHCHECK_TIMER_SRC="$REPO_ROOT/systemd/${SERVICE_NAME}-healthcheck@.timer"
+HEALTHCHECK_SERVICE_TARGET="/etc/systemd/system/${SERVICE_NAME}-healthcheck@.service"
+HEALTHCHECK_TIMER_TARGET="/etc/systemd/system/${SERVICE_NAME}-healthcheck@.timer"
 
 # By default use system user 'inas-usr' when not run via sudo; if the script
 # is run with sudo, prefer SUDO_USER as the service run-as user.
@@ -50,7 +54,7 @@ if [[ $(id -u) -ne 0 ]]; then
   exit 2
 fi
 
-for required_command in awk chown chmod curl getent grep readlink runuser systemctl; do
+for required_command in awk chown chmod curl getent grep ip nmcli ping readlink runuser systemctl; do
   if ! command -v "$required_command" >/dev/null 2>&1; then
     echo "Required deployment command is missing: $required_command" >&2
     exit 5
@@ -279,6 +283,16 @@ if [[ -f "$BACKUP_SERVICE_SRC" ]] && [[ -f "$BACKUP_TIMER_SRC" ]]; then
   chown root:root "$BACKUP_SERVICE_TARGET" "$BACKUP_TIMER_TARGET"
 fi
 
+if [[ ! -f "$HEALTHCHECK_SERVICE_SRC" ]] || [[ ! -f "$HEALTHCHECK_TIMER_SRC" ]]; then
+  echo "Healthcheck systemd units are missing." >&2
+  exit 3
+fi
+echo "Installing self-healing healthcheck systemd units"
+render_systemd_unit "$HEALTHCHECK_SERVICE_SRC" "$HEALTHCHECK_SERVICE_TARGET"
+render_systemd_unit "$HEALTHCHECK_TIMER_SRC" "$HEALTHCHECK_TIMER_TARGET"
+chmod 644 "$HEALTHCHECK_SERVICE_TARGET" "$HEALTHCHECK_TIMER_TARGET"
+chown root:root "$HEALTHCHECK_SERVICE_TARGET" "$HEALTHCHECK_TIMER_TARGET"
+
 install_cloudflare_tunnel_unit=false
 if [[ -f "$CLOUDFLARE_TUNNEL_UNIT_SRC" ]]; then
   echo "Installing Cloudflare Tunnel systemd unit to $CLOUDFLARE_TUNNEL_TARGET_UNIT"
@@ -345,13 +359,18 @@ if [[ "$install_cloudflare_tunnel_unit" == "true" ]]; then
   fi
 fi
 
+echo "Enabling the self-healing healthcheck timer"
+systemctl enable --now "${SERVICE_NAME}-healthcheck@main.timer"
+
 echo "Installation complete. Service statuses:"
 systemctl status "${SERVICE_NAME}@main" --no-pager || true
+systemctl status "${SERVICE_NAME}-healthcheck@main.timer" --no-pager || true
 if [[ "$install_cloudflare_tunnel_unit" == "true" ]] && [[ "$should_enable_cloudflare_tunnel" == "true" ]]; then
   systemctl status "${CLOUDFLARE_TUNNEL_SERVICE_NAME}" --no-pager || true
 fi
 
 echo "If the service failed to start, check logs with: journalctl -u ${SERVICE_NAME}@main -f"
+echo "If the healthcheck failed, check logs with: journalctl -u ${SERVICE_NAME}-healthcheck@main -f"
 echo "If the Cloudflare Tunnel service failed to start, check logs with: journalctl -u ${CLOUDFLARE_TUNNEL_SERVICE_NAME} -f"
 
 exit 0
