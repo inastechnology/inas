@@ -298,6 +298,17 @@ def authenticate_hub_request():
         and not request.path.startswith("/operations/api/")
         and not _is_same_origin_request()
     ):
+        app.logger.warning(
+            "Rejected browser write by same-origin policy: method=%s path=%s origin_present=%s sec_fetch_site=%s forwarded_host_present=%s "
+            "forwarded_proto_present=%s public_origin_configured=%s",
+            request.method,
+            request.path,
+            bool(request.headers.get("Origin", "").strip()),
+            request.headers.get("Sec-Fetch-Site", "").strip().lower() or "missing",
+            bool(request.headers.get("X-Forwarded-Host", "").strip()),
+            bool(request.headers.get("X-Forwarded-Proto", "").strip()),
+            bool(cloudflare_public_base_url()),
+        )
         return _access_error_response("same-origin request is required", 403)
     return None
 
@@ -343,6 +354,12 @@ def _access_error_response(message: str, status: int):
 
 
 def _is_same_origin_request() -> bool:
+    fetch_site = request.headers.get("Sec-Fetch-Site", "").strip().lower()
+    if fetch_site == "same-origin":
+        return True
+    if fetch_site in {"cross-site", "same-site"}:
+        return False
+
     origin = request.headers.get("Origin", "").strip()
     if not origin:
         return False

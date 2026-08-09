@@ -86,6 +86,79 @@ class WebServerSecurityTest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertIn("same-origin", response.get_json()["error"])
 
+    def test_cloudflare_write_accepts_same_origin_fetch_metadata_without_origin_header(self):
+        headers = self._headers(include_origin=False)
+        headers["Sec-Fetch-Site"] = "same-origin"
+        with (
+            patch.dict(os.environ, self.environment, clear=False),
+            patch.object(
+                user_context,
+                "_verify_access_token",
+                return_value={"email": "worker@example.com"},
+            ),
+        ):
+            response = self.client.post("/not-found", headers=headers)
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_cloudflare_admin_can_save_instagram_settings_with_same_origin_fetch_metadata(self):
+        class FakeSetting:
+            def __init__(self):
+                self.values = {
+                    "ai": {},
+                    "discord": {},
+                    "instagram": {"post_schedule_start": "09:01", "camera_id": ""},
+                }
+
+            def get(self, section):
+                return dict(self.values.get(section, {}))
+
+            def set(self, section, value):
+                self.values.setdefault(section, {}).update(value)
+
+        fake_setting = FakeSetting()
+        headers = self._headers("admin@example.com", include_origin=False)
+        headers["Sec-Fetch-Site"] = "same-origin"
+        with (
+            patch.dict(os.environ, self.environment, clear=False),
+            patch.object(
+                user_context,
+                "_verify_access_token",
+                return_value={"email": "admin@example.com"},
+            ),
+            patch.object(web_server, "setting", return_value=fake_setting),
+            patch.object(web_server, "reload_instagram_post_task_settings"),
+        ):
+            response = self.client.post(
+                "/settings",
+                headers=headers,
+                data={
+                    "settings_section": "instagram",
+                    "posting_paused": "on",
+                    "post_schedule_start": "09:01",
+                    "camera_id": "",
+                },
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(fake_setting.values["instagram"]["posting_paused"])
+
+    def test_cloudflare_write_rejects_cross_site_fetch_metadata_before_origin_fallback(self):
+        headers = self._headers()
+        headers["Sec-Fetch-Site"] = "cross-site"
+        with (
+            patch.dict(os.environ, self.environment, clear=False),
+            patch.object(
+                user_context,
+                "_verify_access_token",
+                return_value={"email": "worker@example.com"},
+            ),
+        ):
+            response = self.client.post("/not-found", headers=headers)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("same-origin", response.get_data(as_text=True))
+
     def test_cloudflare_write_accepts_public_origin_from_trusted_proxy_headers(self):
         headers = self._headers()
         headers.update(

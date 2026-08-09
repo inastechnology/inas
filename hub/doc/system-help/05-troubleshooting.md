@@ -2,7 +2,7 @@
 
 ## アプリ設定を保存できない
 
-Cloudflare経由でアプリ設定を保存するときは、Hub初期設定の公開hostnameと、ブラウザで開いているURLが一致している必要があります。`same-origin request is required` と表示された場合は、ブックマークやアドレス欄がHubの正式なHTTPS公開URLになっているか確認してください。現在のHubは、Cloudflare Tunnelが内部向けHostへ置き換える構成でも、登録済みの公開hostnameからの保存を受け付けます。
+Cloudflare経由でアプリ設定を保存するときは、Hub初期設定の公開hostnameと、ブラウザで開いているURLが一致している必要があります。`same-origin request is required` と表示された場合は、ブックマークやアドレス欄がHubの正式なHTTPS公開URLになっているか確認し、ページを再読み込みしてください。現在のHubはブラウザのsame-origin情報を優先するため、Cloudflare Tunnelが内部向けHostへ置き換える構成でも保存できます。外部サイトや別サブドメインからの書き込みは引き続き拒否します。
 
 ## 機器が見つからない
 
