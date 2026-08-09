@@ -268,6 +268,7 @@ DEFAULT_SETTINGS = {
         "user_id": INSTAGRAM_USER_ID,
         "access_token": INSTAGRAM_ACCESS_TOKEN,
         "sensor_id": INSTAGRAM_SENSOR_ID,
+        "posting_paused": False,
         "camera_id": INSTAGRAM_CAMERA_ID,
         "plant_position_prompt": INSTAGRAM_PLANT_POSITION_PROMPT,
         "admin_username": INSTAGRAM_ADMIN_USERNAME,
@@ -365,6 +366,7 @@ RUNTIME_SETTING_FIELDS = {
         "plant_calendar_prompt_template",
     },
     "instagram": {
+        "posting_paused",
         "post_schedule_start",
         "camera_id",
         "plant_position_prompt",

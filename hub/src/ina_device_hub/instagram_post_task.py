@@ -96,6 +96,9 @@ class InstagramPostTask:
         self.scheduler.reschedule_job("instagram-post", trigger="cron", hour=hour, minute=minute)
 
     def is_enabled(self):
+        if self.instagram_settings.get("posting_paused"):
+            logger.info("InstagramPostTask is paused by Hub settings")
+            return False
         required_values = [
             self.ai_settings.get("enabled"),
             self.instagram_settings.get("user_id"),
@@ -111,6 +114,9 @@ class InstagramPostTask:
         return True
 
     def _run(self):
+        if self.instagram_settings.get("posting_paused"):
+            logger.info("Skip Instagram post because automatic posting is paused in Hub settings")
+            return
         camera_id = self.instagram_settings.get("camera_id")
         state = self._load_state()
         instagram_client = InstagramClient(

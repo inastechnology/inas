@@ -7144,6 +7144,7 @@ def hub_settings_page():
             setting().set(
                 "instagram",
                 {
+                    "posting_paused": request.form.get("posting_paused") == "on",
                     "post_schedule_start": post_schedule_start,
                     "camera_id": camera_id,
                     "plant_position_prompt": request.form.get("plant_position_prompt", "").strip(),
@@ -7173,6 +7174,7 @@ def hub_settings_page():
         "image_key_configured": setting().secret_configured("ai", "image_analyze_api_key"),
     }
     visible_instagram = {
+        "posting_paused": bool(current_instagram.get("posting_paused", False)),
         "post_schedule_start": current_instagram.get("post_schedule_start", "09:01"),
         "camera_id": current_instagram.get("camera_id", ""),
         "plant_position_prompt": current_instagram.get("plant_position_prompt", ""),

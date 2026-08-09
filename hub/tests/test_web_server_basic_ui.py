@@ -473,6 +473,8 @@ class WebServerBasicUITest(unittest.TestCase):
             if secret:
                 self.assertNotIn(secret, html)
         self.assertIn('name="post_schedule_start"', html)
+        self.assertIn('name="posting_paused"', html)
+        self.assertIn("Instagramへの自動投稿を一時停止する", html)
         self.assertIn('name="camera_id"', html)
         self.assertIn('id="instagram-camera-select"', html)
         self.assertIn("data-searchable-select", html)
@@ -663,6 +665,27 @@ class WebServerBasicUITest(unittest.TestCase):
         response = self.client.post("/settings", data={"settings_section": "instagram", "post_schedule_start": "invalid"})
 
         self.assertEqual(response.status_code, 400)
+
+    def test_instagram_automatic_posting_can_be_paused_and_resumed(self):
+        current_instagram = dict(web_server.setting().get("instagram"))
+        form = {
+            "settings_section": "instagram",
+            "post_schedule_start": current_instagram.get("post_schedule_start", "09:01"),
+            "camera_id": current_instagram.get("camera_id", ""),
+            "plant_position_prompt": current_instagram.get("plant_position_prompt", ""),
+        }
+        try:
+            with patch.object(web_server, "reload_instagram_post_task_settings") as reload_settings:
+                paused = self.client.post("/settings", data={**form, "posting_paused": "on"})
+                resumed = self.client.post("/settings", data=form)
+
+            self.assertEqual(paused.status_code, 302)
+            self.assertEqual(paused.headers["Location"], "/settings?section=instagram&saved=1")
+            self.assertEqual(resumed.status_code, 302)
+            self.assertFalse(web_server.setting().get("instagram")["posting_paused"])
+            self.assertEqual(reload_settings.call_count, 2)
+        finally:
+            web_server.setting().set("instagram", current_instagram)
 
     def test_instagram_profile_is_fetched_without_returning_access_token(self):
         class FakeSetting:

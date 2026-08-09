@@ -2,7 +2,7 @@ import json
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("TURSO_DATABASE_URL", "x")
@@ -64,6 +64,20 @@ class InstagramClientTest(unittest.TestCase):
         task.instagram_settings = {"post_schedule_start": "07:45"}
 
         self.assertEqual(task._parse_schedule(), (7, 45))
+
+    def test_instagram_post_task_is_disabled_while_posting_is_paused(self):
+        task = InstagramPostTask.__new__(InstagramPostTask)
+        task.ai_settings = {"enabled": True}
+        task.instagram_settings = {
+            "posting_paused": True,
+            "user_id": "1784",
+            "access_token": "secret-token",
+            "camera_id": "camera-1",
+        }
+        task.storage_connector = Mock()
+
+        self.assertFalse(task.is_enabled())
+        task.storage_connector.is_temporary_storage_configured.assert_not_called()
 
 
 if __name__ == "__main__":

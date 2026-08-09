@@ -102,6 +102,18 @@ class SettingTest(unittest.TestCase):
             self.assertFalse(reloaded["plant_calendar_web_knowledge_enabled"])
             self.assertEqual(reloaded["plant_calendar_web_knowledge_cache_days"], 45)
 
+    def test_instagram_posting_pause_is_runtime_editable(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.json"
+            current = Setting(path)
+
+            current.set("instagram", {"posting_paused": True})
+
+            reloaded = Setting(path).get("instagram")
+            persisted = json.loads(path.read_text())
+            self.assertTrue(reloaded["posting_paused"])
+            self.assertTrue(persisted["instagram"]["posting_paused"])
+
     def test_discord_preferences_are_runtime_editable_without_persisting_webhook(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "config.json"

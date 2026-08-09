@@ -323,11 +323,18 @@
           </form>
         </section>
 
-        <section class="settings-section" id="instagram" data-settings-section="instagram" data-search="Instagram インスタグラム 投稿 カメラ アカウント 時刻 prompt プロンプト">
+        <section class="settings-section" id="instagram" data-settings-section="instagram" data-search="Instagram インスタグラム 投稿 スキップ 一時停止 カメラ アカウント 時刻 prompt プロンプト">
           <div class="section-heading"><div><h2>Instagram</h2><p>定点カメラからの自動投稿に固有の設定です。</p></div></div>
           <form method="post" action="/settings" id="instagram-settings-form" data-stateful-form data-pristine-message="Instagram設定は変更されていません。">
             <input type="hidden" name="settings_section" value="instagram">
             <div class="setting-list">
+              <div class="setting-row" data-setting-row data-search="自動投稿 スキップ 一時停止 停止 pause">
+                <div class="setting-label with-help"><span>自動投稿</span><details class="context-help"><summary aria-label="Instagram自動投稿の一時停止について説明を開く">?</summary><div class="context-help-panel" role="note"><strong>今後の投稿をスキップ</strong><p>一時停止中は、設定時刻になっても新しい投稿処理を開始しません。撮影済み画像や前回の投稿情報は削除されません。</p></div></details></div>
+                <div class="setting-control">
+                  <label class="toggle"><input type="checkbox" name="posting_paused"{% if instagram.posting_paused %} checked{% endif %}>Instagramへの自動投稿を一時停止する</label>
+                  {% if instagram.posting_paused %}<p class="disabled-reason">現在は一時停止中です。チェックを外して保存すると、次の設定時刻から再開します。</p>{% endif %}
+                </div>
+              </div>
               <div class="setting-row" data-setting-row data-search="投稿 開始 時刻 schedule 日次">
                 <div class="setting-label with-help"><span id="post-schedule-start-label">投稿処理開始時刻</span><details class="context-help"><summary aria-label="投稿処理開始時刻の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>Instagram専用の時刻</strong><p>Instagramの自動投稿処理を開始する時刻です。他の日次処理には使用しません。</p></div></details></div>
                 <div class="setting-control"><input type="time" name="post_schedule_start" value="{{ instagram.post_schedule_start or '09:01' }}" required aria-labelledby="post-schedule-start-label"></div>
