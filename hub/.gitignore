@@ -12,3 +12,12 @@ wheels/
 .env*
 .idea
 .data
+
+# Local Hub runtime state
+/.camera_device_list.json
+/.device_configs.json
+/.device_list.json
+/.location_list.json
+
+# Local agent marker
+/.codex
