@@ -145,6 +145,7 @@ FIELDS = (
     ConfigurationField("DISCORD_NOTIFY_DEVICE_OFFLINE", "device offline通知", "notification", "true"),
     ConfigurationField("DISCORD_NOTIFY_WATERING_MISSING", "潅水なし通知", "notification", "true"),
     ConfigurationField("DISCORD_NOTIFY_SOIL_CALIBRATION_SUGGESTED", "土壌水分計の調整候補通知", "notification", "true"),
+    ConfigurationField("DISCORD_NOTIFY_POST_WATERING_MOISTURE_LOW", "潅水後の土壌水分不足通知", "notification", "true"),
     ConfigurationField("DISCORD_NOTIFY_PLANT_TASKS", "栽培作業の日次通知", "notification", "true"),
     ConfigurationField("DISCORD_PLANT_TASK_NOTIFY_NEW", "新規栽培作業通知", "notification", "true"),
     ConfigurationField("DISCORD_PLANT_TASK_REMINDER_DAYS_BEFORE", "栽培作業の事前通知日数", "notification", "7"),

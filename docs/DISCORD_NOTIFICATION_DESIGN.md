@@ -24,6 +24,8 @@ this order:
   the annual cultivation calendar.
 - MQTT activity notifications are an advanced troubleshooting option and are
   disabled by default.
+- A post-watering low-moisture alert is sent at most once for each confirmed
+  watering event. A later sensor reading does not repeat the same alert.
 
 The six-card limit also leaves room below Discord's current limits of ten
 embeds per webhook message and 6,000 combined embed characters. See the
@@ -50,6 +52,9 @@ Plant task links open the exact action:
 Device alerts open the relevant device tab, such as overview, settings, or
 diagnostics.
 
+Post-watering low-moisture alerts open the monitoring tab of the sensor that
+was selected for the decision, rather than an unrelated aggregate view.
+
 ## Administrator controls
 
 The Hub application settings provide:
@@ -60,6 +65,8 @@ The Hub application settings provide:
 - plant-task digest, new-task, advance-day, start-day, and active-window
   preferences;
 - new-device, offline-device, missing-watering, and calibration suggestions;
+- a guided post-watering check that pairs one watering device with one soil
+  moisture sensor and a minimum expected percentage;
 - MQTT activity under advanced settings.
 
 `DISCORD_WEBHOOK_URL` remains infrastructure configuration. It is never shown
@@ -71,4 +78,3 @@ Runtime settings are merged with defaults. Existing `config.json` files that do
 not contain the `discord` section therefore continue to load. Notification
 preferences are written only after an administrator saves them. The webhook
 URL is excluded by the runtime allowlist.
-

@@ -168,6 +168,7 @@ DISCORD_NOTIFY_NEW_DEVICE = _bool_env("DISCORD_NOTIFY_NEW_DEVICE", True)
 DISCORD_NOTIFY_DEVICE_OFFLINE = _bool_env("DISCORD_NOTIFY_DEVICE_OFFLINE", True)
 DISCORD_NOTIFY_WATERING_MISSING = _bool_env("DISCORD_NOTIFY_WATERING_MISSING", True)
 DISCORD_NOTIFY_SOIL_CALIBRATION_SUGGESTED = _bool_env("DISCORD_NOTIFY_SOIL_CALIBRATION_SUGGESTED", True)
+DISCORD_NOTIFY_POST_WATERING_MOISTURE_LOW = _bool_env("DISCORD_NOTIFY_POST_WATERING_MOISTURE_LOW", True)
 DISCORD_NOTIFY_PLANT_TASKS = _bool_env("DISCORD_NOTIFY_PLANT_TASKS", True)
 DISCORD_PLANT_TASK_NOTIFY_NEW = _bool_env("DISCORD_PLANT_TASK_NOTIFY_NEW", True)
 DISCORD_PLANT_TASK_REMINDER_DAYS_BEFORE = _int_env("DISCORD_PLANT_TASK_REMINDER_DAYS_BEFORE", 7)
@@ -326,6 +327,7 @@ DEFAULT_SETTINGS = {
         "notify_device_offline": DISCORD_NOTIFY_DEVICE_OFFLINE,
         "notify_watering_missing": DISCORD_NOTIFY_WATERING_MISSING,
         "notify_soil_calibration_suggested": DISCORD_NOTIFY_SOIL_CALIBRATION_SUGGESTED,
+        "notify_post_watering_moisture_low": DISCORD_NOTIFY_POST_WATERING_MOISTURE_LOW,
         "notify_plant_tasks": DISCORD_NOTIFY_PLANT_TASKS,
         "plant_task_notify_new": DISCORD_PLANT_TASK_NOTIFY_NEW,
         "plant_task_reminder_days_before": DISCORD_PLANT_TASK_REMINDER_DAYS_BEFORE,
@@ -337,6 +339,9 @@ DEFAULT_SETTINGS = {
         "interval_seconds": HEALTH_MONITOR_INTERVAL_SECONDS,
         "device_offline_after_hours": HEALTH_DEVICE_OFFLINE_AFTER_HOURS,
         "watering_missing_after_days": HEALTH_WATERING_MISSING_AFTER_DAYS,
+    },
+    "post_watering_moisture": {
+        "rules": [],
     },
     "switchbot": {
         "open_token": SWITCHBOT_OPEN_TOKEN,
@@ -383,11 +388,15 @@ RUNTIME_SETTING_FIELDS = {
         "notify_device_offline",
         "notify_watering_missing",
         "notify_soil_calibration_suggested",
+        "notify_post_watering_moisture_low",
         "notify_plant_tasks",
         "plant_task_notify_new",
         "plant_task_reminder_days_before",
         "plant_task_notify_on_start_day",
         "plant_task_notify_during_window",
+    },
+    "post_watering_moisture": {
+        "rules",
     },
 }
 

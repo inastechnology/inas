@@ -152,6 +152,9 @@ class FakeDeviceConfigService:
     def find_record(self, device_id):
         return self.records.get(device_id)
 
+    def list_statuses(self, device_id, limit=100):
+        return deepcopy((self.records.get(device_id) or {}).get("status_history") or [])[-limit:]
+
     def search_records(self, *, query="", states=None, device_kinds=None, page=1, page_size=50):
         items = {
             device_id: record
@@ -490,6 +493,99 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('class="notification-switch-control"', html)
         self.assertIn("https://hub.example.com", html)
         self.assertNotIn("127.0.0.1", html)
+        self.assertIn("潅水後の水分チェック", html)
+        self.assertIn('href="/settings/post-watering-moisture"', html)
+
+    def test_post_watering_moisture_wizard_selects_sensor_and_saves_rule(self):
+        current_rules = deepcopy(web_server.setting().get("post_watering_moisture"))
+        self.fake_device_config_service.records = {
+            "WTR-001": {
+                "name": "北畝の潅水機",
+                "location": "1号ハウス",
+                "state": "active",
+                "device_kind": "WTR",
+                "last_status": {"last_soil_moisture": 31},
+            },
+            "SOI-001": {
+                "name": "北畝の水分計",
+                "location": "1号ハウス 北畝",
+                "state": "active",
+                "device_kind": "SOI",
+                "last_status": {"soil_moisture_percent": 44},
+            },
+            "SOI-002": {
+                "name": "南畝の水分計",
+                "location": "1号ハウス 南畝",
+                "state": "active",
+                "device_kind": "SOI",
+                "last_status": {"soil_moisture_percent": 61},
+            },
+        }
+        try:
+            page = self.client.get("/settings/post-watering-moisture?watering_device_id=WTR-001")
+
+            self.assertEqual(page.status_code, 200)
+            html = page.get_data(as_text=True)
+            self.assertIn("潅水後に、水が届いたか確認する", html)
+            self.assertIn("北畝の水分計", html)
+            self.assertIn("南畝の水分計", html)
+            self.assertIn('name="sensor_device_id" value="SOI-001"', html)
+            self.assertIn('name="sensor_device_id" value="SOI-002"', html)
+            self.assertIn("現在 44.0%", html)
+
+            saved = self.client.post(
+                "/settings/post-watering-moisture",
+                data={
+                    "watering_device_id": "WTR-001",
+                    "sensor_device_id": "SOI-002",
+                    "minimum_percent": "53.5",
+                    "enabled": "on",
+                },
+            )
+
+            self.assertEqual(saved.status_code, 302)
+            self.assertEqual(saved.headers["Location"], "/settings/post-watering-moisture?watering_device_id=WTR-001&saved=1")
+            rules = web_server.setting().get("post_watering_moisture")["rules"]
+            self.assertEqual(rules[0]["sensor_device_id"], "SOI-002")
+            self.assertEqual(rules[0]["minimum_percent"], 53.5)
+            self.assertTrue(rules[0]["enabled"])
+
+            reloaded = self.client.get(saved.headers["Location"])
+            self.assertEqual(reloaded.status_code, 200)
+            reloaded_html = reloaded.get_data(as_text=True)
+            self.assertIn("潅水後の水分チェック設定を保存しました", reloaded_html)
+            self.assertIn("北畝の潅水機", reloaded_html)
+            self.assertIn("南畝の水分計", reloaded_html)
+            self.assertIn("53.5%未満 / 使用中", reloaded_html)
+        finally:
+            web_server.setting().set("post_watering_moisture", current_rules)
+
+    def test_post_watering_moisture_wizard_rejects_operator(self):
+        headers = {"Cf-Access-Authenticated-User-Email": "worker@example.com"}
+        with patch.dict(os.environ, {"HUB_ADMIN_EMAILS": ""}):
+            response = self.client.get("/settings/post-watering-moisture", headers=headers)
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_watering_device_detail_links_to_post_watering_wizard(self):
+        self.fake_device_config_service.records = {
+            "WTR-001": {
+                "name": "北畝の潅水機",
+                "location": "1号ハウス",
+                "state": "active",
+                "device_kind": "WTR",
+                "config": {"moisture_threshold": 35, "schedules": []},
+                "last_status": {"device_kind": "WTR", "last_soil_moisture": 41},
+                "status_history": [],
+            }
+        }
+
+        response = self.client.get("/mqtt-devices/WTR-001")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("潅水後に、水が届いたかDiscordで確認", html)
+        self.assertIn('href="/settings/post-watering-moisture?watering_device_id=WTR-001"', html)
 
     def test_discord_notification_preferences_can_be_saved_and_all_disabled(self):
         current_discord = dict(web_server.setting().get("discord"))

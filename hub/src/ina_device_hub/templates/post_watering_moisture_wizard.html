@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>潅水後の水分チェック設定 - INA Device Hub</title>
+    <style>
+      :root { --ink:#203029; --muted:#64746b; --line:#cedbd2; --green:#176b52; --green-dark:#10533e; --green-soft:#e8f4ec; --blue:#26758b; --amber:#966113; --amber-soft:#fff5df; --bg:#edf2ee; --surface:#fff; }
+      * { box-sizing:border-box; }
+      [hidden] { display:none !important; }
+      body { min-width:320px; min-height:100vh; margin:0; color:var(--ink); background:var(--bg); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+      button,input { font:inherit; }
+      a { color:var(--green); }
+      .page-header { border-bottom:1px solid var(--line); background:#fff; }
+      .header-inner,.wizard-shell { width:min(960px,calc(100% - 36px)); margin:auto; }
+      .header-inner { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:17px 0; }
+      .brand { color:#53655b; font-size:11px; font-weight:900; text-decoration:none; }
+      .back-link { font-size:12px; font-weight:850; text-decoration:none; }
+      .wizard-shell { padding:24px 0 52px; }
+      .wizard-hero { display:grid; grid-template-columns:minmax(0,1fr) 220px; gap:24px; align-items:center; padding:24px; overflow:hidden; border:1px solid #bfd4c7; border-radius:16px; background:linear-gradient(135deg,#fbfefc,#e1f0e6); box-shadow:0 14px 36px rgba(28,72,51,.08); }
+      .eyebrow { color:#527166; font-size:10px; font-weight:950; letter-spacing:.1em; }
+      h1 { margin:6px 0 9px; color:#174a36; font-size:clamp(25px,4vw,36px); line-height:1.2; }
+      .wizard-hero p { margin:0; color:#52665b; font-size:13px; line-height:1.75; }
+      .wizard-hero img { width:100%; height:145px; border-radius:13px; object-fit:cover; }
+      .notice,.error,.connection-warning { margin:16px 0 0; padding:12px 14px; border-radius:8px; font-size:12px; line-height:1.6; }
+      .notice { color:#18553d; background:#dff2e6; }
+      .error { color:#873d34; background:#fde9e7; }
+      .connection-warning { border-left:4px solid #bd7a1c; color:#68470f; background:var(--amber-soft); }
+      .wizard-progress { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:18px 0; padding:0; list-style:none; }
+      .wizard-progress li { display:grid; grid-template-columns:30px minmax(0,1fr); gap:8px; align-items:center; padding:9px; border:1px solid #d4ded7; border-radius:9px; color:#68766e; background:#f8faf8; font-size:11px; font-weight:800; }
+      .wizard-progress span { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; color:#53635a; background:#e4e9e5; }
+      .wizard-progress li[aria-current="step"] { border-color:#4b9672; color:#174c36; background:#e8f5ec; }
+      .wizard-progress li[aria-current="step"] span { color:#fff; background:var(--green); }
+      .wizard-card { padding:24px; border:1px solid var(--line); border-radius:14px; background:var(--surface); box-shadow:0 12px 30px rgba(28,57,42,.07); }
+      .wizard-step-panel { display:grid; gap:18px; }
+      .wizard-enhanced .wizard-step-panel:not(.active) { display:none; }
+      .step-heading { display:grid; grid-template-columns:46px minmax(0,1fr); gap:13px; align-items:center; }
+      .step-icon { display:grid; place-items:center; width:46px; height:46px; border-radius:13px; color:#fff; background:var(--green); font-size:23px; }
+      .step-heading h2 { margin:0; color:#204f3b; font-size:20px; }
+      .step-heading p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
+      .choice-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+      .choice-card { position:relative; display:grid; grid-template-columns:22px minmax(0,1fr); gap:11px; min-height:92px; padding:14px; border:2px solid #d5dfd8; border-radius:11px; background:#fff; cursor:pointer; transition:border-color .15s ease,background-color .15s ease,transform .15s ease; }
+      .choice-card:hover { border-color:#80ab92; transform:translateY(-1px); }
+      .choice-card:has(input:checked) { border-color:#2b825b; background:#e9f5ed; box-shadow:inset 0 0 0 1px #2b825b; }
+      .choice-card input { width:19px; height:19px; margin:2px 0 0; accent-color:var(--green); }
+      .choice-card strong,.choice-card small,.choice-card span { display:block; }
+      .choice-card small { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
+      .latest-value { margin-top:7px; color:var(--blue); font-size:12px; font-weight:900; }
+      .empty { padding:22px; border:1px dashed #b8c5bd; border-radius:10px; color:var(--muted); background:#f8faf8; font-size:12px; line-height:1.7; text-align:center; }
+      .threshold-panel { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,.7fr); gap:16px; align-items:stretch; }
+      .threshold-input { display:grid; place-items:center; gap:7px; min-height:180px; padding:20px; border:1px solid #bbd7c7; border-radius:12px; background:linear-gradient(145deg,#f5fbf7,#e4f2e8); text-align:center; }
+      .threshold-input label { color:#315f4c; font-size:12px; font-weight:850; }
+      .percent-control { display:flex; align-items:center; justify-content:center; gap:7px; }
+      .percent-control input { width:120px; min-height:66px; padding:7px; border:2px solid #4b9672; border-radius:10px; color:#174c36; background:#fff; font-size:36px; font-weight:950; text-align:center; }
+      .percent-control span { color:#37604e; font-size:24px; font-weight:900; }
+      .threshold-help { display:grid; align-content:center; gap:11px; padding:18px; border-radius:12px; color:#455b50; background:#f4f7f5; font-size:12px; line-height:1.65; }
+      .threshold-help strong { color:#234f3c; }
+      .enable-check { display:flex; align-items:flex-start; gap:10px; padding:13px; border:1px solid #d2ded6; border-radius:9px; background:#fff; font-size:12px; font-weight:800; line-height:1.5; }
+      .enable-check input { flex:0 0 auto; width:20px; height:20px; margin:0; accent-color:var(--green); }
+      .review-card { display:grid; gap:0; overflow:hidden; border:1px solid #bed5c7; border-radius:12px; background:#f8fcf9; }
+      .review-row { display:grid; grid-template-columns:180px minmax(0,1fr); gap:14px; padding:14px 16px; border-top:1px solid #dce7df; }
+      .review-row:first-child { border-top:0; }
+      .review-row span { color:var(--muted); font-size:11px; font-weight:800; }
+      .review-row strong { color:#214f3b; overflow-wrap:anywhere; }
+      .review-explanation { margin:0; padding:14px; border-left:4px solid #4a9270; color:#41584c; background:#edf7f0; font-size:12px; line-height:1.65; }
+      .wizard-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:20px; padding-top:17px; border-top:1px solid #e1e7e2; }
+      .action-group { display:flex; gap:9px; }
+      button,.button-link { min-height:42px; padding:9px 15px; border:1px solid var(--green); border-radius:7px; color:var(--green); background:#fff; cursor:pointer; font-size:12px; font-weight:850; text-decoration:none; }
+      button.primary { color:#fff; background:var(--green); }
+      button.primary:hover { background:var(--green-dark); }
+      button:disabled { border-color:#b9c4bd; color:#8b958f; background:#eff2f0; cursor:not-allowed; }
+      .configured-rules { display:grid; gap:10px; margin-top:18px; padding:18px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+      .configured-rules h2 { margin:0; font-size:16px; }
+      .rule-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+      .rule-list a { display:flex; flex-wrap:wrap; justify-content:space-between; gap:5px 12px; padding:11px 12px; border:1px solid #d8e1db; border-radius:8px; color:inherit; background:#f9fbf9; text-decoration:none; font-size:12px; }
+      .rule-list strong { color:#245942; }
+      @media (max-width:700px) {
+        .header-inner,.wizard-shell { width:min(100% - 22px,960px); }
+        .wizard-hero { grid-template-columns:1fr; padding:19px; }
+        .wizard-hero img { display:none; }
+        .wizard-progress { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .choice-grid,.threshold-panel { grid-template-columns:1fr; }
+        .wizard-card { padding:17px; }
+        .review-row { grid-template-columns:1fr; gap:4px; }
+        .wizard-actions { align-items:stretch; flex-direction:column; }
+        .action-group { width:100%; }
+        .action-group button { flex:1; }
+      }
+    </style>
+    <link rel="stylesheet" href="/static/hub-ui.css">
+  </head>
+  <body class="hub-shell hub-settings {{ accessibility_body_class }}">
+    <header class="page-header"><div class="header-inner"><a class="brand" href="/">INA Device Hub</a><a class="back-link" href="/settings?section=notifications#notifications">通知設定へ戻る</a></div></header>
+    <main class="wizard-shell">
+      <section class="wizard-hero"><div><span class="eyebrow">POST-WATERING CHECK</span><h1>潅水後に、水が届いたか確認する</h1><p>潅水を始めるしきい値とは別に、潅水後に到達してほしい最低水分率を設定します。選んだセンサーの次の有効な測定値が下限未満なら、Discordへ1回だけ知らせます。</p></div><img src="/static/ui-illustrations/controller-flow.png" alt="潅水機とセンサーのつながりを示すイラスト"></section>
+      {% if saved %}<p class="notice" role="status">潅水後の水分チェック設定を保存しました。次の潅水から判定します。</p>{% endif %}
+      {% if error_message %}<p class="error" role="alert">{{ error_message }}</p>{% endif %}
+      {% if not discord.webhook_configured or not discord.enabled %}<p class="connection-warning">設定は保存できますが、{% if not discord.webhook_configured %}Discord Webhookが未設定です{% elif not discord.enabled %}すべてのDiscord通知が停止中です{% endif %}。通知設定で準備を確認してください。</p>{% endif %}
+
+      <ol class="wizard-progress" aria-label="設定の進み具合">
+        <li data-progress-step="0" aria-current="step"><span>1</span>潅水機</li>
+        <li data-progress-step="1"><span>2</span>センサー</li>
+        <li data-progress-step="2"><span>3</span>下限</li>
+        <li data-progress-step="3"><span>4</span>確認</li>
+      </ol>
+
+      <form method="post" class="wizard-card" id="post-watering-wizard">
+        <section class="wizard-step-panel active" data-wizard-step="0" aria-labelledby="watering-device-step-title">
+          <div class="step-heading"><span class="step-icon" aria-hidden="true">💧</span><div><h2 id="watering-device-step-title">どの潅水機を確認しますか？</h2><p>この機器が実際に潅水したときだけ、選択したセンサーの判定を始めます。</p></div></div>
+          {% if watering_devices %}<div class="choice-grid">{% for device in watering_devices %}<label class="choice-card"><input type="radio" name="watering_device_id" value="{{ device.id }}" data-device-name="{{ device.name }}" data-device-location="{{ device.location }}"{% if selected.watering_device_id == device.id %} checked{% endif %} required><span><strong>{{ device.name }}</strong><small>{{ device.location }} / {{ device.device_kind }}<br>{{ device.id }}</small></span></label>{% endfor %}</div>{% else %}<div class="empty">利用中の潅水機がありません。先に機器を登録して「利用中」にしてください。</div>{% endif %}
+        </section>
+
+        <section class="wizard-step-panel" data-wizard-step="1" aria-labelledby="soil-sensor-step-title">
+          <div class="step-heading"><span class="step-icon" aria-hidden="true">🌱</span><div><h2 id="soil-sensor-step-title">判定に使う土壌水分センサーを選ぶ</h2><p>複数ある場合は、潅水対象の根域を代表する1台を選んでください。</p></div></div>
+          {% if soil_sensors %}<div class="choice-grid">{% for sensor in soil_sensors %}<label class="choice-card"><input type="radio" name="sensor_device_id" value="{{ sensor.id }}" data-device-name="{{ sensor.name }}" data-device-location="{{ sensor.location }}"{% if selected.sensor_device_id == sensor.id %} checked{% endif %} required><span><strong>{{ sensor.name }}</strong><small>{{ sensor.location }} / {{ sensor.device_kind }}<br>{{ sensor.id }}</small><span class="latest-value">{% if sensor.latest_percent is not none %}現在 {{ sensor.latest_percent|round(1) }}%{% else %}測定値はまだありません{% endif %}</span></span></label>{% endfor %}</div>{% else %}<div class="empty">土壌水分を測定できる利用中のセンサーがありません。SOI、ENV、WTR、WRS、FGTの土壌水分センサーを登録してください。</div>{% endif %}
+        </section>
+
+        <section class="wizard-step-panel" data-wizard-step="2" aria-labelledby="threshold-step-title">
+          <div class="step-heading"><span class="step-icon" aria-hidden="true">％</span><div><h2 id="threshold-step-title">潅水後に到達してほしい最低水分率</h2><p>この値と同じか上なら正常、下回ったときだけDiscordへ知らせます。</p></div></div>
+          <div class="threshold-panel"><div class="threshold-input"><label for="minimum-percent">最低水分率</label><div class="percent-control"><input id="minimum-percent" name="minimum_percent" type="number" min="0" max="100" step="0.1" inputmode="decimal" value="{{ '%g'|format(selected.minimum_percent) }}" required><span>%</span></div></div><div class="threshold-help"><strong>迷った場合</strong><span>十分に潅水した直後の実測値を基準にします。最初は少し低めに設定し、土質やセンサー位置に合わせて見直してください。</span><span>これは「乾いたため潅水を始める値」ではありません。</span></div></div>
+          <label class="enable-check"><input type="checkbox" name="enabled"{% if selected.enabled %} checked{% endif %}><span>この潅水後チェックを使用する<br><small>OFFで保存すると、潅水機とセンサーの組み合わせを残したまま通知判定を停止します。</small></span></label>
+        </section>
+
+        <section class="wizard-step-panel" data-wizard-step="3" aria-labelledby="review-step-title">
+          <div class="step-heading"><span class="step-icon" aria-hidden="true">✓</span><div><h2 id="review-step-title">設定内容を確認</h2><p>保存後は、次に実行された潅水からこの組み合わせで確認します。</p></div></div>
+          <div class="review-card"><div class="review-row"><span>潅水を確認する機器</span><strong id="review-watering-device">—</strong></div><div class="review-row"><span>判定に使うセンサー</span><strong id="review-sensor-device">—</strong></div><div class="review-row"><span>Discordへ知らせる条件</span><strong id="review-threshold">—</strong></div><div class="review-row"><span>状態</span><strong id="review-enabled">—</strong></div></div>
+          <p class="review-explanation">潅水機から実行済みの状態を受け取った後、選択センサーから最初に届く有効な土壌水分値を判定します。同じ潅水では通知を繰り返しません。</p>
+        </section>
+
+        <div class="wizard-actions"><a class="button-link" href="/settings?section=notifications#notifications">キャンセル</a><div class="action-group"><button type="button" id="wizard-back" hidden>戻る</button><button type="button" class="primary" id="wizard-next"{% if not watering_devices or not soil_sensors %} disabled{% endif %}>次へ</button><button type="submit" class="primary" id="wizard-submit" hidden{% if not watering_devices or not soil_sensors %} disabled{% endif %}>この設定を保存</button></div></div>
+      </form>
+
+      {% if rules %}<section class="configured-rules"><h2>設定済みの潅水機</h2><ul class="rule-list">{% for rule in rules %}<li><a href="/settings/post-watering-moisture?watering_device_id={{ rule.watering_device_id|urlencode }}"><span><strong>{{ rule.watering_device_name }}</strong> → {{ rule.sensor_device_name }}</span><span>{{ rule.minimum_percent }}%未満 / {% if rule.enabled %}使用中{% else %}停止中{% endif %}</span></a></li>{% endfor %}</ul></section>{% endif %}
+    </main>
+    <script>
+      document.body.classList.add("wizard-enhanced");
+      const form = document.getElementById("post-watering-wizard");
+      const panels = [...form.querySelectorAll("[data-wizard-step]")];
+      const progress = [...document.querySelectorAll("[data-progress-step]")];
+      const backButton = document.getElementById("wizard-back");
+      const nextButton = document.getElementById("wizard-next");
+      const submitButton = document.getElementById("wizard-submit");
+      const savedRules = {{ rules|tojson }};
+      let currentStep = 0;
+
+      const selectedInput = (name) => form.querySelector(`input[name="${name}"]:checked`);
+      const updateReview = () => {
+        const watering = selectedInput("watering_device_id");
+        const sensor = selectedInput("sensor_device_id");
+        const threshold = Number(form.elements.minimum_percent.value);
+        document.getElementById("review-watering-device").textContent = watering ? `${watering.dataset.deviceName} / ${watering.dataset.deviceLocation}` : "未選択";
+        document.getElementById("review-sensor-device").textContent = sensor ? `${sensor.dataset.deviceName} / ${sensor.dataset.deviceLocation}` : "未選択";
+        document.getElementById("review-threshold").textContent = Number.isFinite(threshold) ? `${threshold}%未満で通知` : "未入力";
+        document.getElementById("review-enabled").textContent = form.elements.enabled.checked ? "使用する" : "停止したまま保存";
+      };
+      const showStep = (step, moveFocus = true) => {
+        currentStep = Math.max(0, Math.min(panels.length - 1, step));
+        panels.forEach((panel, index) => panel.classList.toggle("active", index === currentStep));
+        progress.forEach((item, index) => index === currentStep ? item.setAttribute("aria-current", "step") : item.removeAttribute("aria-current"));
+        backButton.hidden = currentStep === 0;
+        nextButton.hidden = currentStep === panels.length - 1;
+        submitButton.hidden = currentStep !== panels.length - 1;
+        if (currentStep === panels.length - 1) updateReview();
+        if (moveFocus) {
+          const stepHeading = panels[currentStep].querySelector("h2");
+          stepHeading?.setAttribute("tabindex", "-1");
+          stepHeading?.focus({preventScroll:true});
+        }
+        window.scrollTo({top:Math.max(0, form.offsetTop - 100), behavior:"smooth"});
+      };
+      const stepIsValid = () => {
+        if (currentStep === 0) return Boolean(selectedInput("watering_device_id"));
+        if (currentStep === 1) return Boolean(selectedInput("sensor_device_id"));
+        if (currentStep === 2) return form.elements.minimum_percent.reportValidity();
+        return true;
+      };
+      nextButton.addEventListener("click", () => { if (stepIsValid()) showStep(currentStep + 1); });
+      backButton.addEventListener("click", () => showStep(currentStep - 1));
+      form.querySelectorAll('input[name="watering_device_id"]').forEach((input) => input.addEventListener("change", () => {
+        const rule = savedRules.find((item) => item.watering_device_id === input.value);
+        const preferredSensorId = rule?.sensor_device_id || (form.querySelector(`input[name="sensor_device_id"][value="${CSS.escape(input.value)}"]`) ? input.value : "");
+        const preferredSensor = preferredSensorId ? form.querySelector(`input[name="sensor_device_id"][value="${CSS.escape(preferredSensorId)}"]`) : null;
+        if (preferredSensor) preferredSensor.checked = true;
+        if (rule) {
+          form.elements.minimum_percent.value = rule.minimum_percent;
+          form.elements.enabled.checked = Boolean(rule.enabled);
+        }
+      }));
+      form.addEventListener("submit", (event) => {
+        if (!selectedInput("watering_device_id") || !selectedInput("sensor_device_id") || !form.elements.minimum_percent.reportValidity()) event.preventDefault();
+      });
+      showStep(0, false);
+    </script>
+  </body>
+</html>

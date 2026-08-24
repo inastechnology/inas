@@ -150,6 +150,25 @@ class SettingTest(unittest.TestCase):
             self.assertFalse(discord["notify_mqtt_activity"])
             self.assertTrue(discord["notify_operations_security_alerts"])
             self.assertEqual(discord["security_alert_cooldown_sec"], 300)
+            self.assertTrue(discord["notify_post_watering_moisture_low"])
+
+    def test_post_watering_moisture_rules_are_runtime_editable(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.json"
+            current = Setting(path)
+            rules = [
+                {
+                    "watering_device_id": "watering-1",
+                    "sensor_device_id": "soil-2",
+                    "minimum_percent": 52.5,
+                    "enabled": True,
+                }
+            ]
+
+            current.set("post_watering_moisture", {"rules": rules})
+
+            self.assertEqual(Setting(path).get("post_watering_moisture")["rules"], rules)
+            self.assertEqual(json.loads(path.read_text())["post_watering_moisture"]["rules"], rules)
 
     def test_non_runtime_section_cannot_be_saved(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

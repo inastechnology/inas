@@ -21,6 +21,11 @@ try {
   assert.equal(await page.$eval('[data-settings-nav="notifications"]', (item) => item.classList.contains("active")), true);
   assert.equal(await page.$eval("#notifications h2", (heading) => heading.textContent?.trim()), "通知");
   assert.match(await page.$eval("#notifications", (section) => section.innerText || ""), /今日の栽培作業/);
+  assert.match(await page.$eval("#notifications", (section) => section.innerText || ""), /潅水後の水分チェック/);
+  assert.equal(
+    await page.$eval('.post-watering-summary a', (link) => link.getAttribute("href")),
+    "/settings/post-watering-moisture",
+  );
   assert.doesNotMatch(await page.$eval("#notifications", (section) => section.innerText || ""), /毎朝4:00/, "long notification help must start collapsed");
   await page.click('summary[aria-label="栽培作業通知の説明を開く"]');
   assert.match(await page.$eval("#notifications", (section) => section.innerText || ""), /毎朝4:00/);
@@ -29,16 +34,14 @@ try {
   assert.doesNotMatch(await page.$eval("#notifications", (section) => section.innerText || ""), /127\.0\.0\.1|localhost/);
   assert.equal(await page.$eval('input[name="plant_task_reminder_days_before"]', (input) => input.value), "7");
   assert.equal(await page.$eval('input[name="notify_mqtt_activity"]', (input) => input.checked), false);
-  assert.equal(await page.$$eval('#notification-settings-form input[role="switch"]', (inputs) => inputs.length), 10);
-  assert.equal(await page.$$eval("#notification-settings-form .notification-switch-control", (controls) => controls.length), 10);
-  assert.equal(
-    await page.$eval('input[name="enabled"] + .notification-switch-control', (control) => getComputedStyle(control, "::before").content),
-    '"ON"',
-  );
-  assert.equal(
-    await page.$eval('input[name="notify_mqtt_activity"] + .notification-switch-control', (control) => getComputedStyle(control, "::before").content),
-    '"OFF"',
-  );
+  assert.equal(await page.$$eval('#notification-settings-form input[role="switch"]', (inputs) => inputs.length), 11);
+  assert.equal(await page.$$eval("#notification-settings-form .notification-switch-control", (controls) => controls.length), 11);
+  for (const name of ["enabled", "notify_mqtt_activity"]) {
+    assert.equal(
+      await page.$eval(`input[name="${name}"] + .notification-switch-control`, (control) => getComputedStyle(control, "::before").content),
+      await page.$eval(`input[name="${name}"]`, (input) => input.checked ? '"ON"' : '"OFF"'),
+    );
+  }
   assert.equal(
     await page.$$eval(
       "#notification-settings-form .notification-switch",
@@ -59,6 +62,18 @@ try {
   await page.screenshot({ path: "/tmp/ina-notification-settings-desktop.png", fullPage: true });
   await (await page.$("#notifications")).screenshot({ path: "/tmp/ina-notification-settings-section-desktop.png" });
 
+  const wizardResponse = await page.goto(`${baseUrl}/settings/post-watering-moisture`, { waitUntil: "networkidle0" });
+  assert.equal(wizardResponse.status(), 200);
+  assert.equal(await page.$eval("h1", (heading) => heading.textContent?.trim()), "潅水後に、水が届いたか確認する");
+  assert.equal(await page.$$eval("[data-wizard-step]", (panels) => panels.length), 4);
+  assert.equal(await page.$eval('[data-wizard-step="0"]', (panel) => panel.classList.contains("active")), true);
+  await page.screenshot({ path: "/tmp/ina-post-watering-wizard-desktop.png", fullPage: true });
+  await page.click("#wizard-next");
+  assert.equal(await page.$eval('[data-wizard-step="1"]', (panel) => panel.classList.contains("active")), true);
+  assert((await page.$$eval('input[name="sensor_device_id"]', (inputs) => inputs.length)) > 1, "demo wizard must offer multiple soil sensors");
+  assert.doesNotMatch(await page.$eval('[data-wizard-step="1"]', (panel) => panel.innerText || ""), /PARセンサー|定点カメラ/);
+  await page.screenshot({ path: "/tmp/ina-post-watering-wizard-sensors-desktop.png", fullPage: true });
+
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
   await page.goto(`${baseUrl}/settings?section=notifications`, { waitUntil: "networkidle0" });
   const bounds = await page.evaluate(() => ({
@@ -69,6 +84,14 @@ try {
   assert.equal(await page.$$eval(".settings-nav a", (items) => items.length), 4);
   await page.screenshot({ path: "/tmp/ina-notification-settings-mobile.png", fullPage: true });
   await (await page.$("#notifications")).screenshot({ path: "/tmp/ina-notification-settings-section-mobile.png" });
+
+  await page.goto(`${baseUrl}/settings/post-watering-moisture`, { waitUntil: "networkidle0" });
+  const wizardBounds = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  assert(wizardBounds.scrollWidth <= wizardBounds.clientWidth, "post-watering wizard must not overflow on mobile");
+  await page.screenshot({ path: "/tmp/ina-post-watering-wizard-mobile.png", fullPage: true });
   assert.deepEqual(browserErrors, []);
 
   process.stdout.write(JSON.stringify({
@@ -76,8 +99,11 @@ try {
       "/tmp/ina-notification-settings-confirm-desktop.png",
       "/tmp/ina-notification-settings-desktop.png",
       "/tmp/ina-notification-settings-section-desktop.png",
+      "/tmp/ina-post-watering-wizard-desktop.png",
+      "/tmp/ina-post-watering-wizard-sensors-desktop.png",
       "/tmp/ina-notification-settings-mobile.png",
       "/tmp/ina-notification-settings-section-mobile.png",
+      "/tmp/ina-post-watering-wizard-mobile.png",
     ],
   }, null, 2) + "\n");
 } finally {

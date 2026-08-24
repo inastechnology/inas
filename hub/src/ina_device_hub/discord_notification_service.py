@@ -377,8 +377,16 @@ def format_health_alert_notification(alert_type: str, device_id: str, record: di
             "🌱",
             0xD18B22,
         ),
+        "post_watering_moisture_low": (
+            "潅水後の土壌水分が下限に届いていません",
+            "タンク、ポンプ、配管、センサー位置を確認し、根域まで水が届いたか確認します。",
+            "monitoring",
+            "💧",
+            0xC44D42,
+        ),
     }.get(alert_type, ("機器の確認が必要です", "機器の状態を確認してください。", "maintenance", "⚠️", 0xC44D42))
-    url = _device_url(base_url, device_id, tab)
+    link_device_id = details.get("sensor_device_id") if alert_type == "post_watering_moisture_low" else device_id
+    url = _device_url(base_url, link_device_id, tab)
     description = instruction
     if url:
         description += f"\n\n[確認画面を開く →]({url})"
@@ -395,6 +403,14 @@ def format_health_alert_notification(alert_type: str, device_id: str, record: di
         fields.append({"name": "検出内容", "value": ", ".join(str(item) for item in labels)[:1024], "inline": False})
     if details.get("batch_skip_reason"):
         fields.append({"name": "実行しなかった理由", "value": str(details["batch_skip_reason"])[:1024], "inline": False})
+    if details.get("measured_percent") is not None:
+        fields.append({"name": "潅水後の土壌水分", "value": f"{details['measured_percent']:g}%", "inline": True})
+    if details.get("minimum_percent") is not None:
+        fields.append({"name": "設定した下限", "value": f"{details['minimum_percent']:g}%", "inline": True})
+    if details.get("sensor_device_name"):
+        fields.append({"name": "判定に使ったセンサー", "value": str(details["sensor_device_name"])[:1024], "inline": False})
+    if details.get("watered_at"):
+        fields.append({"name": "潅水を確認した時刻", "value": str(details["watered_at"])[:1024], "inline": False})
     return {
         "username": "INA Device Hub",
         "allowed_mentions": {"parse": []},
@@ -492,6 +508,8 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
         title = "【運転異常】予定動作を実行できませんでした"
     elif alert_type == "soil_calibration_suggested":
         title = "【水分計】校正値の見直し候補があります"
+    elif alert_type == "post_watering_moisture_low":
+        title = "【潅水後確認】土壌水分が設定した下限に届いていません"
     else:
         title = "【死活監視】確認が必要です"
 
@@ -534,6 +552,12 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
         lines.append(f"候補の校正値: dry={details['soil_calibration_suggested_dry_raw']} wet={details['soil_calibration_suggested_wet_raw']}")
     if details.get("soil_calibration_applied") is not None:
         lines.append(f"device反映: {_format_value(details['soil_calibration_applied'], 'soil_calibration_applied')}")
+    if details.get("measured_percent") is not None:
+        lines.append(f"潅水後の土壌水分: {details['measured_percent']:g}%")
+    if details.get("minimum_percent") is not None:
+        lines.append(f"設定した下限: {details['minimum_percent']:g}%")
+    if details.get("sensor_device_name"):
+        lines.append(f"判定センサー: {details['sensor_device_name']}")
 
     content = "\n".join(lines)
     if len(content) > DISCORD_CONTENT_LIMIT:

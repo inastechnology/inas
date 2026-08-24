@@ -193,6 +193,28 @@ class DiscordNotificationServiceTest(unittest.TestCase):
         self.assertIn("電源、通信環境", card["description"])
         self.assertNotIn("topic:", str(payload))
 
+    def test_post_watering_moisture_card_links_to_selected_sensor(self):
+        payload = format_health_alert_notification(
+            "post_watering_moisture_low",
+            "watering-1",
+            {"name": "北畝の潅水機", "location": "1号ハウス"},
+            {
+                "sensor_device_id": "soil / 1",
+                "sensor_device_name": "北畝の水分計",
+                "measured_percent": 43.5,
+                "minimum_percent": 50.0,
+                "watered_at": "2026-08-24T01:00:00+00:00",
+            },
+            base_url="https://hub.example.com",
+        )
+
+        card = payload["embeds"][0]
+        self.assertEqual(card["url"], "https://hub.example.com/mqtt-devices/soil%20%2F%201?tab=monitoring")
+        self.assertIn("潅水後の土壌水分が下限に届いていません", card["title"])
+        self.assertIn("43.5%", str(card["fields"]))
+        self.assertIn("50%", str(card["fields"]))
+        self.assertIn("北畝の水分計", str(card["fields"]))
+
     def test_operational_error_card_shows_failure_reason(self):
         payload = format_health_alert_notification(
             "device_operational_error",

@@ -96,6 +96,13 @@
       .notification-advanced { border:1px solid #d7e0da; border-radius:7px; background:#fafcfb; }
       .notification-advanced summary { padding:11px 13px; color:#315f4c; cursor:pointer; font-size:12px; font-weight:850; }
       .notification-advanced-body { padding:0 13px 13px; }
+      .post-watering-summary { display:grid; gap:10px; padding:14px; border:1px solid #b9d7c7; border-radius:9px; background:linear-gradient(135deg,#f6fbf7,#e8f4ec); }
+      .post-watering-summary-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+      .post-watering-summary-head strong,.post-watering-summary-head small { display:block; }
+      .post-watering-summary-head small { margin-top:3px; color:var(--muted); font-size:11px; line-height:1.5; }
+      .post-watering-rule-list { display:grid; gap:6px; margin:0; padding:0; list-style:none; }
+      .post-watering-rule-list li { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:5px 12px; padding:8px 10px; border-radius:6px; background:rgba(255,255,255,.78); font-size:11px; }
+      .post-watering-rule-list strong { color:#245b44; }
       dialog.confirm-dialog { width:min(480px,calc(100% - 32px)); padding:0; border:0; border-radius:12px; color:var(--ink); box-shadow:0 20px 60px rgba(18,35,27,.28); }
       dialog.confirm-dialog::backdrop { background:rgba(21,34,28,.58); }
       .confirm-dialog-body { display:grid; gap:10px; padding:22px; }
@@ -287,6 +294,16 @@
               <div class="setting-row" data-setting-row data-search="全通知 有効 無効 停止">
                 <div class="setting-label with-help"><span>すべてのDiscord通知</span><details class="context-help"><summary aria-label="全通知スイッチの説明を開く">?</summary><div class="context-help-panel" role="note"><strong>一時停止しても設定は残ります</strong><p>OFFにすると、下の種類別設定を残したままDiscordへの送信だけを止めます。</p></div></details></div>
                 <div class="setting-control"><label class="notification-switch"><input type="checkbox" role="switch" name="enabled" data-notification-master{% if discord.enabled %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">Discord通知を受け取る</span></label></div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="潅水 灌水 直後 土壌水分 下限 しきい値 閾値 センサー Discord ウィザード">
+                <div class="setting-label with-help"><span>潅水後の水分チェック</span><details class="context-help"><summary aria-label="潅水後の水分チェックについて説明を開く">?</summary><div class="context-help-panel" role="note"><strong>水が届いたかを別のしきい値で確認</strong><p>潅水を始める判断値とは別に、潅水後に到達してほしい最低水分率を設定します。選んだセンサーの次の測定値が下限未満ならDiscordへ知らせます。</p></div></details></div>
+                <div class="setting-control">
+                  <div class="post-watering-summary">
+                    <div class="post-watering-summary-head"><div><strong>{% if post_watering_moisture.rules %}{{ post_watering_moisture.enabled_count }}件のチェックを使用中{% else %}まだ設定されていません{% endif %}</strong><small>潅水機ごとに、判定へ使う土壌水分センサーを1台選びます。</small></div><span class="status{% if not post_watering_moisture.enabled_count %} missing{% endif %}">{% if post_watering_moisture.enabled_count %}監視中{% else %}未設定{% endif %}</span></div>
+                    {% if post_watering_moisture.rules %}<ul class="post-watering-rule-list">{% for rule in post_watering_moisture.rules %}<li><span><strong>{{ rule.watering_device_name }}</strong> → {{ rule.sensor_device_name }}</span><span>{{ rule.minimum_percent }}%未満で通知 / {% if rule.enabled %}使用中{% else %}停止中{% endif %}</span></li>{% endfor %}</ul>{% endif %}
+                    <a class="setting-link" href="/settings/post-watering-moisture">{% if post_watering_moisture.rules %}設定を確認・変更{% else %}設定ウィザードを開く{% endif %} →</a>
+                  </div>
+                </div>
               </div>
               <div class="setting-row" data-setting-row data-search="Operations API セキュリティ 認証拒否 不正アクセス Service Token">
                 <div class="setting-label with-help"><span>Operations APIのセキュリティ</span><details class="context-help"><summary aria-label="Operations API認証拒否通知の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>Hubへ到達した認証失敗を通知</strong><p>JWT不正やService IDの許可リスト不一致をDiscordへ通知します。Cloudflareが手前で拒否したClient ID・Secret不正はCloudflare側のログ監視対象です。</p></div></details></div>

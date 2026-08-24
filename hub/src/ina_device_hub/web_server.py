@@ -127,6 +127,14 @@ from ina_device_hub.plant_management_repository import (
     plant_management_repository,
 )
 from ina_device_hub.plant_question_policy import validate_plant_question
+from ina_device_hub.post_watering_moisture_service import (
+    DEFAULT_MINIMUM_PERCENT,
+    PostWateringMoistureValidationError,
+    post_watering_device_options,
+    post_watering_moisture_service,
+    post_watering_rule_views,
+    soil_moisture_sensor_options,
+)
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
 from ina_device_hub.sensor_image_repogitory import sensor_image_repogitory
@@ -1208,6 +1216,7 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "kind_label": _device_kind_label(device_kind),
         "supports_irrigation": device_kind in {"WTR", "WRS"},
         "supports_fertigation": device_kind == "FGT",
+        "post_watering_setup_url": f"/settings/post-watering-moisture?{urlencode({'watering_device_id': device_id})}",
         "supports_watering_pattern": "watering_pattern" in definition.get("runtime_config", {}).get("send_keys", []),
         "definition": definition,
         "ui_extensions": build_device_detail_extensions(device_kind, device=record, status=payload, config=config),
@@ -3590,6 +3599,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           .metric-action { position: relative; display: block; color: inherit; text-decoration: none; transition: border-color .15s ease, transform .15s ease; }
           .metric-action:hover { border-color: var(--green); text-decoration: none; transform: translateY(-1px); }
           .metric-action-label { display: block; margin-top: 8px; color: var(--green); font-size: 12px; font-weight: 800; }
+          .post-watering-setup-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; padding: 14px 16px; border: 1px solid #b9d6c6; border-radius: 10px; color: #174d36; background: linear-gradient(135deg, #f4fbf6, #e5f3e9); }
+          .post-watering-setup-cta strong, .post-watering-setup-cta span { display: block; }
+          .post-watering-setup-cta span { margin-top: 3px; color: var(--muted); font-size: 12px; }
+          .post-watering-setup-cta a { flex: 0 0 auto; padding: 9px 13px; border-radius: 7px; color: #fff; background: var(--green); font-size: 12px; font-weight: 800; }
+          .post-watering-setup-cta a:hover { text-decoration: none; background: #155640; }
           .section-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 18px; align-items: start; }
           .list { display: grid; gap: 10px; }
           .list-row {
@@ -3948,6 +3962,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
             .location-row { grid-template-columns: 1fr; }
             .location-actions { justify-content: flex-start; }
             .section-grid { grid-template-columns: 1fr; }
+            .post-watering-setup-cta { align-items: stretch; flex-direction: column; }
+            .post-watering-setup-cta a { text-align: center; }
             .tile-metrics { grid-template-columns: 1fr; }
             .list-row { grid-template-columns: 1fr; }
             .ridge-row { grid-template-columns: 1fr; }
@@ -4167,6 +4183,12 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               {% if metric.settings_anchor or metric.history_anchor %}</a>{% else %}</div>{% endif %}
               {% endfor %}
             </div>
+            {% if not demo_mode and (selected.supports_irrigation or selected.supports_fertigation) %}
+            <div class="post-watering-setup-cta">
+              <div><strong>潅水後に、水が届いたかDiscordで確認</strong><span>判定に使う土壌水分センサーと、潅水後の最低水分率を案内に沿って設定します。</span></div>
+              <a href="{{ selected.post_watering_setup_url }}">設定ウィザードを開く →</a>
+            </div>
+            {% endif %}
           </section>
 
           <div class="detail-tabs">
@@ -7237,6 +7259,12 @@ def hub_settings_page():
         "public_base_url": public_notification_url,
         "public_url_configured": bool(public_notification_url),
     }
+    device_records = device_config_service().get_all_records()
+    post_watering_rules = post_watering_rule_views(post_watering_moisture_service().list_rules(), device_records)
+    post_watering_moisture = {
+        "rules": post_watering_rules,
+        "enabled_count": sum(1 for rule in post_watering_rules if rule.get("enabled") is True),
+    }
     database_settings = setting().get("turso") or {}
     database_url = str(database_settings.get("database_url") or "local")
     database_label = "Turso replica" if database_url.startswith(("libsql://", "http://", "https://")) else "端末内DB"
@@ -7255,6 +7283,7 @@ def hub_settings_page():
             "hub_settings.html",
             ai=visible_ai,
             discord=visible_discord,
+            post_watering_moisture=post_watering_moisture,
             plant_calendar_prompt_max_length=PLANT_CALENDAR_PROMPT_MAX_LENGTH,
             instagram=visible_instagram,
             instagram_camera_options=_instagram_camera_options(current_instagram.get("camera_id", "")),
@@ -7262,6 +7291,78 @@ def hub_settings_page():
             active_section=request.args.get("section") if request.args.get("section") in {"ai", "notifications", "instagram", "system"} else "ai",
             saved=request.args.get("saved") == "1",
             user=user,
+        )
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/settings/post-watering-moisture", methods=["GET", "POST"])
+def post_watering_moisture_settings_page():
+    user = current_user_from_request(request)
+    if user.role != "admin":
+        return render_template("settings_forbidden.html", user=user), 403
+
+    records = device_config_service().get_all_records()
+    watering_devices = post_watering_device_options(records)
+    soil_sensors = soil_moisture_sensor_options(records)
+    service = post_watering_moisture_service()
+    submitted = None
+    error_message = ""
+    status_code = 200
+    if request.method == "POST":
+        submitted = {
+            "watering_device_id": request.form.get("watering_device_id", "").strip(),
+            "sensor_device_id": request.form.get("sensor_device_id", "").strip(),
+            "minimum_percent": request.form.get("minimum_percent", ""),
+            "enabled": request.form.get("enabled") == "on",
+        }
+        try:
+            saved_rule = service.save_rule(submitted, records)
+        except PostWateringMoistureValidationError as exc:
+            error_message = str(exc)
+            status_code = 400
+        else:
+            query = urlencode({"watering_device_id": saved_rule["watering_device_id"], "saved": "1"})
+            return redirect(f"/settings/post-watering-moisture?{query}")
+
+    rules = service.list_rules()
+    requested_watering_device_id = str(
+        (submitted or {}).get("watering_device_id") or request.args.get("watering_device_id") or (watering_devices[0]["id"] if watering_devices else "")
+    )
+    existing_rule = next((rule for rule in rules if rule.get("watering_device_id") == requested_watering_device_id), None)
+    selected_rule = submitted or existing_rule or {}
+    sensor_ids = {item["id"] for item in soil_sensors}
+    selected_sensor_id = str(selected_rule.get("sensor_device_id") or "")
+    if selected_sensor_id not in sensor_ids:
+        selected_sensor_id = requested_watering_device_id if requested_watering_device_id in sensor_ids else (soil_sensors[0]["id"] if soil_sensors else "")
+    try:
+        minimum_percent = float(selected_rule.get("minimum_percent", DEFAULT_MINIMUM_PERCENT))
+    except (TypeError, ValueError):
+        minimum_percent = DEFAULT_MINIMUM_PERCENT
+    selected_values = {
+        "watering_device_id": requested_watering_device_id,
+        "sensor_device_id": selected_sensor_id,
+        "minimum_percent": minimum_percent,
+        "enabled": selected_rule.get("enabled") is not False,
+    }
+    response = app.make_response(
+        (
+            render_template(
+                "post_watering_moisture_wizard.html",
+                watering_devices=watering_devices,
+                soil_sensors=soil_sensors,
+                selected=selected_values,
+                rules=post_watering_rule_views(rules, records),
+                error_message=error_message,
+                saved=request.args.get("saved") == "1",
+                discord={
+                    "enabled": bool((setting().get("discord") or {}).get("enabled", True)),
+                    "webhook_configured": bool((setting().get("discord") or {}).get("webhook_url")),
+                },
+                user=user,
+            ),
+            status_code,
         )
     )
     response.headers["Cache-Control"] = "no-store"

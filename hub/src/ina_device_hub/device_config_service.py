@@ -19,16 +19,18 @@ from ina_device_hub.device_operational_alert import (
 from ina_device_hub.discord_notification_service import discord_notification_service
 from ina_device_hub.general_log import logger
 from ina_device_hub.local_edge_runtime import local_edge_runtime
+from ina_device_hub.post_watering_moisture_service import post_watering_moisture_service
 from ina_device_hub.sensor_measurement_repository import safe_record_status_measurements
 from ina_device_hub.setting import setting
 
 
 class DeviceConfigService:
-    def __init__(self, repository=None, notification_service=None, event_log_dispatcher=None, runtime_config_cache=None):
+    def __init__(self, repository=None, notification_service=None, event_log_dispatcher=None, runtime_config_cache=None, post_watering_service=None):
         self.repository = repository or device_config_repository()
         self.notification_service = notification_service or discord_notification_service()
         self.event_log_dispatcher = event_log_dispatcher or _dispatch_event_log
         self.runtime_config_cache = runtime_config_cache
+        self.post_watering_service = post_watering_service or post_watering_moisture_service()
         self.mqtt_client = None
         self._operational_alert_signatures = {}
         self._operational_alert_lock = threading.Lock()
@@ -241,6 +243,10 @@ class DeviceConfigService:
         self._notify_device_operational_error(device_id, record, status)
         _log_device_status(device_id, record["last_status_at"], status)
         safe_record_status_measurements(device_id, status, record["last_status_at"])
+        try:
+            self.post_watering_service.process_status(device_id, record, status)
+        except Exception:
+            logger.exception("Post-watering soil moisture check failed for device_id=%s", device_id)
         append_device_event(
             "device_status",
             "inbound",
