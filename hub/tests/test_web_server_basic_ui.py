@@ -1365,7 +1365,6 @@ class WebServerBasicUITest(unittest.TestCase):
 
     def test_field_environment_equipment_lists_post_watering_notification_conditions(self):
         current_rules = deepcopy(web_server.setting().get("post_watering_moisture"))
-        current_discord = dict(web_server.setting().get("discord") or {})
         field = self.field_repository.upsert(None, {"name": "通知条件圃場"})
         self.fake_device_config_service.records = {
             "WTR-001": {
@@ -1437,20 +1436,26 @@ class WebServerBasicUITest(unittest.TestCase):
                 ]
             },
         )
-        web_server.setting().set(
-            "discord",
-            {
-                **current_discord,
-                "webhook_url": "https://discord.example/webhook",
-                "enabled": True,
-                "notify_post_watering_moisture_low": True,
-            },
-        )
         try:
-            response = self.client.get(f"/fields/{field['id']}#monitoring")
+            settings_store = web_server.setting()
+            settings_get = settings_store.get
+
+            def get_with_ready_discord(key):
+                value = settings_get(key)
+                if key != "discord":
+                    return value
+                return {
+                    **(value or {}),
+                    "webhook_url": "https://discord.example/webhook",
+                    "enabled": True,
+                    "notify_post_watering_moisture_low": True,
+                }
+
+            with patch.object(settings_store, "get", side_effect=get_with_ready_discord):
+                response = self.client.get(f"/fields/{field['id']}#monitoring")
+                html = response.get_data(as_text=True)
 
             self.assertEqual(response.status_code, 200)
-            html = response.get_data(as_text=True)
             self.assertIn('id="post-watering-notification-conditions"', html)
             self.assertIn("潅水機 2台", html)
             self.assertIn("設定済み 1件", html)
@@ -1501,7 +1506,6 @@ class WebServerBasicUITest(unittest.TestCase):
             self.assertNotIn(f'href="{wizard_href}"', operator_html)
         finally:
             web_server.setting().set("post_watering_moisture", current_rules)
-            web_server.setting().set("discord", current_discord)
 
     def test_field_layout_page_and_api_support_editing(self):
         field = self.field_repository.upsert(None, {"name": "設置ビュー圃場", "crop": "イチゴ"})
