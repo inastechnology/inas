@@ -159,6 +159,39 @@
       .sensor-value strong { font-size: 16px; }
       .monitoring-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
       .monitoring-scopes { display: grid; gap: 12px; }
+      .notification-condition-surface { display: grid; gap: 14px; border-color: #b8d3c3; background: linear-gradient(135deg, #fff, #edf7f1); }
+      .notification-condition-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+      .notification-condition-heading p { max-width: 720px; margin: 5px 0 0; color: #596c62; font-size: 11px; line-height: 1.6; }
+      .notification-condition-summary { flex: 0 0 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+      .notification-condition-summary span { padding: 5px 8px; border: 1px solid #bfd3c6; border-radius: 999px; color: #385c4c; background: #fff; font-size: 10px; font-weight: 800; }
+      .notification-readiness { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border-left: 4px solid #b8771d; border-radius: 5px; color: #6f4a13; background: #fff6e3; font-size: 10px; font-weight: 750; }
+      .notification-readiness.ready { border-left-color: #2a7857; color: #285b47; background: #e7f4eb; }
+      .notification-readiness a { flex: 0 0 auto; font-weight: 850; }
+      .notification-condition-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 11px; }
+      .notification-condition-card { display: grid; gap: 11px; min-width: 0; padding: 13px; border: 1px solid #cdd9d1; border-top: 4px solid #87958d; border-radius: 7px; background: #fff; }
+      .notification-condition-card.active { border-top-color: #237654; }
+      .notification-condition-card.warning { border-top-color: #bd7920; }
+      .notification-condition-card.paused { border-top-color: #747f79; }
+      .notification-condition-card.unconfigured { border-style: solid; border-top-color: #c28a36; background: #fffdf8; }
+      .notification-condition-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+      .notification-condition-card header strong, .notification-condition-card header small { display: block; }
+      .notification-condition-card header strong { overflow-wrap: anywhere; font-size: 13px; }
+      .notification-condition-card header small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+      .condition-state { flex: 0 0 auto; padding: 4px 7px; border-radius: 999px; color: #526158; background: #e9eeeb; font-size: 9px; font-weight: 850; }
+      .active .condition-state { color: #185b40; background: #dff2e6; }
+      .warning .condition-state, .unconfigured .condition-state { color: #80500d; background: #fff0d1; }
+      .condition-main { display: grid; gap: 3px; padding: 10px; border-radius: 6px; background: #f2f7f3; }
+      .condition-main span { color: #607168; font-size: 9px; font-weight: 800; }
+      .condition-main strong { color: #204f3c; font-size: 17px; }
+      .unconfigured .condition-main { color: #715323; background: #fff6e4; }
+      .unconfigured .condition-main strong { color: #76521c; font-size: 13px; }
+      .condition-details { display: grid; gap: 6px; margin: 0; }
+      .condition-details div { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 8px; padding-top: 6px; border-top: 1px solid #e3e8e4; }
+      .condition-details dt { color: #708078; font-size: 9px; font-weight: 750; }
+      .condition-details dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: #31443a; font-size: 10px; font-weight: 750; }
+      .condition-card-action { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; margin-top: auto; padding: 7px 10px; border: 1px solid #2a7659; border-radius: 5px; color: #fff; background: #237052; font-size: 10px; font-weight: 850; text-decoration: none; }
+      .condition-card-action:hover, .condition-card-action:focus-visible { background: #185d43; text-decoration: none; }
+      .condition-admin-note { margin: auto 0 0; color: #718078; font-size: 9px; }
       .scope-panel { display: grid; gap: 10px; padding: 13px; border: 1px solid #d8e0da; border-radius: 6px; background: #fbfcfb; }
       .scope-panel header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
       .scope-device-list { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -373,6 +406,8 @@
         .record-history-filter .wide { grid-column:auto; }
         .field-camera-grid { scroll-snap-type: x mandatory; }
         .field-camera-card { flex: 0 0 min(84vw, 390px); scroll-snap-align: start; }
+        .notification-condition-heading, .notification-readiness { align-items: stretch; flex-direction: column; }
+        .notification-condition-summary { justify-content: flex-start; }
       }
     </style>
     <link rel="stylesheet" href="/static/hub-ui.css">
@@ -537,6 +572,31 @@
         <summary><div class="section-heading"><div><span class="eyebrow">設置場所と機器</span><h2>圃場構成</h2></div><span class="meta">{{ context.installation_tree|length }}項目</span></div></summary>
         {% if context.installation_tree %}<label class="collection-filter"><input id="installation-tree-filter" type="search" placeholder="場所、培地、機器を検索" aria-label="圃場構成を検索"></label><p id="installation-tree-empty" class="collection-filter-empty" hidden>一致する項目はありません。</p><div class="installation-tree" role="tree" aria-label="圃場の設置階層">{% for node in context.installation_tree %}<a class="tree-row kind-{{ node.kind }}" href="{{ node.href }}" target="_blank" rel="noopener" role="treeitem" aria-level="{{ node.depth + 1 }}" aria-label="{{ node.label }}、{{ node.action_label }}（新しいタブ）" data-filter-text="{{ node.label }} {{ node.detail }} {{ node.relation }}" style="--depth: {{ node.depth }}"><span class="tree-mark" aria-hidden="true"></span><span class="tree-label"><strong>{{ node.label }}</strong><small>{{ node.detail }}</small></span>{% if node.relation %}<span class="tree-relation {{ node.relation_kind }}">{{ node.relation }}</span>{% endif %}<span class="tree-open" aria-hidden="true">&#8599;</span></a>{% endfor %}</div>{% else %}<p class="empty-state">設置ビューに配置物はありません。</p>{% endif %}
       </details>
+
+      {% set notification_conditions = context.post_watering_notifications %}
+      <section class="surface notification-condition-surface" id="post-watering-notification-conditions" data-tab-panel="monitoring">
+        <div class="notification-condition-heading">
+          <div><span class="eyebrow">通知条件</span><h2>潅水後の水分チェック</h2><p>この圃場の潅水機ごとに、水が届いたかを確認するセンサーと最低水分率をまとめて確認できます。</p></div>
+          <div class="notification-condition-summary" aria-label="潅水後通知条件の集計"><span>潅水機 {{ notification_conditions.cards|length }}台</span><span>設定済み {{ notification_conditions.configured_count }}件</span><span>監視中 {{ notification_conditions.active_count }}件</span></div>
+        </div>
+        {% if notification_conditions.cards %}
+        <div class="notification-readiness{% if notification_conditions.discord_ready %} ready{% endif %}"><span>{{ notification_conditions.discord_status_label }}{% if not notification_conditions.discord_ready %}。条件を保存しても、準備が完了するまでDiscordへ届きません。{% endif %}</span>{% if current_user.role == 'admin' and not notification_conditions.discord_ready %}<a href="/settings?section=notifications#notifications">通知設定を確認 →</a>{% endif %}</div>
+        <div class="notification-condition-grid">
+          {% for card in notification_conditions.cards %}
+          <article class="notification-condition-card {{ card.state }}" data-post-watering-condition-card="{{ card.watering_device_id }}">
+            <header><div><strong>{{ card.watering_device_name }}</strong><small>{{ card.scope_label }} / {{ card.device_kind }}</small></div><span class="condition-state">{{ card.state_label }}</span></header>
+            <div class="condition-main"><span>Discordへ知らせる条件</span>{% if card.configured %}<strong>潅水後 {{ card.minimum_percent }}%未満</strong>{% else %}<strong>通知条件が未設定です</strong>{% endif %}</div>
+            <dl class="condition-details">
+              <div><dt>判定センサー</dt><dd>{{ card.sensor_device_name }}{% if card.configured %} / {{ card.sensor_state_label }}{% endif %}</dd></div>
+              <div><dt>センサー現在値</dt><dd>{% if card.latest_percent is not none %}{{ card.latest_percent|round(1) }}%{% elif card.configured %}測定値なし{% else %}センサー選択後に表示{% endif %}</dd></div>
+              <div><dt>チェック状態</dt><dd>{{ card.state_label }}{% if card.configured and not card.enabled %}（条件は保存済み）{% endif %}</dd></div>
+            </dl>
+            {% if current_user.role == 'admin' and card.wizard_available %}<a class="condition-card-action" href="{{ card.wizard_url }}">{% if card.configured %}通知条件を確認・変更{% else %}通知条件を設定{% endif %} →</a>{% elif current_user.role == 'admin' %}<p class="condition-admin-note">条件を変更するには、<a href="{{ card.device_settings_url }}">機器を利用中にしてください。</a></p>{% else %}<p class="condition-admin-note">条件の変更は管理者が行います。</p>{% endif %}
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}<p class="empty-state">この圃場に潅水機が配置されていません。<a href="/fields/{{ field.id }}/layout" target="_blank" rel="noopener">設置ビューで潅水機を配置 →</a></p>{% endif %}
+      </section>
 
       <section class="surface" data-tab-panel="monitoring">
         <div class="section-heading"><div><span class="eyebrow">圃場全体</span><h2>環境・潅水の推移</h2></div><span class="meta">設置場所別の計測を集約</span></div>

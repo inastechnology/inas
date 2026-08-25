@@ -90,7 +90,7 @@
     <link rel="stylesheet" href="/static/hub-ui.css">
   </head>
   <body class="hub-shell hub-settings {{ accessibility_body_class }}">
-    <header class="page-header"><div class="header-inner"><a class="brand" href="/">INA Device Hub</a><a class="back-link" href="/settings?section=notifications#notifications">通知設定へ戻る</a></div></header>
+    <header class="page-header"><div class="header-inner"><a class="brand" href="/">INA Device Hub</a><a class="back-link" href="{{ return_url }}">{{ return_label }}</a></div></header>
     <main class="wizard-shell">
       <section class="wizard-hero"><div><span class="eyebrow">POST-WATERING CHECK</span><h1>潅水後に、水が届いたか確認する</h1><p>潅水を始めるしきい値とは別に、潅水後に到達してほしい最低水分率を設定します。選んだセンサーの次の有効な測定値が下限未満なら、Discordへ1回だけ知らせます。</p></div><img src="/static/ui-illustrations/controller-flow.png" alt="潅水機とセンサーのつながりを示すイラスト"></section>
       {% if saved %}<p class="notice" role="status">潅水後の水分チェック設定を保存しました。次の潅水から判定します。</p>{% endif %}
@@ -105,6 +105,7 @@
       </ol>
 
       <form method="post" class="wizard-card" id="post-watering-wizard">
+        {% if field_id %}<input type="hidden" name="field_id" value="{{ field_id }}">{% endif %}
         <section class="wizard-step-panel active" data-wizard-step="0" aria-labelledby="watering-device-step-title">
           <div class="step-heading"><span class="step-icon" aria-hidden="true">💧</span><div><h2 id="watering-device-step-title">どの潅水機を確認しますか？</h2><p>この機器が実際に潅水したときだけ、選択したセンサーの判定を始めます。</p></div></div>
           {% if watering_devices %}<div class="choice-grid">{% for device in watering_devices %}<label class="choice-card"><input type="radio" name="watering_device_id" value="{{ device.id }}" data-device-name="{{ device.name }}" data-device-location="{{ device.location }}"{% if selected.watering_device_id == device.id %} checked{% endif %} required><span><strong>{{ device.name }}</strong><small>{{ device.location }} / {{ device.device_kind }}<br>{{ device.id }}</small></span></label>{% endfor %}</div>{% else %}<div class="empty">利用中の潅水機がありません。先に機器を登録して「利用中」にしてください。</div>{% endif %}
@@ -127,10 +128,10 @@
           <p class="review-explanation">潅水機から実行済みの状態を受け取った後、選択センサーから最初に届く有効な土壌水分値を判定します。同じ潅水では通知を繰り返しません。</p>
         </section>
 
-        <div class="wizard-actions"><a class="button-link" href="/settings?section=notifications#notifications">キャンセル</a><div class="action-group"><button type="button" id="wizard-back" hidden>戻る</button><button type="button" class="primary" id="wizard-next"{% if not watering_devices or not soil_sensors %} disabled{% endif %}>次へ</button><button type="submit" class="primary" id="wizard-submit" hidden{% if not watering_devices or not soil_sensors %} disabled{% endif %}>この設定を保存</button></div></div>
+        <div class="wizard-actions"><a class="button-link" href="{{ return_url }}">キャンセル</a><div class="action-group"><button type="button" id="wizard-back" hidden>戻る</button><button type="button" class="primary" id="wizard-next"{% if not watering_devices or not soil_sensors %} disabled{% endif %}>次へ</button><button type="submit" class="primary" id="wizard-submit" hidden{% if not watering_devices or not soil_sensors %} disabled{% endif %}>この設定を保存</button></div></div>
       </form>
 
-      {% if rules %}<section class="configured-rules"><h2>設定済みの潅水機</h2><ul class="rule-list">{% for rule in rules %}<li><a href="/settings/post-watering-moisture?watering_device_id={{ rule.watering_device_id|urlencode }}"><span><strong>{{ rule.watering_device_name }}</strong> → {{ rule.sensor_device_name }}</span><span>{{ rule.minimum_percent }}%未満 / {% if rule.enabled %}使用中{% else %}停止中{% endif %}</span></a></li>{% endfor %}</ul></section>{% endif %}
+      {% if rules %}<section class="configured-rules"><h2>設定済みの潅水機</h2><ul class="rule-list">{% for rule in rules %}<li><a href="/settings/post-watering-moisture?watering_device_id={{ rule.watering_device_id|urlencode }}{% if field_id %}&amp;field_id={{ field_id|urlencode }}{% endif %}"><span><strong>{{ rule.watering_device_name }}</strong> → {{ rule.sensor_device_name }}</span><span>{{ rule.minimum_percent }}%未満 / {% if rule.enabled %}使用中{% else %}停止中{% endif %}</span></a></li>{% endfor %}</ul></section>{% endif %}
     </main>
     <script>
       document.body.classList.add("wizard-enhanced");

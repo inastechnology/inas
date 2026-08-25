@@ -129,11 +129,13 @@ from ina_device_hub.plant_management_repository import (
 from ina_device_hub.plant_question_policy import validate_plant_question
 from ina_device_hub.post_watering_moisture_service import (
     DEFAULT_MINIMUM_PERCENT,
+    WATERING_DEVICE_KINDS,
     PostWateringMoistureValidationError,
     post_watering_device_options,
     post_watering_moisture_service,
     post_watering_rule_views,
     soil_moisture_sensor_options,
+    soil_moisture_value,
 )
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
@@ -7307,6 +7309,11 @@ def post_watering_moisture_settings_page():
     watering_devices = post_watering_device_options(records)
     soil_sensors = soil_moisture_sensor_options(records)
     service = post_watering_moisture_service()
+    requested_field_id = str((request.form.get("field_id") if request.method == "POST" else request.args.get("field_id")) or "").strip()
+    return_field = field_repository().get(requested_field_id) if requested_field_id else None
+    field_id = return_field["id"] if return_field else ""
+    return_url = f"/fields/{field_id}#monitoring" if field_id else "/settings?section=notifications#notifications"
+    return_label = "環境・設備へ戻る" if field_id else "通知設定へ戻る"
     submitted = None
     error_message = ""
     status_code = 200
@@ -7323,7 +7330,13 @@ def post_watering_moisture_settings_page():
             error_message = str(exc)
             status_code = 400
         else:
-            query = urlencode({"watering_device_id": saved_rule["watering_device_id"], "saved": "1"})
+            query = urlencode(
+                {
+                    "watering_device_id": saved_rule["watering_device_id"],
+                    "saved": "1",
+                    **({"field_id": field_id} if field_id else {}),
+                }
+            )
             return redirect(f"/settings/post-watering-moisture?{query}")
 
     rules = service.list_rules()
@@ -7360,6 +7373,9 @@ def post_watering_moisture_settings_page():
                     "enabled": bool((setting().get("discord") or {}).get("enabled", True)),
                     "webhook_configured": bool((setting().get("discord") or {}).get("webhook_url")),
                 },
+                field_id=field_id,
+                return_url=return_url,
+                return_label=return_label,
                 user=user,
             ),
             status_code,
@@ -9516,6 +9532,7 @@ def _build_field_context(  # noqa: PLR0915
         ),
         "watering_chart": (_build_watering_trend_chart(statuses_for_chart, include_plotlyjs=False, deferred=True) if statuses_for_chart else ""),
         "monitoring_scopes": _build_monitoring_scopes(placement_rows, latest_sensor_values),
+        "post_watering_notifications": _build_field_post_watering_notification_context(field["id"], device_records, placement_rows),
         "layout": layout,
         "layout_preview": _build_layout_preview(layout, active_plantings, field_id=field["id"]),
         "installation_tree": _build_installation_tree(layout, device_records, active_plantings, field_id=field["id"]),
@@ -10003,6 +10020,92 @@ def _build_monitoring_scopes(placement_rows: list, latest_sensor_values: list):
         scope = scopes.setdefault(label, {"label": label, "devices": [], "sensor_values": []})
         scope["sensor_values"].append(item)
     return list(scopes.values())
+
+
+def _build_field_post_watering_notification_context(field_id: str, field_device_records: dict, placement_rows: list):
+    all_device_records = dict(device_config_service().get_all_records() or {})
+    all_device_records.update(field_device_records or {})
+    rules_by_device = {
+        rule.get("watering_device_id"): rule
+        for rule in post_watering_moisture_service().list_rules()
+        if isinstance(rule, dict) and rule.get("watering_device_id")
+    }
+    placement_by_device = {}
+    for row in placement_rows or []:
+        device_id = row.get("device_id")
+        if device_id:
+            placement_by_device.setdefault(device_id, row)
+
+    discord = setting().get("discord") or {}
+    discord_ready = bool(
+        discord.get("webhook_url")
+        and discord.get("enabled", True)
+        and discord.get("notify_post_watering_moisture_low", True)
+    )
+    if not discord.get("webhook_url"):
+        discord_status_label = "Discord Webhook未設定"
+    elif not discord.get("enabled", True):
+        discord_status_label = "すべてのDiscord通知が停止中"
+    elif not discord.get("notify_post_watering_moisture_low", True):
+        discord_status_label = "潅水後通知が停止中"
+    else:
+        discord_status_label = "Discord通知準備済み"
+
+    cards = []
+    for watering_device_id, watering_record in (field_device_records or {}).items():
+        device_kind = str(watering_record.get("device_kind") or (watering_record.get("last_status") or {}).get("device_kind") or "").upper()
+        if device_kind not in WATERING_DEVICE_KINDS:
+            continue
+        rule = rules_by_device.get(watering_device_id)
+        sensor_record = all_device_records.get((rule or {}).get("sensor_device_id")) or {}
+        latest_percent = soil_moisture_value(sensor_record.get("last_status") or {}) if rule else None
+        placement = placement_by_device.get(watering_device_id) or {}
+        if not rule:
+            state = "unconfigured"
+            state_label = "未設定"
+        elif rule.get("enabled") is not True:
+            state = "paused"
+            state_label = "停止中"
+        elif watering_record.get("state") != "active":
+            state = "paused"
+            state_label = "機器停止中"
+        elif sensor_record.get("state") != "active":
+            state = "warning"
+            state_label = "センサー確認"
+        elif not discord_ready:
+            state = "warning"
+            state_label = "通知準備待ち"
+        else:
+            state = "active"
+            state_label = "監視中"
+        cards.append(
+            {
+                "watering_device_id": watering_device_id,
+                "watering_device_name": watering_record.get("name") or watering_device_id,
+                "device_kind": device_kind,
+                "scope_label": placement.get("scope_label") or watering_record.get("location") or "圃場全体",
+                "configured": bool(rule),
+                "enabled": bool(rule and rule.get("enabled") is True),
+                "wizard_available": watering_record.get("state") == "active",
+                "state": state,
+                "state_label": state_label,
+                "sensor_device_id": (rule or {}).get("sensor_device_id") or "",
+                "sensor_device_name": sensor_record.get("name") or (rule or {}).get("sensor_device_id") or "未選択",
+                "sensor_state_label": "利用中" if sensor_record.get("state") == "active" else "停止・未確認",
+                "latest_percent": latest_percent,
+                "minimum_percent": (rule or {}).get("minimum_percent"),
+                "wizard_url": f"/settings/post-watering-moisture?{urlencode({'watering_device_id': watering_device_id, 'field_id': field_id})}",
+                "device_settings_url": f"/mqtt-devices/{watering_device_id}?tab=settings",
+            }
+        )
+    cards.sort(key=lambda item: (item["scope_label"].casefold(), item["watering_device_name"].casefold(), item["watering_device_id"]))
+    return {
+        "cards": cards,
+        "configured_count": sum(1 for card in cards if card["configured"]),
+        "active_count": sum(1 for card in cards if card["state"] == "active"),
+        "discord_ready": discord_ready,
+        "discord_status_label": discord_status_label,
+    }
 
 
 def _field_compare_day(compare_date: str):

@@ -1363,6 +1363,146 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertNotIn("<h3>監視単位</h3>", html)
         self.assertNotIn("東ベッド", html)
 
+    def test_field_environment_equipment_lists_post_watering_notification_conditions(self):
+        current_rules = deepcopy(web_server.setting().get("post_watering_moisture"))
+        current_discord = dict(web_server.setting().get("discord") or {})
+        field = self.field_repository.upsert(None, {"name": "通知条件圃場"})
+        self.fake_device_config_service.records = {
+            "WTR-001": {
+                "name": "北畝の潅水機",
+                "device_kind": "WTR",
+                "state": "active",
+                "last_status": {"device_kind": "WTR", "last_soil_moisture": 42},
+                "status_history": [],
+            },
+            "WRS-002": {
+                "name": "南畝の潅水盤",
+                "device_kind": "WRS",
+                "state": "active",
+                "last_status": {"device_kind": "WRS", "soil_moisture_percent": 46},
+                "status_history": [],
+            },
+            "SOI-001": {
+                "name": "北畝の水分計",
+                "device_kind": "SOI",
+                "state": "active",
+                "last_status": {"device_kind": "SOI", "soil_moisture_percent": 48},
+                "status_history": [],
+            },
+        }
+        layout = self.field_layout_repository.get(field["id"], field_name=field["name"])
+        layout["spaces"][0]["placements"] = [
+            {
+                "id": "watering-north",
+                "preset": "watering_device",
+                "name": "北畝潅水",
+                "x": 2,
+                "y": 2,
+                "width": 2,
+                "height": 2,
+                "binding": {"device_id": "WTR-001", "resource_type": "device", "resource_id": ""},
+            },
+            {
+                "id": "watering-south",
+                "preset": "watering_device",
+                "name": "南畝潅水",
+                "x": 5,
+                "y": 2,
+                "width": 2,
+                "height": 2,
+                "binding": {"device_id": "WRS-002", "resource_type": "device", "resource_id": ""},
+            },
+            {
+                "id": "soil-north",
+                "preset": "sensor",
+                "name": "北畝水分",
+                "x": 2,
+                "y": 5,
+                "width": 2,
+                "height": 2,
+                "binding": {"device_id": "SOI-001", "resource_type": "sensor", "resource_id": ""},
+            },
+        ]
+        self.field_layout_repository.upsert(field["id"], layout, field_name=field["name"])
+        web_server.setting().set(
+            "post_watering_moisture",
+            {
+                "rules": [
+                    {
+                        "watering_device_id": "WTR-001",
+                        "sensor_device_id": "SOI-001",
+                        "minimum_percent": 53.5,
+                        "enabled": True,
+                    }
+                ]
+            },
+        )
+        web_server.setting().set(
+            "discord",
+            {
+                **current_discord,
+                "webhook_url": "https://discord.example/webhook",
+                "enabled": True,
+                "notify_post_watering_moisture_low": True,
+            },
+        )
+        try:
+            response = self.client.get(f"/fields/{field['id']}#monitoring")
+
+            self.assertEqual(response.status_code, 200)
+            html = response.get_data(as_text=True)
+            self.assertIn('id="post-watering-notification-conditions"', html)
+            self.assertIn("潅水機 2台", html)
+            self.assertIn("設定済み 1件", html)
+            self.assertIn("監視中 1件", html)
+            self.assertIn('data-post-watering-condition-card="WTR-001"', html)
+            self.assertIn('data-post-watering-condition-card="WRS-002"', html)
+            self.assertIn("潅水後 53.5%未満", html)
+            self.assertIn("北畝の水分計 / 利用中", html)
+            self.assertIn("48.0%", html)
+            self.assertIn("通知条件が未設定です", html)
+            self.assertIn("Discord通知準備済み", html)
+            wizard_href = f"/settings/post-watering-moisture?watering_device_id=WTR-001&amp;field_id={field['id']}"
+            self.assertIn(f'href="{wizard_href}"', html)
+            self.assertLess(html.index("潅水後の水分チェック"), html.index("環境・潅水の推移"))
+
+            wizard = self.client.get(f"/settings/post-watering-moisture?watering_device_id=WTR-001&field_id={field['id']}")
+            wizard_html = wizard.get_data(as_text=True)
+            self.assertEqual(wizard.status_code, 200)
+            self.assertIn(f'href="/fields/{field["id"]}#monitoring"', wizard_html)
+            self.assertIn("環境・設備へ戻る", wizard_html)
+            self.assertIn(f'<input type="hidden" name="field_id" value="{field["id"]}">', wizard_html)
+
+            saved = self.client.post(
+                "/settings/post-watering-moisture",
+                data={
+                    "field_id": field["id"],
+                    "watering_device_id": "WTR-001",
+                    "sensor_device_id": "SOI-001",
+                    "minimum_percent": "55",
+                    "enabled": "on",
+                },
+            )
+            self.assertEqual(saved.status_code, 302)
+            self.assertEqual(
+                saved.headers["Location"],
+                f"/settings/post-watering-moisture?watering_device_id=WTR-001&saved=1&field_id={field['id']}",
+            )
+
+            with patch.dict(os.environ, {"HUB_ADMIN_EMAILS": ""}):
+                operator_page = self.client.get(
+                    f"/fields/{field['id']}#monitoring",
+                    headers={"Cf-Access-Authenticated-User-Email": "worker@example.com"},
+                )
+            operator_html = operator_page.get_data(as_text=True)
+            self.assertEqual(operator_page.status_code, 200)
+            self.assertIn('data-post-watering-condition-card="WTR-001"', operator_html)
+            self.assertIn("条件の変更は管理者が行います", operator_html)
+            self.assertNotIn(f'href="{wizard_href}"', operator_html)
+        finally:
+            web_server.setting().set("post_watering_moisture", current_rules)
+            web_server.setting().set("discord", current_discord)
+
     def test_field_layout_page_and_api_support_editing(self):
         field = self.field_repository.upsert(None, {"name": "設置ビュー圃場", "crop": "イチゴ"})
 

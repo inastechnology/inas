@@ -9,6 +9,7 @@
     "smoke:collaboration": "node scripts/layout-collaboration-smoke.mjs",
     "smoke:fields": "node scripts/fields-smoke.mjs",
     "smoke:field-detail": "node scripts/field-detail-smoke.mjs",
+    "smoke:field-notifications": "node scripts/post-watering-field-card-smoke.mjs",
     "smoke:camera-detail": "node scripts/camera-detail-smoke.mjs",
     "smoke:device-detail": "node scripts/device-detail-smoke.mjs",
     "smoke:settings": "node scripts/settings-smoke.mjs",

@@ -89,7 +89,7 @@ try {
   await loadingPage.close();
 
   await page.goto(`${baseUrl}/fields/${fieldId}`, { waitUntil: "networkidle0" });
-  assert.equal(await page.$$eval("[data-field-tab]", (tabs) => tabs.length), 5);
+  assert.equal(await page.$$eval("[data-field-tab]", (tabs) => tabs.length), 6);
   assert.equal(await page.$eval("#field-installation-tree", (details) => details.hasAttribute("open")), false);
   const targetSettingsHref = await page.$eval("#field-status-dashboard .range-card", (link) => link.href);
   assert.equal(await page.$eval("#field-status-dashboard .range-card", (link) => link.getAttribute("target")), "_blank");
@@ -719,8 +719,20 @@ try {
   assert.match(await page.$eval("[data-field-tab='monitoring']", (tab) => tab.textContent || ""), /環境・設備/);
   await page.click("[data-field-tab='monitoring']");
   await page.waitForSelector("[data-tab-panel='monitoring']:not([hidden])");
+  assert.match(await page.$eval("#post-watering-notification-conditions", (section) => section.innerText || ""), /潅水後の水分チェック/);
+  assert((await page.$$("[data-post-watering-condition-card]")).length > 0, "field equipment must list its watering notification condition cards");
+  assert.match(
+    await page.$eval("[data-post-watering-condition-card] .condition-card-action", (link) => link.getAttribute("href") || ""),
+    new RegExp(`field_id=${fieldId}`),
+  );
   assert.equal(await page.$eval(".scope-device-settings", (link) => link.getAttribute("target")), "_blank");
   await page.screenshot({ path: "/tmp/ina-field-monitoring-desktop.png", fullPage: true });
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const monitoringOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  assert(monitoringOverflow <= 1, `mobile notification condition cards must not overflow horizontally: ${monitoringOverflow}px`);
+  await page.screenshot({ path: "/tmp/ina-field-monitoring-mobile.png", fullPage: true });
+  await page.setViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
 
   await page.click("[data-field-tab='cultivation']");
   await page.waitForSelector("[data-planting-form]");
@@ -761,7 +773,7 @@ try {
   assert.equal(browserErrors.length, 0, browserErrors.join("\n"));
 
   process.stdout.write(JSON.stringify({
-    tabs: 5,
+    tabs: 6,
     installationTreeInitiallyOpen: false,
     placementDeepLink: true,
     screenshots: [
@@ -800,6 +812,7 @@ try {
       "/tmp/ina-calendar-edit-action-modal.png",
       "/tmp/ina-work-record-desktop.png",
       "/tmp/ina-field-monitoring-desktop.png",
+      "/tmp/ina-field-monitoring-mobile.png",
       "/tmp/ina-field-cultivation-desktop.png",
       "/tmp/ina-field-record-image-paste.png",
       "/tmp/ina-field-record-search-desktop.png",
