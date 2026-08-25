@@ -222,6 +222,23 @@ class PostWateringMoistureServiceTest(unittest.TestCase):
                 self.devices,
             )
 
+    def test_delete_rule_removes_saved_rule_and_pending_state(self):
+        self.service.process_status(
+            "watering-1",
+            {**self.devices["watering-1"], "last_status_at": "2026-08-24T05:00:00+00:00"},
+            {"seq": 5, "watering_started": True},
+        )
+
+        deleted = self.service.delete_rule("watering-1")
+
+        self.assertEqual(deleted["sensor_device_id"], "soil-1")
+        self.assertEqual(self.service.list_rules(), [])
+        self.assertNotIn("watering-1", self.service.state)
+
+    def test_delete_rule_rejects_missing_rule(self):
+        with self.assertRaises(PostWateringMoistureValidationError):
+            self.service.delete_rule("missing")
+
     def test_sensor_options_keep_multiple_sensors_and_latest_values(self):
         options = soil_moisture_sensor_options(self.devices)
 

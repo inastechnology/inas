@@ -42,6 +42,19 @@ class PostWateringMoistureService:
         self._clear_rule_state(rule["watering_device_id"])
         return deepcopy(rule)
 
+    def delete_rule(self, watering_device_id: str):
+        watering_device_id = str(watering_device_id or "").strip()
+        if not watering_device_id:
+            raise PostWateringMoistureValidationError("削除する潅水機を選んでください。")
+        rules = self.list_rules()
+        deleted = next((item for item in rules if item.get("watering_device_id") == watering_device_id), None)
+        if deleted is None:
+            raise PostWateringMoistureValidationError("削除する通知条件が見つかりませんでした。")
+        remaining = [item for item in rules if item.get("watering_device_id") != watering_device_id]
+        self.settings_store.set("post_watering_moisture", {"rules": remaining})
+        self._clear_rule_state(watering_device_id)
+        return deepcopy(deleted)
+
     def process_status(self, device_id: str, record: dict, status: dict):
         if not isinstance(status, dict) or record.get("state") != "active":
             return False

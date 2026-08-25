@@ -24,6 +24,7 @@
       .wizard-hero img { width:100%; height:145px; border-radius:13px; object-fit:cover; }
       .notice,.error,.connection-warning { margin:16px 0 0; padding:12px 14px; border-radius:8px; font-size:12px; line-height:1.6; }
       .notice { color:#18553d; background:#dff2e6; }
+      .notice.editing { border-left:4px solid #2f7b5d; background:#edf7f0; }
       .error { color:#873d34; background:#fde9e7; }
       .connection-warning { border-left:4px solid #bd7a1c; color:#68470f; background:var(--amber-soft); }
       .wizard-progress { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:18px 0; padding:0; list-style:none; }
@@ -42,10 +43,27 @@
       .choice-card { position:relative; display:grid; grid-template-columns:22px minmax(0,1fr); gap:11px; min-height:92px; padding:14px; border:2px solid #d5dfd8; border-radius:11px; background:#fff; cursor:pointer; transition:border-color .15s ease,background-color .15s ease,transform .15s ease; }
       .choice-card:hover { border-color:#80ab92; transform:translateY(-1px); }
       .choice-card:has(input:checked) { border-color:#2b825b; background:#e9f5ed; box-shadow:inset 0 0 0 1px #2b825b; }
+      .choice-card:has(input:disabled) { opacity:.52; cursor:not-allowed; transform:none; }
       .choice-card input { width:19px; height:19px; margin:2px 0 0; accent-color:var(--green); }
       .choice-card strong,.choice-card small,.choice-card span { display:block; }
       .choice-card small { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
       .latest-value { margin-top:7px; color:var(--blue); font-size:12px; font-weight:900; }
+      .sensor-trend { display:grid; gap:13px; padding:16px; border:1px solid #c9d9cf; border-radius:12px; background:#f8fbf9; }
+      .sensor-trend-header { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+      .sensor-trend-header h3 { margin:0; color:#224d3a; font-size:15px; }
+      .sensor-trend-header p { margin:4px 0 0; color:var(--muted); font-size:11px; }
+      .sensor-trend-stats { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+      .sensor-trend-stats span { min-width:74px; padding:6px 8px; border:1px solid #d5e0d8; border-radius:7px; color:#52665a; background:#fff; font-size:10px; text-align:center; }
+      .sensor-trend-stats strong { display:block; margin-top:2px; color:#245942; font-size:14px; }
+      .sensor-trend-plot { min-width:0; padding:8px 8px 2px; border:1px solid #dce5df; border-radius:9px; background:#fff; }
+      .sensor-trend-chart { display:block; width:100%; min-height:220px; overflow:visible; }
+      .sensor-trend-chart text { fill:#718078; font-size:10px; }
+      .sensor-trend-chart .grid { stroke:#e3e9e5; stroke-width:1; }
+      .sensor-trend-chart .moisture-line { fill:none; stroke:#26758b; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
+      .sensor-trend-chart .threshold-line { stroke:#b16b19; stroke-width:2; stroke-dasharray:7 5; }
+      .sensor-trend-chart .threshold-label { fill:#8b5414; font-weight:800; }
+      .sensor-trend-range { display:flex; justify-content:space-between; gap:12px; margin:2px 38px 0 42px; color:#77847c; font-size:10px; }
+      .sensor-trend-status { margin:0; padding:18px; color:var(--muted); font-size:12px; text-align:center; }
       .empty { padding:22px; border:1px dashed #b8c5bd; border-radius:10px; color:var(--muted); background:#f8faf8; font-size:12px; line-height:1.7; text-align:center; }
       .threshold-panel { display:grid; grid-template-columns:minmax(0,1fr) minmax(180px,.7fr); gap:16px; align-items:stretch; }
       .threshold-input { display:grid; place-items:center; gap:7px; min-height:180px; padding:20px; border:1px solid #bbd7c7; border-radius:12px; background:linear-gradient(145deg,#f5fbf7,#e4f2e8); text-align:center; }
@@ -68,18 +86,27 @@
       button,.button-link { min-height:42px; padding:9px 15px; border:1px solid var(--green); border-radius:7px; color:var(--green); background:#fff; cursor:pointer; font-size:12px; font-weight:850; text-decoration:none; }
       button.primary { color:#fff; background:var(--green); }
       button.primary:hover { background:var(--green-dark); }
+      button.danger { border-color:#ba5148; color:#9a332d; background:#fff; }
+      button.danger:hover { color:#fff; background:#a83f37; }
       button:disabled { border-color:#b9c4bd; color:#8b958f; background:#eff2f0; cursor:not-allowed; }
       .configured-rules { display:grid; gap:10px; margin-top:18px; padding:18px; border:1px solid var(--line); border-radius:12px; background:#fff; }
       .configured-rules h2 { margin:0; font-size:16px; }
       .rule-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
       .rule-list a { display:flex; flex-wrap:wrap; justify-content:space-between; gap:5px 12px; padding:11px 12px; border:1px solid #d8e1db; border-radius:8px; color:inherit; background:#f9fbf9; text-decoration:none; font-size:12px; }
       .rule-list strong { color:#245942; }
+      .danger-zone { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-top:18px; padding:17px 18px; border:1px solid #e5c1bd; border-radius:12px; background:#fff8f7; }
+      .danger-zone h2 { margin:0; color:#7f312c; font-size:15px; }
+      .danger-zone p { margin:4px 0 0; color:#79534f; font-size:11px; line-height:1.55; }
       @media (max-width:700px) {
         .header-inner,.wizard-shell { width:min(100% - 22px,960px); }
         .wizard-hero { grid-template-columns:1fr; padding:19px; }
         .wizard-hero img { display:none; }
         .wizard-progress { grid-template-columns:repeat(2,minmax(0,1fr)); }
         .choice-grid,.threshold-panel { grid-template-columns:1fr; }
+        .sensor-trend-header,.danger-zone { align-items:stretch; flex-direction:column; }
+        .sensor-trend-stats { justify-content:stretch; }
+        .sensor-trend-stats span { flex:1; }
+        .sensor-trend-chart { min-height:180px; }
         .wizard-card { padding:17px; }
         .review-row { grid-template-columns:1fr; gap:4px; }
         .wizard-actions { align-items:stretch; flex-direction:column; }
@@ -93,7 +120,9 @@
     <header class="page-header"><div class="header-inner"><a class="brand" href="/">INA Device Hub</a><a class="back-link" href="{{ return_url }}">{{ return_label }}</a></div></header>
     <main class="wizard-shell">
       <section class="wizard-hero"><div><span class="eyebrow">POST-WATERING CHECK</span><h1>潅水後に、水が届いたか確認する</h1><p>潅水を始めるしきい値とは別に、潅水後に到達してほしい最低水分率を設定します。選んだセンサーの次の有効な測定値が下限未満なら、Discordへ1回だけ知らせます。</p></div><img src="/static/ui-illustrations/controller-flow.png" alt="潅水機とセンサーのつながりを示すイラスト"></section>
-      {% if saved %}<p class="notice" role="status">潅水後の水分チェック設定を保存しました。次の潅水から判定します。</p>{% endif %}
+      {% if saved %}<p class="notice" role="status">潅水後の水分チェック設定を保存しました。次の潅水から新しい条件で判定します。</p>{% endif %}
+      {% if deleted %}<p class="notice" role="status">通知条件を削除しました。</p>{% endif %}
+      {% if editing_rule %}<p class="notice editing">「{{ editing_rule.watering_device_name }}」の保存済み条件を編集中です。センサー、最低水分率、使用状態を変更して保存できます。</p>{% endif %}
       {% if error_message %}<p class="error" role="alert">{{ error_message }}</p>{% endif %}
       {% if not discord.webhook_configured or not discord.enabled %}<p class="connection-warning">設定は保存できますが、{% if not discord.webhook_configured %}Discord Webhookが未設定です{% elif not discord.enabled %}すべてのDiscord通知が停止中です{% endif %}。通知設定で準備を確認してください。</p>{% endif %}
 
@@ -108,12 +137,17 @@
         {% if field_id %}<input type="hidden" name="field_id" value="{{ field_id }}">{% endif %}
         <section class="wizard-step-panel active" data-wizard-step="0" aria-labelledby="watering-device-step-title">
           <div class="step-heading"><span class="step-icon" aria-hidden="true">💧</span><div><h2 id="watering-device-step-title">どの潅水機を確認しますか？</h2><p>この機器が実際に潅水したときだけ、選択したセンサーの判定を始めます。</p></div></div>
-          {% if watering_devices %}<div class="choice-grid">{% for device in watering_devices %}<label class="choice-card"><input type="radio" name="watering_device_id" value="{{ device.id }}" data-device-name="{{ device.name }}" data-device-location="{{ device.location }}"{% if selected.watering_device_id == device.id %} checked{% endif %} required><span><strong>{{ device.name }}</strong><small>{{ device.location }} / {{ device.device_kind }}<br>{{ device.id }}</small></span></label>{% endfor %}</div>{% else %}<div class="empty">利用中の潅水機がありません。先に機器を登録して「利用中」にしてください。</div>{% endif %}
+          {% if watering_devices %}<div class="choice-grid">{% for device in watering_devices %}<label class="choice-card"><input type="radio" name="watering_device_id" value="{{ device.id }}" data-device-name="{{ device.name }}" data-device-location="{{ device.location }}"{% if selected.watering_device_id == device.id %} checked{% endif %}{% if editing_rule and selected.watering_device_id != device.id %} disabled{% endif %} required><span><strong>{{ device.name }}</strong><small>{{ device.location }} / {{ device.device_kind }}<br>{{ device.id }}</small></span></label>{% endfor %}</div>{% else %}<div class="empty">利用中の潅水機がありません。先に機器を登録して「利用中」にしてください。</div>{% endif %}
         </section>
 
         <section class="wizard-step-panel" data-wizard-step="1" aria-labelledby="soil-sensor-step-title">
           <div class="step-heading"><span class="step-icon" aria-hidden="true">🌱</span><div><h2 id="soil-sensor-step-title">判定に使う土壌水分センサーを選ぶ</h2><p>複数ある場合は、潅水対象の根域を代表する1台を選んでください。</p></div></div>
           {% if soil_sensors %}<div class="choice-grid">{% for sensor in soil_sensors %}<label class="choice-card"><input type="radio" name="sensor_device_id" value="{{ sensor.id }}" data-device-name="{{ sensor.name }}" data-device-location="{{ sensor.location }}"{% if selected.sensor_device_id == sensor.id %} checked{% endif %} required><span><strong>{{ sensor.name }}</strong><small>{{ sensor.location }} / {{ sensor.device_kind }}<br>{{ sensor.id }}</small><span class="latest-value">{% if sensor.latest_percent is not none %}現在 {{ sensor.latest_percent|round(1) }}%{% else %}測定値はまだありません{% endif %}</span></span></label>{% endfor %}</div>{% else %}<div class="empty">土壌水分を測定できる利用中のセンサーがありません。SOI、ENV、WTR、WRS、FGTの土壌水分センサーを登録してください。</div>{% endif %}
+          <section class="sensor-trend" id="post-watering-sensor-trend" aria-labelledby="sensor-trend-title">
+            <div class="sensor-trend-header"><div><h3 id="sensor-trend-title">選択センサーの直近3日</h3><p id="sensor-trend-name">センサーを選ぶと推移を表示します。</p></div><div class="sensor-trend-stats" aria-label="直近3日の集計"><span>最新<strong id="sensor-trend-latest">—</strong></span><span>最小<strong id="sensor-trend-minimum">—</strong></span><span>最大<strong id="sensor-trend-maximum">—</strong></span><span>測定<strong id="sensor-trend-count">—</strong></span></div></div>
+            <div class="sensor-trend-plot" id="sensor-trend-plot" hidden><svg class="sensor-trend-chart" id="sensor-trend-chart" viewBox="0 0 720 230" role="img" aria-label="選択センサーの直近3日間の土壌水分推移"></svg><div class="sensor-trend-range"><span id="sensor-trend-start"></span><span id="sensor-trend-end"></span></div></div>
+            <p class="sensor-trend-status" id="sensor-trend-status" role="status" aria-live="polite">直近3日分を読み込んでいます。</p>
+          </section>
         </section>
 
         <section class="wizard-step-panel" data-wizard-step="2" aria-labelledby="threshold-step-title">
@@ -128,10 +162,12 @@
           <p class="review-explanation">潅水機から実行済みの状態を受け取った後、選択センサーから最初に届く有効な土壌水分値を判定します。同じ潅水では通知を繰り返しません。</p>
         </section>
 
-        <div class="wizard-actions"><a class="button-link" href="{{ return_url }}">キャンセル</a><div class="action-group"><button type="button" id="wizard-back" hidden>戻る</button><button type="button" class="primary" id="wizard-next"{% if not watering_devices or not soil_sensors %} disabled{% endif %}>次へ</button><button type="submit" class="primary" id="wizard-submit" hidden{% if not watering_devices or not soil_sensors %} disabled{% endif %}>この設定を保存</button></div></div>
+        <div class="wizard-actions"><a class="button-link" href="{{ return_url }}">キャンセル</a><div class="action-group"><button type="button" id="wizard-back" hidden>戻る</button><button type="button" class="primary" id="wizard-next"{% if not watering_devices or not soil_sensors %} disabled{% endif %}>次へ</button><button type="submit" class="primary" id="wizard-submit" hidden{% if not watering_devices or not soil_sensors %} disabled{% endif %}>{% if editing_rule %}変更を保存{% else %}この設定を保存{% endif %}</button></div></div>
       </form>
 
-      {% if rules %}<section class="configured-rules"><h2>設定済みの潅水機</h2><ul class="rule-list">{% for rule in rules %}<li><a href="/settings/post-watering-moisture?watering_device_id={{ rule.watering_device_id|urlencode }}{% if field_id %}&amp;field_id={{ field_id|urlencode }}{% endif %}"><span><strong>{{ rule.watering_device_name }}</strong> → {{ rule.sensor_device_name }}</span><span>{{ rule.minimum_percent }}%未満 / {% if rule.enabled %}使用中{% else %}停止中{% endif %}</span></a></li>{% endfor %}</ul></section>{% endif %}
+      {% if editing_rule %}<section class="danger-zone"><div><h2>この通知条件を削除</h2><p>「{{ editing_rule.watering_device_name }} → {{ editing_rule.sensor_device_name }}」の条件と、保留中の潅水後チェックを削除します。</p></div><form method="post" onsubmit="return window.confirm('この通知条件を削除します。よろしいですか？');">{% if field_id %}<input type="hidden" name="field_id" value="{{ field_id }}">{% endif %}<input type="hidden" name="watering_device_id" value="{{ editing_rule.watering_device_id }}"><button class="danger" type="submit" name="action" value="delete">通知条件を削除</button></form></section>{% endif %}
+
+      {% if rules %}<section class="configured-rules"><h2>設定済みの潅水機</h2><p class="meta">条件を選ぶと、現在値を読み込んで編集できます。</p><ul class="rule-list">{% for rule in rules %}<li><a href="/settings/post-watering-moisture?watering_device_id={{ rule.watering_device_id|urlencode }}{% if field_id %}&amp;field_id={{ field_id|urlencode }}{% endif %}"><span><strong>{{ rule.watering_device_name }}</strong> → {{ rule.sensor_device_name }}</span><span>{{ rule.minimum_percent }}%未満 / {% if rule.enabled %}使用中{% else %}停止中{% endif %}</span></a></li>{% endfor %}</ul></section>{% endif %}
     </main>
     <script>
       document.body.classList.add("wizard-enhanced");
@@ -142,9 +178,113 @@
       const nextButton = document.getElementById("wizard-next");
       const submitButton = document.getElementById("wizard-submit");
       const savedRules = {{ rules|tojson }};
+      const trendName = document.getElementById("sensor-trend-name");
+      const trendLatest = document.getElementById("sensor-trend-latest");
+      const trendMinimum = document.getElementById("sensor-trend-minimum");
+      const trendMaximum = document.getElementById("sensor-trend-maximum");
+      const trendCount = document.getElementById("sensor-trend-count");
+      const trendPlot = document.getElementById("sensor-trend-plot");
+      const trendChart = document.getElementById("sensor-trend-chart");
+      const trendStatus = document.getElementById("sensor-trend-status");
+      const trendStart = document.getElementById("sensor-trend-start");
+      const trendEnd = document.getElementById("sensor-trend-end");
+      const trendCache = new Map();
+      let trendRequestSequence = 0;
       let currentStep = 0;
 
       const selectedInput = (name) => form.querySelector(`input[name="${name}"]:checked`);
+      const trendValue = (value) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : "—";
+      const trendDate = (value) => {
+        const parsed = new Date(value);
+        return Number.isFinite(parsed.getTime()) ? new Intl.DateTimeFormat("ja-JP", { month:"numeric", day:"numeric", hour:"2-digit", minute:"2-digit" }).format(parsed) : "";
+      };
+      const appendSvg = (name, attributes, text = "") => {
+        const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+        Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
+        if (text) element.textContent = text;
+        trendChart.append(element);
+        return element;
+      };
+      const renderTrend = (trend) => {
+        const sensor = selectedInput("sensor_device_id");
+        trendName.textContent = sensor ? `${sensor.dataset.deviceName} / ${sensor.dataset.deviceLocation}` : "センサーを選ぶと推移を表示します。";
+        const points = trend?.points || [];
+        trendLatest.textContent = trendValue(trend?.latest);
+        trendMinimum.textContent = trendValue(trend?.minimum);
+        trendMaximum.textContent = trendValue(trend?.maximum);
+        trendCount.textContent = `${points.length}件`;
+        trendChart.replaceChildren();
+        if (trend?.error) {
+          trendPlot.hidden = true;
+          trendStatus.hidden = false;
+          trendStatus.textContent = trend.error;
+          return;
+        }
+        if (!points.length) {
+          trendPlot.hidden = true;
+          trendStatus.hidden = false;
+          trendStatus.textContent = "選択センサーには直近3日分の土壌水分測定がありません。";
+          return;
+        }
+
+        const left = 48;
+        const right = 702;
+        const top = 18;
+        const bottom = 192;
+        const rangeStart = new Date(trend.range_start).getTime();
+        const rangeEnd = new Date(trend.range_end).getTime();
+        const rangeDuration = Math.max(1, rangeEnd - rangeStart);
+        const xAt = (value) => left + Math.max(0, Math.min(1, (new Date(value).getTime() - rangeStart) / rangeDuration)) * (right - left);
+        const yAt = (value) => top + (100 - Math.max(0, Math.min(100, Number(value)))) / 100 * (bottom - top);
+        [0, 25, 50, 75, 100].forEach((value) => {
+          const y = yAt(value);
+          appendSvg("line", { class:"grid", x1:left, x2:right, y1:y, y2:y });
+          appendSvg("text", { x:8, y:y + 4 }, `${value}%`);
+        });
+        const threshold = Number(form.elements.minimum_percent.value);
+        if (Number.isFinite(threshold)) {
+          const thresholdY = yAt(threshold);
+          appendSvg("line", { class:"threshold-line", x1:left, x2:right, y1:thresholdY, y2:thresholdY });
+          appendSvg("text", { class:"threshold-label", x:right - 3, y:thresholdY - 6, "text-anchor":"end" }, `通知 ${threshold}%`);
+        }
+        appendSvg(
+          "polyline",
+          {
+            class:"moisture-line",
+            points:points.map((point) => `${xAt(point.measured_at).toFixed(1)},${yAt(point.value).toFixed(1)}`).join(" "),
+          },
+        );
+        const latestPoint = points[points.length - 1];
+        appendSvg("circle", { cx:xAt(latestPoint.measured_at), cy:yAt(latestPoint.value), r:4, fill:"#26758b" });
+        trendStart.textContent = trendDate(trend.range_start);
+        trendEnd.textContent = trendDate(trend.range_end);
+        trendPlot.hidden = false;
+        trendStatus.hidden = true;
+      };
+      const loadTrend = async (sensorDeviceId) => {
+        if (!sensorDeviceId) {
+          renderTrend(null);
+          return;
+        }
+        if (trendCache.has(sensorDeviceId)) {
+          renderTrend(trendCache.get(sensorDeviceId));
+          return;
+        }
+        const requestSequence = ++trendRequestSequence;
+        trendPlot.hidden = true;
+        trendStatus.hidden = false;
+        trendStatus.textContent = "直近3日分を読み込んでいます。";
+        try {
+          const response = await fetch(`/local/api/settings/post-watering-moisture/trend?sensor_device_id=${encodeURIComponent(sensorDeviceId)}`, { headers:{ Accept:"application/json" } });
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "直近3日分を読み込めませんでした。");
+          trendCache.set(sensorDeviceId, payload);
+          if (requestSequence === trendRequestSequence && selectedInput("sensor_device_id")?.value === sensorDeviceId) renderTrend(payload);
+        } catch (error) {
+          if (requestSequence !== trendRequestSequence) return;
+          renderTrend({ points:[], error:error.message || "直近3日分を読み込めませんでした。" });
+        }
+      };
       const updateReview = () => {
         const watering = selectedInput("watering_device_id");
         const sensor = selectedInput("sensor_device_id");
@@ -186,11 +326,18 @@
           form.elements.minimum_percent.value = rule.minimum_percent;
           form.elements.enabled.checked = Boolean(rule.enabled);
         }
+        loadTrend(selectedInput("sensor_device_id")?.value || "");
       }));
+      form.querySelectorAll('input[name="sensor_device_id"]').forEach((input) => input.addEventListener("change", () => loadTrend(input.value)));
+      form.elements.minimum_percent.addEventListener("input", () => {
+        const sensorDeviceId = selectedInput("sensor_device_id")?.value;
+        if (sensorDeviceId && trendCache.has(sensorDeviceId)) renderTrend(trendCache.get(sensorDeviceId));
+      });
       form.addEventListener("submit", (event) => {
         if (!selectedInput("watering_device_id") || !selectedInput("sensor_device_id") || !form.elements.minimum_percent.reportValidity()) event.preventDefault();
       });
       showStep(0, false);
+      loadTrend(selectedInput("sensor_device_id")?.value || "");
     </script>
   </body>
 </html>

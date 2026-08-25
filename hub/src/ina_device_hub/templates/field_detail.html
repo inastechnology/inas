@@ -576,7 +576,7 @@
       {% set notification_conditions = context.post_watering_notifications %}
       <section class="surface notification-condition-surface" id="post-watering-notification-conditions" data-tab-panel="monitoring">
         <div class="notification-condition-heading">
-          <div><span class="eyebrow">通知条件</span><h2>潅水後の水分チェック</h2><p>この圃場の潅水機ごとに、水が届いたかを確認するセンサーと最低水分率をまとめて確認できます。</p></div>
+          <div><span class="eyebrow">通知条件</span><h2>潅水後の水分チェック</h2><p>この圃場に関連する潅水機ごとに、水が届いたかを確認するセンサーと最低水分率をまとめて確認できます。</p></div>
           <div class="notification-condition-summary" aria-label="潅水後通知条件の集計"><span>潅水機 {{ notification_conditions.cards|length }}台</span><span>設定済み {{ notification_conditions.configured_count }}件</span><span>監視中 {{ notification_conditions.active_count }}件</span></div>
         </div>
         {% if notification_conditions.cards %}
@@ -584,7 +584,7 @@
         <div class="notification-condition-grid">
           {% for card in notification_conditions.cards %}
           <article class="notification-condition-card {{ card.state }}" data-post-watering-condition-card="{{ card.watering_device_id }}">
-            <header><div><strong>{{ card.watering_device_name }}</strong><small>{{ card.scope_label }} / {{ card.device_kind }}</small></div><span class="condition-state">{{ card.state_label }}</span></header>
+            <header><div><strong>{{ card.watering_device_name }}</strong><small>{{ card.scope_label }} / {{ card.device_kind }}{% if card.linked_via_sensor %} / 判定センサーから関連付け{% endif %}</small></div><span class="condition-state">{{ card.state_label }}</span></header>
             <div class="condition-main"><span>Discordへ知らせる条件</span>{% if card.configured %}<strong>潅水後 {{ card.minimum_percent }}%未満</strong>{% else %}<strong>通知条件が未設定です</strong>{% endif %}</div>
             <dl class="condition-details">
               <div><dt>判定センサー</dt><dd>{{ card.sensor_device_name }}{% if card.configured %} / {{ card.sensor_state_label }}{% endif %}</dd></div>
