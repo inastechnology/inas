@@ -378,8 +378,8 @@ def format_health_alert_notification(alert_type: str, device_id: str, record: di
             0xD18B22,
         ),
         "post_watering_moisture_low": (
-            "潅水後の土壌水分が下限に届いていません",
-            "タンク、ポンプ、配管、センサー位置を確認し、根域まで水が届いたか確認します。",
+            "土壌水分が設定値に届かない状態が続いています",
+            "潅水、降雨、配管、センサー位置を確認し、根域の水分が回復しているか確認します。",
             "monitoring",
             "💧",
             0xC44D42,
@@ -390,8 +390,9 @@ def format_health_alert_notification(alert_type: str, device_id: str, record: di
     description = instruction
     if url:
         description += f"\n\n[確認画面を開く →]({url})"
+    device_field_label = "判定センサー" if alert_type == "post_watering_moisture_low" else "機器"
     fields = [
-        {"name": "機器", "value": record.get("name") or device_id, "inline": True},
+        {"name": device_field_label, "value": record.get("name") or device_id, "inline": True},
         {"name": "場所", "value": record.get("location") or "未設定", "inline": True},
     ]
     if details.get("last_seen_at"):
@@ -404,10 +405,16 @@ def format_health_alert_notification(alert_type: str, device_id: str, record: di
     if details.get("batch_skip_reason"):
         fields.append({"name": "実行しなかった理由", "value": str(details["batch_skip_reason"])[:1024], "inline": False})
     if details.get("measured_percent") is not None:
-        fields.append({"name": "潅水後の土壌水分", "value": f"{details['measured_percent']:g}%", "inline": True})
+        measured_label = "最新の土壌水分" if alert_type == "post_watering_moisture_low" else "潅水後の土壌水分"
+        fields.append({"name": measured_label, "value": f"{details['measured_percent']:g}%", "inline": True})
     if details.get("minimum_percent") is not None:
-        fields.append({"name": "設定した下限", "value": f"{details['minimum_percent']:g}%", "inline": True})
-    if details.get("sensor_device_name"):
+        minimum_label = "到達判定値" if alert_type == "post_watering_moisture_low" else "設定した下限"
+        fields.append({"name": minimum_label, "value": f"{details['minimum_percent']:g}%", "inline": True})
+    if details.get("window_days") is not None:
+        fields.append({"name": "未到達の監視期間", "value": f"直近{details['window_days']}日", "inline": True})
+    if details.get("last_reached_at"):
+        fields.append({"name": "最後に到達した時刻", "value": str(details["last_reached_at"])[:1024], "inline": False})
+    if details.get("sensor_device_name") and alert_type != "post_watering_moisture_low":
         fields.append({"name": "判定に使ったセンサー", "value": str(details["sensor_device_name"])[:1024], "inline": False})
     if details.get("watered_at"):
         fields.append({"name": "潅水を確認した時刻", "value": str(details["watered_at"])[:1024], "inline": False})
@@ -509,7 +516,7 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
     elif alert_type == "soil_calibration_suggested":
         title = "【水分計】校正値の見直し候補があります"
     elif alert_type == "post_watering_moisture_low":
-        title = "【潅水後確認】土壌水分が設定した下限に届いていません"
+        title = "【水分確認】土壌水分が設定値に届かない状態が続いています"
     else:
         title = "【死活監視】確認が必要です"
 
@@ -553,9 +560,15 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
     if details.get("soil_calibration_applied") is not None:
         lines.append(f"device反映: {_format_value(details['soil_calibration_applied'], 'soil_calibration_applied')}")
     if details.get("measured_percent") is not None:
-        lines.append(f"潅水後の土壌水分: {details['measured_percent']:g}%")
+        measured_label = "最新の土壌水分" if alert_type == "post_watering_moisture_low" else "潅水後の土壌水分"
+        lines.append(f"{measured_label}: {details['measured_percent']:g}%")
     if details.get("minimum_percent") is not None:
-        lines.append(f"設定した下限: {details['minimum_percent']:g}%")
+        minimum_label = "到達判定値" if alert_type == "post_watering_moisture_low" else "設定した下限"
+        lines.append(f"{minimum_label}: {details['minimum_percent']:g}%")
+    if details.get("window_days") is not None:
+        lines.append(f"未到達の監視期間: 直近{details['window_days']}日")
+    if details.get("last_reached_at"):
+        lines.append(f"最後に到達した時刻: {details['last_reached_at']}")
     if details.get("sensor_device_name"):
         lines.append(f"判定センサー: {details['sensor_device_name']}")
 

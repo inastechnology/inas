@@ -8,6 +8,7 @@ from ina_device_hub.instagram_post_task import instagram_post_task
 from ina_device_hub.ota_update_service import ota_update_service
 from ina_device_hub.plant_calendar_generation_task import plant_calendar_generation_task
 from ina_device_hub.plant_task_notification_task import plant_task_notification_task
+from ina_device_hub.soil_moisture_notification_task import soil_moisture_notification_task
 from ina_device_hub.timelapse_task import timelapse_task
 from ina_device_hub.weather_record_task import weather_record_task
 
@@ -38,6 +39,7 @@ def run():
     weather_record_task().start()
     instagram_post_task().start()
     health_monitor_task().start()
+    soil_moisture_notification_task().start()
     plant_calendar_generation_task().start()
     plant_task_notification_task().start()
 

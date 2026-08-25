@@ -576,26 +576,26 @@
       {% set notification_conditions = context.post_watering_notifications %}
       <section class="surface notification-condition-surface" id="post-watering-notification-conditions" data-tab-panel="monitoring">
         <div class="notification-condition-heading">
-          <div><span class="eyebrow">通知条件</span><h2>潅水後の水分チェック</h2><p>この圃場に関連する潅水機ごとに、水が届いたかを確認するセンサーと最低水分率をまとめて確認できます。</p></div>
-          <div class="notification-condition-summary" aria-label="潅水後通知条件の集計"><span>潅水機 {{ notification_conditions.cards|length }}台</span><span>設定済み {{ notification_conditions.configured_count }}件</span><span>監視中 {{ notification_conditions.active_count }}件</span></div>
+          <div><span class="eyebrow">通知条件</span><h2>土壌水分の未到達チェック</h2><p>この圃場のセンサーごとに、直近何日間・何%以上へ届かなければ知らせるかをまとめて確認できます。</p></div>
+          <div class="notification-condition-summary" aria-label="土壌水分通知条件の集計"><span>センサー {{ notification_conditions.cards|length }}台</span><span>設定済み {{ notification_conditions.configured_count }}件</span><span>監視中 {{ notification_conditions.active_count }}件</span></div>
         </div>
         {% if notification_conditions.cards %}
         <div class="notification-readiness{% if notification_conditions.discord_ready %} ready{% endif %}"><span>{{ notification_conditions.discord_status_label }}{% if not notification_conditions.discord_ready %}。条件を保存しても、準備が完了するまでDiscordへ届きません。{% endif %}</span>{% if current_user.role == 'admin' and not notification_conditions.discord_ready %}<a href="/settings?section=notifications#notifications">通知設定を確認 →</a>{% endif %}</div>
         <div class="notification-condition-grid">
           {% for card in notification_conditions.cards %}
-          <article class="notification-condition-card {{ card.state }}" data-post-watering-condition-card="{{ card.watering_device_id }}">
-            <header><div><strong>{{ card.watering_device_name }}</strong><small>{{ card.scope_label }} / {{ card.device_kind }}{% if card.linked_via_sensor %} / 判定センサーから関連付け{% endif %}</small></div><span class="condition-state">{{ card.state_label }}</span></header>
-            <div class="condition-main"><span>Discordへ知らせる条件</span>{% if card.configured %}<strong>潅水後 {{ card.minimum_percent }}%未満</strong>{% else %}<strong>通知条件が未設定です</strong>{% endif %}</div>
+          <article class="notification-condition-card {{ card.state }}" data-post-watering-condition-card="{{ card.sensor_device_id }}">
+            <header><div><strong>{{ card.sensor_device_name }}</strong><small>{{ card.scope_label }} / {{ card.device_kind }}</small></div><span class="condition-state">{{ card.state_label }}</span></header>
+            <div class="condition-main"><span>Discordへ知らせる条件</span>{% if card.configured %}<strong>直近{{ card.window_days }}日、{{ card.minimum_percent }}%以上に未到達</strong>{% else %}<strong>通知条件が未設定です</strong>{% endif %}</div>
             <dl class="condition-details">
-              <div><dt>判定センサー</dt><dd>{{ card.sensor_device_name }}{% if card.configured %} / {{ card.sensor_state_label }}{% endif %}</dd></div>
-              <div><dt>センサー現在値</dt><dd>{% if card.latest_percent is not none %}{{ card.latest_percent|round(1) }}%{% elif card.configured %}測定値なし{% else %}センサー選択後に表示{% endif %}</dd></div>
+              <div><dt>センサー現在値</dt><dd>{% if card.latest_percent is not none %}{{ card.latest_percent|round(1) }}%{% else %}測定値なし{% endif %}</dd></div>
+              <div><dt>最後に連続3回到達</dt><dd>{% if card.configured %}{{ card.last_reached_at }}{% else %}設定後に表示{% endif %}</dd></div>
               <div><dt>チェック状態</dt><dd>{{ card.state_label }}{% if card.configured and not card.enabled %}（条件は保存済み）{% endif %}</dd></div>
             </dl>
             {% if current_user.role == 'admin' and card.wizard_available %}<a class="condition-card-action" href="{{ card.wizard_url }}">{% if card.configured %}通知条件を確認・変更{% else %}通知条件を設定{% endif %} →</a>{% elif current_user.role == 'admin' %}<p class="condition-admin-note">条件を変更するには、<a href="{{ card.device_settings_url }}">機器を利用中にしてください。</a></p>{% else %}<p class="condition-admin-note">条件の変更は管理者が行います。</p>{% endif %}
           </article>
           {% endfor %}
         </div>
-        {% else %}<p class="empty-state">この圃場に潅水機が配置されていません。<a href="/fields/{{ field.id }}/layout" target="_blank" rel="noopener">設置ビューで潅水機を配置 →</a></p>{% endif %}
+        {% else %}<p class="empty-state">この圃場に土壌水分センサーが配置されていません。<a href="/fields/{{ field.id }}/layout" target="_blank" rel="noopener">設置ビューでセンサーを配置 →</a></p>{% endif %}
       </section>
 
       <section class="surface" data-tab-panel="monitoring">

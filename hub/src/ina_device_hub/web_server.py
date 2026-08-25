@@ -129,9 +129,11 @@ from ina_device_hub.plant_management_repository import (
 from ina_device_hub.plant_question_policy import validate_plant_question
 from ina_device_hub.post_watering_moisture_service import (
     DEFAULT_MINIMUM_PERCENT,
-    WATERING_DEVICE_KINDS,
+    DEFAULT_WINDOW_DAYS,
+    MAX_WINDOW_DAYS,
+    MIN_WINDOW_DAYS,
+    SOIL_MOISTURE_DEVICE_KINDS,
     PostWateringMoistureValidationError,
-    post_watering_device_options,
     post_watering_moisture_service,
     post_watering_rule_views,
     soil_moisture_sensor_options,
@@ -1218,7 +1220,7 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "kind_label": _device_kind_label(device_kind),
         "supports_irrigation": device_kind in {"WTR", "WRS"},
         "supports_fertigation": device_kind == "FGT",
-        "post_watering_setup_url": f"/settings/post-watering-moisture?{urlencode({'watering_device_id': device_id})}",
+        "post_watering_setup_url": f"/settings/post-watering-moisture?{urlencode({'sensor_device_id': device_id})}",
         "supports_watering_pattern": "watering_pattern" in definition.get("runtime_config", {}).get("send_keys", []),
         "definition": definition,
         "ui_extensions": build_device_detail_extensions(device_kind, device=record, status=payload, config=config),
@@ -4185,9 +4187,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               {% if metric.settings_anchor or metric.history_anchor %}</a>{% else %}</div>{% endif %}
               {% endfor %}
             </div>
-            {% if not demo_mode and (selected.supports_irrigation or selected.supports_fertigation) %}
+            {% if not demo_mode and selected.device_kind in ['SOI', 'ENV', 'WTR', 'WRS', 'FGT'] %}
             <div class="post-watering-setup-cta">
-              <div><strong>潅水後に、水が届いたかDiscordで確認</strong><span>判定に使う土壌水分センサーと、潅水後の最低水分率を案内に沿って設定します。</span></div>
+              <div><strong>水分が回復していない状態をDiscordで確認</strong><span>このセンサーについて、監視する日数と到達してほしい水分量を設定します。</span></div>
               <a href="{{ selected.post_watering_setup_url }}">設定ウィザードを開く →</a>
             </div>
             {% endif %}
@@ -7299,18 +7301,20 @@ def hub_settings_page():
     return response
 
 
-def _post_watering_sensor_trend(sensor_device_id: str, *, now: datetime | None = None):
+def _post_watering_sensor_trend(sensor_device_id: str, *, days: int = DEFAULT_WINDOW_DAYS, now: datetime | None = None):
     range_end = now or datetime.now(UTC)
     if range_end.tzinfo is None:
         range_end = range_end.replace(tzinfo=UTC)
     range_end = range_end.astimezone(UTC)
-    range_start = range_end - timedelta(days=3)
+    days = min(MAX_WINDOW_DAYS, max(MIN_WINDOW_DAYS, int(days)))
+    range_start = range_end - timedelta(days=days)
     try:
         measurements = sensor_measurement_repository().between_for_devices(
             [sensor_device_id],
             range_start.isoformat(),
             range_end.isoformat(),
             limit=5000,
+            metric="soil_moisture_percent",
         )
     except Exception:  # noqa: BLE001
         app.logger.exception("Unable to load post-watering moisture trend for sensor_device_id=%s", sensor_device_id)
@@ -7322,7 +7326,8 @@ def _post_watering_sensor_trend(sensor_device_id: str, *, now: datetime | None =
             "latest": None,
             "minimum": None,
             "maximum": None,
-            "error": "直近3日分の測定値を読み込めませんでした。時間をおいて再読み込みしてください。",
+            "days": days,
+            "error": f"直近{days}日分の測定値を読み込めませんでした。時間をおいて再読み込みしてください。",
         }
 
     points = []
@@ -7354,6 +7359,7 @@ def _post_watering_sensor_trend(sensor_device_id: str, *, now: datetime | None =
     values = [point["value"] for point in points]
     return {
         "sensor_device_id": sensor_device_id,
+        "days": days,
         "range_start": range_start.isoformat(),
         "range_end": range_end.isoformat(),
         "points": points,
@@ -7374,7 +7380,13 @@ def post_watering_moisture_trend_api():
     valid_sensor_ids = {item["id"] for item in soil_moisture_sensor_options(records)}
     if sensor_device_id not in valid_sensor_ids:
         return jsonify({"error": "土壌水分を測定できる利用中のセンサーを選んでください。"}), 400
-    response = jsonify(_post_watering_sensor_trend(sensor_device_id))
+    try:
+        days = int(request.args.get("days", DEFAULT_WINDOW_DAYS))
+    except (TypeError, ValueError):
+        return jsonify({"error": "表示期間は1〜14日で入力してください。"}), 400
+    if not MIN_WINDOW_DAYS <= days <= MAX_WINDOW_DAYS:
+        return jsonify({"error": "表示期間は1〜14日で入力してください。"}), 400
+    response = jsonify(_post_watering_sensor_trend(sensor_device_id, days=days))
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -7386,7 +7398,6 @@ def post_watering_moisture_settings_page():
         return render_template("settings_forbidden.html", user=user), 403
 
     records = device_config_service().get_all_records()
-    watering_devices = post_watering_device_options(records)
     soil_sensors = soil_moisture_sensor_options(records)
     service = post_watering_moisture_service()
     requested_field_id = str((request.form.get("field_id") if request.method == "POST" else request.args.get("field_id")) or "").strip()
@@ -7399,9 +7410,9 @@ def post_watering_moisture_settings_page():
     status_code = 200
     if request.method == "POST":
         if request.form.get("action") == "delete":
-            requested_watering_device_id = request.form.get("watering_device_id", "").strip()
+            requested_sensor_device_id = request.form.get("sensor_device_id", "").strip()
             try:
-                service.delete_rule(requested_watering_device_id)
+                service.delete_rule(requested_sensor_device_id)
             except PostWateringMoistureValidationError as exc:
                 error_message = str(exc)
                 status_code = 400
@@ -7411,20 +7422,27 @@ def post_watering_moisture_settings_page():
                 return redirect("/settings/post-watering-moisture?deleted=1")
         else:
             submitted = {
-                "watering_device_id": request.form.get("watering_device_id", "").strip(),
                 "sensor_device_id": request.form.get("sensor_device_id", "").strip(),
                 "minimum_percent": request.form.get("minimum_percent", ""),
+                "window_days": request.form.get("window_days", ""),
                 "enabled": request.form.get("enabled") == "on",
             }
+            original_sensor_device_id = request.form.get("original_sensor_device_id", "").strip()
             try:
                 saved_rule = service.save_rule(submitted, records)
+                if (
+                    original_sensor_device_id
+                    and original_sensor_device_id != saved_rule["sensor_device_id"]
+                    and any(rule.get("sensor_device_id") == original_sensor_device_id for rule in service.list_rules())
+                ):
+                    service.delete_rule(original_sensor_device_id)
             except PostWateringMoistureValidationError as exc:
                 error_message = str(exc)
                 status_code = 400
             else:
                 query = urlencode(
                     {
-                        "watering_device_id": saved_rule["watering_device_id"],
+                        "sensor_device_id": saved_rule["sensor_device_id"],
                         "saved": "1",
                         **({"field_id": field_id} if field_id else {}),
                     }
@@ -7432,33 +7450,37 @@ def post_watering_moisture_settings_page():
                 return redirect(f"/settings/post-watering-moisture?{query}")
 
     rules = service.list_rules()
-    requested_watering_device_id = str(
-        (submitted or {}).get("watering_device_id")
-        or request.form.get("watering_device_id")
+    requested_sensor_device_id = str(
+        (submitted or {}).get("sensor_device_id")
+        or request.form.get("sensor_device_id")
+        or request.args.get("sensor_device_id")
         or request.args.get("watering_device_id")
-        or (watering_devices[0]["id"] if watering_devices else "")
+        or (soil_sensors[0]["id"] if soil_sensors else "")
     )
-    existing_rule = next((rule for rule in rules if rule.get("watering_device_id") == requested_watering_device_id), None)
+    existing_rule = next((rule for rule in rules if rule.get("sensor_device_id") == requested_sensor_device_id), None)
     selected_rule = submitted or existing_rule or {}
     sensor_ids = {item["id"] for item in soil_sensors}
-    selected_sensor_id = str(selected_rule.get("sensor_device_id") or "")
+    selected_sensor_id = str(selected_rule.get("sensor_device_id") or requested_sensor_device_id)
     if selected_sensor_id not in sensor_ids:
-        selected_sensor_id = requested_watering_device_id if requested_watering_device_id in sensor_ids else (soil_sensors[0]["id"] if soil_sensors else "")
+        selected_sensor_id = soil_sensors[0]["id"] if soil_sensors else ""
     try:
         minimum_percent = float(selected_rule.get("minimum_percent", DEFAULT_MINIMUM_PERCENT))
     except (TypeError, ValueError):
         minimum_percent = DEFAULT_MINIMUM_PERCENT
+    try:
+        window_days = int(selected_rule.get("window_days", DEFAULT_WINDOW_DAYS))
+    except (TypeError, ValueError):
+        window_days = DEFAULT_WINDOW_DAYS
     selected_values = {
-        "watering_device_id": requested_watering_device_id,
         "sensor_device_id": selected_sensor_id,
         "minimum_percent": minimum_percent,
+        "window_days": min(MAX_WINDOW_DAYS, max(MIN_WINDOW_DAYS, window_days)),
         "enabled": selected_rule.get("enabled") is not False,
     }
     response = app.make_response(
         (
             render_template(
                 "post_watering_moisture_wizard.html",
-                watering_devices=watering_devices,
                 soil_sensors=soil_sensors,
                 selected=selected_values,
                 rules=post_watering_rule_views(rules, records),
@@ -10120,103 +10142,82 @@ def _build_monitoring_scopes(placement_rows: list, latest_sensor_values: list):
 
 
 def _build_field_post_watering_notification_context(field_id: str, field_device_records: dict, placement_rows: list):
-    all_device_records = dict(device_config_service().get_all_records() or {})
-    all_device_records.update(field_device_records or {})
-    rules = [
-        rule
-        for rule in post_watering_moisture_service().list_rules()
-        if isinstance(rule, dict) and rule.get("watering_device_id")
-    ]
+    service = post_watering_moisture_service()
+    rules_by_sensor = {str(rule.get("sensor_device_id")): rule for rule in service.list_rules() if isinstance(rule, dict) and rule.get("sensor_device_id")}
     placement_by_device = {}
     for row in placement_rows or []:
         device_id = row.get("device_id")
         if device_id:
             placement_by_device.setdefault(device_id, row)
 
-    field_device_ids = set(field_device_records or {})
-    field_watering_records = {
+    field_sensor_records = {
         device_id: record
         for device_id, record in (field_device_records or {}).items()
-        if str(record.get("device_kind") or (record.get("last_status") or {}).get("device_kind") or "").upper() in WATERING_DEVICE_KINDS
+        if device_id in placement_by_device
+        if str(record.get("device_kind") or (record.get("last_status") or {}).get("device_kind") or "").upper() in SOIL_MOISTURE_DEVICE_KINDS
     }
 
     discord = setting().get("discord") or {}
-    discord_ready = bool(
-        discord.get("webhook_url")
-        and discord.get("enabled", True)
-        and discord.get("notify_post_watering_moisture_low", True)
-    )
+    discord_ready = bool(discord.get("webhook_url") and discord.get("enabled", True) and discord.get("notify_post_watering_moisture_low", True))
     if not discord.get("webhook_url"):
         discord_status_label = "Discord Webhook未設定"
     elif not discord.get("enabled", True):
         discord_status_label = "すべてのDiscord通知が停止中"
     elif not discord.get("notify_post_watering_moisture_low", True):
-        discord_status_label = "潅水後通知が停止中"
+        discord_status_label = "水分未到達通知が停止中"
     else:
         discord_status_label = "Discord通知準備済み"
 
-    def build_card(watering_device_id, watering_record, rule=None, placement=None, *, linked_via_sensor=False):
-        device_kind = str(watering_record.get("device_kind") or (watering_record.get("last_status") or {}).get("device_kind") or "").upper()
-        sensor_record = all_device_records.get((rule or {}).get("sensor_device_id")) or {}
-        latest_percent = soil_moisture_value(sensor_record.get("last_status") or {}) if rule else None
-        placement = placement or {}
+    def build_card(sensor_device_id, sensor_record, rule=None):
+        device_kind = str(sensor_record.get("device_kind") or (sensor_record.get("last_status") or {}).get("device_kind") or "").upper()
+        latest_percent = soil_moisture_value(sensor_record.get("last_status") or {})
+        placement = placement_by_device.get(sensor_device_id) or {}
+        monitor_state = service.rule_status(sensor_device_id) if rule else {}
+        evaluation_status = monitor_state.get("status")
         if not rule:
             state = "unconfigured"
             state_label = "未設定"
         elif rule.get("enabled") is not True:
             state = "paused"
             state_label = "停止中"
-        elif watering_record.get("state") != "active":
-            state = "warning"
-            state_label = "潅水機確認"
         elif sensor_record.get("state") != "active":
             state = "warning"
             state_label = "センサー確認"
+        elif evaluation_status == "not_reached":
+            state = "warning"
+            state_label = "未到達"
         elif not discord_ready:
             state = "warning"
             state_label = "通知準備待ち"
+        elif evaluation_status in {"insufficient_data", "data_unavailable", "sensor_unavailable"}:
+            state = "warning"
+            state_label = "判定準備中"
         else:
             state = "active"
             state_label = "監視中"
         return {
-            "watering_device_id": watering_device_id,
-            "watering_device_name": watering_record.get("name") or watering_device_id,
+            "sensor_device_id": sensor_device_id,
+            "sensor_device_name": sensor_record.get("name") or sensor_device_id,
             "device_kind": device_kind or "不明",
-            "scope_label": placement.get("scope_label") or watering_record.get("location") or "圃場全体",
+            "scope_label": placement.get("scope_label") or sensor_record.get("location") or "圃場全体",
             "configured": bool(rule),
             "enabled": bool(rule and rule.get("enabled") is True),
-            "wizard_available": bool(rule) or watering_record.get("state") == "active",
+            "wizard_available": bool(rule) or sensor_record.get("state") == "active",
             "state": state,
             "state_label": state_label,
-            "linked_via_sensor": linked_via_sensor,
-            "sensor_device_id": (rule or {}).get("sensor_device_id") or "",
-            "sensor_device_name": sensor_record.get("name") or (rule or {}).get("sensor_device_id") or "未選択",
             "sensor_state_label": "利用中" if sensor_record.get("state") == "active" else "停止・未確認",
             "latest_percent": latest_percent,
             "minimum_percent": (rule or {}).get("minimum_percent"),
-            "wizard_url": f"/settings/post-watering-moisture?{urlencode({'watering_device_id': watering_device_id, 'field_id': field_id})}",
-            "device_settings_url": f"/mqtt-devices/{watering_device_id}?tab=settings",
+            "window_days": (rule or {}).get("window_days"),
+            "last_reached_at": _format_datetime(monitor_state.get("last_reached_at")) if monitor_state.get("last_reached_at") else "未確認",
+            "wizard_url": f"/settings/post-watering-moisture?{urlencode({'sensor_device_id': sensor_device_id, 'field_id': field_id})}",
+            "device_settings_url": f"/mqtt-devices/{sensor_device_id}?tab=settings",
         }
 
-    cards = []
-    linked_field_watering_ids = set()
-    for rule in rules:
-        watering_device_id = str(rule.get("watering_device_id") or "")
-        sensor_device_id = str(rule.get("sensor_device_id") or "")
-        if watering_device_id not in field_device_ids and sensor_device_id not in field_device_ids:
-            continue
-        watering_record = all_device_records.get(watering_device_id) or {}
-        linked_via_sensor = watering_device_id not in field_device_ids and sensor_device_id in field_device_ids
-        placement = placement_by_device.get(watering_device_id) or placement_by_device.get(sensor_device_id) or {}
-        cards.append(build_card(watering_device_id, watering_record, rule, placement, linked_via_sensor=linked_via_sensor))
-        linked_field_watering_ids.update({watering_device_id, sensor_device_id} & set(field_watering_records))
-
-    for watering_device_id, watering_record in field_watering_records.items():
-        if watering_device_id in linked_field_watering_ids:
-            continue
-        cards.append(build_card(watering_device_id, watering_record, placement=placement_by_device.get(watering_device_id) or {}))
-
-    cards.sort(key=lambda item: (item["scope_label"].casefold(), item["watering_device_name"].casefold(), item["watering_device_id"]))
+    cards = [
+        build_card(sensor_device_id, sensor_record, rules_by_sensor.get(sensor_device_id)) for sensor_device_id, sensor_record in field_sensor_records.items()
+    ]
+    cards.sort(key=lambda item: (item["scope_label"].casefold(), item["sensor_device_name"].casefold(), item["sensor_device_id"]))
     return {
         "cards": cards,
         "configured_count": sum(1 for card in cards if card["configured"]),

@@ -219,12 +219,19 @@ class SensorMeasurementRepositoryTest(unittest.TestCase):
             "2026-07-12T00:00:00+00:00",
             "2026-07-13T00:00:00+00:00",
         )
+        soil_only = repository.between_for_devices(
+            ["INADS-env-measurement-test"],
+            "2026-07-12T00:00:00+00:00",
+            "2026-07-13T00:00:00+00:00",
+            metric="soil_moisture_percent",
+        )
         out_of_range = repository.between_for_devices(
             ["INADS-env-measurement-test"],
             "2026-07-13T00:00:00+00:00",
             "2026-07-14T00:00:00+00:00",
         )
         self.assertEqual(len(in_range), 1)
+        self.assertEqual(soil_only, [])
         self.assertEqual(out_of_range, [])
 
 

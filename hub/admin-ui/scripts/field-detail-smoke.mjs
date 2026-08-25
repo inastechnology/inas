@@ -719,7 +719,7 @@ try {
   assert.match(await page.$eval("[data-field-tab='monitoring']", (tab) => tab.textContent || ""), /環境・設備/);
   await page.click("[data-field-tab='monitoring']");
   await page.waitForSelector("[data-tab-panel='monitoring']:not([hidden])");
-  assert.match(await page.$eval("#post-watering-notification-conditions", (section) => section.innerText || ""), /潅水後の水分チェック/);
+  assert.match(await page.$eval("#post-watering-notification-conditions", (section) => section.innerText || ""), /土壌水分の未到達チェック/);
   assert((await page.$$("[data-post-watering-condition-card]")).length > 0, "field equipment must list its watering notification condition cards");
   assert.match(
     await page.$eval("[data-post-watering-condition-card] .condition-card-action", (link) => link.getAttribute("href") || ""),

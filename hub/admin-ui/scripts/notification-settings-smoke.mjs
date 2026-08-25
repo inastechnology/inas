@@ -21,7 +21,7 @@ try {
   assert.equal(await page.$eval('[data-settings-nav="notifications"]', (item) => item.classList.contains("active")), true);
   assert.equal(await page.$eval("#notifications h2", (heading) => heading.textContent?.trim()), "通知");
   assert.match(await page.$eval("#notifications", (section) => section.innerText || ""), /今日の栽培作業/);
-  assert.match(await page.$eval("#notifications", (section) => section.innerText || ""), /潅水後の水分チェック/);
+  assert.match(await page.$eval("#notifications", (section) => section.innerText || ""), /土壌水分の未到達チェック/);
   assert.equal(
     await page.$eval('.post-watering-summary a', (link) => link.getAttribute("href")),
     "/settings/post-watering-moisture",
@@ -64,14 +64,15 @@ try {
 
   const wizardResponse = await page.goto(`${baseUrl}/settings/post-watering-moisture`, { waitUntil: "networkidle0" });
   assert.equal(wizardResponse.status(), 200);
-  assert.equal(await page.$eval("h1", (heading) => heading.textContent?.trim()), "潅水後に、水が届いたか確認する");
-  assert.equal(await page.$$eval("[data-wizard-step]", (panels) => panels.length), 4);
+  assert.equal(await page.$eval("h1", (heading) => heading.textContent?.trim()), "水分が回復していない状態を知らせる");
+  assert.equal(await page.$$eval("[data-wizard-step]", (panels) => panels.length), 3);
   assert.equal(await page.$eval('[data-wizard-step="0"]', (panel) => panel.classList.contains("active")), true);
+  assert((await page.$$eval('input[name="sensor_device_id"]', (inputs) => inputs.length)) > 1, "demo wizard must offer multiple soil sensors");
+  assert.doesNotMatch(await page.$eval('[data-wizard-step="0"]', (panel) => panel.innerText || ""), /PARセンサー|定点カメラ/);
   await page.screenshot({ path: "/tmp/ina-post-watering-wizard-desktop.png", fullPage: true });
   await page.click("#wizard-next");
   assert.equal(await page.$eval('[data-wizard-step="1"]', (panel) => panel.classList.contains("active")), true);
-  assert((await page.$$eval('input[name="sensor_device_id"]', (inputs) => inputs.length)) > 1, "demo wizard must offer multiple soil sensors");
-  assert.doesNotMatch(await page.$eval('[data-wizard-step="1"]', (panel) => panel.innerText || ""), /PARセンサー|定点カメラ/);
+  assert.match(await page.$eval('[data-wizard-step="1"]', (panel) => panel.innerText || ""), /1〜14日|監視期間/);
   await page.screenshot({ path: "/tmp/ina-post-watering-wizard-sensors-desktop.png", fullPage: true });
 
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 1 });

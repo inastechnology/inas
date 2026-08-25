@@ -243,20 +243,29 @@ class InaDBConnector:
         ).fetchall()
 
     @serialized_operation
-    def fetch_sensor_measurements_for_devices(self, device_ids: list[str], start_at: str, end_at: str, limit: int = 5000):
+    def fetch_sensor_measurements_for_devices(
+        self,
+        device_ids: list[str],
+        start_at: str,
+        end_at: str,
+        limit: int = 5000,
+        metric: str | None = None,
+    ):
         device_ids = list(dict.fromkeys(str(device_id) for device_id in device_ids if device_id))
         if not device_ids:
             return []
         placeholders = ",".join("?" for _ in device_ids)
+        metric_clause = " AND metric = ?" if metric else ""
+        parameters = (*device_ids, start_at, end_at, *((metric,) if metric else ()), max(1, min(int(limit), 20000)))
         return self.conn.execute(
             f"""
             SELECT device_id, device_kind, measured_at, metric, value, unit, quality, raw_value, source, payload
             FROM sensor_measurements
-            WHERE device_id IN ({placeholders}) AND measured_at >= ? AND measured_at < ?
+            WHERE device_id IN ({placeholders}) AND measured_at >= ? AND measured_at < ?{metric_clause}
             ORDER BY measured_at DESC, id DESC
             LIMIT ?
             """,
-            (*device_ids, start_at, end_at, max(1, min(int(limit), 20000))),
+            parameters,
         ).fetchall()
 
     @commit_and_sync

@@ -3,17 +3,24 @@ import math
 import os
 import threading
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 
 from ina_device_hub.discord_notification_service import discord_notification_service
 from ina_device_hub.general_log import logger
 from ina_device_hub.json_repository_io import atomic_write_json
+from ina_device_hub.sensor_measurement_repository import sensor_measurement_repository
 from ina_device_hub.setting import setting
 
 WATERING_DEVICE_KINDS = {"WTR", "WRS", "FGT"}
 SOIL_MOISTURE_DEVICE_KINDS = {"SOI", "ENV", "WTR", "WRS", "FGT"}
 DEFAULT_MINIMUM_PERCENT = 55.0
+DEFAULT_WINDOW_DAYS = 3
+MIN_WINDOW_DAYS = 1
+MAX_WINDOW_DAYS = 14
+REQUIRED_CONSECUTIVE_SAMPLES = 3
+RENOTIFY_INTERVAL = timedelta(hours=24)
+MEASUREMENT_LIMIT = 20000
 
 
 class PostWateringMoistureValidationError(ValueError):
@@ -21,11 +28,19 @@ class PostWateringMoistureValidationError(ValueError):
 
 
 class PostWateringMoistureService:
-    def __init__(self, settings_store=None, notification_service=None, state_path=None):
+    """Monitor whether soil moisture reached a configured value in a rolling window.
+
+    Historical class and setting names are retained so installed Hubs can migrate
+    existing post-watering rules without losing their selected sensor or threshold.
+    """
+
+    def __init__(self, settings_store=None, notification_service=None, measurement_repository=None, state_path=None):
         self.settings_store = settings_store or setting()
         self.notification_service = notification_service or discord_notification_service()
+        self.measurement_repository = measurement_repository or sensor_measurement_repository()
         self.state_path = state_path or os.path.join(self.settings_store.get_work_dir(), ".post_watering_moisture_state.json")
         self._state_lock = threading.RLock()
+        self._migrate_rules()
         self.state = self._load_state()
 
     def list_rules(self):
@@ -35,164 +50,247 @@ class PostWateringMoistureService:
 
     def save_rule(self, value: dict, devices: dict):
         rule = validate_post_watering_moisture_rule(value, devices)
-        rules = [item for item in self.list_rules() if item.get("watering_device_id") != rule["watering_device_id"]]
+        rules = [item for item in self.list_rules() if item.get("sensor_device_id") != rule["sensor_device_id"]]
         rules.append(rule)
-        rules.sort(key=lambda item: str(item.get("watering_device_id") or ""))
+        rules.sort(key=lambda item: str(item.get("sensor_device_id") or ""))
         self.settings_store.set("post_watering_moisture", {"rules": rules})
-        self._clear_rule_state(rule["watering_device_id"])
+        self._clear_rule_state(rule["sensor_device_id"])
         return deepcopy(rule)
 
-    def delete_rule(self, watering_device_id: str):
-        watering_device_id = str(watering_device_id or "").strip()
-        if not watering_device_id:
-            raise PostWateringMoistureValidationError("削除する潅水機を選んでください。")
+    def delete_rule(self, sensor_device_id: str):
+        sensor_device_id = str(sensor_device_id or "").strip()
+        if not sensor_device_id:
+            raise PostWateringMoistureValidationError("削除するセンサーを選んでください。")
         rules = self.list_rules()
-        deleted = next((item for item in rules if item.get("watering_device_id") == watering_device_id), None)
+        deleted = next((item for item in rules if item.get("sensor_device_id") == sensor_device_id), None)
         if deleted is None:
             raise PostWateringMoistureValidationError("削除する通知条件が見つかりませんでした。")
-        remaining = [item for item in rules if item.get("watering_device_id") != watering_device_id]
+        remaining = [item for item in rules if item.get("sensor_device_id") != sensor_device_id]
         self.settings_store.set("post_watering_moisture", {"rules": remaining})
-        self._clear_rule_state(watering_device_id)
+        self._clear_rule_state(sensor_device_id)
         return deepcopy(deleted)
 
     def process_status(self, device_id: str, record: dict, status: dict):
-        if not isinstance(status, dict) or record.get("state") != "active":
+        if not isinstance(status, dict) or record.get("state") != "active" or soil_moisture_value(status) is None:
             return False
-        rules = [rule for rule in self.list_rules() if rule.get("enabled") is True]
-        if not rules:
+        rule = next(
+            (item for item in self.list_rules() if item.get("enabled") is True and item.get("sensor_device_id") == device_id),
+            None,
+        )
+        if rule is None:
             return False
+        measured_at = _parse_datetime(record.get("last_status_at")) or datetime.now(UTC)
+        return self._evaluate_rule(rule, record, measured_at)
 
+    def evaluate_rules(self, devices: dict, *, now: datetime | None = None):
+        evaluation_time = _as_utc(now or datetime.now(UTC))
         changed = False
-        with self._state_lock:
-            for rule in rules:
-                watering_device_id = rule.get("watering_device_id")
-                sensor_device_id = rule.get("sensor_device_id")
-                if device_id == watering_device_id and _watering_was_performed(status):
-                    changed |= self._start_watering_event(rule, record, status)
-                    after_value = _explicit_post_watering_value(status)
-                    if sensor_device_id == device_id and after_value is not None:
-                        changed |= self._evaluate_pending(rule, record, after_value, record.get("last_status_at"), "潅水機の潅水後測定値")
-                    continue
-                if device_id != sensor_device_id:
-                    continue
-                sensor_value = soil_moisture_value(status)
-                if sensor_value is None:
-                    continue
-                changed |= self._evaluate_pending(rule, record, sensor_value, record.get("last_status_at"), "選択センサーの次回測定値")
-            if changed:
-                self._save_state()
+        for rule in self.list_rules():
+            if rule.get("enabled") is not True:
+                continue
+            sensor_device_id = str(rule.get("sensor_device_id") or "")
+            sensor_record = (devices or {}).get(sensor_device_id) or {}
+            if sensor_record.get("state") != "active":
+                changed |= self._set_non_evaluated_state(sensor_device_id, "sensor_unavailable", evaluation_time)
+                continue
+            changed |= self._evaluate_rule(rule, sensor_record, evaluation_time)
         return changed
 
-    def _start_watering_event(self, rule: dict, record: dict, status: dict):
-        watering_device_id = rule["watering_device_id"]
-        event_id = _watering_event_id(record, status)
-        current = self.state.get(watering_device_id)
-        if isinstance(current, dict) and current.get("event_id") == event_id:
-            return False
-        self.state[watering_device_id] = {
-            "event_id": event_id,
-            "status": "pending",
-            "watered_at": record.get("last_status_at") or datetime.now(UTC).isoformat(),
-            "watering_device_name": record.get("name") or watering_device_id,
-            "watering_device_location": record.get("location") or "未設定",
-            "watering_device_kind": record.get("device_kind") or (record.get("last_status") or {}).get("device_kind") or "",
-            "sensor_device_id": rule["sensor_device_id"],
-            "minimum_percent": rule["minimum_percent"],
-        }
-        return True
-
-    def _evaluate_pending(self, rule: dict, sensor_record: dict, value: float, measured_at, source_label: str):
-        watering_device_id = rule["watering_device_id"]
-        current = self.state.get(watering_device_id)
-        if not isinstance(current, dict) or current.get("status") != "pending":
-            return False
-        if current.get("sensor_device_id") != rule["sensor_device_id"]:
-            return False
-        watered_at = _parse_datetime(current.get("watered_at"))
-        measurement_at = _parse_datetime(measured_at)
-        if watered_at is None or measurement_at is None or measurement_at < watered_at:
-            return False
-
-        minimum_percent = float(rule["minimum_percent"])
-        current.update(
-            {
-                "status": "alerted" if value < minimum_percent else "ok",
-                "measured_at": measurement_at.isoformat(),
-                "measured_percent": value,
-                "minimum_percent": minimum_percent,
-                "sensor_device_name": sensor_record.get("name") or rule["sensor_device_id"],
-                "measurement_source": source_label,
-            }
-        )
-        if value < minimum_percent:
-            watering_record = {
-                "name": current.get("watering_device_name") or watering_device_id,
-                "location": current.get("watering_device_location") or "未設定",
-                "device_kind": current.get("watering_device_kind") or "WTR",
-                "state": "active",
-            }
-            details = {
-                "watered_at": current.get("watered_at"),
-                "measured_at": measurement_at.isoformat(),
-                "measured_percent": value,
-                "minimum_percent": minimum_percent,
-                "sensor_device_id": rule["sensor_device_id"],
-                "sensor_device_name": current["sensor_device_name"],
-                "measurement_source": source_label,
-            }
-            try:
-                self.notification_service.notify_health_alert(
-                    "post_watering_moisture_low",
-                    watering_device_id,
-                    watering_record,
-                    details,
-                )
-            except Exception:
-                logger.exception("Post-watering soil moisture notification failed for device_id=%s", watering_device_id)
-        return True
-
-    def _clear_rule_state(self, watering_device_id: str):
+    def rule_status(self, sensor_device_id: str):
         with self._state_lock:
-            if watering_device_id not in self.state:
+            value = self.state.get(str(sensor_device_id or ""))
+            return deepcopy(value) if isinstance(value, dict) else {}
+
+    def _evaluate_rule(self, rule: dict, sensor_record: dict, now: datetime):
+        sensor_device_id = rule["sensor_device_id"]
+        window_days = int(rule["window_days"])
+        range_start = now - timedelta(days=window_days)
+        try:
+            measurements = self.measurement_repository.between_for_devices(
+                [sensor_device_id],
+                range_start.isoformat(),
+                (now + timedelta(microseconds=1)).isoformat(),
+                limit=MEASUREMENT_LIMIT,
+                metric="soil_moisture_percent",
+            )
+            evaluation = analyze_moisture_window(measurements, rule, now=now)
+        except Exception:  # noqa: BLE001
+            logger.exception("Unable to evaluate soil moisture window for sensor_device_id=%s", sensor_device_id)
+            return self._set_non_evaluated_state(sensor_device_id, "data_unavailable", now)
+
+        with self._state_lock:
+            previous = self.state.get(sensor_device_id) if isinstance(self.state.get(sensor_device_id), dict) else {}
+            current = {
+                **evaluation,
+                "sensor_device_id": sensor_device_id,
+                "minimum_percent": float(rule["minimum_percent"]),
+                "window_days": window_days,
+                "evaluated_at": now.isoformat(),
+            }
+            previous_notified_at = _parse_datetime(previous.get("last_notified_at"))
+            if evaluation["status"] == "not_reached":
+                should_notify = previous_notified_at is None or now - previous_notified_at >= RENOTIFY_INTERVAL
+                if should_notify:
+                    details = {
+                        "sensor_device_id": sensor_device_id,
+                        "sensor_device_name": sensor_record.get("name") or sensor_device_id,
+                        "measured_percent": evaluation.get("latest_percent"),
+                        "measured_at": evaluation.get("latest_measured_at"),
+                        "minimum_percent": float(rule["minimum_percent"]),
+                        "window_days": window_days,
+                        "measurement_count": evaluation.get("measurement_count"),
+                        "last_reached_at": previous.get("last_reached_at") or evaluation.get("last_reached_at"),
+                    }
+                    try:
+                        self.notification_service.notify_health_alert(
+                            "post_watering_moisture_low",
+                            sensor_device_id,
+                            sensor_record,
+                            details,
+                        )
+                    except Exception:
+                        logger.exception("Soil moisture not-reached notification failed for sensor_device_id=%s", sensor_device_id)
+                    current["last_notified_at"] = now.isoformat()
+                elif previous.get("last_notified_at"):
+                    current["last_notified_at"] = previous["last_notified_at"]
+                if previous.get("last_reached_at") and not current.get("last_reached_at"):
+                    current["last_reached_at"] = previous["last_reached_at"]
+            elif evaluation["status"] == "insufficient_data":
+                if previous.get("last_notified_at"):
+                    current["last_notified_at"] = previous["last_notified_at"]
+                if previous.get("last_reached_at") and not current.get("last_reached_at"):
+                    current["last_reached_at"] = previous["last_reached_at"]
+
+            if current == previous:
+                return False
+            self.state[sensor_device_id] = current
+            self._save_state()
+            return True
+
+    def _set_non_evaluated_state(self, sensor_device_id: str, status: str, now: datetime):
+        if not sensor_device_id:
+            return False
+        with self._state_lock:
+            previous = self.state.get(sensor_device_id) if isinstance(self.state.get(sensor_device_id), dict) else {}
+            current = {
+                "sensor_device_id": sensor_device_id,
+                "status": status,
+                "evaluated_at": now.isoformat(),
+            }
+            for key in ("last_notified_at", "last_reached_at", "latest_percent", "latest_measured_at"):
+                if previous.get(key) is not None:
+                    current[key] = previous[key]
+            if current == previous:
+                return False
+            self.state[sensor_device_id] = current
+            self._save_state()
+            return True
+
+    def _migrate_rules(self):
+        config = self.settings_store.get("post_watering_moisture") or {}
+        source_rules = config.get("rules") if isinstance(config, dict) else []
+        source_rules = source_rules if isinstance(source_rules, list) else []
+        by_sensor = {}
+        for source_rule in source_rules:
+            migrated = _normalize_stored_rule(source_rule)
+            if migrated:
+                by_sensor[migrated["sensor_device_id"]] = migrated
+        migrated_rules = sorted(by_sensor.values(), key=lambda item: item["sensor_device_id"])
+        if migrated_rules != source_rules:
+            self.settings_store.set("post_watering_moisture", {"rules": migrated_rules})
+
+    def _clear_rule_state(self, sensor_device_id: str):
+        with self._state_lock:
+            if sensor_device_id not in self.state:
                 return
-            del self.state[watering_device_id]
+            del self.state[sensor_device_id]
             self._save_state()
 
     def _load_state(self):
         try:
             with open(self.state_path, encoding="utf-8") as file:
                 state = json.load(file)
-            return state.get("rules", {}) if isinstance(state, dict) and isinstance(state.get("rules"), dict) else {}
+            if not isinstance(state, dict) or state.get("schema_version") != 2 or not isinstance(state.get("rules"), dict):
+                return {}
+            return state["rules"]
         except (FileNotFoundError, json.JSONDecodeError):
             return {}
 
     def _save_state(self):
-        atomic_write_json(self.state_path, {"schema_version": 1, "rules": self.state})
+        atomic_write_json(self.state_path, {"schema_version": 2, "rules": self.state})
 
 
 def validate_post_watering_moisture_rule(value: dict, devices: dict):
     if not isinstance(value, dict):
         raise PostWateringMoistureValidationError("設定内容を読み取れませんでした。")
-    watering_device_id = str(value.get("watering_device_id") or "").strip()
     sensor_device_id = str(value.get("sensor_device_id") or "").strip()
-    watering_record = devices.get(watering_device_id) if isinstance(devices, dict) else None
     sensor_record = devices.get(sensor_device_id) if isinstance(devices, dict) else None
-    if not _active_watering_device(watering_record):
-        raise PostWateringMoistureValidationError("利用中の潅水機を選んでください。")
     if not _active_soil_moisture_sensor(sensor_record):
         raise PostWateringMoistureValidationError("土壌水分を測定できる利用中のセンサーを選んでください。")
     try:
         minimum_percent = float(value.get("minimum_percent"))
     except (TypeError, ValueError) as exc:
-        raise PostWateringMoistureValidationError("最低水分率は0〜100%で入力してください。") from exc
+        raise PostWateringMoistureValidationError("到達判定値は0〜100%で入力してください。") from exc
     if not math.isfinite(minimum_percent) or not 0 <= minimum_percent <= 100:
-        raise PostWateringMoistureValidationError("最低水分率は0〜100%で入力してください。")
+        raise PostWateringMoistureValidationError("到達判定値は0〜100%で入力してください。")
+    try:
+        window_days = int(value.get("window_days"))
+    except (TypeError, ValueError) as exc:
+        raise PostWateringMoistureValidationError("監視期間は1〜14日で入力してください。") from exc
+    if not MIN_WINDOW_DAYS <= window_days <= MAX_WINDOW_DAYS:
+        raise PostWateringMoistureValidationError("監視期間は1〜14日で入力してください。")
     return {
-        "watering_device_id": watering_device_id,
         "sensor_device_id": sensor_device_id,
         "minimum_percent": round(minimum_percent, 1),
+        "window_days": window_days,
         "enabled": value.get("enabled") is True,
     }
+
+
+def analyze_moisture_window(measurements: list[dict], rule: dict, *, now: datetime):
+    now = _as_utc(now)
+    window_days = int(rule["window_days"])
+    range_start = now - timedelta(days=window_days)
+    minimum_percent = float(rule["minimum_percent"])
+    points = []
+    for measurement in measurements or []:
+        if measurement.get("metric") != "soil_moisture_percent":
+            continue
+        measured_at = _parse_datetime(measurement.get("measured_at"))
+        value = measurement.get("value")
+        if measured_at is None or measured_at < range_start or measured_at > now:
+            continue
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            continue
+        numeric_value = float(value)
+        if not math.isfinite(numeric_value) or not 0 <= numeric_value <= 100:
+            continue
+        points.append((measured_at, numeric_value))
+    points.sort(key=lambda item: item[0])
+
+    consecutive = 0
+    last_reached_at = None
+    for measured_at, value in points:
+        consecutive = consecutive + 1 if value >= minimum_percent else 0
+        if consecutive >= REQUIRED_CONSECUTIVE_SAMPLES:
+            last_reached_at = measured_at
+
+    latest_at, latest_percent = points[-1] if points else (None, None)
+    result = {
+        "status": "reached" if last_reached_at else "insufficient_data",
+        "range_start": range_start.isoformat(),
+        "range_end": now.isoformat(),
+        "measurement_count": len(points),
+        "latest_percent": latest_percent,
+        "latest_measured_at": latest_at.isoformat() if latest_at else None,
+        "last_reached_at": last_reached_at.isoformat() if last_reached_at else None,
+    }
+    if last_reached_at:
+        return result
+    if not _history_covers_window(points, range_start, now):
+        return result
+    result["status"] = "not_reached"
+    return result
 
 
 def post_watering_device_options(devices: dict):
@@ -218,13 +316,12 @@ def soil_moisture_sensor_options(devices: dict):
 def post_watering_rule_views(rules: list[dict], devices: dict):
     views = []
     for rule in rules:
-        watering = (devices or {}).get(rule.get("watering_device_id")) or {}
         sensor = (devices or {}).get(rule.get("sensor_device_id")) or {}
         views.append(
             {
                 **deepcopy(rule),
-                "watering_device_name": watering.get("name") or rule.get("watering_device_id") or "未設定",
                 "sensor_device_name": sensor.get("name") or rule.get("sensor_device_id") or "未設定",
+                "sensor_location": sensor.get("location") or "場所未設定",
             }
         )
     return views
@@ -244,19 +341,38 @@ def soil_moisture_value(status: dict):
     return _first_number(status, ("last_soil_moisture",))
 
 
-def _explicit_post_watering_value(status: dict):
-    if status.get("watering_completed") is not True or status.get("soil_rs485_ok") is False:
+def _normalize_stored_rule(value):
+    if not isinstance(value, dict):
         return None
-    return _first_number(status, ("soil_moisture_after_watering",))
+    sensor_device_id = str(value.get("sensor_device_id") or "").strip()
+    if not sensor_device_id:
+        return None
+    try:
+        minimum_percent = float(value.get("minimum_percent"))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(minimum_percent) or not 0 <= minimum_percent <= 100:
+        return None
+    try:
+        window_days = int(value.get("window_days", DEFAULT_WINDOW_DAYS))
+    except (TypeError, ValueError):
+        window_days = DEFAULT_WINDOW_DAYS
+    window_days = min(MAX_WINDOW_DAYS, max(MIN_WINDOW_DAYS, window_days))
+    return {
+        "sensor_device_id": sensor_device_id,
+        "minimum_percent": round(minimum_percent, 1),
+        "window_days": window_days,
+        "enabled": value.get("enabled") is True,
+    }
 
 
-def _watering_was_performed(status: dict):
-    return status.get("watering_started") is True or status.get("batch_started") is True
-
-
-def _watering_event_id(record: dict, status: dict):
-    stable_part = status.get("schedule_epoch_utc") or status.get("batch_id") or status.get("seq") or "status"
-    return f"{stable_part}:{record.get('last_status_at') or ''}"
+def _history_covers_window(points, range_start: datetime, now: datetime):
+    if len(points) < REQUIRED_CONSECUTIVE_SAMPLES:
+        return False
+    window = now - range_start
+    start_grace = max(timedelta(hours=6), window / 10)
+    latest_grace = min(timedelta(hours=24), window / 2)
+    return points[0][0] <= range_start + start_grace and points[-1][0] >= now - latest_grace
 
 
 def _active_watering_device(record):
@@ -302,9 +418,13 @@ def _parse_datetime(value):
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return _as_utc(parsed)
+
+
+def _as_utc(value: datetime):
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 @lru_cache(maxsize=1)

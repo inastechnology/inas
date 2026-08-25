@@ -21,11 +21,11 @@ try {
   assert.equal(response.status(), 200);
   await page.waitForSelector("#post-watering-notification-conditions:not([hidden])");
   assert.equal(await page.$eval('[data-field-tab="monitoring"]', (tab) => tab.getAttribute("aria-selected")), "true");
-  assert.match(await page.$eval("#post-watering-notification-conditions", (section) => section.innerText || ""), /潅水後の水分チェック/);
+  assert.match(await page.$eval("#post-watering-notification-conditions", (section) => section.innerText || ""), /土壌水分の未到達チェック/);
   const fieldCardCount = await page.$$eval("[data-post-watering-condition-card]", (cards) => cards.length);
   assert(fieldCardCount > 0, "the demo field must list watering condition cards");
   const setupHref = await page.$eval("[data-post-watering-condition-card] .condition-card-action", (link) => link.getAttribute("href") || "");
-  assert.match(setupHref, /watering_device_id=/);
+  assert.match(setupHref, /sensor_device_id=/);
   assert.match(setupHref, new RegExp(`field_id=${fieldId}`));
   await page.screenshot({ path: "/tmp/ina-field-notification-conditions-desktop.png", fullPage: true });
 
@@ -38,10 +38,16 @@ try {
   assert(bounds.scrollWidth <= bounds.clientWidth, `field notification condition cards must not overflow on mobile: ${bounds.scrollWidth}px > ${bounds.clientWidth}px`);
   await page.screenshot({ path: "/tmp/ina-field-notification-conditions-mobile.png", fullPage: true });
 
+  // The demo field also loads a camera preview whose fixture intentionally
+  // returns 422 when no newer frame exists. Keep the wizard assertion scoped
+  // to the soil-moisture flow under test.
+  browserErrors.length = 0;
+
   const trendEnd = new Date();
-  const trendStart = new Date(trendEnd.getTime() - 3 * 24 * 60 * 60 * 1000);
+  const trendStart = new Date(trendEnd.getTime() - 14 * 24 * 60 * 60 * 1000);
   const smokeTrend = {
     sensor_device_id: "smoke-sensor",
+    days: 14,
     range_start: trendStart.toISOString(),
     range_end: trendEnd.toISOString(),
     points: [
@@ -59,9 +65,7 @@ try {
   assert.equal(await page.$eval(".back-link", (link) => link.getAttribute("href")), `/fields/${fieldId}#monitoring`);
   assert.equal(await page.$eval('input[name="field_id"]', (input) => input.value), fieldId);
   assert.match(await page.$eval("#post-watering-sensor-trend", (section) => section.innerText || ""), /選択センサーの直近3日/);
-  await page.click("#wizard-next");
-  await page.waitForSelector('[data-wizard-step="1"].active #post-watering-sensor-trend');
-  await page.waitForFunction(() => document.querySelector("#sensor-trend-status")?.textContent !== "直近3日分を読み込んでいます。");
+  await page.waitForFunction(() => !document.querySelector("#sensor-trend-status")?.textContent?.includes("読み込んでいます"));
   await page.evaluate((trend) => {
     const originalFetch = window.fetch.bind(window);
     window.fetch = (input, init) => {
@@ -72,8 +76,12 @@ try {
     };
     const alternativeSensor = [...document.querySelectorAll('input[name="sensor_device_id"]')].find((input) => !input.checked);
     alternativeSensor?.click();
+    const period = document.querySelector('input[name="window_days"]');
+    period.value = "14";
+    period.dispatchEvent(new Event("change", { bubbles: true }));
   }, smokeTrend);
   await page.waitForSelector("#sensor-trend-chart .moisture-line");
+  assert.match(await page.$eval("#sensor-trend-title", (title) => title.textContent || ""), /直近14日/);
   assert.equal(await page.$eval("#sensor-trend-latest", (value) => value.textContent), "41.0%");
   const trendBounds = await page.$eval("#post-watering-sensor-trend", (section) => ({ scrollWidth: section.scrollWidth, clientWidth: section.clientWidth }));
   assert(trendBounds.scrollWidth <= trendBounds.clientWidth, `sensor trend must not overflow on mobile: ${trendBounds.scrollWidth}px > ${trendBounds.clientWidth}px`);

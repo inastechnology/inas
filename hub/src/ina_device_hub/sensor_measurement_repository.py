@@ -149,8 +149,15 @@ class SensorMeasurementRepository:
         measurements = [_measurement_row_to_dict(row) for row in rows]
         return [item for item in measurements if metric_supported_for_device_kind(item.get("metric"), item.get("device_kind"))]
 
-    def between_for_devices(self, device_ids: list[str], start_at: str, end_at: str, limit: int = 5000):
-        rows = self.db_connector.fetch_sensor_measurements_for_devices(device_ids, start_at, end_at, limit=limit)
+    def between_for_devices(
+        self,
+        device_ids: list[str],
+        start_at: str,
+        end_at: str,
+        limit: int = 5000,
+        metric: str | None = None,
+    ):
+        rows = self.db_connector.fetch_sensor_measurements_for_devices(device_ids, start_at, end_at, limit=limit, metric=metric)
         measurements = [_measurement_row_to_dict(row) for row in rows]
         return [item for item in measurements if metric_supported_for_device_kind(item.get("metric"), item.get("device_kind"))]
 

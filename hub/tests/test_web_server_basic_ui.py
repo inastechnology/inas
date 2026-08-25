@@ -179,8 +179,12 @@ class FakeSensorMeasurementRepository:
     def latest_for_device(self, device_id, limit=100):
         return [item for item in reversed(self.measurements) if item["device_id"] == device_id][:limit]
 
-    def between_for_devices(self, device_ids, start_at, end_at, limit=5000):
-        return [item for item in reversed(self.measurements) if item["device_id"] in device_ids and start_at <= item["measured_at"] < end_at][:limit]
+    def between_for_devices(self, device_ids, start_at, end_at, limit=5000, metric=None):
+        return [
+            item
+            for item in reversed(self.measurements)
+            if item["device_id"] in device_ids and (not metric or item.get("metric") == metric) and start_at <= item["measured_at"] < end_at
+        ][:limit]
 
 
 class FakeFieldRecordMediaService:
@@ -493,7 +497,7 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('class="notification-switch-control"', html)
         self.assertIn("https://hub.example.com", html)
         self.assertNotIn("127.0.0.1", html)
-        self.assertIn("潅水後の水分チェック", html)
+        self.assertIn("土壌水分の未到達チェック", html)
         self.assertIn('href="/settings/post-watering-moisture"', html)
 
     def test_post_watering_moisture_wizard_selects_sensor_and_saves_rule(self):
@@ -538,11 +542,11 @@ class WebServerBasicUITest(unittest.TestCase):
             },
         ]
         try:
-            page = self.client.get("/settings/post-watering-moisture?watering_device_id=WTR-001")
+            page = self.client.get("/settings/post-watering-moisture?sensor_device_id=SOI-001")
 
             self.assertEqual(page.status_code, 200)
             html = page.get_data(as_text=True)
-            self.assertIn("潅水後に、水が届いたか確認する", html)
+            self.assertIn("水分が回復していない状態を知らせる", html)
             self.assertIn("北畝の水分計", html)
             self.assertIn("南畝の水分計", html)
             self.assertIn('name="sensor_device_id" value="SOI-001"', html)
@@ -551,35 +555,36 @@ class WebServerBasicUITest(unittest.TestCase):
             self.assertIn('id="post-watering-sensor-trend"', html)
             self.assertIn("選択センサーの直近3日", html)
 
-            trend = self.client.get("/local/api/settings/post-watering-moisture/trend?sensor_device_id=SOI-001")
+            trend = self.client.get("/local/api/settings/post-watering-moisture/trend?sensor_device_id=SOI-001&days=7")
             self.assertEqual(trend.status_code, 200)
             self.assertEqual([point["value"] for point in trend.get_json()["points"]], [41.0, 46.0])
             self.assertEqual(trend.get_json()["latest"], 46.0)
+            self.assertEqual(trend.get_json()["days"], 7)
 
             saved = self.client.post(
                 "/settings/post-watering-moisture",
                 data={
-                    "watering_device_id": "WTR-001",
                     "sensor_device_id": "SOI-002",
                     "minimum_percent": "53.5",
+                    "window_days": "7",
                     "enabled": "on",
                 },
             )
 
             self.assertEqual(saved.status_code, 302)
-            self.assertEqual(saved.headers["Location"], "/settings/post-watering-moisture?watering_device_id=WTR-001&saved=1")
+            self.assertEqual(saved.headers["Location"], "/settings/post-watering-moisture?sensor_device_id=SOI-002&saved=1")
             rules = web_server.setting().get("post_watering_moisture")["rules"]
             self.assertEqual(rules[0]["sensor_device_id"], "SOI-002")
             self.assertEqual(rules[0]["minimum_percent"], 53.5)
+            self.assertEqual(rules[0]["window_days"], 7)
             self.assertTrue(rules[0]["enabled"])
 
             reloaded = self.client.get(saved.headers["Location"])
             self.assertEqual(reloaded.status_code, 200)
             reloaded_html = reloaded.get_data(as_text=True)
-            self.assertIn("潅水後の水分チェック設定を保存しました", reloaded_html)
-            self.assertIn("北畝の潅水機", reloaded_html)
+            self.assertIn("土壌水分の未到達通知設定を保存しました", reloaded_html)
             self.assertIn("南畝の水分計", reloaded_html)
-            self.assertIn("53.5%未満 / 使用中", reloaded_html)
+            self.assertIn("直近7日で53.5%未到達 / 使用中", reloaded_html)
             self.assertIn("保存済み条件を編集中", reloaded_html)
             self.assertIn("変更を保存", reloaded_html)
             self.assertIn('name="action" value="delete"', reloaded_html)
@@ -587,9 +592,10 @@ class WebServerBasicUITest(unittest.TestCase):
             updated = self.client.post(
                 "/settings/post-watering-moisture",
                 data={
-                    "watering_device_id": "WTR-001",
+                    "original_sensor_device_id": "SOI-002",
                     "sensor_device_id": "SOI-001",
                     "minimum_percent": "55",
+                    "window_days": "14",
                     "enabled": "on",
                 },
             )
@@ -598,10 +604,11 @@ class WebServerBasicUITest(unittest.TestCase):
             self.assertEqual(len(updated_rules), 1)
             self.assertEqual(updated_rules[0]["sensor_device_id"], "SOI-001")
             self.assertEqual(updated_rules[0]["minimum_percent"], 55.0)
+            self.assertEqual(updated_rules[0]["window_days"], 14)
 
             deleted = self.client.post(
                 "/settings/post-watering-moisture",
-                data={"action": "delete", "watering_device_id": "WTR-001"},
+                data={"action": "delete", "sensor_device_id": "SOI-001"},
             )
             self.assertEqual(deleted.status_code, 302)
             self.assertEqual(deleted.headers["Location"], "/settings/post-watering-moisture?deleted=1")
@@ -621,7 +628,7 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(trend.status_code, 403)
 
-    def test_watering_device_detail_links_to_post_watering_wizard(self):
+    def test_soil_moisture_device_detail_links_to_notification_wizard(self):
         self.fake_device_config_service.records = {
             "WTR-001": {
                 "name": "北畝の潅水機",
@@ -638,8 +645,8 @@ class WebServerBasicUITest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
-        self.assertIn("潅水後に、水が届いたかDiscordで確認", html)
-        self.assertIn('href="/settings/post-watering-moisture?watering_device_id=WTR-001"', html)
+        self.assertIn("水分が回復していない状態をDiscordで確認", html)
+        self.assertIn('href="/settings/post-watering-moisture?sensor_device_id=WTR-001"', html)
 
     def test_discord_notification_preferences_can_be_saved_and_all_disabled(self):
         current_discord = dict(web_server.setting().get("discord"))
@@ -1482,9 +1489,9 @@ class WebServerBasicUITest(unittest.TestCase):
             {
                 "rules": [
                     {
-                        "watering_device_id": "WTR-001",
                         "sensor_device_id": "SOI-001",
                         "minimum_percent": 53.5,
+                        "window_days": 7,
                         "enabled": True,
                     }
                 ]
@@ -1511,21 +1518,22 @@ class WebServerBasicUITest(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             self.assertIn('id="post-watering-notification-conditions"', html)
-            self.assertIn("潅水機 2台", html)
+            self.assertIn("センサー 3台", html)
             self.assertIn("設定済み 1件", html)
             self.assertIn("監視中 1件", html)
+            self.assertIn('data-post-watering-condition-card="SOI-001"', html)
             self.assertIn('data-post-watering-condition-card="WTR-001"', html)
             self.assertIn('data-post-watering-condition-card="WRS-002"', html)
-            self.assertIn("潅水後 53.5%未満", html)
-            self.assertIn("北畝の水分計 / 利用中", html)
+            self.assertIn("直近7日、53.5%以上に未到達", html)
+            self.assertIn("北畝の水分計", html)
             self.assertIn("48.0%", html)
             self.assertIn("通知条件が未設定です", html)
             self.assertIn("Discord通知準備済み", html)
-            wizard_href = f"/settings/post-watering-moisture?watering_device_id=WTR-001&amp;field_id={field['id']}"
+            wizard_href = f"/settings/post-watering-moisture?sensor_device_id=SOI-001&amp;field_id={field['id']}"
             self.assertIn(f'href="{wizard_href}"', html)
-            self.assertLess(html.index("潅水後の水分チェック"), html.index("環境・潅水の推移"))
+            self.assertLess(html.index("土壌水分の未到達チェック"), html.index("環境・潅水の推移"))
 
-            wizard = self.client.get(f"/settings/post-watering-moisture?watering_device_id=WTR-001&field_id={field['id']}")
+            wizard = self.client.get(f"/settings/post-watering-moisture?sensor_device_id=SOI-001&field_id={field['id']}")
             wizard_html = wizard.get_data(as_text=True)
             self.assertEqual(wizard.status_code, 200)
             self.assertIn(f'href="/fields/{field["id"]}#monitoring"', wizard_html)
@@ -1536,16 +1544,16 @@ class WebServerBasicUITest(unittest.TestCase):
                 "/settings/post-watering-moisture",
                 data={
                     "field_id": field["id"],
-                    "watering_device_id": "WTR-001",
                     "sensor_device_id": "SOI-001",
                     "minimum_percent": "55",
+                    "window_days": "5",
                     "enabled": "on",
                 },
             )
             self.assertEqual(saved.status_code, 302)
             self.assertEqual(
                 saved.headers["Location"],
-                f"/settings/post-watering-moisture?watering_device_id=WTR-001&saved=1&field_id={field['id']}",
+                f"/settings/post-watering-moisture?sensor_device_id=SOI-001&saved=1&field_id={field['id']}",
             )
 
             with patch.dict(os.environ, {"HUB_ADMIN_EMAILS": ""}):
@@ -1555,13 +1563,13 @@ class WebServerBasicUITest(unittest.TestCase):
                 )
             operator_html = operator_page.get_data(as_text=True)
             self.assertEqual(operator_page.status_code, 200)
-            self.assertIn('data-post-watering-condition-card="WTR-001"', operator_html)
+            self.assertIn('data-post-watering-condition-card="SOI-001"', operator_html)
             self.assertIn("条件の変更は管理者が行います", operator_html)
             self.assertNotIn(f'href="{wizard_href}"', operator_html)
 
             deleted = self.client.post(
                 "/settings/post-watering-moisture",
-                data={"action": "delete", "field_id": field["id"], "watering_device_id": "WTR-001"},
+                data={"action": "delete", "field_id": field["id"], "sensor_device_id": "SOI-001"},
             )
             self.assertEqual(deleted.status_code, 302)
             self.assertEqual(deleted.headers["Location"], f"/fields/{field['id']}#monitoring")
@@ -1608,9 +1616,9 @@ class WebServerBasicUITest(unittest.TestCase):
             {
                 "rules": [
                     {
-                        "watering_device_id": "WTR-OUTSIDE",
                         "sensor_device_id": "FGT-IN-FIELD",
                         "minimum_percent": 40.0,
+                        "window_days": 3,
                         "enabled": True,
                     }
                 ]
@@ -1621,14 +1629,13 @@ class WebServerBasicUITest(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             html = response.get_data(as_text=True)
-            self.assertIn('data-post-watering-condition-card="WTR-OUTSIDE"', html)
-            self.assertNotIn('data-post-watering-condition-card="FGT-IN-FIELD"', html)
-            self.assertIn("潅水機 1台", html)
+            self.assertIn('data-post-watering-condition-card="FGT-IN-FIELD"', html)
+            self.assertNotIn('data-post-watering-condition-card="WTR-OUTSIDE"', html)
+            self.assertIn("センサー 1台", html)
             self.assertIn("設定済み 1件", html)
-            self.assertIn("潅水後 40.0%未満", html)
-            self.assertIn("判定センサーから関連付け", html)
+            self.assertIn("直近3日、40.0%以上に未到達", html)
             self.assertNotIn("通知条件が未設定です", html)
-            wizard_href = f"/settings/post-watering-moisture?watering_device_id=WTR-OUTSIDE&amp;field_id={field['id']}"
+            wizard_href = f"/settings/post-watering-moisture?sensor_device_id=FGT-IN-FIELD&amp;field_id={field['id']}"
             self.assertIn(f'href="{wizard_href}"', html)
         finally:
             web_server.setting().set("post_watering_moisture", current_rules)
