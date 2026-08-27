@@ -147,19 +147,19 @@
         </section>
 
         <section class="wizard-step-panel" data-wizard-step="1" aria-labelledby="condition-step-title">
-          <div class="step-heading"><span class="step-icon" aria-hidden="true">％</span><div><h2 id="condition-step-title">監視する期間と到達判定値</h2><p>期間内に判定値以上が連続3回なければ、Discordへ知らせます。</p></div></div>
+          <div class="step-heading"><span class="step-icon" aria-hidden="true">％</span><div><h2 id="condition-step-title">監視する期間と到達判定値</h2><p>期間内に判定値以上が1回もなければ、Discordへ知らせます。</p></div></div>
           <div class="condition-grid">
             <div class="condition-input"><label for="window-days">監視期間</label><div class="number-control"><input id="window-days" name="window_days" type="number" min="1" max="14" step="1" inputmode="numeric" value="{{ selected.window_days }}" required><span>日</span></div><div class="period-presets" aria-label="監視期間の候補">{% for days in [1, 2, 3, 5, 7, 10, 14] %}<button type="button" data-window-days="{{ days }}">{{ days }}日</button>{% endfor %}</div><small>現在時刻から遡るローリング期間です。1〜14日の整数で設定できます。</small></div>
             <div class="condition-input"><label for="minimum-percent">到達判定値</label><div class="number-control"><input id="minimum-percent" name="minimum_percent" type="number" min="0" max="100" step="0.1" inputmode="decimal" value="{{ '%g'|format(selected.minimum_percent) }}" required><span>%</span></div><small>十分に水分が回復したときの実測値を目安にします。乾いたため潅水を始める値とは別です。</small></div>
           </div>
-          <p class="condition-help">一瞬の測定ノイズで通知が解除されないよう、到達判定値以上が連続3回記録された場合に「到達」とみなします。履歴が期間を十分に覆っていない場合は、水分不足と判定せず準備中になります。</p>
+          <p class="condition-help">潅水後などに到達判定値以上が1回でも記録された場合は「到達」とみなします。履歴が期間を十分に覆っていない場合は、水分不足と判定せず準備中になります。</p>
           <label class="enable-check"><input type="checkbox" name="enabled"{% if selected.enabled %} checked{% endif %}><span>この水分未到達チェックを使用する<br><small>OFFで保存すると、センサー、期間、判定値を残したまま通知判定を停止します。</small></span></label>
         </section>
 
         <section class="wizard-step-panel" data-wizard-step="2" aria-labelledby="review-step-title">
           <div class="step-heading"><span class="step-icon" aria-hidden="true">✓</span><div><h2 id="review-step-title">設定内容を確認</h2><p>保存後は、保存済みの測定履歴を含むローリング期間で判定します。</p></div></div>
           <div class="review-card"><div class="review-row"><span>判定に使うセンサー</span><strong id="review-sensor-device">—</strong></div><div class="review-row"><span>監視期間</span><strong id="review-window">—</strong></div><div class="review-row"><span>到達判定値</span><strong id="review-threshold">—</strong></div><div class="review-row"><span>状態</span><strong id="review-enabled">—</strong></div></div>
-          <p class="review-explanation">直近N日間に判定値以上が連続3回なければ通知します。未到達が続く場合は24時間ごとに再通知し、連続3回の到達を確認すると自動で解除します。</p>
+          <p class="review-explanation">直近N日間に判定値以上が1回もなければ通知します。未到達が続く場合は24時間ごとに再通知し、1回の到達を確認すると自動で解除します。</p>
         </section>
 
         <div class="wizard-actions"><a class="button-link" href="{{ return_url }}">キャンセル</a><div class="action-group"><button type="button" id="wizard-back" hidden>戻る</button><button type="button" class="primary" id="wizard-next"{% if not soil_sensors %} disabled{% endif %}>次へ</button><button type="submit" class="primary" id="wizard-submit" hidden{% if not soil_sensors %} disabled{% endif %}>{% if editing_rule %}変更を保存{% else %}この設定を保存{% endif %}</button></div></div>
@@ -293,7 +293,7 @@
         const days = selectedDays();
         document.getElementById("review-sensor-device").textContent = sensor ? `${sensor.dataset.deviceName} / ${sensor.dataset.deviceLocation}` : "未選択";
         document.getElementById("review-window").textContent = Number.isInteger(days) ? `直近${days}日` : "未入力";
-        document.getElementById("review-threshold").textContent = Number.isFinite(threshold) ? `${threshold}%以上を連続3回` : "未入力";
+        document.getElementById("review-threshold").textContent = Number.isFinite(threshold) ? `${threshold}%以上を1回` : "未入力";
         document.getElementById("review-enabled").textContent = form.elements.enabled.checked ? "使用する" : "停止したまま保存";
       };
       const showStep = (step, moveFocus = true) => {

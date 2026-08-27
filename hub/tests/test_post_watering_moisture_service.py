@@ -123,9 +123,19 @@ class PostWateringMoistureServiceTest(unittest.TestCase):
             for index, value in enumerate(values)
         ]
 
-    def test_complete_window_without_three_consecutive_reaches_notifies(self):
+    def test_complete_window_with_one_reach_does_not_notify(self):
         now = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)
         self._set_points(now, [38, 42, 51, 43, 41])
+
+        self.service.evaluate_rules(self.devices, now=now)
+
+        self.assertEqual(self.notifications.alerts, [])
+        self.assertEqual(self.service.state["soil-1"]["status"], "reached")
+        self.assertIsNotNone(self.service.state["soil-1"]["last_reached_at"])
+
+    def test_complete_window_without_a_reach_notifies(self):
+        now = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)
+        self._set_points(now, [38, 42, 49, 43, 41])
 
         changed = self.service.evaluate_rules(self.devices, now=now)
 
@@ -137,16 +147,6 @@ class PostWateringMoistureServiceTest(unittest.TestCase):
         self.assertEqual(details["window_days"], 3)
         self.assertEqual(details["minimum_percent"], 50)
         self.assertEqual(self.service.state["soil-1"]["status"], "not_reached")
-
-    def test_three_consecutive_values_at_threshold_complete_without_notification(self):
-        now = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)
-        self._set_points(now, [40, 50, 52, 51, 45])
-
-        self.service.evaluate_rules(self.devices, now=now)
-
-        self.assertEqual(self.notifications.alerts, [])
-        self.assertEqual(self.service.state["soil-1"]["status"], "reached")
-        self.assertIsNotNone(self.service.state["soil-1"]["last_reached_at"])
 
     def test_incomplete_history_does_not_notify(self):
         now = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)
@@ -176,7 +176,7 @@ class PostWateringMoistureServiceTest(unittest.TestCase):
         self.service.evaluate_rules(self.devices, now=now)
 
         reached_at = now + timedelta(hours=1)
-        self._set_points(reached_at, [40, 50, 51, 52])
+        self._set_points(reached_at, [40, 50, 41, 42])
         self.service.evaluate_rules(self.devices, now=reached_at)
         self.assertEqual(self.service.state["soil-1"]["status"], "reached")
         self.assertNotIn("last_notified_at", self.service.state["soil-1"])

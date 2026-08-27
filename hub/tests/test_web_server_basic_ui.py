@@ -499,6 +499,7 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertNotIn("127.0.0.1", html)
         self.assertIn("土壌水分の未到達チェック", html)
         self.assertIn('href="/settings/post-watering-moisture"', html)
+        self.assertIn("到達判定値以上を1回も記録していなければ", html)
 
     def test_post_watering_moisture_wizard_selects_sensor_and_saves_rule(self):
         current_rules = deepcopy(web_server.setting().get("post_watering_moisture"))
@@ -554,6 +555,8 @@ class WebServerBasicUITest(unittest.TestCase):
             self.assertIn("現在 44.0%", html)
             self.assertIn('id="post-watering-sensor-trend"', html)
             self.assertIn("選択センサーの直近3日", html)
+            self.assertIn("期間内に判定値以上が1回もなければ", html)
+            self.assertNotIn("連続3回", html)
 
             trend = self.client.get("/local/api/settings/post-watering-moisture/trend?sensor_device_id=SOI-001&days=7")
             self.assertEqual(trend.status_code, 200)

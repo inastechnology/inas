@@ -588,7 +588,7 @@
             <div class="condition-main"><span>Discordへ知らせる条件</span>{% if card.configured %}<strong>直近{{ card.window_days }}日、{{ card.minimum_percent }}%以上に未到達</strong>{% else %}<strong>通知条件が未設定です</strong>{% endif %}</div>
             <dl class="condition-details">
               <div><dt>センサー現在値</dt><dd>{% if card.latest_percent is not none %}{{ card.latest_percent|round(1) }}%{% else %}測定値なし{% endif %}</dd></div>
-              <div><dt>最後に連続3回到達</dt><dd>{% if card.configured %}{{ card.last_reached_at }}{% else %}設定後に表示{% endif %}</dd></div>
+              <div><dt>最後に到達</dt><dd>{% if card.configured %}{{ card.last_reached_at }}{% else %}設定後に表示{% endif %}</dd></div>
               <div><dt>チェック状態</dt><dd>{{ card.state_label }}{% if card.configured and not card.enabled %}（条件は保存済み）{% endif %}</dd></div>
             </dl>
             {% if current_user.role == 'admin' and card.wizard_available %}<a class="condition-card-action" href="{{ card.wizard_url }}">{% if card.configured %}通知条件を確認・変更{% else %}通知条件を設定{% endif %} →</a>{% elif current_user.role == 'admin' %}<p class="condition-admin-note">条件を変更するには、<a href="{{ card.device_settings_url }}">機器を利用中にしてください。</a></p>{% else %}<p class="condition-admin-note">条件の変更は管理者が行います。</p>{% endif %}

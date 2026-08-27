@@ -18,7 +18,7 @@ DEFAULT_MINIMUM_PERCENT = 55.0
 DEFAULT_WINDOW_DAYS = 3
 MIN_WINDOW_DAYS = 1
 MAX_WINDOW_DAYS = 14
-REQUIRED_CONSECUTIVE_SAMPLES = 3
+MINIMUM_WINDOW_SAMPLES = 3
 RENOTIFY_INTERVAL = timedelta(hours=24)
 MEASUREMENT_LIMIT = 20000
 
@@ -268,12 +268,7 @@ def analyze_moisture_window(measurements: list[dict], rule: dict, *, now: dateti
         points.append((measured_at, numeric_value))
     points.sort(key=lambda item: item[0])
 
-    consecutive = 0
-    last_reached_at = None
-    for measured_at, value in points:
-        consecutive = consecutive + 1 if value >= minimum_percent else 0
-        if consecutive >= REQUIRED_CONSECUTIVE_SAMPLES:
-            last_reached_at = measured_at
+    last_reached_at = next((measured_at for measured_at, value in reversed(points) if value >= minimum_percent), None)
 
     latest_at, latest_percent = points[-1] if points else (None, None)
     result = {
@@ -367,7 +362,7 @@ def _normalize_stored_rule(value):
 
 
 def _history_covers_window(points, range_start: datetime, now: datetime):
-    if len(points) < REQUIRED_CONSECUTIVE_SAMPLES:
+    if len(points) < MINIMUM_WINDOW_SAMPLES:
         return False
     window = now - range_start
     start_grace = max(timedelta(hours=6), window / 10)

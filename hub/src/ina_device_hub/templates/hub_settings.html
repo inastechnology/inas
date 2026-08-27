@@ -296,7 +296,7 @@
                 <div class="setting-control"><label class="notification-switch"><input type="checkbox" role="switch" name="enabled" data-notification-master{% if discord.enabled %} checked{% endif %}><span class="notification-switch-control" aria-hidden="true"></span><span class="notification-switch-label">Discord通知を受け取る</span></label></div>
               </div>
               <div class="setting-row" data-setting-row data-search="土壌水分 未到達 乾燥 継続 日数 しきい値 閾値 センサー Discord ウィザード">
-                <div class="setting-label with-help"><span>土壌水分の未到達チェック</span><details class="context-help"><summary aria-label="土壌水分の未到達チェックについて説明を開く">?</summary><div class="context-help-panel" role="note"><strong>一定期間、水分が回復していない状態を確認</strong><p>選んだセンサーが直近1〜14日の間に到達判定値以上を連続3回記録していなければDiscordへ知らせます。</p></div></details></div>
+                <div class="setting-label with-help"><span>土壌水分の未到達チェック</span><details class="context-help"><summary aria-label="土壌水分の未到達チェックについて説明を開く">?</summary><div class="context-help-panel" role="note"><strong>一定期間、水分が回復していない状態を確認</strong><p>選んだセンサーが直近1〜14日の間に到達判定値以上を1回も記録していなければDiscordへ知らせます。</p></div></details></div>
                 <div class="setting-control">
                   <div class="post-watering-summary">
                     <div class="post-watering-summary-head"><div><strong>{% if post_watering_moisture.rules %}{{ post_watering_moisture.enabled_count }}件のチェックを使用中{% else %}まだ設定されていません{% endif %}</strong><small>センサーごとに、監視期間と到達判定値を設定します。</small></div><span class="status{% if not post_watering_moisture.enabled_count %} missing{% endif %}">{% if post_watering_moisture.enabled_count %}監視中{% else %}未設定{% endif %}</span></div>
