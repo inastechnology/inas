@@ -395,6 +395,8 @@ def format_health_alert_notification(alert_type: str, device_id: str, record: di
         {"name": device_field_label, "value": record.get("name") or device_id, "inline": True},
         {"name": "場所", "value": record.get("location") or "未設定", "inline": True},
     ]
+    if details.get("measurement_source_label"):
+        fields.append({"name": "判定に使った値", "value": str(details["measurement_source_label"])[:1024], "inline": False})
     if details.get("last_seen_at"):
         fields.append({"name": "最後に確認できた時刻", "value": str(details["last_seen_at"]), "inline": False})
     if details.get("last_watering_at"):
@@ -571,6 +573,8 @@ def format_health_alert(alert_type: str, device_id: str, record: dict, details: 
         lines.append(f"最後に到達した時刻: {details['last_reached_at']}")
     if details.get("sensor_device_name"):
         lines.append(f"判定センサー: {details['sensor_device_name']}")
+    if details.get("measurement_source_label"):
+        lines.append(f"判定に使った値: {details['measurement_source_label']}")
 
     content = "\n".join(lines)
     if len(content) > DISCORD_CONTENT_LIMIT:

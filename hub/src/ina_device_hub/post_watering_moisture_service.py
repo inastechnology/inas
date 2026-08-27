@@ -16,6 +16,8 @@ WATERING_DEVICE_KINDS = {"WTR", "WRS", "FGT"}
 SOIL_MOISTURE_DEVICE_KINDS = {"SOI", "ENV", "WTR", "WRS", "FGT"}
 DEFAULT_MINIMUM_PERCENT = 55.0
 DEFAULT_WINDOW_DAYS = 3
+DEFAULT_MEASUREMENT_SOURCE = "device"
+AVERAGE_MEASUREMENT_SOURCE = "rs485:average"
 MIN_WINDOW_DAYS = 1
 MAX_WINDOW_DAYS = 14
 MINIMUM_WINDOW_SAMPLES = 3
@@ -71,13 +73,15 @@ class PostWateringMoistureService:
         return deepcopy(deleted)
 
     def process_status(self, device_id: str, record: dict, status: dict):
-        if not isinstance(status, dict) or record.get("state") != "active" or soil_moisture_value(status) is None:
+        if not isinstance(status, dict) or record.get("state") != "active":
             return False
         rule = next(
             (item for item in self.list_rules() if item.get("enabled") is True and item.get("sensor_device_id") == device_id),
             None,
         )
         if rule is None:
+            return False
+        if soil_moisture_source_value(status, rule.get("measurement_source")) is None:
             return False
         measured_at = _parse_datetime(record.get("last_status_at")) or datetime.now(UTC)
         return self._evaluate_rule(rule, record, measured_at)
@@ -104,15 +108,20 @@ class PostWateringMoistureService:
     def _evaluate_rule(self, rule: dict, sensor_record: dict, now: datetime):
         sensor_device_id = rule["sensor_device_id"]
         window_days = int(rule["window_days"])
+        measurement_source = rule.get("measurement_source") or DEFAULT_MEASUREMENT_SOURCE
+        measurement_source_label = soil_moisture_source_label(sensor_record, measurement_source)
         range_start = now - timedelta(days=window_days)
         try:
-            measurements = self.measurement_repository.between_for_devices(
-                [sensor_device_id],
-                range_start.isoformat(),
-                (now + timedelta(microseconds=1)).isoformat(),
-                limit=MEASUREMENT_LIMIT,
-                metric="soil_moisture_percent",
-            )
+            if measurement_source == DEFAULT_MEASUREMENT_SOURCE:
+                measurements = self.measurement_repository.between_for_devices(
+                    [sensor_device_id],
+                    range_start.isoformat(),
+                    (now + timedelta(microseconds=1)).isoformat(),
+                    limit=MEASUREMENT_LIMIT,
+                    metric="soil_moisture_percent",
+                )
+            else:
+                measurements = soil_moisture_measurements_from_status_history(sensor_record.get("status_history"), measurement_source)
             evaluation = analyze_moisture_window(measurements, rule, now=now)
         except Exception:  # noqa: BLE001
             logger.exception("Unable to evaluate soil moisture window for sensor_device_id=%s", sensor_device_id)
@@ -123,6 +132,8 @@ class PostWateringMoistureService:
             current = {
                 **evaluation,
                 "sensor_device_id": sensor_device_id,
+                "measurement_source": measurement_source,
+                "measurement_source_label": measurement_source_label,
                 "minimum_percent": float(rule["minimum_percent"]),
                 "window_days": window_days,
                 "evaluated_at": now.isoformat(),
@@ -134,6 +145,8 @@ class PostWateringMoistureService:
                     details = {
                         "sensor_device_id": sensor_device_id,
                         "sensor_device_name": sensor_record.get("name") or sensor_device_id,
+                        "measurement_source": measurement_source,
+                        "measurement_source_label": measurement_source_label,
                         "measured_percent": evaluation.get("latest_percent"),
                         "measured_at": evaluation.get("latest_measured_at"),
                         "minimum_percent": float(rule["minimum_percent"]),
@@ -227,6 +240,10 @@ def validate_post_watering_moisture_rule(value: dict, devices: dict):
     sensor_record = devices.get(sensor_device_id) if isinstance(devices, dict) else None
     if not _active_soil_moisture_sensor(sensor_record):
         raise PostWateringMoistureValidationError("土壌水分を測定できる利用中のセンサーを選んでください。")
+    measurement_source = str(value.get("measurement_source") or DEFAULT_MEASUREMENT_SOURCE).strip()
+    available_sources = {item["id"] for item in soil_moisture_source_options(sensor_record)}
+    if measurement_source not in available_sources:
+        raise PostWateringMoistureValidationError("判定に使う土壌水分の値を選んでください。")
     try:
         minimum_percent = float(value.get("minimum_percent"))
     except (TypeError, ValueError) as exc:
@@ -241,6 +258,7 @@ def validate_post_watering_moisture_rule(value: dict, devices: dict):
         raise PostWateringMoistureValidationError("監視期間は1〜14日で入力してください。")
     return {
         "sensor_device_id": sensor_device_id,
+        "measurement_source": measurement_source,
         "minimum_percent": round(minimum_percent, 1),
         "window_days": window_days,
         "enabled": value.get("enabled") is True,
@@ -303,7 +321,8 @@ def soil_moisture_sensor_options(devices: dict):
         if not _active_soil_moisture_sensor(record):
             continue
         option = _device_option(device_id, record)
-        option["latest_percent"] = soil_moisture_value(record.get("last_status") or {})
+        option["measurement_sources"] = soil_moisture_source_options(record)
+        option["latest_percent"] = option["measurement_sources"][0]["latest_percent"]
         options.append(option)
     return sorted(options, key=lambda item: (item["name"].casefold(), item["id"]))
 
@@ -317,6 +336,7 @@ def post_watering_rule_views(rules: list[dict], devices: dict):
                 **deepcopy(rule),
                 "sensor_device_name": sensor.get("name") or rule.get("sensor_device_id") or "未設定",
                 "sensor_location": sensor.get("location") or "場所未設定",
+                "measurement_source_label": soil_moisture_source_label(sensor, rule.get("measurement_source")),
             }
         )
     return views
@@ -334,6 +354,79 @@ def soil_moisture_value(status: dict):
     if status.get("soil_moisture_ok") is False:
         return None
     return _first_number(status, ("last_soil_moisture",))
+
+
+def soil_moisture_source_options(record: dict):
+    status = record.get("last_status") if isinstance(record, dict) and isinstance(record.get("last_status"), dict) else {}
+    options = [
+        {
+            "id": DEFAULT_MEASUREMENT_SOURCE,
+            "label": "デバイス代表値（従来どおり）",
+            "latest_percent": soil_moisture_value(status),
+        }
+    ]
+    soil_devices = _rs485_soil_devices(status)
+    for position, device in soil_devices:
+        options.append(
+            {
+                "id": _rs485_source_id(device, position),
+                "label": _rs485_source_label(device, position),
+                "latest_percent": _rs485_moisture_value(device),
+            }
+        )
+    if len(soil_devices) >= 2:
+        options.append(
+            {
+                "id": AVERAGE_MEASUREMENT_SOURCE,
+                "label": f"全土壌センサーの平均（{len(soil_devices)}台）",
+                "latest_percent": soil_moisture_source_value(status, AVERAGE_MEASUREMENT_SOURCE),
+            }
+        )
+    return options
+
+
+def soil_moisture_source_label(record: dict, measurement_source: str | None):
+    measurement_source = str(measurement_source or DEFAULT_MEASUREMENT_SOURCE)
+    option = next((item for item in soil_moisture_source_options(record) if item["id"] == measurement_source), None)
+    return option["label"] if option else "選択した土壌水分値"
+
+
+def soil_moisture_source_value(status: dict, measurement_source: str | None):
+    measurement_source = str(measurement_source or DEFAULT_MEASUREMENT_SOURCE)
+    if measurement_source == DEFAULT_MEASUREMENT_SOURCE:
+        return soil_moisture_value(status)
+    soil_devices = _rs485_soil_devices(status)
+    if measurement_source == AVERAGE_MEASUREMENT_SOURCE:
+        if len(soil_devices) < 2:
+            return None
+        values = [_rs485_moisture_value(device) for _position, device in soil_devices]
+        if any(value is None for value in values):
+            return None
+        return sum(values) / len(values)
+    for position, device in soil_devices:
+        if _rs485_source_id(device, position) == measurement_source:
+            return _rs485_moisture_value(device)
+    return None
+
+
+def soil_moisture_measurements_from_status_history(status_history: list[dict] | None, measurement_source: str):
+    measurements = []
+    for entry in status_history or []:
+        if not isinstance(entry, dict):
+            continue
+        payload = entry.get("payload")
+        measured_at = entry.get("received_at")
+        value = soil_moisture_source_value(payload, measurement_source)
+        if not isinstance(measured_at, str) or value is None:
+            continue
+        measurements.append(
+            {
+                "metric": "soil_moisture_percent",
+                "measured_at": measured_at,
+                "value": value,
+            }
+        )
+    return measurements
 
 
 def _normalize_stored_rule(value):
@@ -355,6 +448,7 @@ def _normalize_stored_rule(value):
     window_days = min(MAX_WINDOW_DAYS, max(MIN_WINDOW_DAYS, window_days))
     return {
         "sensor_device_id": sensor_device_id,
+        "measurement_source": _normalize_measurement_source(value.get("measurement_source")),
         "minimum_percent": round(minimum_percent, 1),
         "window_days": window_days,
         "enabled": value.get("enabled") is True,
@@ -368,6 +462,49 @@ def _history_covers_window(points, range_start: datetime, now: datetime):
     start_grace = max(timedelta(hours=6), window / 10)
     latest_grace = min(timedelta(hours=24), window / 2)
     return points[0][0] <= range_start + start_grace and points[-1][0] >= now - latest_grace
+
+
+def _normalize_measurement_source(value):
+    source = str(value or DEFAULT_MEASUREMENT_SOURCE).strip()
+    if source in {DEFAULT_MEASUREMENT_SOURCE, AVERAGE_MEASUREMENT_SOURCE}:
+        return source
+    if source.startswith(("rs485:index:", "rs485:bus:", "rs485:position:")) and len(source) <= 128:
+        return source
+    return DEFAULT_MEASUREMENT_SOURCE
+
+
+def _rs485_soil_devices(status: dict):
+    devices = status.get("rs485_devices") if isinstance(status, dict) else None
+    if not isinstance(devices, list):
+        return []
+    return [
+        (position, device)
+        for position, device in enumerate(devices)
+        if isinstance(device, dict) and str(device.get("type") or "").lower() == "soil" and device.get("enabled") is not False
+    ]
+
+
+def _rs485_source_id(device: dict, position: int):
+    index = device.get("index")
+    if isinstance(index, int) and not isinstance(index, bool):
+        return f"rs485:index:{index}"
+    slave_id = device.get("modbus_slave_id")
+    if isinstance(slave_id, int) and not isinstance(slave_id, bool):
+        return f"rs485:bus:{str(device.get('type') or '').lower()}:{device.get('baud') or ''}:{slave_id}"
+    return f"rs485:position:{position}"
+
+
+def _rs485_source_label(device: dict, position: int):
+    name = str(device.get("name") or "").strip() or f"土壌センサー{position + 1}"
+    location = str(device.get("location") or "").strip()
+    return f"{name}（{location}）" if location else name
+
+
+def _rs485_moisture_value(device: dict):
+    if device.get("attempted") is False or device.get("bus_ready") is False or device.get("ok") is False:
+        return None
+    value = _first_number(device, ("moisture_percent", "soil_moisture_percent"))
+    return value if value is not None and 0 <= value <= 100 else None
 
 
 def _active_watering_device(record):

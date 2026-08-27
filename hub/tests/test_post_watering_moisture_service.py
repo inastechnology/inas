@@ -18,11 +18,13 @@ os.environ.setdefault("MQTT_BROKER_PASSWORD", "")
 os.environ.setdefault("TIMELAPSE_INTERVAL", "600")
 
 from ina_device_hub.post_watering_moisture_service import (  # noqa: E402
+    AVERAGE_MEASUREMENT_SOURCE,
     PostWateringMoistureService,
     PostWateringMoistureValidationError,
     analyze_moisture_window,
     post_watering_device_options,
     soil_moisture_sensor_options,
+    soil_moisture_source_value,
 )
 
 
@@ -95,6 +97,14 @@ class PostWateringMoistureServiceTest(unittest.TestCase):
                 "device_kind": "SOI",
                 "last_status": {"soil_moisture_percent": 63},
             },
+            "fgt-1": {
+                "name": "潅水デバイスMKⅡ",
+                "location": "ライチ区画",
+                "state": "active",
+                "device_kind": "FGT",
+                "last_status": self._mk2_status(22.5, 26.5),
+                "status_history": [],
+            },
         }
         self.service.save_rule(
             {
@@ -121,6 +131,43 @@ class PostWateringMoistureServiceTest(unittest.TestCase):
                 "value": value,
             }
             for index, value in enumerate(values)
+        ]
+
+    def _mk2_status(self, first, second, *, second_ok=True):
+        return {
+            "device_kind": "FGT",
+            "soil_moisture_percent": first,
+            "rs485_devices": [
+                {
+                    "index": 0,
+                    "enabled": True,
+                    "type": "soil",
+                    "name": "土壌センサー1",
+                    "location": "ライチ北",
+                    "ok": True,
+                    "moisture_percent": first,
+                },
+                {
+                    "index": 1,
+                    "enabled": True,
+                    "type": "soil",
+                    "name": "土壌センサー2",
+                    "location": "ライチ南",
+                    "ok": second_ok,
+                    "moisture_percent": second,
+                },
+            ],
+        }
+
+    def _set_mk2_history(self, now, values):
+        window_start = now - timedelta(days=3) + timedelta(hours=1)
+        step = (now - timedelta(hours=1) - window_start) / max(1, len(values) - 1)
+        self.devices["fgt-1"]["status_history"] = [
+            {
+                "received_at": (window_start + step * index).isoformat(),
+                "payload": self._mk2_status(first, second),
+            }
+            for index, (first, second) in enumerate(values)
         ]
 
     def test_complete_window_with_one_reach_does_not_notify(self):
@@ -226,7 +273,15 @@ class PostWateringMoistureServiceTest(unittest.TestCase):
 
         self.assertEqual(
             service.list_rules(),
-            [{"sensor_device_id": "soil-1", "minimum_percent": 47.0, "window_days": 3, "enabled": True}],
+            [
+                {
+                    "sensor_device_id": "soil-1",
+                    "measurement_source": "device",
+                    "minimum_percent": 47.0,
+                    "window_days": 3,
+                    "enabled": True,
+                }
+            ],
         )
 
     def test_rule_validation_requires_active_sensor_and_one_to_fourteen_days(self):
@@ -265,9 +320,77 @@ class PostWateringMoistureServiceTest(unittest.TestCase):
         self.assertEqual(by_id["soil-1"]["latest_percent"], 42)
         self.assertEqual(by_id["soil-2"]["latest_percent"], 63)
 
+    def test_sensor_options_offer_each_mk2_probe_and_average(self):
+        options = soil_moisture_sensor_options(self.devices)
+
+        mk2_sources = {item["id"]: item for item in next(option for option in options if option["id"] == "fgt-1")["measurement_sources"]}
+        self.assertEqual(mk2_sources["rs485:index:0"]["label"], "土壌センサー1（ライチ北）")
+        self.assertEqual(mk2_sources["rs485:index:1"]["latest_percent"], 26.5)
+        self.assertEqual(mk2_sources[AVERAGE_MEASUREMENT_SOURCE]["latest_percent"], 24.5)
+
+    def test_second_mk2_probe_can_reach_threshold_independently(self):
+        now = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)
+        self._set_mk2_history(now, [(30, 40), (31, 55), (32, 42), (33, 41)])
+        self.service.save_rule(
+            {
+                "sensor_device_id": "fgt-1",
+                "measurement_source": "rs485:index:1",
+                "minimum_percent": 50,
+                "window_days": 3,
+                "enabled": True,
+            },
+            self.devices,
+        )
+
+        self.service.evaluate_rules(self.devices, now=now)
+
+        self.assertEqual(self.notifications.alerts, [])
+        self.assertEqual(self.service.state["fgt-1"]["status"], "reached")
+        self.assertEqual(self.service.state["fgt-1"]["measurement_source_label"], "土壌センサー2（ライチ南）")
+
+    def test_mk2_average_uses_all_healthy_soil_sensors(self):
+        status = self._mk2_status(40, 60)
+        failed_status = self._mk2_status(40, 60, second_ok=False)
+
+        self.assertEqual(soil_moisture_source_value(status, AVERAGE_MEASUREMENT_SOURCE), 50)
+        self.assertIsNone(soil_moisture_source_value(failed_status, AVERAGE_MEASUREMENT_SOURCE))
+
+    def test_mk2_average_rule_notifies_with_selected_source_label(self):
+        now = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)
+        self._set_mk2_history(now, [(30, 40), (32, 42), (34, 44), (36, 46)])
+        self.service.save_rule(
+            {
+                "sensor_device_id": "fgt-1",
+                "measurement_source": AVERAGE_MEASUREMENT_SOURCE,
+                "minimum_percent": 50,
+                "window_days": 3,
+                "enabled": True,
+            },
+            self.devices,
+        )
+
+        self.service.evaluate_rules(self.devices, now=now)
+
+        details = next(alert[3] for alert in self.notifications.alerts if alert[1] == "fgt-1")
+        self.assertEqual(details["measurement_source_label"], "全土壌センサーの平均（2台）")
+        self.assertEqual(details["measured_percent"], 41)
+
+    def test_rule_validation_rejects_unknown_measurement_source(self):
+        with self.assertRaises(PostWateringMoistureValidationError):
+            self.service.save_rule(
+                {
+                    "sensor_device_id": "fgt-1",
+                    "measurement_source": "rs485:index:99",
+                    "minimum_percent": 50,
+                    "window_days": 3,
+                    "enabled": True,
+                },
+                self.devices,
+            )
+
     def test_watering_options_remain_available_for_legacy_callers(self):
         option_ids = {item["id"] for item in post_watering_device_options(self.devices)}
-        self.assertEqual(option_ids, {"watering-1"})
+        self.assertEqual(option_ids, {"watering-1", "fgt-1"})
 
     def test_analyzer_ignores_invalid_values(self):
         now = datetime(2026, 8, 26, 0, 0, tzinfo=UTC)

@@ -47,6 +47,10 @@
       .choice-card strong,.choice-card small,.choice-card span { display:block; }
       .choice-card small { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
       .latest-value { margin-top:7px; color:var(--blue); font-size:12px; font-weight:900; }
+      .source-choice { display:grid; gap:7px; padding:15px; border:1px solid #bbd7c7; border-radius:11px; background:#f2f8f4; }
+      .source-choice label { color:#315f4c; font-size:12px; font-weight:900; }
+      .source-choice select { min-height:46px; padding:9px 11px; border:2px solid #4b9672; border-radius:8px; color:#174c36; background:#fff; font:inherit; font-weight:800; }
+      .source-choice small { color:var(--muted); font-size:11px; line-height:1.55; }
       .sensor-trend { display:grid; gap:13px; padding:16px; border:1px solid #c9d9cf; border-radius:12px; background:#f8fbf9; }
       .sensor-trend-header { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
       .sensor-trend-header h3 { margin:0; color:#224d3a; font-size:15px; }
@@ -123,7 +127,7 @@
       <section class="wizard-hero"><div><span class="eyebrow">SOIL MOISTURE WATCH</span><h1>水分が回復していない状態を知らせる</h1><p>選んだセンサーが、直近1〜14日の間に設定した水分量へ到達していなければDiscordへ知らせます。夏冬の潅水間隔、手動潅水、降雨を含めて圃場の水分回復を確認できます。</p></div><img src="/static/ui-illustrations/controller-flow.png" alt="土壌水分センサーの監視を示すイラスト"></section>
       {% if saved %}<p class="notice" role="status">土壌水分の未到達通知設定を保存しました。保存済みの測定履歴を含めて判定します。</p>{% endif %}
       {% if deleted %}<p class="notice" role="status">通知条件を削除しました。</p>{% endif %}
-      {% if editing_rule %}<p class="notice editing">「{{ editing_rule.sensor_device_name }}」の保存済み条件を編集中です。監視期間、到達判定値、使用状態を変更して保存できます。</p>{% endif %}
+      {% if editing_rule %}<p class="notice editing">「{{ editing_rule.sensor_device_name }} / {{ editing_rule.measurement_source_label }}」の保存済み条件を編集中です。判定に使う値、監視期間、到達判定値、使用状態を変更して保存できます。</p>{% endif %}
       {% if error_message %}<p class="error" role="alert">{{ error_message }}</p>{% endif %}
       {% if not discord.webhook_configured or not discord.enabled %}<p class="connection-warning">設定は保存できますが、{% if not discord.webhook_configured %}Discord Webhookが未設定です{% elif not discord.enabled %}すべてのDiscord通知が停止中です{% endif %}。通知設定で準備を確認してください。</p>{% endif %}
 
@@ -138,7 +142,7 @@
         {% if editing_rule %}<input type="hidden" name="original_sensor_device_id" value="{{ editing_rule.sensor_device_id }}">{% endif %}
         <section class="wizard-step-panel active" data-wizard-step="0" aria-labelledby="soil-sensor-step-title">
           <div class="step-heading"><span class="step-icon" aria-hidden="true">🌱</span><div><h2 id="soil-sensor-step-title">判定に使う土壌水分センサーを選ぶ</h2><p>複数ある場合は、潅水対象の根域を代表する1台を選んでください。</p></div></div>
-          {% if soil_sensors %}<div class="choice-grid">{% for sensor in soil_sensors %}<label class="choice-card"><input type="radio" name="sensor_device_id" value="{{ sensor.id }}" data-device-name="{{ sensor.name }}" data-device-location="{{ sensor.location }}"{% if selected.sensor_device_id == sensor.id %} checked{% endif %} required><span><strong>{{ sensor.name }}</strong><small>{{ sensor.location }} / {{ sensor.device_kind }}<br>{{ sensor.id }}</small><span class="latest-value">{% if sensor.latest_percent is not none %}現在 {{ sensor.latest_percent|round(1) }}%{% else %}測定値はまだありません{% endif %}</span></span></label>{% endfor %}</div>{% else %}<div class="empty">土壌水分を測定できる利用中のセンサーがありません。SOI、ENV、WTR、WRS、FGTの土壌水分センサーを登録してください。</div>{% endif %}
+          {% if soil_sensors %}<div class="choice-grid">{% for sensor in soil_sensors %}<label class="choice-card"><input type="radio" name="sensor_device_id" value="{{ sensor.id }}" data-device-name="{{ sensor.name }}" data-device-location="{{ sensor.location }}"{% if selected.sensor_device_id == sensor.id %} checked{% endif %} required><span><strong>{{ sensor.name }}</strong><small>{{ sensor.location }} / {{ sensor.device_kind }}<br>{{ sensor.id }}</small><span class="latest-value">{% if sensor.latest_percent is not none %}代表値 {{ sensor.latest_percent|round(1) }}%{% else %}測定値はまだありません{% endif %}</span></span></label>{% endfor %}</div><div class="source-choice"><label for="measurement-source">判定に使う水分値</label><select id="measurement-source" name="measurement_source" required>{% for source in selected_source_options %}<option value="{{ source.id }}"{% if selected.measurement_source == source.id %} selected{% endif %}>{{ source.label }}{% if source.latest_percent is not none %} — 現在 {{ source.latest_percent|round(1) }}%{% endif %}</option>{% endfor %}</select><small>複数の土壌センサーがある機器では、個別センサーまたは全センサーの平均を選べます。平均は全センサーを正常に読めた測定だけを使います。</small></div>{% else %}<div class="empty">土壌水分を測定できる利用中のセンサーがありません。SOI、ENV、WTR、WRS、FGTの土壌水分センサーを登録してください。</div>{% endif %}
           <section class="sensor-trend" id="post-watering-sensor-trend" aria-labelledby="sensor-trend-title">
             <div class="sensor-trend-header"><div><h3 id="sensor-trend-title">選択センサーの直近{{ selected.window_days }}日</h3><p id="sensor-trend-name">センサーを選ぶと推移を表示します。</p></div><div class="sensor-trend-stats" aria-label="表示期間の集計"><span>最新<strong id="sensor-trend-latest">—</strong></span><span>最小<strong id="sensor-trend-minimum">—</strong></span><span>最大<strong id="sensor-trend-maximum">—</strong></span><span>測定<strong id="sensor-trend-count">—</strong></span></div></div>
             <div class="sensor-trend-plot" id="sensor-trend-plot" hidden><svg class="sensor-trend-chart" id="sensor-trend-chart" viewBox="0 0 720 230" role="img" aria-label="選択センサーの土壌水分推移"></svg><div class="sensor-trend-range"><span id="sensor-trend-start"></span><span id="sensor-trend-end"></span></div></div>
@@ -158,7 +162,7 @@
 
         <section class="wizard-step-panel" data-wizard-step="2" aria-labelledby="review-step-title">
           <div class="step-heading"><span class="step-icon" aria-hidden="true">✓</span><div><h2 id="review-step-title">設定内容を確認</h2><p>保存後は、保存済みの測定履歴を含むローリング期間で判定します。</p></div></div>
-          <div class="review-card"><div class="review-row"><span>判定に使うセンサー</span><strong id="review-sensor-device">—</strong></div><div class="review-row"><span>監視期間</span><strong id="review-window">—</strong></div><div class="review-row"><span>到達判定値</span><strong id="review-threshold">—</strong></div><div class="review-row"><span>状態</span><strong id="review-enabled">—</strong></div></div>
+          <div class="review-card"><div class="review-row"><span>判定に使うデバイス</span><strong id="review-sensor-device">—</strong></div><div class="review-row"><span>判定に使う水分値</span><strong id="review-measurement-source">—</strong></div><div class="review-row"><span>監視期間</span><strong id="review-window">—</strong></div><div class="review-row"><span>到達判定値</span><strong id="review-threshold">—</strong></div><div class="review-row"><span>状態</span><strong id="review-enabled">—</strong></div></div>
           <p class="review-explanation">直近N日間に判定値以上が1回もなければ通知します。未到達が続く場合は24時間ごとに再通知し、1回の到達を確認すると自動で解除します。</p>
         </section>
 
@@ -167,7 +171,7 @@
 
       {% if editing_rule %}<section class="danger-zone"><div><h2>この通知条件を削除</h2><p>「{{ editing_rule.sensor_device_name }}」の監視期間、到達判定値、通知状態を削除します。</p></div><form method="post" onsubmit="return window.confirm('この通知条件を削除します。よろしいですか？');">{% if field_id %}<input type="hidden" name="field_id" value="{{ field_id }}">{% endif %}<input type="hidden" name="sensor_device_id" value="{{ editing_rule.sensor_device_id }}"><button class="danger" type="submit" name="action" value="delete">通知条件を削除</button></form></section>{% endif %}
 
-      {% if rules %}<section class="configured-rules"><h2>設定済みのセンサー</h2><p class="meta">条件を選ぶと、現在値を読み込んで編集できます。</p><ul class="rule-list">{% for rule in rules %}<li><a href="/settings/post-watering-moisture?sensor_device_id={{ rule.sensor_device_id|urlencode }}{% if field_id %}&amp;field_id={{ field_id|urlencode }}{% endif %}"><span><strong>{{ rule.sensor_device_name }}</strong> / {{ rule.sensor_location }}</span><span>直近{{ rule.window_days }}日で{{ rule.minimum_percent }}%未到達 / {% if rule.enabled %}使用中{% else %}停止中{% endif %}</span></a></li>{% endfor %}</ul></section>{% endif %}
+      {% if rules %}<section class="configured-rules"><h2>設定済みのセンサー</h2><p class="meta">条件を選ぶと、現在値を読み込んで編集できます。</p><ul class="rule-list">{% for rule in rules %}<li><a href="/settings/post-watering-moisture?sensor_device_id={{ rule.sensor_device_id|urlencode }}{% if field_id %}&amp;field_id={{ field_id|urlencode }}{% endif %}"><span><strong>{{ rule.sensor_device_name }}</strong> / {{ rule.measurement_source_label }} / {{ rule.sensor_location }}</span><span>直近{{ rule.window_days }}日で{{ rule.minimum_percent }}%未到達 / {% if rule.enabled %}使用中{% else %}停止中{% endif %}</span></a></li>{% endfor %}</ul></section>{% endif %}
     </main>
     <script>
       document.body.classList.add("wizard-enhanced");
@@ -178,6 +182,8 @@
       const nextButton = document.getElementById("wizard-next");
       const submitButton = document.getElementById("wizard-submit");
       const savedRules = {{ rules|tojson }};
+      const sensorOptions = {{ soil_sensors|tojson }};
+      const measurementSource = document.getElementById("measurement-source");
       const trendTitle = document.getElementById("sensor-trend-title");
       const trendName = document.getElementById("sensor-trend-name");
       const trendLatest = document.getElementById("sensor-trend-latest");
@@ -195,6 +201,21 @@
 
       const selectedInput = (name) => form.querySelector(`input[name="${name}"]:checked`);
       const selectedDays = () => Number(form.elements.window_days.value);
+      const selectedSource = () => measurementSource?.value || "device";
+      const selectedSourceLabel = () => measurementSource?.selectedOptions?.[0]?.textContent?.replace(/ — 現在 .+$/, "") || "未選択";
+      const populateMeasurementSources = (preferredSource = "device") => {
+        if (!measurementSource) return;
+        const sensorDeviceId = selectedInput("sensor_device_id")?.value || "";
+        const sensor = sensorOptions.find((item) => item.id === sensorDeviceId);
+        const sources = sensor?.measurement_sources || [];
+        measurementSource.replaceChildren(...sources.map((source) => {
+          const option = document.createElement("option");
+          option.value = source.id;
+          option.textContent = `${source.label}${source.latest_percent === null || source.latest_percent === undefined ? "" : ` — 現在 ${Number(source.latest_percent).toFixed(1)}%`}`;
+          return option;
+        }));
+        measurementSource.value = sources.some((source) => source.id === preferredSource) ? preferredSource : "device";
+      };
       const trendValue = (value) => value !== null && value !== undefined && Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : "—";
       const trendDate = (value) => {
         const parsed = new Date(value);
@@ -211,7 +232,7 @@
         const sensor = selectedInput("sensor_device_id");
         const days = Number(trend?.days || selectedDays() || 3);
         trendTitle.textContent = `選択センサーの直近${days}日`;
-        trendName.textContent = sensor ? `${sensor.dataset.deviceName} / ${sensor.dataset.deviceLocation}` : "センサーを選ぶと推移を表示します。";
+        trendName.textContent = sensor ? `${sensor.dataset.deviceName} / ${selectedSourceLabel()} / ${sensor.dataset.deviceLocation}` : "センサーを選ぶと推移を表示します。";
         const points = trend?.points || [];
         trendLatest.textContent = trendValue(trend?.latest);
         trendMinimum.textContent = trendValue(trend?.minimum);
@@ -261,12 +282,13 @@
       };
       const loadTrend = async () => {
         const sensorDeviceId = selectedInput("sensor_device_id")?.value || "";
+        const source = selectedSource();
         const days = selectedDays();
-        if (!sensorDeviceId || !Number.isInteger(days) || days < 1 || days > 14) {
+        if (!sensorDeviceId || !source || !Number.isInteger(days) || days < 1 || days > 14) {
           renderTrend(null);
           return;
         }
-        const cacheKey = `${sensorDeviceId}:${days}`;
+        const cacheKey = `${sensorDeviceId}:${source}:${days}`;
         if (trendCache.has(cacheKey)) {
           renderTrend(trendCache.get(cacheKey));
           return;
@@ -277,11 +299,11 @@
         trendStatus.hidden = false;
         trendStatus.textContent = `直近${days}日分を読み込んでいます。`;
         try {
-          const response = await fetch(`/local/api/settings/post-watering-moisture/trend?sensor_device_id=${encodeURIComponent(sensorDeviceId)}&days=${days}`, { headers:{ Accept:"application/json" } });
+          const response = await fetch(`/local/api/settings/post-watering-moisture/trend?sensor_device_id=${encodeURIComponent(sensorDeviceId)}&measurement_source=${encodeURIComponent(source)}&days=${days}`, { headers:{ Accept:"application/json" } });
           const payload = await response.json();
           if (!response.ok) throw new Error(payload.error || `直近${days}日分を読み込めませんでした。`);
           trendCache.set(cacheKey, payload);
-          if (requestSequence === trendRequestSequence && selectedInput("sensor_device_id")?.value === sensorDeviceId && selectedDays() === days) renderTrend(payload);
+          if (requestSequence === trendRequestSequence && selectedInput("sensor_device_id")?.value === sensorDeviceId && selectedSource() === source && selectedDays() === days) renderTrend(payload);
         } catch (error) {
           if (requestSequence !== trendRequestSequence) return;
           renderTrend({ days, points:[], error:error.message || `直近${days}日分を読み込めませんでした。` });
@@ -292,6 +314,7 @@
         const threshold = Number(form.elements.minimum_percent.value);
         const days = selectedDays();
         document.getElementById("review-sensor-device").textContent = sensor ? `${sensor.dataset.deviceName} / ${sensor.dataset.deviceLocation}` : "未選択";
+        document.getElementById("review-measurement-source").textContent = selectedSourceLabel();
         document.getElementById("review-window").textContent = Number.isInteger(days) ? `直近${days}日` : "未入力";
         document.getElementById("review-threshold").textContent = Number.isFinite(threshold) ? `${threshold}%以上を1回` : "未入力";
         document.getElementById("review-enabled").textContent = form.elements.enabled.checked ? "使用する" : "停止したまま保存";
@@ -312,7 +335,7 @@
         window.scrollTo({top:Math.max(0, form.offsetTop - 100), behavior:"smooth"});
       };
       const stepIsValid = () => {
-        if (currentStep === 0) return Boolean(selectedInput("sensor_device_id"));
+        if (currentStep === 0) return Boolean(selectedInput("sensor_device_id")) && (measurementSource?.reportValidity() ?? false);
         if (currentStep === 1) return form.elements.window_days.reportValidity() && form.elements.minimum_percent.reportValidity();
         return true;
       };
@@ -325,8 +348,10 @@
           form.elements.window_days.value = rule.window_days;
           form.elements.enabled.checked = Boolean(rule.enabled);
         }
+        populateMeasurementSources(rule?.measurement_source || "device");
         loadTrend();
       }));
+      measurementSource?.addEventListener("change", loadTrend);
       document.querySelectorAll("[data-window-days]").forEach((button) => button.addEventListener("click", () => {
         form.elements.window_days.value = button.dataset.windowDays;
         loadTrend();
@@ -334,11 +359,11 @@
       form.elements.window_days.addEventListener("change", loadTrend);
       form.elements.minimum_percent.addEventListener("input", () => {
         const sensorDeviceId = selectedInput("sensor_device_id")?.value;
-        const cacheKey = `${sensorDeviceId}:${selectedDays()}`;
+        const cacheKey = `${sensorDeviceId}:${selectedSource()}:${selectedDays()}`;
         if (sensorDeviceId && trendCache.has(cacheKey)) renderTrend(trendCache.get(cacheKey));
       });
       form.addEventListener("submit", (event) => {
-        if (!selectedInput("sensor_device_id") || !form.elements.window_days.reportValidity() || !form.elements.minimum_percent.reportValidity()) event.preventDefault();
+        if (!selectedInput("sensor_device_id") || !(measurementSource?.reportValidity() ?? false) || !form.elements.window_days.reportValidity() || !form.elements.minimum_percent.reportValidity()) event.preventDefault();
       });
       showStep(0, false);
       loadTrend();

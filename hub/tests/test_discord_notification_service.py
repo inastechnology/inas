@@ -201,6 +201,7 @@ class DiscordNotificationServiceTest(unittest.TestCase):
             {
                 "sensor_device_id": "soil / 1",
                 "sensor_device_name": "北畝の水分計",
+                "measurement_source_label": "土壌センサー2（南側）",
                 "measured_percent": 43.5,
                 "minimum_percent": 50.0,
                 "window_days": 3,
@@ -216,6 +217,7 @@ class DiscordNotificationServiceTest(unittest.TestCase):
         self.assertIn("50%", str(card["fields"]))
         self.assertIn("直近3日", str(card["fields"]))
         self.assertIn("北畝の水分計", str(card["fields"]))
+        self.assertIn("土壌センサー2（南側）", str(card["fields"]))
 
     def test_operational_error_card_shows_failure_reason(self):
         payload = format_health_alert_notification(

@@ -588,6 +588,7 @@
             <div class="condition-main"><span>Discordへ知らせる条件</span>{% if card.configured %}<strong>直近{{ card.window_days }}日、{{ card.minimum_percent }}%以上に未到達</strong>{% else %}<strong>通知条件が未設定です</strong>{% endif %}</div>
             <dl class="condition-details">
               <div><dt>センサー現在値</dt><dd>{% if card.latest_percent is not none %}{{ card.latest_percent|round(1) }}%{% else %}測定値なし{% endif %}</dd></div>
+              <div><dt>判定に使う値</dt><dd>{% if card.configured %}{{ card.measurement_source_label }}{% else %}設定後に表示{% endif %}</dd></div>
               <div><dt>最後に到達</dt><dd>{% if card.configured %}{{ card.last_reached_at }}{% else %}設定後に表示{% endif %}</dd></div>
               <div><dt>チェック状態</dt><dd>{{ card.state_label }}{% if card.configured and not card.enabled %}（条件は保存済み）{% endif %}</dd></div>
             </dl>

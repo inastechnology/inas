@@ -619,6 +619,81 @@ class WebServerBasicUITest(unittest.TestCase):
         finally:
             web_server.setting().set("post_watering_moisture", current_rules)
 
+    def test_post_watering_moisture_wizard_selects_mk2_probe_or_average(self):
+        current_rules = deepcopy(web_server.setting().get("post_watering_moisture"))
+
+        def status(first, second):
+            return {
+                "device_kind": "FGT",
+                "soil_moisture_percent": first,
+                "rs485_devices": [
+                    {
+                        "index": 0,
+                        "enabled": True,
+                        "type": "soil",
+                        "name": "土壌センサー1",
+                        "location": "ライチ北",
+                        "ok": True,
+                        "moisture_percent": first,
+                    },
+                    {
+                        "index": 1,
+                        "enabled": True,
+                        "type": "soil",
+                        "name": "土壌センサー2",
+                        "location": "ライチ南",
+                        "ok": True,
+                        "moisture_percent": second,
+                    },
+                ],
+            }
+
+        self.fake_device_config_service.records = {
+            "FGT-001": {
+                "name": "潅水デバイスMKⅡ",
+                "location": "ライチ区画",
+                "state": "active",
+                "device_kind": "FGT",
+                "last_status": status(22.5, 26.5),
+                "status_history": [
+                    {"received_at": "2026-08-24T01:00:00+00:00", "payload": status(20, 40)},
+                    {"received_at": "2026-08-25T01:00:00+00:00", "payload": status(30, 60)},
+                ],
+            }
+        }
+        try:
+            page = self.client.get("/settings/post-watering-moisture?sensor_device_id=FGT-001")
+
+            self.assertEqual(page.status_code, 200)
+            html = page.get_data(as_text=True)
+            self.assertIn('id="measurement-source"', html)
+            self.assertIn('value="rs485:index:1"', html)
+            self.assertIn("土壌センサー2（ライチ南）", html)
+            self.assertIn("全土壌センサーの平均（2台）", html)
+
+            second = self.client.get("/local/api/settings/post-watering-moisture/trend?sensor_device_id=FGT-001&measurement_source=rs485%3Aindex%3A1&days=7")
+            average = self.client.get("/local/api/settings/post-watering-moisture/trend?sensor_device_id=FGT-001&measurement_source=rs485%3Aaverage&days=7")
+
+            self.assertEqual([point["value"] for point in second.get_json()["points"]], [40.0, 60.0])
+            self.assertEqual([point["value"] for point in average.get_json()["points"]], [30.0, 45.0])
+
+            saved = self.client.post(
+                "/settings/post-watering-moisture",
+                data={
+                    "sensor_device_id": "FGT-001",
+                    "measurement_source": "rs485:average",
+                    "minimum_percent": "50",
+                    "window_days": "7",
+                    "enabled": "on",
+                },
+            )
+
+            self.assertEqual(saved.status_code, 302)
+            rule = web_server.setting().get("post_watering_moisture")["rules"][0]
+            self.assertEqual(rule["measurement_source"], "rs485:average")
+        finally:
+            web_server.setting().set("post_watering_moisture", current_rules)
+
     def test_post_watering_moisture_wizard_rejects_operator(self):
         headers = {"Cf-Access-Authenticated-User-Email": "worker@example.com"}
         with patch.dict(os.environ, {"HUB_ADMIN_EMAILS": ""}):

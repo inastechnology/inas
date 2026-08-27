@@ -128,6 +128,7 @@ from ina_device_hub.plant_management_repository import (
 )
 from ina_device_hub.plant_question_policy import validate_plant_question
 from ina_device_hub.post_watering_moisture_service import (
+    DEFAULT_MEASUREMENT_SOURCE,
     DEFAULT_MINIMUM_PERCENT,
     DEFAULT_WINDOW_DAYS,
     MAX_WINDOW_DAYS,
@@ -136,8 +137,11 @@ from ina_device_hub.post_watering_moisture_service import (
     PostWateringMoistureValidationError,
     post_watering_moisture_service,
     post_watering_rule_views,
+    soil_moisture_measurements_from_status_history,
     soil_moisture_sensor_options,
-    soil_moisture_value,
+    soil_moisture_source_label,
+    soil_moisture_source_options,
+    soil_moisture_source_value,
 )
 from ina_device_hub.sensor_data_repository import sensor_data_repository
 from ina_device_hub.sensor_device_repository import sensor_device_repository
@@ -7301,7 +7305,14 @@ def hub_settings_page():
     return response
 
 
-def _post_watering_sensor_trend(sensor_device_id: str, *, days: int = DEFAULT_WINDOW_DAYS, now: datetime | None = None):
+def _post_watering_sensor_trend(
+    sensor_device_id: str,
+    *,
+    measurement_source: str = DEFAULT_MEASUREMENT_SOURCE,
+    sensor_record: dict | None = None,
+    days: int = DEFAULT_WINDOW_DAYS,
+    now: datetime | None = None,
+):
     range_end = now or datetime.now(UTC)
     if range_end.tzinfo is None:
         range_end = range_end.replace(tzinfo=UTC)
@@ -7309,17 +7320,21 @@ def _post_watering_sensor_trend(sensor_device_id: str, *, days: int = DEFAULT_WI
     days = min(MAX_WINDOW_DAYS, max(MIN_WINDOW_DAYS, int(days)))
     range_start = range_end - timedelta(days=days)
     try:
-        measurements = sensor_measurement_repository().between_for_devices(
-            [sensor_device_id],
-            range_start.isoformat(),
-            range_end.isoformat(),
-            limit=5000,
-            metric="soil_moisture_percent",
-        )
+        if measurement_source == DEFAULT_MEASUREMENT_SOURCE:
+            measurements = sensor_measurement_repository().between_for_devices(
+                [sensor_device_id],
+                range_start.isoformat(),
+                range_end.isoformat(),
+                limit=5000,
+                metric="soil_moisture_percent",
+            )
+        else:
+            measurements = soil_moisture_measurements_from_status_history((sensor_record or {}).get("status_history"), measurement_source)
     except Exception:  # noqa: BLE001
         app.logger.exception("Unable to load post-watering moisture trend for sensor_device_id=%s", sensor_device_id)
         return {
             "sensor_device_id": sensor_device_id,
+            "measurement_source": measurement_source,
             "range_start": range_start.isoformat(),
             "range_end": range_end.isoformat(),
             "points": [],
@@ -7337,6 +7352,8 @@ def _post_watering_sensor_trend(sensor_device_id: str, *, days: int = DEFAULT_WI
         measured_at = _parse_datetime(measurement.get("measured_at"))
         value = measurement.get("value")
         if measured_at is None or isinstance(value, bool) or not isinstance(value, int | float):
+            continue
+        if measured_at < range_start or measured_at > range_end:
             continue
         numeric_value = float(value)
         if not 0 <= numeric_value <= 100:
@@ -7359,6 +7376,7 @@ def _post_watering_sensor_trend(sensor_device_id: str, *, days: int = DEFAULT_WI
     values = [point["value"] for point in points]
     return {
         "sensor_device_id": sensor_device_id,
+        "measurement_source": measurement_source,
         "days": days,
         "range_start": range_start.isoformat(),
         "range_end": range_end.isoformat(),
@@ -7380,13 +7398,24 @@ def post_watering_moisture_trend_api():
     valid_sensor_ids = {item["id"] for item in soil_moisture_sensor_options(records)}
     if sensor_device_id not in valid_sensor_ids:
         return jsonify({"error": "土壌水分を測定できる利用中のセンサーを選んでください。"}), 400
+    sensor_record = records.get(sensor_device_id) or {}
+    measurement_source = request.args.get("measurement_source", DEFAULT_MEASUREMENT_SOURCE).strip()
+    if measurement_source not in {item["id"] for item in soil_moisture_source_options(sensor_record)}:
+        return jsonify({"error": "判定に使う土壌水分の値を選んでください。"}), 400
     try:
         days = int(request.args.get("days", DEFAULT_WINDOW_DAYS))
     except (TypeError, ValueError):
         return jsonify({"error": "表示期間は1〜14日で入力してください。"}), 400
     if not MIN_WINDOW_DAYS <= days <= MAX_WINDOW_DAYS:
         return jsonify({"error": "表示期間は1〜14日で入力してください。"}), 400
-    response = jsonify(_post_watering_sensor_trend(sensor_device_id, days=days))
+    response = jsonify(
+        _post_watering_sensor_trend(
+            sensor_device_id,
+            measurement_source=measurement_source,
+            sensor_record=sensor_record,
+            days=days,
+        )
+    )
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -7423,6 +7452,7 @@ def post_watering_moisture_settings_page():
         else:
             submitted = {
                 "sensor_device_id": request.form.get("sensor_device_id", "").strip(),
+                "measurement_source": request.form.get("measurement_source", "").strip(),
                 "minimum_percent": request.form.get("minimum_percent", ""),
                 "window_days": request.form.get("window_days", ""),
                 "enabled": request.form.get("enabled") == "on",
@@ -7463,6 +7493,12 @@ def post_watering_moisture_settings_page():
     selected_sensor_id = str(selected_rule.get("sensor_device_id") or requested_sensor_device_id)
     if selected_sensor_id not in sensor_ids:
         selected_sensor_id = soil_sensors[0]["id"] if soil_sensors else ""
+    selected_sensor_record = records.get(selected_sensor_id) or {}
+    selected_source_options = soil_moisture_source_options(selected_sensor_record) if selected_sensor_id else []
+    selected_source_ids = {item["id"] for item in selected_source_options}
+    selected_measurement_source = str(selected_rule.get("measurement_source") or DEFAULT_MEASUREMENT_SOURCE)
+    if selected_measurement_source not in selected_source_ids:
+        selected_measurement_source = DEFAULT_MEASUREMENT_SOURCE
     try:
         minimum_percent = float(selected_rule.get("minimum_percent", DEFAULT_MINIMUM_PERCENT))
     except (TypeError, ValueError):
@@ -7473,6 +7509,7 @@ def post_watering_moisture_settings_page():
         window_days = DEFAULT_WINDOW_DAYS
     selected_values = {
         "sensor_device_id": selected_sensor_id,
+        "measurement_source": selected_measurement_source,
         "minimum_percent": minimum_percent,
         "window_days": min(MAX_WINDOW_DAYS, max(MIN_WINDOW_DAYS, window_days)),
         "enabled": selected_rule.get("enabled") is not False,
@@ -7482,6 +7519,7 @@ def post_watering_moisture_settings_page():
             render_template(
                 "post_watering_moisture_wizard.html",
                 soil_sensors=soil_sensors,
+                selected_source_options=selected_source_options,
                 selected=selected_values,
                 rules=post_watering_rule_views(rules, records),
                 editing_rule=post_watering_rule_views([existing_rule], records)[0] if existing_rule else None,
@@ -10170,7 +10208,8 @@ def _build_field_post_watering_notification_context(field_id: str, field_device_
 
     def build_card(sensor_device_id, sensor_record, rule=None):
         device_kind = str(sensor_record.get("device_kind") or (sensor_record.get("last_status") or {}).get("device_kind") or "").upper()
-        latest_percent = soil_moisture_value(sensor_record.get("last_status") or {})
+        measurement_source = (rule or {}).get("measurement_source") or DEFAULT_MEASUREMENT_SOURCE
+        latest_percent = soil_moisture_source_value(sensor_record.get("last_status") or {}, measurement_source)
         placement = placement_by_device.get(sensor_device_id) or {}
         monitor_state = service.rule_status(sensor_device_id) if rule else {}
         evaluation_status = monitor_state.get("status")
@@ -10209,6 +10248,7 @@ def _build_field_post_watering_notification_context(field_id: str, field_device_
             "latest_percent": latest_percent,
             "minimum_percent": (rule or {}).get("minimum_percent"),
             "window_days": (rule or {}).get("window_days"),
+            "measurement_source_label": soil_moisture_source_label(sensor_record, measurement_source) if rule else "未設定",
             "last_reached_at": _format_datetime(monitor_state.get("last_reached_at")) if monitor_state.get("last_reached_at") else "未確認",
             "wizard_url": f"/settings/post-watering-moisture?{urlencode({'sensor_device_id': sensor_device_id, 'field_id': field_id})}",
             "device_settings_url": f"/mqtt-devices/{sensor_device_id}?tab=settings",
