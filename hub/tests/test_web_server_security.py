@@ -128,6 +128,7 @@ class WebServerSecurityTest(unittest.TestCase):
             ),
             patch.object(web_server, "setting", return_value=fake_setting),
             patch.object(web_server, "reload_instagram_post_task_settings"),
+            patch.object(web_server, "reload_instagram_sensor_feed_task_settings"),
         ):
             response = self.client.post(
                 "/settings",
@@ -136,6 +137,7 @@ class WebServerSecurityTest(unittest.TestCase):
                     "settings_section": "instagram",
                     "posting_paused": "on",
                     "post_schedule_start": "09:01",
+                    "sensor_feed_schedule_start": "20:00",
                     "camera_id": "",
                 },
             )

@@ -110,6 +110,8 @@ FIELDS = (
     ConfigurationField("INSTAGRAM_USER_ID", "Instagram user ID", "instagram"),
     ConfigurationField("INSTAGRAM_ACCESS_TOKEN", "Instagram access token", "instagram", secret=True),
     ConfigurationField("INSTAGRAM_SENSOR_ID", "参照sensor ID", "instagram"),
+    ConfigurationField("INSTAGRAM_SENSOR_FEED_ENABLED", "センサーグラフ投稿を有効化", "instagram", "false"),
+    ConfigurationField("INSTAGRAM_SENSOR_FEED_SCHEDULE_START", "センサーグラフ投稿時刻", "instagram", "20:00"),
     ConfigurationField("INSTAGRAM_WEATHER_FORECAST_URL", "Instagram用天気feed URL", "instagram"),
     ConfigurationField("INSTAGRAM_WEATHER_AREA_NAME", "Instagram用天気area", "instagram"),
     ConfigurationField("INSTAGRAM_WEATHER_OFFICE_NAME", "Instagram用気象台", "instagram"),

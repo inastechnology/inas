@@ -5,6 +5,7 @@ from ina_device_hub.health_monitor_task import health_monitor_task
 from ina_device_hub.hierarchy_service import hierarchy_service
 from ina_device_hub.hub_mqtt_client import DEFAULT_SUBSCRIPTION_TOPICS, HubMQTTClient
 from ina_device_hub.instagram_post_task import instagram_post_task
+from ina_device_hub.instagram_sensor_feed_task import instagram_sensor_feed_task
 from ina_device_hub.ota_update_service import ota_update_service
 from ina_device_hub.plant_calendar_generation_task import plant_calendar_generation_task
 from ina_device_hub.plant_task_notification_task import plant_task_notification_task
@@ -38,6 +39,7 @@ def run():
     timelapse_task().start()
     weather_record_task().start()
     instagram_post_task().start()
+    instagram_sensor_feed_task().start()
     health_monitor_task().start()
     soil_moisture_notification_task().start()
     plant_calendar_generation_task().start()

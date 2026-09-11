@@ -109,6 +109,7 @@ from ina_device_hub.firmware_release_module import (
 from ina_device_hub.hierarchy_api import hierarchy_api
 from ina_device_hub.instagram_client import InstagramClient
 from ina_device_hub.instagram_post_task import reload_instagram_post_task_settings
+from ina_device_hub.instagram_sensor_feed_task import reload_instagram_sensor_feed_task_settings
 from ina_device_hub.location_repository import location_repository
 from ina_device_hub.operations_api import operations_api
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, extract_firmware_manifest, ota_update_service
@@ -3928,6 +3929,7 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           }
           .range-controls button.active { border-color: var(--blue); color: var(--blue); font-weight: 700; }
           .range-controls input { width: auto; min-width: 150px; }
+          #tab-monitoring, #tab-monitoring .section-grid > .panel, .chart-card, .chart-body { min-width: 0; }
           .chart-body { min-height: 360px; }
           .chart-loading { min-height: 360px; display: grid; place-items: center; color: var(--muted); background: #f8fafc; border: 1px dashed var(--line); border-radius: 8px; }
           .empty { color: var(--muted); background: #f8fafc; border: 1px dashed var(--line); border-radius: 8px; padding: 14px; }
@@ -4896,6 +4898,8 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           const deviceOutputCapabilities = {{ (admin_view.selected.output_settings.outputs if admin_view.selected else []) | tojson }};
           const unsupportedOutputSettings = {{ (admin_view.selected.output_settings.unsupported if admin_view.selected else []) | tojson }};
           let plotlyLoadPromise = null;
+          let chartDataPromise = null;
+          let chartsRendering = false;
           let pendingWorkCount = 0;
           let lastActionButton = null;
           let currentMosfetSwitches = [];
@@ -5006,6 +5010,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
           function activateDetailTab(targetId, updateUrl = true) {
             const targetPanel = document.getElementById(targetId);
             if (!targetPanel) return;
+            const changingTab = targetPanel.hidden;
+            const tabContainer = targetPanel.closest(".detail-tabs");
+            const tabTop = tabContainer ? tabContainer.getBoundingClientRect().top + window.scrollY : 0;
             let activeKey = "overview";
             document.querySelectorAll(".tab-button").forEach((button) => {
               const selected = button.getAttribute("data-tab-target") === targetId;
@@ -5020,8 +5027,13 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               const url = new URL(window.location.href);
               if (activeKey === "overview") url.searchParams.delete("tab");
               else url.searchParams.set("tab", activeKey);
+              if (changingTab) url.hash = "";
               window.history.replaceState({}, "", url);
             }
+            if (updateUrl && changingTab && window.scrollY > tabTop) {
+              window.scrollTo({ top: tabTop, behavior: "instant" });
+            }
+            if (targetId === "tab-monitoring") void loadCharts();
           }
 
           const detailTabButtons = Array.from(document.querySelectorAll(".tab-button"));
@@ -5191,7 +5203,11 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
 
           function showChartEmpty(card, message) {
             const body = card.querySelector(".chart-body");
-            if (body) body.innerHTML = '<div class="empty">' + message + "</div>";
+            if (!body) return;
+            const empty = document.createElement("div");
+            empty.className = "empty";
+            empty.textContent = message;
+            body.replaceChildren(empty);
           }
 
           function ensurePlotlyLoaded() {
@@ -5201,36 +5217,74 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
               const script = document.createElement("script");
               script.src = "/local/assets/plotly.min.js";
               script.onload = resolve;
-              script.onerror = () => reject(new Error("Plotly を読み込めませんでした"));
+              script.onerror = () => {
+                plotlyLoadPromise = null;
+                script.remove();
+                reject(new Error("Plotly を読み込めませんでした"));
+              };
               document.head.appendChild(script);
             });
             return plotlyLoadPromise;
           }
 
           async function loadCharts() {
-            if (!chartEndpoint) return;
+            const panel = document.getElementById("tab-monitoring");
+            if (!chartEndpoint || !panel || panel.hidden || chartsRendering) return;
             const cards = Array.from(document.querySelectorAll(".chart-card[data-chart-kind]"));
-            if (!cards.length) return;
+            const pendingCards = cards.filter((card) => card.dataset.chartLoaded !== "true");
+            if (!pendingCards.length) return;
+            chartsRendering = true;
             try {
-              const [charts] = await Promise.all([requestJson(chartEndpoint, null, "推移グラフを読み込んでいます..."), ensurePlotlyLoaded()]);
-              cards.forEach((card) => {
+              // Paint the selected tab before loading or rendering the graphs.
+              await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+              if (panel.hidden) return;
+              if (!chartDataPromise) {
+                chartDataPromise = requestJson(chartEndpoint, null, "推移グラフを読み込んでいます...").catch((error) => {
+                  chartDataPromise = null;
+                  throw error;
+                });
+              }
+              const [charts] = await Promise.all([chartDataPromise, ensurePlotlyLoaded()]);
+              for (const card of pendingCards) {
+                // Yield between graphs, and leave unfinished graphs for the next visit.
+                await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+                if (panel.hidden) return;
                 const body = card.querySelector(".chart-body");
                 const kind = card.getAttribute("data-chart-kind");
                 const html = charts[kind];
-                if (!body) return;
+                if (!body) continue;
                 if (!html) {
                   showChartEmpty(card, card.getAttribute("data-empty-message") || "時系列データはまだありません。");
-                  return;
+                } else {
+                  setHtmlAndRunScripts(body, html);
+                  window.setTimeout(() => attachChartRangeControls(card), 0);
                 }
-                setHtmlAndRunScripts(body, html);
-                window.setTimeout(() => attachChartRangeControls(card), 0);
-              });
+                card.dataset.chartLoaded = "true";
+                const anchor = window.location.hash.slice(1);
+                if (anchor && anchor === card.getAttribute("data-chart-id")) {
+                  document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+                }
+              }
             } catch (error) {
-              cards.forEach((card) => showChartEmpty(card, "推移グラフを読み込めませんでした: " + error.message));
+              pendingCards.filter((card) => card.dataset.chartLoaded !== "true").forEach((card) => {
+                showChartEmpty(card, "推移グラフを読み込めませんでした。タブを押すと再試行します: " + error.message);
+              });
+            } finally {
+              chartsRendering = false;
             }
           }
 
-          loadCharts();
+          // Plotly cannot measure a hidden panel. Resize after it becomes visible,
+          // including viewport changes made while another tab was open.
+          const chartResizeObserver = new ResizeObserver((entries) => {
+            entries.forEach(({ target, contentRect }) => {
+              const graph = target.querySelector(".js-plotly-plot");
+              if (!graph || !window.Plotly || contentRect.width <= 0 || !graph.getClientRects().length) return;
+              if (Math.abs((graph._fullLayout?.width || 0) - contentRect.width) < 1) return;
+              window.Plotly.Plots.resize(graph).catch(() => {});
+            });
+          });
+          document.querySelectorAll(".chart-body").forEach((body) => chartResizeObserver.observe(body));
 
           document.querySelectorAll("[data-state-action]").forEach((button) => {
             button.addEventListener("click", async () => {
@@ -7195,24 +7249,34 @@ def hub_settings_page():
             reload_discord_notification_settings()
         elif section == "instagram":
             post_schedule_start = request.form.get("post_schedule_start", "09:01").strip()
+            sensor_feed_schedule_start = request.form.get("sensor_feed_schedule_start", "20:00").strip()
             try:
                 datetime.strptime(post_schedule_start, "%H:%M")
+                datetime.strptime(sensor_feed_schedule_start, "%H:%M")
             except ValueError:
-                return "post_schedule_start must use HH:MM", 400
+                return "Instagram schedules must use HH:MM", 400
             camera_id = request.form.get("camera_id", "").strip()
             camera_ids = {item["id"] for item in _instagram_camera_options(current_instagram.get("camera_id", ""))}
             if camera_id and camera_id not in camera_ids:
                 return "camera_id must identify a registered camera", 400
+            sensor_id = request.form.get("sensor_id", "").strip()
+            sensor_ids = {item["id"] for item in _instagram_sensor_options(current_instagram.get("sensor_id", ""))}
+            if sensor_id and sensor_id not in sensor_ids:
+                return "sensor_id must identify a registered sensor device", 400
             setting().set(
                 "instagram",
                 {
                     "posting_paused": request.form.get("posting_paused") == "on",
                     "post_schedule_start": post_schedule_start,
+                    "sensor_feed_enabled": request.form.get("sensor_feed_enabled") == "on",
+                    "sensor_feed_schedule_start": sensor_feed_schedule_start,
+                    "sensor_id": sensor_id,
                     "camera_id": camera_id,
                     "plant_position_prompt": request.form.get("plant_position_prompt", "").strip(),
                 },
             )
             reload_instagram_post_task_settings()
+            reload_instagram_sensor_feed_task_settings()
         else:
             return "unsupported settings section", 400
         return redirect(f"/settings?{urlencode({'section': section, 'saved': '1'})}")
@@ -7238,6 +7302,9 @@ def hub_settings_page():
     visible_instagram = {
         "posting_paused": bool(current_instagram.get("posting_paused", False)),
         "post_schedule_start": current_instagram.get("post_schedule_start", "09:01"),
+        "sensor_feed_enabled": bool(current_instagram.get("sensor_feed_enabled", False)),
+        "sensor_feed_schedule_start": current_instagram.get("sensor_feed_schedule_start", "20:00"),
+        "sensor_id": current_instagram.get("sensor_id", ""),
         "camera_id": current_instagram.get("camera_id", ""),
         "plant_position_prompt": current_instagram.get("plant_position_prompt", ""),
         "account_id": current_instagram.get("account_id", ""),
@@ -7299,6 +7366,7 @@ def hub_settings_page():
             active_section=request.args.get("section") if request.args.get("section") in {"ai", "notifications", "instagram", "system"} else "ai",
             saved=request.args.get("saved") == "1",
             user=user,
+            instagram_sensor_options=_instagram_sensor_options(current_instagram.get("sensor_id", "")),
         )
     )
     response.headers["Cache-Control"] = "no-store"
@@ -7680,6 +7748,7 @@ def refresh_instagram_account_profile_api():
         },
     )
     reload_instagram_post_task_settings()
+    reload_instagram_sensor_feed_task_settings()
     response = jsonify(
         {
             "id": profile["id"],
@@ -7702,6 +7771,26 @@ def _instagram_camera_options(selected_camera_id=""):
     if selected_camera_id and selected_camera_id not in cameras:
         cameras[selected_camera_id] = f"{selected_camera_id}（現在の設定・未登録）"
     return [{"id": device_id, "name": name} for device_id, name in sorted(cameras.items(), key=lambda item: (item[1].lower(), item[0].lower()))]
+
+
+def _instagram_sensor_options(selected_sensor_id=""):
+    eligible_kinds = {"ENV", "SOI", "WTR", "WRS", "FGT"}
+    sensors = {}
+    for device_id, record in (device_config_service().get_all_records() or {}).items():
+        normalized = record if isinstance(record, dict) else {}
+        device_kind = str(normalized.get("device_kind") or "").upper()
+        if device_kind not in eligible_kinds or normalized.get("state") == "retired":
+            continue
+        sensors[str(device_id)] = {
+            "name": normalized.get("name") or str(device_id),
+            "kind": device_kind,
+        }
+    if selected_sensor_id and selected_sensor_id not in sensors:
+        sensors[selected_sensor_id] = {"name": f"{selected_sensor_id}（現在の設定・未登録）", "kind": ""}
+    return [
+        {"id": device_id, "name": details["name"], "kind": details["kind"]}
+        for device_id, details in sorted(sensors.items(), key=lambda item: (item[1]["name"].lower(), item[0].lower()))
+    ]
 
 
 @app.route("/fields", methods=["GET", "POST"])

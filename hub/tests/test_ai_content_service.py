@@ -180,6 +180,70 @@ class AIContentServiceTest(unittest.TestCase):
         self.assertEqual(payloads[0]["reasoning_effort"], "high")
         self.assertEqual(result["parameters"]["reasoning_effort"], "high")
 
+    def test_instagram_generation_uses_each_channels_reasoning_effort_when_provider_is_shared(self):
+        self.service.ai_settings = {
+            "enabled": True,
+            "text_analyze_api_key": "shared-secret",
+            "text_analyze_model": "gpt-5.6-luna",
+            "text_analyze_temperature_mode": "default",
+            "text_analyze_reasoning_effort": "xhigh",
+            "image_analyze_api_key": "shared-secret",
+            "image_analyze_model": "gpt-5.6-luna",
+            "image_analyze_temperature_mode": "default",
+            "image_analyze_reasoning_effort": "low",
+        }
+        self.service.instagram_settings = {}
+        payloads = []
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"choices":[{"message":{"content":"observation"}}]}'
+
+        def fake_urlopen(req, timeout):
+            payloads.append(json.loads(req.data.decode("utf-8")))
+            return FakeResponse()
+
+        with patch("ina_device_hub.ai_content_service.request.urlopen", side_effect=fake_urlopen):
+            result = self.service.generate_instagram_caption({})
+
+        self.assertEqual(result, "observation")
+        self.assertEqual(len(payloads), 2)
+        self.assertEqual(payloads[0]["reasoning_effort"], "low")
+        self.assertEqual(payloads[1]["reasoning_effort"], "xhigh")
+        self.assertTrue(all("temperature" not in payload for payload in payloads))
+
+    def test_sensor_trend_impression_uses_daily_focus_and_recent_headings(self):
+        self.service.ai_settings = {
+            "enabled": True,
+            "text_analyze_api_key": "test",
+            "text_analyze_model": "test-model",
+        }
+        captured = {}
+
+        def fake_chat(**kwargs):
+            captured.update(kwargs)
+            return "光量の幅に注目"
+
+        self.service._chat_completion = fake_chat
+        result = self.service.generate_sensor_trend_impression(
+            [{"metric": "par_umol_m2_s", "minimum": 100, "maximum": 800}],
+            editorial_context={"focus_label": "光量（PAR）", "angle": "range"},
+            recent_impressions=["今日も穏やか", "変化を見守ろう"],
+        )
+
+        prompt = captured["messages"][1]["content"]
+        self.assertEqual(result, "光量の幅に注目")
+        self.assertIn("光量（PAR）", prompt)
+        self.assertIn("range", prompt)
+        self.assertIn("今日も穏やか", prompt)
+        self.assertIn("同じ見出し、似た語順、同じ結びを避けて", prompt)
+
     def test_calendar_fallback_has_priorities_reasons_and_tags(self):
         self.service.ai_settings = {"text_analyze_api_key": ""}
 

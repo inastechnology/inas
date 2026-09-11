@@ -21,7 +21,8 @@ Cross-project specification:
   S3-compatible storage.
 - Integrate with the Local Hub installation's configured Turso/libSQL replica.
 - Generate timelapse content and schedule periodic jobs.
-- Publish Instagram Reels from timelapse output when configured.
+- Publish Instagram Reels from timelapse output and daily 3-day sensor trend
+  images to the feed when configured.
 - Serve a local Flask-based admin UI.
 - Register a raw `firmware.bin` or an INAS `.inasfw` release module for OTA. For
   `.inasfw`, the Hub verifies the package and stores/delivers only its

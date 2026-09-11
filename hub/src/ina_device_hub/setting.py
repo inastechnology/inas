@@ -140,6 +140,8 @@ INSTAGRAM_POST_SCHEDULE_START = os.environ.get(
     "INSTAGRAM_POST_SCHEDULE_START",
     os.environ.get("AI_AGENT_SCHEDULE_START", "09:01"),
 ).strip()
+INSTAGRAM_SENSOR_FEED_ENABLED = _bool_env("INSTAGRAM_SENSOR_FEED_ENABLED", False)
+INSTAGRAM_SENSOR_FEED_SCHEDULE_START = os.environ.get("INSTAGRAM_SENSOR_FEED_SCHEDULE_START", "20:00").strip()
 INSTAGRAM_WEATHER_FORECAST_URL = os.environ.get("INSTAGRAM_WEATHER_FORECAST_URL", WEATHER_FORECAST_URL).strip()
 INSTAGRAM_WEATHER_AREA_NAME = os.environ.get("INSTAGRAM_WEATHER_AREA_NAME", WEATHER_AREA_NAME).strip()
 INSTAGRAM_WEATHER_OFFICE_NAME = os.environ.get("INSTAGRAM_WEATHER_OFFICE_NAME", WEATHER_OFFICE_NAME).strip()
@@ -274,6 +276,8 @@ DEFAULT_SETTINGS = {
         "plant_position_prompt": INSTAGRAM_PLANT_POSITION_PROMPT,
         "admin_username": INSTAGRAM_ADMIN_USERNAME,
         "post_schedule_start": INSTAGRAM_POST_SCHEDULE_START,
+        "sensor_feed_enabled": INSTAGRAM_SENSOR_FEED_ENABLED,
+        "sensor_feed_schedule_start": INSTAGRAM_SENSOR_FEED_SCHEDULE_START,
         "account_id": "",
         "account_username": "",
         "account_profile_updated_at": "",
@@ -373,6 +377,9 @@ RUNTIME_SETTING_FIELDS = {
     "instagram": {
         "posting_paused",
         "post_schedule_start",
+        "sensor_feed_enabled",
+        "sensor_feed_schedule_start",
+        "sensor_id",
         "camera_id",
         "plant_position_prompt",
         "account_id",

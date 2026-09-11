@@ -114,6 +114,27 @@ class SettingTest(unittest.TestCase):
             self.assertTrue(reloaded["posting_paused"])
             self.assertTrue(persisted["instagram"]["posting_paused"])
 
+    def test_instagram_sensor_feed_settings_are_runtime_editable(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "config.json"
+            current = Setting(path)
+
+            current.set(
+                "instagram",
+                {
+                    "sensor_feed_enabled": True,
+                    "sensor_feed_schedule_start": "20:30",
+                    "sensor_id": "fgt-1",
+                },
+            )
+
+            reloaded = Setting(path).get("instagram")
+            persisted = json.loads(path.read_text())
+            self.assertTrue(reloaded["sensor_feed_enabled"])
+            self.assertEqual(reloaded["sensor_feed_schedule_start"], "20:30")
+            self.assertEqual(reloaded["sensor_id"], "fgt-1")
+            self.assertNotIn("access_token", persisted["instagram"])
+
     def test_discord_preferences_are_runtime_editable_without_persisting_webhook(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "config.json"

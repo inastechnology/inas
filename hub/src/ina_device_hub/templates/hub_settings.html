@@ -198,7 +198,7 @@
                 <div class="setting-label">AI機能</div>
                 <div class="setting-control"><label class="toggle"><input type="checkbox" name="enabled"{% if ai.enabled %} checked{% endif %}>有効にする</label></div>
               </div>
-              {% for channel,title,description in [('text','テキスト・栽培計画','栽培カレンダー、目標レンジ、質問回答'),('image','画像解析','植物画像と定点観察の解析')] %}
+              {% for channel,title,description in [('text','テキスト・栽培計画','Instagram投稿文、栽培カレンダー、目標レンジ、質問回答'),('image','画像解析','植物画像と定点観察の解析')] %}
               <div class="setting-row" data-setting-row data-ai-provider="{{ channel }}" data-search="{{ title }} {{ description }} OpenAI Base URL model モデル API キー 接続">
                 <div class="setting-label with-help"><span>{{ title }}</span><details class="context-help"><summary aria-label="{{ title }}の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>{{ title }}</strong><p>{{ description }}に使用します。APIキーは保存後に画面へ再表示されません。</p></div></details></div>
                 <div class="setting-control">
@@ -243,7 +243,7 @@
                           </select>
                         </label>
                       </div>
-                      <p class="parameter-note">自動調整では用途に合う温度を試し、モデルが拒否した場合だけ温度を省略して再試行します。手動指定では値を変えず、非対応なら理由と直し方を表示します。</p>
+                      <p class="parameter-note">自動調整では用途に合う温度を試し、モデルが拒否した場合だけ温度を省略して再試行します。手動指定では値を変えず、非対応なら理由と直し方を表示します。テキスト側の「考える深さ」はInstagram投稿文にも適用されます。深くすると処理時間や使用トークンが増える場合があります。</p>
                     </div>
                   </details>
                   {% set connection_ready = ai[channel + '_key_configured'] and ai[channel + '_analyze_model'] %}
@@ -340,8 +340,8 @@
           </form>
         </section>
 
-        <section class="settings-section" id="instagram" data-settings-section="instagram" data-search="Instagram インスタグラム 投稿 スキップ 一時停止 カメラ アカウント 時刻 prompt プロンプト">
-          <div class="section-heading"><div><h2>Instagram</h2><p>定点カメラからの自動投稿に固有の設定です。</p></div></div>
+        <section class="settings-section" id="instagram" data-settings-section="instagram" data-search="Instagram インスタグラム 投稿 スキップ 一時停止 カメラ センサー グラフ アカウント 時刻 prompt プロンプト">
+          <div class="section-heading"><div><h2>Instagram</h2><p>定点カメラとセンサー記録からの自動投稿を設定します。</p></div></div>
           <form method="post" action="/settings" id="instagram-settings-form" data-stateful-form data-pristine-message="Instagram設定は変更されていません。">
             <input type="hidden" name="settings_section" value="instagram">
             <div class="setting-list">
@@ -361,6 +361,21 @@
                 <div class="setting-control">
                   <select id="instagram-camera-select" name="camera_id" aria-label="投稿元カメラ" data-searchable-select data-search-placeholder="カメラ名、IDを検索" data-empty-message="一致するカメラはありません。"><option value="">選択してください</option>{% for camera in instagram_camera_options %}<option value="{{ camera.id }}"{% if instagram.camera_id == camera.id %} selected{% endif %}>{{ camera.name }} / {{ camera.id }}</option>{% endfor %}</select>
                   {% if not instagram_camera_options %}<p class="disabled-reason">利用できるカメラデバイスがありません。<a href="/cameras/new">カメラを登録</a>してください。</p>{% endif %}
+                </div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="センサー グラフ フィード 3日 土壌水分 日射 PAR 温度 有効">
+                <div class="setting-label with-help"><span>センサーグラフ投稿</span><details class="context-help"><summary aria-label="センサーグラフ投稿の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>直近3日の推移をフィードへ投稿</strong><p>取得できた土壌水分、日射量またはPAR、気温または地温を1時間ごとにまとめます。注目項目と比較の切り口を日替わりにし、直近の見出しと重ならない10文字以内の感想を添えた4:5画像を投稿します。</p></div></details></div>
+                <div class="setting-control"><label class="toggle"><input type="checkbox" name="sensor_feed_enabled"{% if instagram.sensor_feed_enabled %} checked{% endif %}>毎日センサーグラフを投稿する</label></div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="センサー グラフ 投稿 時刻 20時 schedule">
+                <div class="setting-label with-help"><span id="sensor-feed-schedule-label">グラフ投稿時刻</span><details class="context-help"><summary aria-label="グラフ投稿時刻の説明を開く">?</summary><div class="context-help-panel" role="note"><strong>毎日のフィード投稿時刻</strong><p>Hubのタイムゾーンで実行します。タイムラプス投稿とは別の静止画フィード投稿です。</p></div></details></div>
+                <div class="setting-control"><input type="time" name="sensor_feed_schedule_start" value="{{ instagram.sensor_feed_schedule_start or '20:00' }}" required aria-labelledby="sensor-feed-schedule-label"></div>
+              </div>
+              <div class="setting-row" data-setting-row data-search="センサー グラフ 元デバイス 自動選択 土壌水分 日射 PAR 温度">
+                <div class="setting-label with-help"><span>グラフ元センサー</span><details class="context-help"><summary aria-label="グラフ元センサーの説明を開く">?</summary><div class="context-help-panel" role="note"><strong>表示するセンサー値の取得元</strong><p>自動選択では、項目ごとに直近3日の有効データが最も多いデバイスを使います。1台に固定することもできます。</p></div></details></div>
+                <div class="setting-control">
+                  <select id="instagram-sensor-select" name="sensor_id" aria-label="グラフ元センサー" data-searchable-select data-search-placeholder="センサー名、種類、IDを検索" data-empty-message="一致するセンサーデバイスはありません。"><option value="">自動選択（おすすめ）</option>{% for sensor in instagram_sensor_options %}<option value="{{ sensor.id }}"{% if instagram.sensor_id == sensor.id %} selected{% endif %}>{{ sensor.name }}{% if sensor.kind %}（{{ sensor.kind }}）{% endif %} / {{ sensor.id }}</option>{% endfor %}</select>
+                  {% if not instagram_sensor_options %}<p class="disabled-reason">利用できるセンサーデバイスがありません。デバイスを登録して計測を開始してください。</p>{% endif %}
                 </div>
               </div>
               <div class="setting-row" data-setting-row data-search="植物 位置 配置 解析 prompt プロンプト">

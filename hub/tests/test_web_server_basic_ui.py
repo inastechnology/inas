@@ -4,7 +4,7 @@ import os
 import tempfile
 import unittest
 from copy import deepcopy
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 
 from werkzeug.datastructures import MultiDict
@@ -461,6 +461,9 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn('name="text_analyze_temperature_mode"', html)
         self.assertIn('name="text_analyze_temperature"', html)
         self.assertIn('name="text_analyze_reasoning_effort"', html)
+        self.assertIn('<option value="xhigh"', html)
+        self.assertIn("Instagram投稿文、栽培カレンダー、目標レンジ、質問回答", html)
+        self.assertIn("テキスト側の「考える深さ」はInstagram投稿文にも適用されます", html)
         self.assertIn("接続先とモデル特性を調整（上級者向け）", html)
         self.assertIn('id="ai-test-dialog"', html)
         self.assertIn("次に行うこと", html)
@@ -484,6 +487,13 @@ class WebServerBasicUITest(unittest.TestCase):
         self.assertIn("Instagramへの自動投稿を一時停止する", html)
         self.assertIn('name="camera_id"', html)
         self.assertIn('id="instagram-camera-select"', html)
+        self.assertIn('name="sensor_feed_enabled"', html)
+        self.assertIn('name="sensor_feed_schedule_start"', html)
+        self.assertIn('value="20:00"', html)
+        self.assertIn('name="sensor_id"', html)
+        self.assertIn('id="instagram-sensor-select"', html)
+        self.assertIn("自動選択（おすすめ）", html)
+        self.assertIn("取得できた土壌水分、日射量またはPAR、気温または地温", html)
         self.assertIn("data-searchable-select", html)
         self.assertIn("/static/searchable-select.css", html)
         self.assertIn('name="plant_position_prompt"', html)
@@ -503,6 +513,7 @@ class WebServerBasicUITest(unittest.TestCase):
 
     def test_post_watering_moisture_wizard_selects_sensor_and_saves_rule(self):
         current_rules = deepcopy(web_server.setting().get("post_watering_moisture"))
+        now = datetime.now(UTC).replace(microsecond=0)
         self.fake_device_config_service.records = {
             "WTR-001": {
                 "name": "北畝の潅水機",
@@ -530,14 +541,14 @@ class WebServerBasicUITest(unittest.TestCase):
             {
                 "device_id": "SOI-001",
                 "device_kind": "SOI",
-                "measured_at": "2026-08-24T01:00:00+00:00",
+                "measured_at": (now - timedelta(days=2)).isoformat(),
                 "metric": "soil_moisture_percent",
                 "value": 41.0,
             },
             {
                 "device_id": "SOI-001",
                 "device_kind": "SOI",
-                "measured_at": "2026-08-25T01:00:00+00:00",
+                "measured_at": (now - timedelta(days=1)).isoformat(),
                 "metric": "soil_moisture_percent",
                 "value": 46.0,
             },
@@ -621,6 +632,7 @@ class WebServerBasicUITest(unittest.TestCase):
 
     def test_post_watering_moisture_wizard_selects_mk2_probe_or_average(self):
         current_rules = deepcopy(web_server.setting().get("post_watering_moisture"))
+        now = datetime.now(UTC).replace(microsecond=0)
 
         def status(first, second):
             return {
@@ -656,8 +668,8 @@ class WebServerBasicUITest(unittest.TestCase):
                 "device_kind": "FGT",
                 "last_status": status(22.5, 26.5),
                 "status_history": [
-                    {"received_at": "2026-08-24T01:00:00+00:00", "payload": status(20, 40)},
-                    {"received_at": "2026-08-25T01:00:00+00:00", "payload": status(30, 60)},
+                    {"received_at": (now - timedelta(days=2)).isoformat(), "payload": status(20, 40)},
+                    {"received_at": (now - timedelta(days=1)).isoformat(), "payload": status(30, 60)},
                 ],
             }
         }
@@ -848,7 +860,7 @@ class WebServerBasicUITest(unittest.TestCase):
                     "plant_calendar_web_knowledge_cache_days": "30",
                     "text_analyze_temperature_mode": "custom",
                     "text_analyze_temperature": "0.4",
-                    "text_analyze_reasoning_effort": "high",
+                    "text_analyze_reasoning_effort": "xhigh",
                     "image_analyze_temperature_mode": "default",
                     "image_analyze_temperature": "1",
                     "image_analyze_reasoning_effort": "",
@@ -859,7 +871,7 @@ class WebServerBasicUITest(unittest.TestCase):
             self.assertEqual(response.status_code, 302)
             self.assertEqual(saved["text_analyze_temperature_mode"], "custom")
             self.assertEqual(saved["text_analyze_temperature"], 0.4)
-            self.assertEqual(saved["text_analyze_reasoning_effort"], "high")
+            self.assertEqual(saved["text_analyze_reasoning_effort"], "xhigh")
             self.assertEqual(saved["image_analyze_temperature_mode"], "default")
 
             invalid = self.client.post(
@@ -901,16 +913,33 @@ class WebServerBasicUITest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_instagram_settings_reject_invalid_sensor_feed_schedule_before_saving(self):
+        response = self.client.post(
+            "/settings",
+            data={
+                "settings_section": "instagram",
+                "post_schedule_start": "09:01",
+                "sensor_feed_schedule_start": "invalid",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+
     def test_instagram_automatic_posting_can_be_paused_and_resumed(self):
         current_instagram = dict(web_server.setting().get("instagram"))
         form = {
             "settings_section": "instagram",
             "post_schedule_start": current_instagram.get("post_schedule_start", "09:01"),
+            "sensor_feed_schedule_start": current_instagram.get("sensor_feed_schedule_start", "20:00"),
+            "sensor_id": current_instagram.get("sensor_id", ""),
             "camera_id": current_instagram.get("camera_id", ""),
             "plant_position_prompt": current_instagram.get("plant_position_prompt", ""),
         }
         try:
-            with patch.object(web_server, "reload_instagram_post_task_settings") as reload_settings:
+            with (
+                patch.object(web_server, "reload_instagram_post_task_settings") as reload_reel_settings,
+                patch.object(web_server, "reload_instagram_sensor_feed_task_settings") as reload_feed_settings,
+            ):
                 paused = self.client.post("/settings", data={**form, "posting_paused": "on"})
                 resumed = self.client.post("/settings", data=form)
 
@@ -918,8 +947,41 @@ class WebServerBasicUITest(unittest.TestCase):
             self.assertEqual(paused.headers["Location"], "/settings?section=instagram&saved=1")
             self.assertEqual(resumed.status_code, 302)
             self.assertFalse(web_server.setting().get("instagram")["posting_paused"])
-            self.assertEqual(reload_settings.call_count, 2)
+            self.assertEqual(reload_reel_settings.call_count, 2)
+            self.assertEqual(reload_feed_settings.call_count, 2)
         finally:
+            web_server.setting().set("instagram", current_instagram)
+
+    def test_instagram_sensor_feed_schedule_and_source_can_be_saved(self):
+        current_instagram = dict(web_server.setting().get("instagram"))
+        self.fake_device_config_service.records = {
+            "fgt-1": {"name": "鉢センサー", "device_kind": "FGT", "state": "active"},
+        }
+        try:
+            with (
+                patch.object(web_server, "reload_instagram_post_task_settings"),
+                patch.object(web_server, "reload_instagram_sensor_feed_task_settings"),
+            ):
+                response = self.client.post(
+                    "/settings",
+                    data={
+                        "settings_section": "instagram",
+                        "post_schedule_start": current_instagram.get("post_schedule_start", "09:01"),
+                        "sensor_feed_enabled": "on",
+                        "sensor_feed_schedule_start": "20:30",
+                        "sensor_id": "fgt-1",
+                        "camera_id": current_instagram.get("camera_id", ""),
+                        "plant_position_prompt": current_instagram.get("plant_position_prompt", ""),
+                    },
+                )
+
+            saved = web_server.setting().get("instagram")
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(saved["sensor_feed_enabled"])
+            self.assertEqual(saved["sensor_feed_schedule_start"], "20:30")
+            self.assertEqual(saved["sensor_id"], "fgt-1")
+        finally:
+            self.fake_device_config_service.records = {}
             web_server.setting().set("instagram", current_instagram)
 
     def test_instagram_profile_is_fetched_without_returning_access_token(self):
@@ -952,6 +1014,7 @@ class WebServerBasicUITest(unittest.TestCase):
             patch.object(web_server, "setting", return_value=fake_setting),
             patch.object(web_server, "InstagramClient", FakeInstagramClient),
             patch.object(web_server, "reload_instagram_post_task_settings"),
+            patch.object(web_server, "reload_instagram_sensor_feed_task_settings"),
         ):
             response = self.client.post("/local/api/settings/instagram/profile")
 
