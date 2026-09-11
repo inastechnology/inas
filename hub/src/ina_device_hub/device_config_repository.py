@@ -537,6 +537,15 @@ def validate_device_config(config: dict, *, device_kind: str | None = None):  # 
         limits = fgt.get("limits", {})
         sensors = fgt.get("sensors", {})
         timed_outputs = fgt.get("timed_outputs", {})
+        moisture_guard = fgt.get("moisture_guard", {})
+        if not isinstance(moisture_guard, dict):
+            raise DeviceConfigValidationError("fgt.moisture_guard must be an object")
+        guard_enabled = moisture_guard.get("enabled", False)
+        guard_threshold = moisture_guard.get("threshold_percent", 40)
+        if not isinstance(guard_enabled, bool):
+            raise DeviceConfigValidationError("fgt.moisture_guard.enabled must be a boolean")
+        if type(guard_threshold) is not int or not 0 <= guard_threshold <= 100:
+            raise DeviceConfigValidationError("fgt.moisture_guard.threshold_percent must be an integer from 0 to 100")
         if not isinstance(recipe, dict):
             raise DeviceConfigValidationError("fgt.recipe must be an object")
         if not isinstance(limits, dict):
@@ -613,6 +622,7 @@ def validate_device_config(config: dict, *, device_kind: str | None = None):  # 
 
         normalized_fgt = {
             "enabled": _optional_bool(fgt, "enabled", False, "fgt.enabled"),
+            "moisture_guard": {"enabled": guard_enabled, "threshold_percent": guard_threshold},
             "recovery_ack": _optional_int(fgt, "recovery_ack", 0, 0, 0xFFFFFFFF, "fgt.recovery_ack"),
             "timed_outputs": normalized_timed_outputs,
             "recipe": normalized_fgt_recipe,

@@ -27,6 +27,20 @@
   },
   "configuration_fields": [
     {
+      "path": "fgt.moisture_guard.enabled",
+      "label": "土が湿っているときは予約運転を見送る",
+      "description": "FGT 0.3.0以降で使えます。最初の有効な土壌水分計で判断し、読み取れない場合もその回の給水・液肥づくり・潅水を見送ります。",
+      "type": "boolean"
+    },
+    {
+      "path": "fgt.moisture_guard.threshold_percent",
+      "label": "予約運転を見送る土壌水分（この値以上）",
+      "type": "number",
+      "unit": "%",
+      "min": 0,
+      "max": 100
+    },
+    {
       "path": "fgt.timed_outputs.enabled",
       "label": "各ポンプを秒数で動かす",
       "type": "boolean"

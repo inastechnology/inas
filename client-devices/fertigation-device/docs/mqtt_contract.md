@@ -14,6 +14,7 @@ the v1 defaults and remain bounded by firmware limits.
   "debug_log_on_wake": false,
   "fgt": {
     "enabled": true,
+    "moisture_guard": {"enabled": false, "threshold_percent": 40},
     "timed_outputs": {
       "enabled": false,
       "water_inlet": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
@@ -79,6 +80,42 @@ FGT v1 accepts only `frequency.mode="daily"`. Interval and weekday entries are
 ignored rather than accidentally being executed every day.
 
 ## Existing Hub database compatibility
+
+### Soil moisture schedule guard (firmware 0.3.0+)
+
+`fgt.moisture_guard` is optional. `enabled` must be a boolean (default `false`),
+and `threshold_percent` an integer from 0 to 100 (default `40`). Enabling it
+requires updating the FGT firmware; older firmware ignores this object.
+
+Before either a timed-output sequence or a recipe starts, the device compares
+the current wake's soil moisture with the threshold. A value **greater than or
+equal to** the threshold skips the entire scheduled operation, including filling,
+dosing, mixing, irrigation, and rinsing. Catch-up schedules use the same guard.
+Disabled guards preserve existing schedule behavior. This is a start condition,
+not an in-progress irrigation stop condition or a rainfall forecast.
+
+The source is the first enabled soil sensor in the saved local RS485 registry,
+matching the primary soil telemetry. Without a saved registry, the runtime soil
+sensor is used. Values are not averaged or taken from another Hub device.
+No enabled sensor, failed reads, sensor power/bus failures, non-finite values,
+or moisture outside 0..100 all skip that occurrence. A skipped occurrence is
+persisted as consumed, so later wakes and restarts cannot catch it up. Journal
+write failure keeps all outputs off and requires recovery.
+
+Status reports `batch_skipped=true` and `batch_skip_reason=soil_moisture_high`
+or `soil_moisture_unavailable`. `moisture_guard_invalid` is reserved for an
+invalid guard configuration. The status also includes `moisture_guard_enabled`,
+`moisture_guard_threshold_percent`, `moisture_guard_checked`,
+`moisture_guard_sample_ok`, and `moisture_guard_sample_percent` (null unless a
+valid sample was used). The decision sample is retained separately from the
+post-operation soil telemetry. A wet-soil skip is not an actuator fault.
+
+Saved runtime configuration version 3 appends the guard. Valid version 2 records
+retain all previous settings and load with the guard disabled. Corrupt records
+continue to fall back to actuator-safe defaults. Downgrading to older firmware
+requires retrieving configuration from the Hub again.
+
+### Legacy Hub rows
 
 `fgt` is an optional overlay in the Hub device-config validator. Existing
 WTR/WRS/ENV/SOI records without that key are loaded and republished without an

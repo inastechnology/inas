@@ -89,6 +89,9 @@ a top-level key listed in `send_keys`.
 
 ## UI Rules
 
+- `ui.configuration_fields` may include an optional plain-text `description`.
+  The Hub escapes this help text and associates it with the form control using
+  `aria-describedby`; product-specific instructions remain in the definition.
 - The primary screen uses farmer-facing names and pictures: for example,
   `water pump`, `mixing pump`, or `soil sensor`, not switch technologies or bus
   addresses.

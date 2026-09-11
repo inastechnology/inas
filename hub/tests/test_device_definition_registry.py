@@ -148,6 +148,16 @@ class DeviceDefinitionRegistryTest(unittest.TestCase):
         self.assertEqual(history[0]["channel"], "A液ポンプ")
         self.assertEqual(history[0]["soil"], "41.5%")
 
+    def test_moisture_skip_is_visible_in_history_without_an_operational_fault(self):
+        for reason in ("soil_moisture_high", "soil_moisture_unavailable"):
+            with self.subTest(reason=reason):
+                status = {"device_kind": "FGT", "batch_skipped": True, "batch_started": False, "batch_skip_reason": reason, "fgt_fault": "none"}
+                history = _build_watering_history([{"received_at": "2026-09-11T06:30:00+09:00", "payload": status}])
+                self.assertEqual(history[0]["label"], "実行せず")
+                self.assertEqual(history[0]["reason"], reason)
+                summary = _build_device_summary("fgt-1", {"device_kind": "FGT", "last_status": status}, datetime.now(UTC))
+                self.assertIsNone(summary["operational_error"])
+
     def test_fgt_idle_status_is_not_shown_as_watering_history(self):
         history = _build_watering_history(
             [

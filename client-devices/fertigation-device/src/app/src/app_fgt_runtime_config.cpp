@@ -9,7 +9,7 @@
 
 #define APP_FGT_RUNTIME_CONFIG_FILE "/.fgt_runtime_config"
 #define APP_FGT_RUNTIME_CONFIG_STORE_MAGIC 0x46475443UL
-#define APP_FGT_RUNTIME_CONFIG_STORE_VERSION 2
+#define APP_FGT_RUNTIME_CONFIG_STORE_VERSION 3
 
 #ifndef APP_FGT_SOIL_RS485_ENABLED
 #define APP_FGT_SOIL_RS485_ENABLED 1
@@ -58,6 +58,12 @@ static_assert(
     offsetof(app_fgt_runtime_config_store_t, crc32) + sizeof(uint32_t) ==
         sizeof(app_fgt_runtime_config_store_t),
     "FGT runtime config store unexpectedly has CRC tail padding");
+
+// Version 2 used the same binary prefix, with CRC immediately after schedules.
+constexpr size_t kV2ConfigSize = offsetof(app_fgt_runtime_config_t, moisture_guard);
+constexpr size_t kV2CrcOffset = offsetof(app_fgt_runtime_config_store_t, config) + kV2ConfigSize;
+static_assert(alignof(app_fgt_runtime_config_t) == alignof(uint32_t),
+              "Revisit version 2 migration when config alignment changes");
 
 static app_fgt_runtime_config_t s_runtime_config = {};
 
@@ -127,6 +133,7 @@ static app_fgt_runtime_config_t default_config()
     config.recipe = fgt::Recipe{};
     config.limits = fgt::Limits{};
     config.sensors = default_sensors();
+    config.moisture_guard = fgt::MoistureGuardConfig{};
     return config;
 }
 
@@ -136,6 +143,7 @@ static bool content_is_valid(const app_fgt_runtime_config_t &config)
         config.ota_check_interval_sec < APP_FGT_MIN_OTA_CHECK_INTERVAL_SEC ||
         config.ota_check_interval_sec > APP_FGT_MAX_OTA_CHECK_INTERVAL_SEC ||
         config.schedule_count > APP_FGT_MAX_SCHEDULES || config.sensors.flow_pulses_per_liter == 0 ||
+        config.moisture_guard.threshold_percent > 100 ||
         !fgt::recipe_valid(config.recipe, config.limits) ||
         (config.timed_outputs_enabled && !fgt::timed_program_valid(config.timed_program)))
     {
@@ -268,6 +276,23 @@ bool app_fgt_runtime_config_apply_json(const uint8_t *payload, size_t length)
         JsonObjectConst fgt_json = doc["fgt"].as<JsonObjectConst>();
         next.enabled = fgt_json["enabled"] | next.enabled;
         next.recovery_ack = bounded_u32(fgt_json["recovery_ack"], next.recovery_ack, 0, UINT32_MAX);
+        if (!fgt_json["moisture_guard"].isUnbound())
+        {
+            if (!fgt_json["moisture_guard"].is<JsonObjectConst>()) return false;
+            JsonObjectConst guard = fgt_json["moisture_guard"].as<JsonObjectConst>();
+            if (!guard["enabled"].isUnbound())
+            {
+                if (!guard["enabled"].is<bool>()) return false;
+                next.moisture_guard.enabled = guard["enabled"].as<bool>();
+            }
+            if (!guard["threshold_percent"].isUnbound())
+            {
+                if (!guard["threshold_percent"].is<int>()) return false;
+                const int threshold = guard["threshold_percent"].as<int>();
+                if (threshold < 0 || threshold > 100) return false;
+                next.moisture_guard.threshold_percent = static_cast<uint8_t>(threshold);
+            }
+        }
         if (fgt_json["recipe"].is<JsonObjectConst>()) parse_recipe(fgt_json["recipe"].as<JsonObjectConst>(), next.recipe);
         if (fgt_json["limits"].is<JsonObjectConst>()) parse_limits(fgt_json["limits"].as<JsonObjectConst>(), next.limits);
         next.timed_outputs_enabled = false;
@@ -324,12 +349,30 @@ bool app_fgt_runtime_config_load_saved()
     File file = LittleFS.open(APP_FGT_RUNTIME_CONFIG_FILE, "r");
     if (!file) return false;
     app_fgt_runtime_config_store_t store = {};
+    const size_t file_size = file.size();
     const size_t read_size = file.read(reinterpret_cast<uint8_t *>(&store), sizeof(store));
     file.close();
+    if (file_size == kV2CrcOffset + sizeof(uint32_t) && read_size == file_size &&
+        store.magic == APP_FGT_RUNTIME_CONFIG_STORE_MAGIC &&
+        store.version == 2 && store.config_size == kV2ConfigSize)
+    {
+        uint32_t saved_crc = 0;
+        memcpy(&saved_crc, reinterpret_cast<const uint8_t *>(&store) + kV2CrcOffset, sizeof(saved_crc));
+        const uint32_t expected_v2 = AppUtils::crc32(
+            reinterpret_cast<const uint8_t *>(&store), kV2CrcOffset);
+        store.config.moisture_guard = fgt::MoistureGuardConfig{};
+        if (saved_crc == expected_v2 && content_is_valid(store.config))
+        {
+            store.config.received_from_mqtt = false;
+            s_runtime_config = store.config;
+            return true;
+        }
+        return false;
+    }
     const uint32_t expected = AppUtils::crc32(
         reinterpret_cast<const uint8_t *>(&store),
         offsetof(app_fgt_runtime_config_store_t, crc32));
-    if (read_size != sizeof(store) || store.magic != APP_FGT_RUNTIME_CONFIG_STORE_MAGIC ||
+    if (file_size != sizeof(store) || read_size != sizeof(store) || store.magic != APP_FGT_RUNTIME_CONFIG_STORE_MAGIC ||
         store.version != APP_FGT_RUNTIME_CONFIG_STORE_VERSION || store.config_size != sizeof(store.config) ||
         store.crc32 != expected || !content_is_valid(store.config))
     {

@@ -47,7 +47,7 @@ try {
 
     if (kind === "FGT") {
       assert.equal(await page.$$("#fertigation-recipe .pump-program-card").then((items) => items.length), 5, "FGT must show its five fixed pump controls");
-      assert.equal(await page.$$("#fertigation-recipe [data-definition-path]").then((items) => items.length), 17, "FGT timed outputs must be editable with farmer-facing fields");
+      assert.equal(await page.$$("#fertigation-recipe [data-definition-path]").then((items) => items.length), 19, "FGT timed outputs and moisture guard must be editable");
       assert.equal(await page.$('[data-definition-path="fgt.enabled"]'), null, "FGT scheduled operation must not expose an overall off switch");
       const flowText = await page.$eval("#fertigation-recipe", (section) => section.innerText);
       for (const label of ["水を入れる", "A液を量る", "B液を量る", "タンクを混ぜる", "植物へ送る"]) assert.match(flowText, new RegExp(label));
@@ -81,6 +81,26 @@ try {
       assert.match(await page.$eval("#scheduled-operation-warning-dialog", (dialog) => dialog.innerText), /潅水ポンプが無効/);
       assert.equal(await page.$("#scheduled-operation-enable-before-save"), null, "FGT operation is always enabled and needs no checkbox");
       await page.click("[data-cancel-scheduled-operation-warning]");
+      const guardSelector = '[data-definition-path="fgt.moisture_guard.enabled"]';
+      const thresholdSelector = '[data-definition-path="fgt.moisture_guard.threshold_percent"]';
+      assert.equal(await page.$eval(guardSelector, (input) => input.checked), false);
+      assert.equal(await page.$eval(thresholdSelector, (input) => input.value), "40");
+      assert.match(await page.$eval(guardSelector, (input) => document.getElementById(input.getAttribute("aria-describedby")).innerText), /読み取れない場合も/);
+      // Exercise keyboard operation, form collection, persistence and reload.
+      await page.focus(guardSelector);
+      await page.keyboard.press("Space");
+      await page.$eval(thresholdSelector, (input) => {
+        input.value = "60";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      assert.deepEqual(await page.$eval("#runtime-config-json", (textarea) => JSON.parse(textarea.value).fgt.moisture_guard), { enabled: true, threshold_percent: 60 });
+      await page.click('[data-timed-output-card="irrigation"] [data-timed-output-enabled]');
+      const saved = page.waitForResponse((response) => response.url().includes("/runtime-config?push=false") && response.request().method() === "PUT");
+      await page.$eval("#runtime-config-form", (form) => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+      assert.equal((await saved).status(), 200);
+      await page.waitForNavigation({ waitUntil: "networkidle0" });
+      assert.equal(await page.$eval(guardSelector, (input) => input.checked), true);
+      assert.equal(await page.$eval(thresholdSelector, (input) => input.value), "60");
     }
     await page.screenshot({ path: `/tmp/ina-device-definition-${kind.toLowerCase()}-settings.png`, fullPage: true });
     if (kind === "FGT") {

@@ -4333,8 +4333,9 @@ def _mqtt_devices_page_response(demo_mode=False, device_id=None, page_mode="list
                 <p id="scheduled-operation-inline-warning" class="notice warn"{% if not selected.scheduled_operation.warning %} hidden{% endif %}>{{ selected.scheduled_operation.warning }}</p>
                 <div class="config-toolbar definition-config-fields definition-global-fields">
                   {% for field in selected.definition.ui.configuration_fields %}
-                  {% if not field.output_id %}{% if field.type == 'boolean' %}<label class="switch-row"><input type="checkbox" data-definition-path="{{ field.path }}" data-definition-type="boolean">{{ field.label }}</label>
-                  {% else %}<div class="config-field"><label>{{ field.label }}</label><div class="threshold-control"><input type="number" data-definition-path="{{ field.path }}" data-definition-type="number" min="{{ field.min }}" max="{{ field.max }}" step="1"><span>{{ field.unit }}</span></div></div>{% endif %}{% endif %}
+                  {% if not field.output_id %}<div class="config-field">{% if field.type == 'boolean' %}<label class="switch-row" for="definition-field-{{ loop.index }}"><input id="definition-field-{{ loop.index }}" type="checkbox" data-definition-path="{{ field.path }}" data-definition-type="boolean"{% if field.description %} aria-describedby="definition-help-{{ loop.index }}"{% endif %}>{{ field.label }}</label>
+                  {% else %}<label for="definition-field-{{ loop.index }}">{{ field.label }}</label><div class="threshold-control"><input id="definition-field-{{ loop.index }}" type="number" data-definition-path="{{ field.path }}" data-definition-type="number" min="{{ field.min }}" max="{{ field.max }}" step="1"{% if field.description %} aria-describedby="definition-help-{{ loop.index }}"{% endif %}><span>{{ field.unit }}</span></div>{% endif %}
+                  {% if field.description %}<p id="definition-help-{{ loop.index }}" class="field-help">{{ field.description }}</p>{% endif %}</div>{% endif %}
                   {% endfor %}
                 </div>
                 <div class="pump-program-list" aria-label="ポンプごとの時間設定">

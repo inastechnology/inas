@@ -392,7 +392,7 @@
         ],
         "schema_version": 1
       },
-      "definition_version": "1.3.0",
+      "definition_version": "1.4.0",
       "device": {
         "category": "fertigation",
         "icon": "🧪",
@@ -721,6 +721,20 @@
       },
       "ui": {
         "configuration_fields": [
+          {
+            "description": "FGT 0.3.0以降で使えます。最初の有効な土壌水分計で判断し、読み取れない場合もその回の給水・液肥づくり・潅水を見送ります。",
+            "label": "土が湿っているときは予約運転を見送る",
+            "path": "fgt.moisture_guard.enabled",
+            "type": "boolean"
+          },
+          {
+            "label": "予約運転を見送る土壌水分（この値以上）",
+            "max": 100,
+            "min": 0,
+            "path": "fgt.moisture_guard.threshold_percent",
+            "type": "number",
+            "unit": "%"
+          },
           {
             "label": "各ポンプを秒数で動かす",
             "path": "fgt.timed_outputs.enabled",

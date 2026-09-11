@@ -516,6 +516,35 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
         self.assertTrue(config["schedules"][0]["enabled"])
         self.assertFalse(config["schedules"][1]["enabled"])
 
+    def test_fgt_moisture_guard_defaults_validation_and_mqtt_round_trip(self):
+        self.service.get_record("INADS-FGT-001")
+        self.repository.record_status("INADS-FGT-001", {"seq": 1, "device_kind": "FGT"})
+        self.service.set_state("INADS-FGT-001", "active", approved_by="operator")
+        record = self.repository.get("INADS-FGT-001")
+        self.assertEqual(record["config"]["fgt"]["moisture_guard"], {"enabled": False, "threshold_percent": 40})
+        for threshold in (0, 60, 100):
+            with self.subTest(threshold=threshold):
+                config = record["config"]
+                config["fgt"]["moisture_guard"] = {"enabled": True, "threshold_percent": threshold}
+                self.repository.upsert("INADS-FGT-001", config)
+                result = self.service.publish_config("INADS-FGT-001", "push")
+                expected = {"enabled": True, "threshold_percent": threshold}
+                self.assertEqual(result["payload"]["fgt"]["moisture_guard"], expected)
+                self.assertEqual(json.loads(self.mqtt_client.published[-1]["payload"])["fgt"]["moisture_guard"], expected)
+                self.repository.load()
+                self.assertEqual(self.repository.get("INADS-FGT-001")["config"]["fgt"]["moisture_guard"], expected)
+
+    def test_fgt_moisture_guard_rejects_malformed_settings(self):
+        self.service.get_record("INADS-FGT-001")
+        self.repository.record_status("INADS-FGT-001", {"seq": 1, "device_kind": "FGT"})
+        self.service.set_state("INADS-FGT-001", "active", approved_by="operator")
+        config = self.repository.get("INADS-FGT-001")["config"]
+        invalid_guards = [None, [], True, {"enabled": "false"}, {"enabled": 1}, {"enabled": None}]
+        invalid_guards += [{"threshold_percent": value} for value in (-1, 101, 60.5, "60", True, None)]
+        for guard in invalid_guards:
+            with self.subTest(guard=guard), self.assertRaises(DeviceConfigValidationError):
+                validate_device_config({**config, "fgt": {**config["fgt"], "moisture_guard": guard}})
+
     def test_config_validation_keeps_legacy_records_free_of_fgt_defaults(self):
         config = validate_device_config(
             {

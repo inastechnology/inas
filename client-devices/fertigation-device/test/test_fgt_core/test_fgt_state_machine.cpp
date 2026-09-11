@@ -1,10 +1,12 @@
 #include <unity.h>
 #include <initializer_list>
+#include <math.h>
 #include <string.h>
 
 #include "fgt_commissioning_interlock.h"
 #include "fgt_firmware_manifest_validator.h"
 #include "fgt_journal_record.h"
+#include "fgt_moisture_guard.h"
 #include "fgt_rs485_device_registry.h"
 #include "fgt_schedule_policy.h"
 #include "fgt_sensor_diagnostics.h"
@@ -654,9 +656,44 @@ static void test_schedule_policy_retries_due_batch_quickly_after_ota()
         decide_scheduled_batch(due + kScheduleCatchUpLimitSec + 1, due, true, true).action);
 }
 
+static void test_moisture_guard_is_opt_in_and_includes_threshold_boundary()
+{
+    MoistureGuardConfig config;
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::allow, decide_moisture_guard(config, false, NAN));
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::allow, decide_moisture_guard(config, true, 100.0f));
+    config.enabled = true;
+    config.threshold_percent = 60;
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::allow, decide_moisture_guard(config, true, 59.9f));
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_wet, decide_moisture_guard(config, true, 60.0f));
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_wet, decide_moisture_guard(config, true, 60.1f));
+    config.threshold_percent = 0;
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_wet, decide_moisture_guard(config, true, 0.0f));
+    config.threshold_percent = 100;
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::allow, decide_moisture_guard(config, true, 99.9f));
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_wet, decide_moisture_guard(config, true, 100.0f));
+}
+
+static void test_moisture_guard_fails_closed_on_bad_samples_and_config()
+{
+    MoistureGuardConfig config{true, 60};
+    for (float sample : {NAN, INFINITY, -INFINITY, -0.1f, 100.1f})
+    {
+        TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_unavailable, decide_moisture_guard(config, true, sample));
+    }
+    // A zero-filled failed read and an old wet value are both unavailable.
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_unavailable, decide_moisture_guard(config, false, 0.0f));
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_unavailable, decide_moisture_guard(config, false, 80.0f));
+    config.threshold_percent = 101;
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_invalid_config, decide_moisture_guard(config, true, 20.0f));
+    TEST_ASSERT_EQUAL_STRING("soil_moisture_high", moisture_guard_skip_reason(MoistureGuardDecision::skip_wet));
+    TEST_ASSERT_EQUAL_STRING("soil_moisture_unavailable", moisture_guard_skip_reason(MoistureGuardDecision::skip_unavailable));
+}
+
 int main(int argc, char **argv)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_moisture_guard_is_opt_in_and_includes_threshold_boundary);
+    RUN_TEST(test_moisture_guard_fails_closed_on_bad_samples_and_config);
     RUN_TEST(test_recipe_validation_and_duration_rounding);
     RUN_TEST(test_nominal_time_calibrated_batch);
     RUN_TEST(test_zero_nutrients_and_rinse_skip_optional_phases);

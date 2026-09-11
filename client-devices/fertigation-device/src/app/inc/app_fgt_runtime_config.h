@@ -5,6 +5,7 @@
 #include <time.h>
 
 #include "fgt_state_machine.h"
+#include "fgt_moisture_guard.h"
 #include "fgt_timed_output_sequence.h"
 #include "hal_rs485_sensor_protocol.h"
 
@@ -49,6 +50,8 @@ typedef struct
     app_fgt_sensor_config_t sensors;
     uint8_t schedule_count;
     app_fgt_schedule_entry_t schedules[APP_FGT_MAX_SCHEDULES];
+    // Append-only: version 2 saved configurations end immediately before this field.
+    alignas(uint32_t) fgt::MoistureGuardConfig moisture_guard;
 } app_fgt_runtime_config_t;
 
 void app_fgt_runtime_config_init();

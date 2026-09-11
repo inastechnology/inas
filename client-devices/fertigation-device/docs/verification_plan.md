@@ -23,6 +23,26 @@ operation with an external hard disconnect for the 12 V actuator rail.
   path, while new records ignore ABI tail padding.
 - A single missed schedule catches up within six hours, OTA deferral remains
   pending, and older schedules are never replayed.
+- Moisture guard opt-in, equality and 0/100% boundaries, failed reads, non-finite
+  and out-of-range samples, and invalid configuration all follow the contract.
+- Actual runtime-config parsing and in-memory LittleFS round trips preserve
+  enabled/disabled guards, reject malformed JSON, and migrate version 2 records
+  without changing schedules. Consumed moisture skips remain consumed after restart.
+
+## Moisture guard bench acceptance
+
+Use a supervised water-only setup to verify both timed-output and recipe mode:
+
+- Enable the guard and set the threshold equal to or below the measured moisture;
+  confirm all five outputs remain OFF and the status records `soil_moisture_high`.
+- Set the threshold above the measurement; confirm the scheduled program starts.
+- Disconnect the selected soil sensor; confirm `soil_moisture_unavailable`, with
+  no substitution of another connected soil sensor and no actuator output.
+- Restart after a skipped occurrence; confirm it is not replayed, then verify
+  the next scheduled occurrence is evaluated normally.
+
+These physical checks require the connected FGT and are separate from native
+tests and firmware compilation.
 
 ## Build regression
 

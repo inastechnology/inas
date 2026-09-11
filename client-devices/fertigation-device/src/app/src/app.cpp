@@ -78,6 +78,10 @@ struct FgtCycleState
     time_t schedule_epoch_utc = 0;
     uint32_t batch_delay_sec = 0;
     uint32_t batch_id = 0;
+    fgt::MoistureGuardConfig moisture_guard = {};
+    bool moisture_guard_checked = false;
+    bool moisture_guard_sample_ok = false;
+    float moisture_guard_sample_percent = 0;
     bool timed_outputs_mode = false;
     fgt::Inputs inputs = {};
     fgt::Snapshot state = {};
@@ -231,6 +235,7 @@ protected:
         const app_fgt_runtime_config_t &config = app_fgt_runtime_config_get();
         m_cycle = {};
         m_cycle.config_valid = app_fgt_runtime_config_is_valid();
+        m_cycle.moisture_guard = config.moisture_guard;
         m_cycle.timed_outputs_mode = config.timed_outputs_enabled;
         force_actuators_off();
         read_sensors();
@@ -289,10 +294,32 @@ protected:
         }
         else if (m_cycle.batch_due)
         {
+            // Use the fresh pre-operation sample, before any pump or dosing starts.
+            m_cycle.moisture_guard_checked = config.moisture_guard.enabled;
+            m_cycle.moisture_guard_sample_percent = m_cycle.sensors.soil.moisture_percent;
+            m_cycle.moisture_guard_sample_ok = fgt::moisture_sample_valid(
+                m_cycle.sensors.soil.ok, m_cycle.moisture_guard_sample_percent);
+            const fgt::MoistureGuardDecision moisture_decision = fgt::decide_moisture_guard(
+                config.moisture_guard, m_cycle.moisture_guard_sample_ok,
+                m_cycle.moisture_guard_sample_percent);
             m_cycle.batch_catch_up =
                 schedule_decision.action ==
                 fgt::ScheduledBatchAction::run_catch_up;
-            if (config.timed_outputs_enabled) run_timed_outputs(config, due_epoch);
+            if (moisture_decision != fgt::MoistureGuardDecision::allow)
+            {
+                m_cycle.batch_skipped = true;
+                m_cycle.skip_reason = fgt::moisture_guard_skip_reason(moisture_decision);
+                m_cycle.batch_id = static_cast<uint32_t>(due_epoch);
+                // Consume this occurrence, including on sensor failure. Do not water
+                // later in the catch-up window when the soil or sensor changes.
+                if (!app_fgt_journal_mark_started(due_epoch, m_cycle.batch_id) ||
+                    !app_fgt_journal_mark_finished())
+                {
+                    m_cycle.journal_error = true;
+                    m_cycle.recovery_required = true;
+                }
+            }
+            else if (config.timed_outputs_enabled) run_timed_outputs(config, due_epoch);
             else run_batch(config, due_epoch);
         }
         else if (m_cycle.recovery_required)
@@ -390,6 +417,14 @@ protected:
         doc["batch_catch_up"] = m_cycle.batch_catch_up;
         doc["batch_delay_sec"] = m_cycle.batch_delay_sec;
         doc["batch_skip_reason"] = m_cycle.skip_reason;
+        doc["moisture_guard_enabled"] = m_cycle.moisture_guard.enabled;
+        doc["moisture_guard_threshold_percent"] = m_cycle.moisture_guard.threshold_percent;
+        doc["moisture_guard_checked"] = m_cycle.moisture_guard_checked;
+        doc["moisture_guard_sample_ok"] = m_cycle.moisture_guard_checked && m_cycle.moisture_guard_sample_ok;
+        if (m_cycle.moisture_guard_checked && m_cycle.moisture_guard_sample_ok)
+            doc["moisture_guard_sample_percent"] = m_cycle.moisture_guard_sample_percent;
+        else
+            doc["moisture_guard_sample_percent"] = nullptr;
         doc["batch_id"] = m_cycle.batch_id;
         doc["schedule_epoch_utc"] = static_cast<int64_t>(m_cycle.schedule_epoch_utc);
         doc["recovery_required"] = m_cycle.recovery_required;
@@ -573,6 +608,10 @@ private:
                     ensure_rs485_baud(device.baud);
                 if (!configured.bus_ready)
                 {
+                    // Reserve the primary soil slot even if its bus failed.
+                    // Never substitute a different sensor for the guard.
+                    if (device.type == fgt::Rs485DeviceType::soil && first_soil)
+                        first_soil = false;
                     continue;
                 }
                 if (device.type == fgt::Rs485DeviceType::soil)
