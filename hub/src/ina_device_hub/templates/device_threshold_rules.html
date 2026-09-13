@@ -1,0 +1,37 @@
+{% for context in selected.threshold_contexts %}
+{% set rule = context.rule %}
+<section id="threshold-rule-{{ rule.id }}" class="setup-stage threshold-rule" data-threshold-rule="{{ rule.id }}" aria-labelledby="threshold-title-{{ rule.id }}">
+  <div class="setup-stage-head"><h3 id="threshold-title-{{ rule.id }}">{{ rule.title }}</h3><span class="badge" data-threshold-applied></span></div>
+  <label class="switch-row" for="threshold-enabled-{{ rule.id }}"><input id="threshold-enabled-{{ rule.id }}" type="checkbox" data-definition-path="{{ rule.enabled_path }}" data-definition-type="boolean" aria-describedby="threshold-help-{{ rule.id }}">{{ context.enabled_field.label }}</label>
+  <p id="threshold-help-{{ rule.id }}" class="hint">{{ rule.missing_hint }}</p>
+  {% if not context.supported %}<p class="notice warn">{{ rule.unsupported_hint }}</p>{% endif %}
+  <div class="threshold-source-layout">
+    <div class="threshold-source-settings">
+      <label for="threshold-source-{{ rule.id }}">{{ context.source_field.label }}</label>
+      <select id="threshold-source-{{ rule.id }}" data-definition-path="{{ rule.source_path }}" data-definition-type="string" aria-describedby="threshold-selection-{{ rule.id }}">
+        {% for option in context.options %}<option value="{{ option.key }}">{{ option.label }}</option>{% endfor %}
+      </select>
+      <p id="threshold-selection-{{ rule.id }}" class="hint">{{ rule.selection_hint }}</p>
+      <label for="threshold-value-{{ rule.id }}">{{ context.threshold_field.label }}</label>
+      <div class="threshold-control"><input id="threshold-value-{{ rule.id }}" type="number" min="{{ context.threshold_field.min }}" max="{{ context.threshold_field.max }}" step="1" data-definition-path="{{ rule.threshold_path }}" data-definition-type="number"><span>{{ context.threshold_field.unit }}</span></div>
+    </div>
+    <div class="threshold-source-reading">
+      <strong>選んだ対象の測定値</strong>
+      <div class="threshold-reading-value" data-threshold-reading>未取得</div>
+      <p class="hint">最後の受信：{{ context.received_label }}</p>
+      <ul class="threshold-source-members" data-threshold-members></ul>
+      <p class="hint" data-threshold-source-state></p>
+      <a href="?tab=monitoring#connected-sensor-list">測定一覧で確認 →</a>
+    </div>
+  </div>
+  <p class="notice" data-threshold-comparison role="status" aria-live="polite"></p>
+  <p class="hint">{{ rule.timing_hint }}</p>
+  {% if context.last_decision %}{% set decision = context.last_decision %}
+  <details class="threshold-last-decision"><summary>前回の予約で使った値と判断</summary>
+    <p><strong>{{ decision.result }}</strong>（受信：{{ decision.received_label }}）</p>
+    <p>{{ decision.source.label }}{% for member in decision.source.members %} / {{ member.name }}{% if member.location %}（{{ member.location }}）{% endif %}{% endfor %}</p>
+    <p>判定値：{{ '%.1f'|format(decision.value) ~ context.threshold_field.unit if decision.value is not none else '取得できず' }} ／ そのときのしきい値：{{ decision.threshold if decision.threshold is not none else '未取得' }}{{ context.threshold_field.unit if decision.threshold is not none else '' }}</p>
+  </details>
+  {% else %}<p class="hint">予約時の判断記録はまだ届いていません。</p>{% endif %}
+</section>
+{% endfor %}

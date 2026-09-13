@@ -546,6 +546,12 @@ def validate_device_config(config: dict, *, device_kind: str | None = None):  # 
             raise DeviceConfigValidationError("fgt.moisture_guard.enabled must be a boolean")
         if type(guard_threshold) is not int or not 0 <= guard_threshold <= 100:
             raise DeviceConfigValidationError("fgt.moisture_guard.threshold_percent must be an integer from 0 to 100")
+        guard_source = moisture_guard.get("source", "first")
+        if not isinstance(guard_source, str) or (
+            guard_source not in {"first", "average"}
+            and not re.fullmatch(r"sensor:(2400|4800|9600):([1-9]|[1-9][0-9]|1[0-9]{2}|2[0-3][0-9]|24[0-7])", guard_source)
+        ):
+            raise DeviceConfigValidationError("fgt.moisture_guard.source must select first, average, or a sensor address")
         if not isinstance(recipe, dict):
             raise DeviceConfigValidationError("fgt.recipe must be an object")
         if not isinstance(limits, dict):
@@ -622,7 +628,7 @@ def validate_device_config(config: dict, *, device_kind: str | None = None):  # 
 
         normalized_fgt = {
             "enabled": _optional_bool(fgt, "enabled", False, "fgt.enabled"),
-            "moisture_guard": {"enabled": guard_enabled, "threshold_percent": guard_threshold},
+            "moisture_guard": {"enabled": guard_enabled, "threshold_percent": guard_threshold, "source": guard_source},
             "recovery_ack": _optional_int(fgt, "recovery_ack", 0, 0, 0xFFFFFFFF, "fgt.recovery_ack"),
             "timed_outputs": normalized_timed_outputs,
             "recipe": normalized_fgt_recipe,

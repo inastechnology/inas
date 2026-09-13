@@ -26,7 +26,7 @@ operation with an external hard disconnect for the 12 V actuator rail.
 - Moisture guard opt-in, equality and 0/100% boundaries, failed reads, non-finite
   and out-of-range samples, and invalid configuration all follow the contract.
 - Actual runtime-config parsing and in-memory LittleFS round trips preserve
-  enabled/disabled guards, reject malformed JSON, and migrate version 2 records
+  enabled/disabled guards, reject malformed JSON, and migrate version 2 and 3 records
   without changing schedules. Consumed moisture skips remain consumed after restart.
 
 ## Moisture guard bench acceptance
@@ -36,8 +36,11 @@ Use a supervised water-only setup to verify both timed-output and recipe mode:
 - Enable the guard and set the threshold equal to or below the measured moisture;
   confirm all five outputs remain OFF and the status records `soil_moisture_high`.
 - Set the threshold above the measurement; confirm the scheduled program starts.
-- Disconnect the selected soil sensor; confirm `soil_moisture_unavailable`, with
-  no substitution of another connected soil sensor and no actuator output.
+- Select a specific soil sensor and then the average. Check the actual decision
+  value, including equality at the threshold and reordered registry entries.
+- Disconnect the selected sensor or one member of the average; confirm
+  `moisture_guard_result=allow_unavailable` and normal scheduled irrigation,
+  without substituting another sensor or calculating a partial mean.
 - Restart after a skipped occurrence; confirm it is not replayed, then verify
   the next scheduled occurrence is evaluated normally.
 

@@ -112,6 +112,26 @@ a top-level key listed in `send_keys`.
 
 ## Compatibility And Failure Handling
 
+`ui.threshold_rules` groups three declared configuration fields (`enabled_path`,
+`threshold_path`, `source_path`) into a source selector, measurement context and
+threshold comparison. The source field uses type `measurement_source` and stores
+`first`, `average`, or `sensor:<baud>:<address>`. The rule's `source` declares the
+status collection, type filter, enable/valid/value/name/location/identity keys,
+and single-sensor fallback paths. Registry presence must be explicit; a missing
+registry must not silently select a fallback. A failed member invalidates an
+average. The renderer keeps missing values distinct from zero.
+
+Rules also declare instructions, reported setting/capability paths, and decision
+value/threshold/result paths and labels. Hub-owned controls show source members,
+receipt time, a draft comparison, and the previous actual decision separately.
+These displays do not start or suppress device operations. The firmware owns
+the comparison and missing-feedback policy. All names and labels are escaped.
+
+`runtime_config.capability_requirements` may specify `enabled_path`,
+`status_path`, and a plain-text `message`. MQTT reply and push reject enabled
+features until the latest device status confirms the declared boolean capability.
+This prevents older firmware silently ignoring new control settings.
+
 - Existing database rows are not rewritten when definitions are introduced.
 - Unknown device kinds use a small read-only fallback definition and retain the
   legacy configuration path.

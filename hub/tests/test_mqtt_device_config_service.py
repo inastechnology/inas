@@ -518,17 +518,17 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
 
     def test_fgt_moisture_guard_defaults_validation_and_mqtt_round_trip(self):
         self.service.get_record("INADS-FGT-001")
-        self.repository.record_status("INADS-FGT-001", {"seq": 1, "device_kind": "FGT"})
+        self.repository.record_status("INADS-FGT-001", {"seq": 1, "device_kind": "FGT", "moisture_guard_source_supported": True})
         self.service.set_state("INADS-FGT-001", "active", approved_by="operator")
         record = self.repository.get("INADS-FGT-001")
-        self.assertEqual(record["config"]["fgt"]["moisture_guard"], {"enabled": False, "threshold_percent": 40})
+        self.assertEqual(record["config"]["fgt"]["moisture_guard"], {"enabled": False, "threshold_percent": 40, "source": "first"})
         for threshold in (0, 60, 100):
             with self.subTest(threshold=threshold):
                 config = record["config"]
                 config["fgt"]["moisture_guard"] = {"enabled": True, "threshold_percent": threshold}
                 self.repository.upsert("INADS-FGT-001", config)
                 result = self.service.publish_config("INADS-FGT-001", "push")
-                expected = {"enabled": True, "threshold_percent": threshold}
+                expected = {"enabled": True, "threshold_percent": threshold, "source": "first"}
                 self.assertEqual(result["payload"]["fgt"]["moisture_guard"], expected)
                 self.assertEqual(json.loads(self.mqtt_client.published[-1]["payload"])["fgt"]["moisture_guard"], expected)
                 self.repository.load()
@@ -536,14 +536,33 @@ class MqttDeviceConfigServiceTest(unittest.TestCase):
 
     def test_fgt_moisture_guard_rejects_malformed_settings(self):
         self.service.get_record("INADS-FGT-001")
-        self.repository.record_status("INADS-FGT-001", {"seq": 1, "device_kind": "FGT"})
+        self.repository.record_status("INADS-FGT-001", {"seq": 1, "device_kind": "FGT", "moisture_guard_source_supported": True})
         self.service.set_state("INADS-FGT-001", "active", approved_by="operator")
         config = self.repository.get("INADS-FGT-001")["config"]
         invalid_guards = [None, [], True, {"enabled": "false"}, {"enabled": 1}, {"enabled": None}]
         invalid_guards += [{"threshold_percent": value} for value in (-1, 101, 60.5, "60", True, None)]
+        invalid_guards += [{"source": value} for value in (None, 1, "sensor:4800:0", "sensor:4800:248", "sensor:4800:01", "sensor:19200:1", "unknown")]
         for guard in invalid_guards:
             with self.subTest(guard=guard), self.assertRaises(DeviceConfigValidationError):
                 validate_device_config({**config, "fgt": {**config["fgt"], "moisture_guard": guard}})
+
+    def test_selected_moisture_source_is_delivered_only_to_capable_firmware(self):
+        device_id = "INADS-FGT-SOURCE-001"
+        self.service.get_record(device_id)
+        self.repository.record_status(device_id, {"device_kind": "FGT", "firmware_version": "0.3.0"})
+        self.service.set_state(device_id, "active", approved_by="operator")
+        config = self.repository.get(device_id)["config"]
+        config["fgt"]["moisture_guard"] = {"enabled": True, "threshold_percent": 60, "source": "average"}
+        self.repository.upsert(device_id, config)
+        for action in ("reply", "push"):
+            with self.subTest(action=action), self.assertRaisesRegex(DeviceConfigValidationError, "0.4.0"):
+                self.service.publish_config(device_id, action)
+        self.assertEqual(self.mqtt_client.published, [])
+        self.repository.record_status(device_id, {"device_kind": "FGT", "firmware_version": "0.4.0", "moisture_guard_source_supported": True})
+        for source in ("average", "sensor:4800:2", "first"):
+            config["fgt"]["moisture_guard"]["source"] = source
+            self.repository.upsert(device_id, config)
+            self.assertEqual(self.service.publish_reply(device_id)["payload"]["fgt"]["moisture_guard"]["source"], source)
 
     def test_config_validation_keeps_legacy_records_free_of_fgt_defaults(self):
         config = validate_device_config(

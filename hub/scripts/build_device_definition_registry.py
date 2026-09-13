@@ -9,6 +9,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 DEVICE_ROOT = ROOT / "client-devices"
 OUTPUT = ROOT / "hub/src/ina_device_hub/device_definitions/generated/registry.json"
+sys.path.insert(0, str(ROOT / "hub/src"))
+from ina_device_hub.device_threshold_context import validate_threshold_rules  # noqa: E402
+
 REFERENCES = {
     "runtime_config": "runtime_config",
     "status": "status",
@@ -64,6 +67,19 @@ def build_registry():
             raise ValueError(f"runtime_config.fixed_values must use paths below send_keys for {kind}")
         if assembled["status"].get("metrics") != definition["sensor_slots"]:
             raise ValueError(f"status metrics must match device sensor_slots for {kind}")
+        validate_threshold_rules(assembled["ui"])
+        requirements = assembled["runtime_config"].get("capability_requirements", [])
+        if not isinstance(requirements, list):
+            raise ValueError("capability_requirements must be an array")
+        for requirement in requirements:
+            if (
+                not isinstance(requirement, dict)
+                or set(requirement) != {"enabled_path", "status_path", "message"}
+                or not all(isinstance(value, str) and value for value in requirement.values())
+            ):
+                raise ValueError("invalid runtime capability requirement")
+            if requirement["enabled_path"].split(".")[0] not in send_keys:
+                raise ValueError("capability requirement must use a runtime send key")
         definitions[kind] = assembled
     if not definitions:
         raise ValueError("no Device Definitions found")

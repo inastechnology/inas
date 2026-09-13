@@ -6,11 +6,12 @@ from functools import lru_cache
 
 from ina_device_hub.collection_search import matches_search, paginate, search_terms
 from ina_device_hub.device_config_repository import (
+    DeviceConfigValidationError,
     DeviceStateConflictError,
     device_config_repository,
     validate_device_config,
 )
-from ina_device_hub.device_definition_registry import project_runtime_config
+from ina_device_hub.device_definition_registry import get_device_definition, project_runtime_config, value_at_path
 from ina_device_hub.device_event_log import append_device_event
 from ina_device_hub.device_operational_alert import (
     device_operational_error_details,
@@ -351,6 +352,11 @@ class DeviceConfigService:
         return self._publish_runtime_config_payload(device_id, action, config, retain=retain, record_event=record_event)
 
     def _publish_runtime_config_payload(self, device_id: str, action: str, config: dict, *, retain: bool, record_event: bool):
+        record = self.get_record(device_id)
+        requirements = get_device_definition(record.get("device_kind")).get("runtime_config", {}).get("capability_requirements", [])
+        for requirement in requirements:
+            if value_at_path(config, requirement["enabled_path"]) is True and value_at_path(record.get("last_status"), requirement["status_path"]) is not True:
+                raise DeviceConfigValidationError(requirement["message"])
         topic = f"/{device_id}/kinds/config/{action}"
         payload = json.dumps(config, ensure_ascii=True, separators=(",", ":"))
         result = self.mqtt_client.publish(topic, payload, qos=0, retain=retain)

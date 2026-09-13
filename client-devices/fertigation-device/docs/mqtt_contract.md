@@ -14,7 +14,7 @@ the v1 defaults and remain bounded by firmware limits.
   "debug_log_on_wake": false,
   "fgt": {
     "enabled": true,
-    "moisture_guard": {"enabled": false, "threshold_percent": 40},
+    "moisture_guard": {"enabled": false, "threshold_percent": 40, "source": "first"},
     "timed_outputs": {
       "enabled": false,
       "water_inlet": {"on_sec": 0, "off_sec": 0, "repeat_count": 0},
@@ -81,39 +81,57 @@ ignored rather than accidentally being executed every day.
 
 ## Existing Hub database compatibility
 
-### Soil moisture schedule guard (firmware 0.3.0+)
+### Soil moisture schedule guard (firmware 0.4.0+)
 
-`fgt.moisture_guard` is optional. `enabled` must be a boolean (default `false`),
-and `threshold_percent` an integer from 0 to 100 (default `40`). Enabling it
-requires updating the FGT firmware; older firmware ignores this object.
+`fgt.moisture_guard` is optional. `enabled` is a boolean (default `false`),
+`threshold_percent` an integer in 0..100 (default `40`), and `source` one of:
 
-Before either a timed-output sequence or a recipe starts, the device compares
-the current wake's soil moisture with the threshold. A value **greater than or
-equal to** the threshold skips the entire scheduled operation, including filling,
-dosing, mixing, irrigation, and rinsing. Catch-up schedules use the same guard.
-Disabled guards preserve existing schedule behavior. This is a start condition,
-not an in-progress irrigation stop condition or a rainfall forecast.
+- `first` (default): first enabled soil sensor in local registration order;
+- `sensor:<baud>:<slave_id>`: one specific soil sensor, identified by its bus
+  speed (2400, 4800, or 9600) and address (1..247), independent of list position;
+- `average`: arithmetic mean of every enabled local soil sensor. Disabled soil
+  sensors and non-soil sensors are excluded. With only one enabled soil sensor,
+  the mean is that sensor's value.
 
-The source is the first enabled soil sensor in the saved local RS485 registry,
-matching the primary soil telemetry. Without a saved registry, the runtime soil
-sensor is used. Values are not averaged or taken from another Hub device.
-No enabled sensor, failed reads, sensor power/bus failures, non-finite values,
-or moisture outside 0..100 all skip that occurrence. A skipped occurrence is
-persisted as consumed, so later wakes and restarts cannot catch it up. Journal
-write failure keeps all outputs off and requires recovery.
+Without a saved local registry, the runtime soil sensor is the single available
+source. A removed, disabled, or unreadable selected sensor is unavailable; no
+other sensor is substituted. If any member of an average is unreadable, the
+whole mean is unavailable rather than averaging a subset.
 
-Status reports `batch_skipped=true` and `batch_skip_reason=soil_moisture_high`
-or `soil_moisture_unavailable`. `moisture_guard_invalid` is reserved for an
-invalid guard configuration. The status also includes `moisture_guard_enabled`,
-`moisture_guard_threshold_percent`, `moisture_guard_checked`,
-`moisture_guard_sample_ok`, and `moisture_guard_sample_percent` (null unless a
-valid sample was used). The decision sample is retained separately from the
-post-operation soil telemetry. A wet-soil skip is not an actuator fault.
+Before either a timed sequence or recipe starts, fresh moisture **greater than
+or equal to** the threshold skips the entire scheduled operation: filling,
+dosing, mixing, irrigation, and rinsing. This also applies to catch-up schedules.
+A wet-soil skip is consumed in the journal and cannot be replayed after restart.
+The guard does not stop a batch already in progress or infer rainfall.
 
-Saved runtime configuration version 3 appends the guard. Valid version 2 records
-retain all previous settings and load with the guard disabled. Corrupt records
-continue to fall back to actuator-safe defaults. Downgrading to older firmware
-requires retrieving configuration from the Hub again.
+**Unavailable feedback allows scheduled irrigation.** This includes no enabled
+source, read errors, a partial/missing average, non-finite values, and readings
+outside 0..100. Existing actuator, emergency, journal, and batch interlocks still
+apply. Invalid configuration is rejected rather than interpreted as missing
+feedback. This missing-feedback behavior replaces the 0.3.0 behavior, which
+skipped when moisture was unavailable.
+
+Status includes `moisture_guard_source_supported=true`, the applied
+`moisture_guard_source`, `moisture_guard_missing_allows_watering=true`,
+`moisture_guard_enabled`, `moisture_guard_threshold_percent`,
+`moisture_guard_checked`, `moisture_guard_sensor_count` (selected enabled members),
+`moisture_guard_sample_ok`, and `moisture_guard_sample_percent` (null on failure).
+`moisture_guard_result` is `not_checked`, `skip_wet`, `allow_below`,
+`allow_unavailable`, or `skip_invalid_config` (invalid settings). This result is
+preserved even if a subsequent journal write fails. The decision sample is separate from later sensor telemetry;
+allowing the moisture check alone does not imply that actuator operation succeeded.
+Wet-soil skips retain `batch_skip_reason=soil_moisture_high`.
+
+Runtime store version 4 preserves valid version 2 and 3 configurations. V2 loads
+with the guard off; V3 retains enabled/threshold settings with `source=first`.
+Corrupt records still load actuator-safe defaults. Firmware 0.4.0 implements the
+new missing-feedback policy immediately, including for migrated configurations.
+Downgrading requires retrieving configuration from the Hub again.
+
+The Hub refuses to send an enabled guard until the device has reported source
+support, preventing older firmware from silently interpreting a selected sensor
+or mean as `first`. Saved settings may be prepared in advance; update firmware
+and wait for its first status before sending them.
 
 ### Legacy Hub rows
 

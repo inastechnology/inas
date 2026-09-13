@@ -9,7 +9,7 @@
 
 #define APP_FGT_RUNTIME_CONFIG_FILE "/.fgt_runtime_config"
 #define APP_FGT_RUNTIME_CONFIG_STORE_MAGIC 0x46475443UL
-#define APP_FGT_RUNTIME_CONFIG_STORE_VERSION 3
+#define APP_FGT_RUNTIME_CONFIG_STORE_VERSION 4
 
 #ifndef APP_FGT_SOIL_RS485_ENABLED
 #define APP_FGT_SOIL_RS485_ENABLED 1
@@ -143,7 +143,7 @@ static bool content_is_valid(const app_fgt_runtime_config_t &config)
         config.ota_check_interval_sec < APP_FGT_MIN_OTA_CHECK_INTERVAL_SEC ||
         config.ota_check_interval_sec > APP_FGT_MAX_OTA_CHECK_INTERVAL_SEC ||
         config.schedule_count > APP_FGT_MAX_SCHEDULES || config.sensors.flow_pulses_per_liter == 0 ||
-        config.moisture_guard.threshold_percent > 100 ||
+        !fgt::moisture_guard_config_valid(config.moisture_guard) ||
         !fgt::recipe_valid(config.recipe, config.limits) ||
         (config.timed_outputs_enabled && !fgt::timed_program_valid(config.timed_program)))
     {
@@ -280,6 +280,11 @@ bool app_fgt_runtime_config_apply_json(const uint8_t *payload, size_t length)
         {
             if (!fgt_json["moisture_guard"].is<JsonObjectConst>()) return false;
             JsonObjectConst guard = fgt_json["moisture_guard"].as<JsonObjectConst>();
+            if (!guard["source"].isUnbound())
+            {
+                if (!guard["source"].is<const char *>() ||
+                    !fgt::parse_moisture_source(guard["source"].as<const char *>(), next.moisture_guard)) return false;
+            }
             if (!guard["enabled"].isUnbound())
             {
                 if (!guard["enabled"].is<bool>()) return false;
@@ -352,22 +357,29 @@ bool app_fgt_runtime_config_load_saved()
     const size_t file_size = file.size();
     const size_t read_size = file.read(reinterpret_cast<uint8_t *>(&store), sizeof(store));
     file.close();
-    if (file_size == kV2CrcOffset + sizeof(uint32_t) && read_size == file_size &&
-        store.magic == APP_FGT_RUNTIME_CONFIG_STORE_MAGIC &&
-        store.version == 2 && store.config_size == kV2ConfigSize)
+    // V3 appended a two-byte guard followed by two bytes of alignment padding.
+    const size_t legacy_config_size = kV2ConfigSize + (store.version == 3 ? 4 : 0);
+    const size_t legacy_crc_offset = offsetof(app_fgt_runtime_config_store_t, config) + legacy_config_size;
+    if ((store.version == 2 || store.version == 3) &&
+        file_size == legacy_crc_offset + sizeof(uint32_t) && read_size == file_size &&
+        store.magic == APP_FGT_RUNTIME_CONFIG_STORE_MAGIC && store.config_size == legacy_config_size)
     {
+        const uint8_t *bytes = reinterpret_cast<const uint8_t *>(&store);
         uint32_t saved_crc = 0;
-        memcpy(&saved_crc, reinterpret_cast<const uint8_t *>(&store) + kV2CrcOffset, sizeof(saved_crc));
-        const uint32_t expected_v2 = AppUtils::crc32(
-            reinterpret_cast<const uint8_t *>(&store), kV2CrcOffset);
-        store.config.moisture_guard = fgt::MoistureGuardConfig{};
-        if (saved_crc == expected_v2 && content_is_valid(store.config))
+        memcpy(&saved_crc, bytes + legacy_crc_offset, sizeof(saved_crc));
+        if (saved_crc != AppUtils::crc32(bytes, legacy_crc_offset)) return false;
+        fgt::MoistureGuardConfig guard;
+        if (store.version == 3)
         {
-            store.config.received_from_mqtt = false;
-            s_runtime_config = store.config;
-            return true;
+            if (bytes[kV2CrcOffset] > 1) return false;
+            guard.enabled = bytes[kV2CrcOffset] != 0;
+            guard.threshold_percent = bytes[kV2CrcOffset + 1];
         }
-        return false;
+        store.config.moisture_guard = guard;
+        if (!content_is_valid(store.config)) return false;
+        store.config.received_from_mqtt = false;
+        s_runtime_config = store.config;
+        return true;
     }
     const uint32_t expected = AppUtils::crc32(
         reinterpret_cast<const uint8_t *>(&store),

@@ -82,6 +82,8 @@ struct FgtCycleState
     bool moisture_guard_checked = false;
     bool moisture_guard_sample_ok = false;
     float moisture_guard_sample_percent = 0;
+    uint8_t moisture_guard_sensor_count = 0;
+    fgt::MoistureGuardDecision moisture_guard_decision = fgt::MoistureGuardDecision::allow;
     bool timed_outputs_mode = false;
     fgt::Inputs inputs = {};
     fgt::Snapshot state = {};
@@ -296,12 +298,14 @@ protected:
         {
             // Use the fresh pre-operation sample, before any pump or dosing starts.
             m_cycle.moisture_guard_checked = config.moisture_guard.enabled;
-            m_cycle.moisture_guard_sample_percent = m_cycle.sensors.soil.moisture_percent;
-            m_cycle.moisture_guard_sample_ok = fgt::moisture_sample_valid(
-                m_cycle.sensors.soil.ok, m_cycle.moisture_guard_sample_percent);
+            const fgt::MoistureReading reading = moisture_guard_reading(config);
+            m_cycle.moisture_guard_sample_percent = reading.percent;
+            m_cycle.moisture_guard_sample_ok = reading.ok;
+            m_cycle.moisture_guard_sensor_count = reading.sensor_count;
             const fgt::MoistureGuardDecision moisture_decision = fgt::decide_moisture_guard(
                 config.moisture_guard, m_cycle.moisture_guard_sample_ok,
                 m_cycle.moisture_guard_sample_percent);
+            m_cycle.moisture_guard_decision = moisture_decision;
             m_cycle.batch_catch_up =
                 schedule_decision.action ==
                 fgt::ScheduledBatchAction::run_catch_up;
@@ -310,8 +314,7 @@ protected:
                 m_cycle.batch_skipped = true;
                 m_cycle.skip_reason = fgt::moisture_guard_skip_reason(moisture_decision);
                 m_cycle.batch_id = static_cast<uint32_t>(due_epoch);
-                // Consume this occurrence, including on sensor failure. Do not water
-                // later in the catch-up window when the soil or sensor changes.
+                // Consume wet-soil skips so a later wake cannot catch them up.
                 if (!app_fgt_journal_mark_started(due_epoch, m_cycle.batch_id) ||
                     !app_fgt_journal_mark_finished())
                 {
@@ -418,6 +421,16 @@ protected:
         doc["batch_delay_sec"] = m_cycle.batch_delay_sec;
         doc["batch_skip_reason"] = m_cycle.skip_reason;
         doc["moisture_guard_enabled"] = m_cycle.moisture_guard.enabled;
+        char moisture_source[32];
+        fgt::format_moisture_source(m_cycle.moisture_guard, moisture_source, sizeof(moisture_source));
+        doc["moisture_guard_source_supported"] = true;
+        doc["moisture_guard_source"] = moisture_source;
+        doc["moisture_guard_sensor_count"] = m_cycle.moisture_guard_sensor_count;
+        doc["moisture_guard_missing_allows_watering"] = true;
+        doc["moisture_guard_result"] = !m_cycle.moisture_guard_checked ? "not_checked"
+            : m_cycle.moisture_guard_decision == fgt::MoistureGuardDecision::skip_invalid_config ? "skip_invalid_config"
+            : !m_cycle.moisture_guard_sample_ok ? "allow_unavailable"
+            : m_cycle.moisture_guard_decision == fgt::MoistureGuardDecision::skip_wet ? "skip_wet" : "allow_below";
         doc["moisture_guard_threshold_percent"] = m_cycle.moisture_guard.threshold_percent;
         doc["moisture_guard_checked"] = m_cycle.moisture_guard_checked;
         doc["moisture_guard_sample_ok"] = m_cycle.moisture_guard_checked && m_cycle.moisture_guard_sample_ok;
@@ -554,6 +567,31 @@ private:
     FgtCycleState m_cycle = {};
     fgt::StateMachine m_machine;
     fgt::TimedOutputSequence m_timed_sequence;
+
+    fgt::MoistureReading moisture_guard_reading(const app_fgt_runtime_config_t &config) const
+    {
+        fgt::MoistureSample samples[fgt::kMaxRs485Devices] = {};
+        size_t count = 0;
+        if (m_cycle.sensors.saved_registry_used)
+        {
+            const auto &registry = app_fgt_rs485_devices_get();
+            for (size_t i = 0; i < registry.count; ++i)
+            {
+                const auto &device = registry.devices[i];
+                if (device.type != fgt::Rs485DeviceType::soil) continue;
+                const auto &sample = m_cycle.sensors.configured[i];
+                samples[count++] = {device.baud, device.slave_id, device.enabled,
+                                    sample.ok, sample.soil.moisture_percent};
+            }
+        }
+        else
+        {
+            samples[count++] = {APP_RS485_BAUD, config.sensors.soil.modbus_slave_id,
+                                config.sensors.soil.enabled, m_cycle.sensors.soil.ok,
+                                m_cycle.sensors.soil.moisture_percent};
+        }
+        return fgt::select_moisture_reading(config.moisture_guard, samples, count);
+    }
 
     void read_sensors()
     {

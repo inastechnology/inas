@@ -29,16 +29,21 @@
     {
       "path": "fgt.moisture_guard.enabled",
       "label": "土が湿っているときは予約運転を見送る",
-      "description": "FGT 0.3.0以降で使えます。最初の有効な土壌水分計で判断し、読み取れない場合もその回の給水・液肥づくり・潅水を見送ります。",
+      "description": "判定元の選択と、読取エラー時の潅水にはFGT 0.4.0以降が必要です。",
       "type": "boolean"
     },
     {
       "path": "fgt.moisture_guard.threshold_percent",
-      "label": "予約運転を見送る土壌水分（この値以上）",
+      "label": "見送るしきい値（この値以上）",
       "type": "number",
       "unit": "%",
       "min": 0,
       "max": 100
+    },
+    {
+      "path": "fgt.moisture_guard.source",
+      "label": "判定に使う土壌水分",
+      "type": "measurement_source"
     },
     {
       "path": "fgt.timed_outputs.enabled",
@@ -202,6 +207,55 @@
       "unit": "秒",
       "min": 60,
       "max": 86400
+    }
+  ],
+  "threshold_rules": [
+    {
+      "id": "moisture-guard",
+      "title": "土壌水分による予約見送り",
+      "enabled_path": "fgt.moisture_guard.enabled",
+      "threshold_path": "fgt.moisture_guard.threshold_percent",
+      "selection_hint": "土壌水分計を1台指定するか、有効な土壌水分計すべての平均を選べます。平均には下に表示した全台を使います。",
+      "timing_hint": "実際の予約では、開始直前に選んだ対象を測り直します。しきい値以上なら、給水・液肥づくり・潅水の全工程を見送ります。",
+      "missing_hint": "選んだ値を読み取れないときは予約どおり潅水します。平均の場合も1台でも読めなければ、水分条件では見送りません。",
+      "source": {
+        "registry_flag_path": "rs485_registry_saved",
+        "collection_path": "rs485_devices",
+        "filter_key": "type",
+        "filter_value": "soil",
+        "enabled_key": "enabled",
+        "valid_key": "ok",
+        "value_key": "moisture_percent",
+        "name_key": "name",
+        "location_key": "location",
+        "fallback_name": "本体の土壌水分計",
+        "fallback_enabled_path": "soil_rs485_enabled",
+        "fallback_valid_path": "soil_rs485_ok",
+        "fallback_value_path": "soil_moisture_percent",
+        "baud_key": "baud",
+        "address_key": "modbus_slave_id",
+        "fallback_baud": 4800,
+        "fallback_address_path": "soil_rs485_modbus_slave_id"
+      },
+      "device_enabled_path": "moisture_guard_enabled",
+      "device_threshold_path": "moisture_guard_threshold_percent",
+      "decision": {
+        "checked_path": "moisture_guard_checked",
+        "valid_path": "moisture_guard_sample_ok",
+        "value_path": "moisture_guard_sample_percent",
+        "threshold_path": "moisture_guard_threshold_percent",
+        "reason_path": "moisture_guard_result",
+        "labels": {
+          "skip_wet": "土が湿っているため見送り",
+          "skip_invalid_config": "水分の判定設定が不正なため見送り",
+          "allow_unavailable": "水分を読めないため水分条件では見送らず",
+          "allow_below": "しきい値未満のため水分条件を通過"
+        }
+      },
+      "source_path": "fgt.moisture_guard.source",
+      "device_source_path": "moisture_guard_source",
+      "capability_path": "moisture_guard_source_supported",
+      "unsupported_hint": "この判定設定を使うにはFGT 0.4.0以降への更新が必要です。更新後の状態が届くまで、設定を機器へ送信できません。"
     }
   ]
 }

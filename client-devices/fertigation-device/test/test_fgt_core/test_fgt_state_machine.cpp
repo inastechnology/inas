@@ -673,27 +673,74 @@ static void test_moisture_guard_is_opt_in_and_includes_threshold_boundary()
     TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_wet, decide_moisture_guard(config, true, 100.0f));
 }
 
-static void test_moisture_guard_fails_closed_on_bad_samples_and_config()
+static void test_moisture_guard_allows_watering_on_missing_feedback()
 {
     MoistureGuardConfig config{true, 60};
     for (float sample : {NAN, INFINITY, -INFINITY, -0.1f, 100.1f})
     {
-        TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_unavailable, decide_moisture_guard(config, true, sample));
+        TEST_ASSERT_EQUAL(MoistureGuardDecision::allow, decide_moisture_guard(config, true, sample));
     }
     // A zero-filled failed read and an old wet value are both unavailable.
-    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_unavailable, decide_moisture_guard(config, false, 0.0f));
-    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_unavailable, decide_moisture_guard(config, false, 80.0f));
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::allow, decide_moisture_guard(config, false, 0.0f));
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::allow, decide_moisture_guard(config, false, 80.0f));
     config.threshold_percent = 101;
     TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_invalid_config, decide_moisture_guard(config, true, 20.0f));
     TEST_ASSERT_EQUAL_STRING("soil_moisture_high", moisture_guard_skip_reason(MoistureGuardDecision::skip_wet));
     TEST_ASSERT_EQUAL_STRING("soil_moisture_unavailable", moisture_guard_skip_reason(MoistureGuardDecision::skip_unavailable));
 }
 
+static void test_selected_sensor_and_average_follow_configured_members()
+{
+    MoistureGuardConfig config{true, 60};
+    MoistureSample samples[] = {{4800, 1, true, true, 20}, {4800, 2, true, true, 100}, {4800, 3, false, true, 90}};
+    TEST_ASSERT_TRUE(parse_moisture_source("sensor:4800:2", config));
+    auto reading = select_moisture_reading(config, samples, 3);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_FLOAT(100, reading.percent);
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_wet, decide_moisture_guard(config, reading.ok, reading.percent));
+    // Reordering the registration list cannot silently select another sensor.
+    MoistureSample reordered[] = {samples[1], samples[2], samples[0]};
+    TEST_ASSERT_EQUAL_FLOAT(100, select_moisture_reading(config, reordered, 3).percent);
+    TEST_ASSERT_TRUE(parse_moisture_source("average", config));
+    reading = select_moisture_reading(config, samples, 3);
+    TEST_ASSERT_TRUE(reading.ok);
+    TEST_ASSERT_EQUAL_UINT8(2, reading.sensor_count);
+    TEST_ASSERT_EQUAL_FLOAT(60, reading.percent);
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::skip_wet, decide_moisture_guard(config, reading.ok, reading.percent));
+    samples[0].ok = false;
+    reading = select_moisture_reading(config, samples, 3);
+    TEST_ASSERT_FALSE(reading.ok);
+    TEST_ASSERT_EQUAL(MoistureGuardDecision::allow, decide_moisture_guard(config, reading.ok, reading.percent));
+    TEST_ASSERT_TRUE(parse_moisture_source("sensor:4800:3", config));
+    TEST_ASSERT_FALSE(select_moisture_reading(config, samples, 3).ok);
+    TEST_ASSERT_TRUE(parse_moisture_source("sensor:9600:2", config));
+    TEST_ASSERT_FALSE(select_moisture_reading(config, samples, 3).ok);
+    TEST_ASSERT_TRUE(parse_moisture_source("first", config));
+    TEST_ASSERT_FALSE(select_moisture_reading(config, samples, 3).ok);
+    TEST_ASSERT_FALSE(select_moisture_reading(config, samples, 0).ok);
+}
+
+static void test_moisture_source_rejects_malformed_or_ambiguous_identity()
+{
+    MoistureGuardConfig config;
+    for (const char *source : {"", "sensor:4800:0", "sensor:4800:248", "sensor:19200:1", "sensor:4800:01", "sensor:4800:1x", "sensor:4800:-1", "sensor:4294967296:1", "average ", "1"})
+        TEST_ASSERT_FALSE_MESSAGE(parse_moisture_source(source, config), source);
+    for (const char *source : {"first", "average", "sensor:2400:1", "sensor:4800:247", "sensor:9600:2"})
+    {
+        TEST_ASSERT_TRUE(parse_moisture_source(source, config));
+        char formatted[32];
+        format_moisture_source(config, formatted, sizeof(formatted));
+        TEST_ASSERT_EQUAL_STRING(source, formatted);
+    }
+}
+
 int main(int argc, char **argv)
 {
     UNITY_BEGIN();
     RUN_TEST(test_moisture_guard_is_opt_in_and_includes_threshold_boundary);
-    RUN_TEST(test_moisture_guard_fails_closed_on_bad_samples_and_config);
+    RUN_TEST(test_moisture_guard_allows_watering_on_missing_feedback);
+    RUN_TEST(test_selected_sensor_and_average_follow_configured_members);
+    RUN_TEST(test_moisture_source_rejects_malformed_or_ambiguous_identity);
     RUN_TEST(test_recipe_validation_and_duration_rounding);
     RUN_TEST(test_nominal_time_calibrated_batch);
     RUN_TEST(test_zero_nutrients_and_rinse_skip_optional_phases);

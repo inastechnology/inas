@@ -47,7 +47,7 @@ try {
 
     if (kind === "FGT") {
       assert.equal(await page.$$("#fertigation-recipe .pump-program-card").then((items) => items.length), 5, "FGT must show its five fixed pump controls");
-      assert.equal(await page.$$("#fertigation-recipe [data-definition-path]").then((items) => items.length), 19, "FGT timed outputs and moisture guard must be editable");
+      assert.equal(await page.$$("#fertigation-recipe [data-definition-path]").then((items) => items.length), 17, "FGT timed outputs must remain editable");
       assert.equal(await page.$('[data-definition-path="fgt.enabled"]'), null, "FGT scheduled operation must not expose an overall off switch");
       const flowText = await page.$eval("#fertigation-recipe", (section) => section.innerText);
       for (const label of ["水を入れる", "A液を量る", "B液を量る", "タンクを混ぜる", "植物へ送る"]) assert.match(flowText, new RegExp(label));
@@ -82,10 +82,20 @@ try {
       assert.equal(await page.$("#scheduled-operation-enable-before-save"), null, "FGT operation is always enabled and needs no checkbox");
       await page.click("[data-cancel-scheduled-operation-warning]");
       const guardSelector = '[data-definition-path="fgt.moisture_guard.enabled"]';
+      const sourceSelector = '[data-definition-path="fgt.moisture_guard.source"]';
+      const readingSelector = '#threshold-rule-moisture-guard [data-threshold-reading]';
+      assert.equal(await page.$eval(readingSelector, (element) => element.innerText), "44.0 %");
       const thresholdSelector = '[data-definition-path="fgt.moisture_guard.threshold_percent"]';
       assert.equal(await page.$eval(guardSelector, (input) => input.checked), false);
       assert.equal(await page.$eval(thresholdSelector, (input) => input.value), "40");
-      assert.match(await page.$eval(guardSelector, (input) => document.getElementById(input.getAttribute("aria-describedby")).innerText), /読み取れない場合も/);
+      assert.match(await page.$eval(guardSelector, (input) => document.getElementById(input.getAttribute("aria-describedby")).innerText), /予約どおり潅水/);
+      await page.select(sourceSelector, "sensor:4800:2");
+      assert.equal(await page.$eval(readingSelector, (element) => element.innerText), "76.0 %");
+      await page.select(sourceSelector, "average");
+      assert.equal(await page.$eval(readingSelector, (element) => element.innerText), "60.0 %");
+      const memberText = await page.$eval("#threshold-rule-moisture-guard [data-threshold-members]", (element) => element.innerText);
+      assert.match(memberText, /北側の土壌水分計/);
+      assert.match(memberText, /南側の土壌水分計/);
       // Exercise keyboard operation, form collection, persistence and reload.
       await page.focus(guardSelector);
       await page.keyboard.press("Space");
@@ -93,7 +103,19 @@ try {
         input.value = "60";
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
-      assert.deepEqual(await page.$eval("#runtime-config-json", (textarea) => JSON.parse(textarea.value).fgt.moisture_guard), { enabled: true, threshold_percent: 60 });
+      assert.deepEqual(await page.$eval("#runtime-config-json", (textarea) => JSON.parse(textarea.value).fgt.moisture_guard), { enabled: true, threshold_percent: 60, source: "average" });
+      assert.match(await page.$eval("[data-threshold-comparison]", (element) => element.innerText), /この測定値なら見送り/);
+      await page.evaluate(() => {
+        const average = thresholdContexts[0].options.find((option) => option.key === "average");
+        average.percent = null;
+        refreshRuntimeConfigPreview();
+      });
+      assert.match(await page.$eval("[data-threshold-comparison]", (element) => element.innerText), /予約どおり潅水/);
+      assert.equal(await page.$eval(readingSelector, (element) => element.innerText), "取得できず");
+      await page.evaluate(() => {
+        thresholdContexts[0].options.find((option) => option.key === "average").percent = 60;
+        refreshRuntimeConfigPreview();
+      });
       await page.click('[data-timed-output-card="irrigation"] [data-timed-output-enabled]');
       const saved = page.waitForResponse((response) => response.url().includes("/runtime-config?push=false") && response.request().method() === "PUT");
       await page.$eval("#runtime-config-form", (form) => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
@@ -101,6 +123,7 @@ try {
       await page.waitForNavigation({ waitUntil: "networkidle0" });
       assert.equal(await page.$eval(guardSelector, (input) => input.checked), true);
       assert.equal(await page.$eval(thresholdSelector, (input) => input.value), "60");
+      assert.equal(await page.$eval(sourceSelector, (input) => input.value), "average");
     }
     await page.screenshot({ path: `/tmp/ina-device-definition-${kind.toLowerCase()}-settings.png`, fullPage: true });
     if (kind === "FGT") {

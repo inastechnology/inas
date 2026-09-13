@@ -654,6 +654,18 @@
           .pump-program-settings .config-field { min-width: 0; }
           .pump-program-settings .threshold-control { grid-template-columns: minmax(0, 1fr) auto; }
           .definition-global-fields { margin-top: 12px; }
+          .threshold-rule { border-color: #9ec4b0; }
+          .threshold-rule h3 { margin: 0; }
+          .threshold-source-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin: 18px 0; }
+          .threshold-source-settings, .threshold-source-reading { min-width: 0; }
+          .threshold-source-settings select { width: 100%; max-width: 100%; }
+          .threshold-source-settings .threshold-control { grid-template-columns: minmax(0, 150px) auto; justify-content: start; }
+          .threshold-source-reading { padding: 18px; background: #edf6f0; border-radius: 10px; overflow-wrap: anywhere; }
+          .threshold-reading-value { font-size: 32px; font-weight: 700; margin: 8px 0; }
+          .threshold-source-members { padding-left: 20px; line-height: 1.7; }
+          .threshold-last-decision { padding-top: 10px; border-top: 1px solid var(--line); }
+          .rs485-sensor-card { scroll-margin-top: 90px; }
+          @media (max-width: 640px) { .threshold-source-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; } }
           .output-warning { grid-column: 1 / -1; margin: 0; }
           .config-dialog { width: min(760px, calc(100vw - 28px)); max-height: min(86vh, 840px); overflow: auto; padding: 0; border: 0; border-radius: 12px; box-shadow: 0 24px 70px rgba(20, 42, 30, .26); }
           .config-dialog.builder-dialog { width: min(1040px, calc(100vw - 28px)); }
@@ -1238,13 +1250,14 @@
                 <span id="debug-log-display" hidden>{{ selected.config_summary.debug_log }}</span><span id="ota-interval-display" hidden>{{ selected.config_summary.ota_interval }}</span>
               </div>
 
+              {% include 'device_threshold_rules.html' %}
               {% if selected.supports_fertigation %}
               <section id="fertigation-recipe" class="setup-stage">
                 <div class="setup-stage-head"><div class="context-help-row"><h3>ポンプの時間設定</h3><details class="context-help left"><summary aria-label="時間指定運転の説明を開く" title="時間指定運転">?</summary><div class="context-help-panel" role="note"><strong>時間指定運転</strong><p>使用するポンプだけを有効にします。無効なポンプは繰り返し0回として保存され、保持した時間設定は再度有効にしたときに使えます。</p></div></details></div><span class="badge good">ポンプごとに設定</span></div>
                 <p id="scheduled-operation-inline-warning" class="notice warn"{% if not selected.scheduled_operation.warning %} hidden{% endif %}>{{ selected.scheduled_operation.warning }}</p>
                 <div class="config-toolbar definition-config-fields definition-global-fields">
                   {% for field in selected.definition.ui.configuration_fields %}
-                  {% if not field.output_id %}<div class="config-field">{% if field.type == 'boolean' %}<label class="switch-row" for="definition-field-{{ loop.index }}"><input id="definition-field-{{ loop.index }}" type="checkbox" data-definition-path="{{ field.path }}" data-definition-type="boolean"{% if field.description %} aria-describedby="definition-help-{{ loop.index }}"{% endif %}>{{ field.label }}</label>
+                  {% if not field.output_id and field.path not in selected.threshold_field_paths %}<div class="config-field">{% if field.type == 'boolean' %}<label class="switch-row" for="definition-field-{{ loop.index }}"><input id="definition-field-{{ loop.index }}" type="checkbox" data-definition-path="{{ field.path }}" data-definition-type="boolean"{% if field.description %} aria-describedby="definition-help-{{ loop.index }}"{% endif %}>{{ field.label }}</label>
                   {% else %}<label for="definition-field-{{ loop.index }}">{{ field.label }}</label><div class="threshold-control"><input id="definition-field-{{ loop.index }}" type="number" data-definition-path="{{ field.path }}" data-definition-type="number" min="{{ field.min }}" max="{{ field.max }}" step="1"{% if field.description %} aria-describedby="definition-help-{{ loop.index }}"{% endif %}><span>{{ field.unit }}</span></div>{% endif %}
                   {% if field.description %}<p id="definition-help-{{ loop.index }}" class="field-help">{{ field.description }}</p>{% endif %}</div>{% endif %}
                   {% endfor %}
@@ -1498,9 +1511,10 @@
               <div><h2>接続センサーの現在値</h2><p class="lead">センサー名と設置場所ごとに、最後に受信した状態を表示します。</p></div>
               <span class="badge good">{{ selected.rs485_sensor_groups|length }} 台</span>
             </div>
-            <div class="rs485-sensor-grid">
+            <div class="rs485-sensor-grid" id="connected-sensor-list">
               {% for sensor in selected.rs485_sensor_groups %}
-              <article class="rs485-sensor-card">
+              <article class="rs485-sensor-card" id="sensor-{{ sensor.position }}">
+                <span class="badge good" data-threshold-source-badge="{{ sensor.position }}" hidden></span>
                 <div class="rs485-sensor-head"><span><strong>{{ sensor.name }}</strong><small>{{ sensor.location }}</small></span><span class="badge {{ sensor.state_class }}">{{ sensor.state_label }}</span></div>
                 <div class="rs485-sensor-measurements">
                   {% for measurement in sensor.measurements %}<a class="rs485-sensor-measurement" href="#{{ measurement.history_anchor }}" aria-label="{{ sensor.name }}の{{ measurement.label }}の履歴を見る"><span>{{ measurement.label }}</span><strong>{{ measurement.value }}</strong></a>{% else %}<p class="rs485-sensor-no-value">有効な計測値はまだありません。</p>{% endfor %}
@@ -1785,6 +1799,7 @@
         <script src="/static/context-help.js"></script>
         <script src="/static/stateful-actions.js"></script>
         <script src="/static/select-filter.js"></script>
+        <script src="/static/device-threshold-rules.js"></script>
         <script>
           const selectedDeviceId = {{ selected_device_id | tojson }};
           const selectedDeviceState = {{ (selected_device.state if selected_device else '') | tojson }};
@@ -1792,6 +1807,7 @@
           const chartEndpoint = selectedDeviceId ? ((demoMode ? "/demo/local/api/mqtt-devices/" : "/local/api/mqtt-devices/") + encodeURIComponent(selectedDeviceId) + "/charts") : null;
           const technicalDataEndpoint = selectedDeviceId ? ((demoMode ? "/demo/local/api/mqtt-devices/" : "/local/api/mqtt-devices/") + encodeURIComponent(selectedDeviceId) + "/technical-data") : null;
           const initialRuntimeConfig = {{ (selected_device.config if selected_device else {}) | tojson }};
+          const thresholdContexts = {{ (admin_view.selected.threshold_contexts if admin_view.selected else []) | tojson }};
           const deviceDefinition = {{ (admin_view.selected.definition if admin_view.selected else {}) | tojson }};
           const deviceRuntimeSendKeys = (((deviceDefinition || {}).runtime_config || {}).send_keys || []);
           const runtimeConfigFixedValues = (((deviceDefinition || {}).runtime_config || {}).fixed_values || {});
@@ -3018,7 +3034,12 @@
             document.querySelectorAll("[data-definition-path]").forEach((input) => {
               const value = getNestedValue(config, input.dataset.definitionPath);
               if (input.dataset.definitionType === "boolean") input.checked = Boolean(value);
-              else if (value !== undefined && value !== null) input.value = String(value);
+              else if (value !== undefined && value !== null) {
+                if (input.dataset.definitionType === "string" && !Array.from(input.options).some((option) => option.value === String(value))) {
+                  input.add(new Option("保存済みのセンサー（現在の一覧にありません）", String(value)));
+                }
+                input.value = String(value);
+              }
             });
             syncTimedOutputControlsFromValues();
 
@@ -3132,7 +3153,7 @@
               schedules,
             };
             document.querySelectorAll("[data-definition-path]").forEach((input) => {
-              const value = input.dataset.definitionType === "boolean" ? input.checked : Number(input.value);
+              const value = input.dataset.definitionType === "boolean" ? input.checked : input.dataset.definitionType === "string" ? input.value : Number(input.value);
               setNestedValue(config, input.dataset.definitionPath, value);
             });
             Object.keys(initialRuntimeConfig || {}).forEach((key) => {
@@ -3508,6 +3529,7 @@
             const otaIntervalDisplay = document.getElementById("ota-interval-display");
             if (otaIntervalDisplay) otaIntervalDisplay.textContent = formatDurationSeconds(config.ota_check_interval_sec);
             refreshScheduledOperationWarning(config);
+            window.refreshDeviceThresholdRules(thresholdContexts, config);
             refreshScheduleSpacingValidation(config);
           }
 

@@ -142,11 +142,59 @@ static void test_consumed_moisture_skip_is_not_due_after_restart()
     TEST_ASSERT_TRUE(app_fgt_runtime_config_find_due_schedule(due + 10 * 3600, app_fgt_journal_get().schedule_epoch_utc, &schedule, &epoch));
 }
 
+static void test_source_selection_survives_restart_and_missing_feedback_does_not_skip()
+{
+    for (const char *source : {"average", "sensor:9600:247", "first"})
+    {
+        char json[256];
+        snprintf(json, sizeof(json), "{\"fgt\":{\"moisture_guard\":{\"enabled\":true,\"source\":\"%s\"}}}", source);
+        TEST_ASSERT_TRUE(apply(json));
+        app_fgt_runtime_config_init();
+        const auto &guard = app_fgt_runtime_config_get().moisture_guard;
+        char actual[32];
+        fgt::format_moisture_source(guard, actual, sizeof(actual));
+        TEST_ASSERT_EQUAL_STRING(source, actual);
+        TEST_ASSERT_EQUAL(fgt::MoistureGuardDecision::allow, fgt::decide_moisture_guard(guard, false, 80));
+    }
+    TEST_ASSERT_FALSE(apply(R"({"fgt":{"moisture_guard":{"source":null}}})"));
+    TEST_ASSERT_FALSE(apply(R"({"fgt":{"moisture_guard":{"source":42}}})"));
+    TEST_ASSERT_FALSE(apply(R"({"fgt":{"moisture_guard":{"source":"sensor:4800:0"}}})"));
+}
+
+static void test_version_three_keeps_enabled_guard_and_threshold()
+{
+    struct ConfigV3 { LegacyConfigV2 base; bool enabled; uint8_t threshold; };
+    struct StoreV3 { uint32_t magic; uint16_t version; uint16_t config_size; ConfigV3 config; uint32_t crc; };
+    StoreV3 legacy = {};
+    legacy.magic = 0x46475443UL;
+    legacy.version = 3;
+    legacy.config_size = sizeof(legacy.config);
+    const auto defaults = default_config();
+    memcpy(&legacy.config.base, &defaults, sizeof(LegacyConfigV2));
+    legacy.config.base.enabled = true;
+    legacy.config.base.schedule_count = 1;
+    legacy.config.base.schedules[0] = {true, 7, 45};
+    legacy.config.enabled = true;
+    legacy.config.threshold = 65;
+    legacy.crc = AppUtils::crc32(reinterpret_cast<const uint8_t *>(&legacy), offsetof(StoreV3, crc));
+    const auto *bytes = reinterpret_cast<const uint8_t *>(&legacy);
+    LittleFS.files[APP_FGT_RUNTIME_CONFIG_FILE] = {bytes, bytes + sizeof(legacy)};
+    app_fgt_runtime_config_init();
+    const auto &config = app_fgt_runtime_config_get();
+    TEST_ASSERT_TRUE(config.enabled);
+    TEST_ASSERT_TRUE(config.moisture_guard.enabled);
+    TEST_ASSERT_EQUAL_UINT8(65, config.moisture_guard.threshold_percent);
+    TEST_ASSERT_EQUAL(fgt::MoistureSource::first, config.moisture_guard.source);
+    TEST_ASSERT_EQUAL_UINT8(45, config.schedules[0].minute);
+}
+
 int main()
 {
     UNITY_BEGIN();
     RUN_TEST(test_guard_settings_survive_restart_and_reject_invalid_json);
     RUN_TEST(test_legacy_config_preserves_schedules_with_guard_disabled);
     RUN_TEST(test_consumed_moisture_skip_is_not_due_after_restart);
+    RUN_TEST(test_source_selection_survives_restart_and_missing_feedback_does_not_skip);
+    RUN_TEST(test_version_three_keeps_enabled_guard_and_threshold);
     return UNITY_END();
 }

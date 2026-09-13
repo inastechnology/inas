@@ -14,5 +14,12 @@
     "fgt.sensors.soil.modbus_slave_id": 1,
     "fgt.sensors.soil.modbus_function": 3,
     "fgt.sensors.soil.start_register": 0
-  }
+  },
+  "capability_requirements": [
+    {
+      "enabled_path": "fgt.moisture_guard.enabled",
+      "status_path": "moisture_guard_source_supported",
+      "message": "土壌水分の判定設定を送るには、FGTを0.4.0以降へ更新し、機器からの状態受信を待ってください。"
+    }
+  ]
 }

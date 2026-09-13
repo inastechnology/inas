@@ -60,6 +60,7 @@ from ina_device_hub.device_output_capabilities import (
     supported_output_ids,
 )
 from ina_device_hub.device_removal_service import DeviceRemovalConflictError, device_removal_service
+from ina_device_hub.device_threshold_context import build_threshold_contexts
 from ina_device_hub.discord_notification_service import (
     cloudflare_public_base_url,
     discord_notification_service,
@@ -1187,6 +1188,11 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
     threshold = payload.get("threshold") if payload.get("threshold") is not None else config.get("moisture_threshold")
     output_settings = _build_device_output_settings(device_kind, config, layout_context)
     scheduled_operation = _build_scheduled_operation_state(definition, config)
+    threshold_contexts = build_threshold_contexts(definition, payload, record.get("last_status_at"), statuses or [], config)
+    for context in threshold_contexts:
+        context["received_label"] = _format_datetime(context["received_at"])
+        if context["last_decision"]:
+            context["last_decision"]["received_label"] = _format_datetime(context["last_decision"]["received_at"])
     enabled_outputs = [output for output in output_settings["outputs"] if output["enabled"]]
     readiness_checks = [
         {
@@ -1248,6 +1254,8 @@ def _build_selected_device_view(device_id, record, statuses, ota_statuses, now, 
         "operational_heading": "現在の潅水判断" if device_kind in {"WTR", "WRS"} else "液肥づくりの現在地" if device_kind == "FGT" else "現在の計測・稼働状況",
         "operational_metrics": _build_device_operational_metrics(record, payload, config, now, watering),
         "rs485_sensor_groups": _build_rs485_sensor_groups(payload, device_kind),
+        "threshold_contexts": threshold_contexts,
+        "threshold_field_paths": [context["rule"][key] for context in threshold_contexts for key in ("enabled_path", "threshold_path", "source_path")],
         "monitoring_charts": _build_device_monitoring_charts(device_kind, statuses, config),
         "schedules": _format_schedules_for_ui(config.get("schedules") or [], config, scheduled_operation=scheduled_operation),
         "scheduled_operation": scheduled_operation,
@@ -1824,6 +1832,7 @@ def _build_rs485_sensor_groups(payload, device_kind):
                 )
         groups.append(
             {
+                "position": position,
                 "name": _rs485_sensor_name(device, position),
                 "location": str(device.get("location") or "").strip() or "設置場所未設定",
                 "state_label": state_label,
