@@ -54,6 +54,15 @@ class WebServerSecurityTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_device_technical_data_requires_access_jwt(self):
+        with patch.dict(os.environ, self.environment, clear=False):
+            for path in (
+                "/local/api/mqtt-devices/device-1/technical-data",
+                "/demo/local/api/mqtt-devices/INADS-DEMO-WTR-001/technical-data",
+            ):
+                with self.subTest(path=path):
+                    self.assertEqual(self.client.get(path).status_code, 401)
+
     def test_operations_authentication_rejection_notifies_discord_without_secret_headers(self):
         notification_service = Mock()
         headers = {

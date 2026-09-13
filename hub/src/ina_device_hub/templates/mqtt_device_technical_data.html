@@ -1,0 +1,8 @@
+<h3>Status History</h3>
+<table><thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead><tbody>{% for status in statuses | reverse %}<tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>{% endfor %}</tbody></table>
+<h3>OTA Status History</h3>
+<table><thead><tr><th>受信時刻</th><th>詳細 JSON</th></tr></thead><tbody>{% for status in ota_statuses | reverse %}<tr><td>{{ format_datetime(status.received_at) }}</td><td><pre>{{ format_json(status.payload) }}</pre></td></tr>{% endfor %}</tbody></table>
+<h3>接続履歴</h3>
+{{ render_events(connection_events) | safe }}
+<h3>MQTT Event History</h3>
+{{ render_events(recent_events) | safe }}

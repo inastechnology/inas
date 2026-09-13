@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import zipfile
 from datetime import UTC, datetime, timedelta, timezone
+from unittest.mock import patch
 
 os.environ.setdefault("WORK_DIR", tempfile.mkdtemp())
 os.environ.setdefault("LOCAL_STORAGE_BASE_DIR", tempfile.mkdtemp())
@@ -550,7 +551,10 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("配信ファイルを開く", html)
         self.assertIn("2026-07-01T00:00:00Z+abcdef0", html)
         self.assertIn("/local/api/firmware-artifacts/", html)
-        self.assertIn("OTA Status History", html)
+        self.assertIn('id="device-technical-data"', html)
+        technical_data = self.client.get(f"/local/api/mqtt-devices/{device_id}/technical-data")
+        self.assertEqual(technical_data.status_code, 200)
+        self.assertIn("OTA Status History", technical_data.get_json()["html"])
         self.assertIn('id="output-connection-map"', html)
         self.assertIn('id="open-output-settings"', html)
         self.assertIn('role="button" tabindex="0" aria-haspopup="dialog" aria-controls="output-settings-dialog"', html)
@@ -578,7 +582,7 @@ class WebServerOTATest(unittest.TestCase):
         self.assertIn("湿った基準を記録する", html)
         self.assertIn("/static/ui-illustrations/controller-flow.png", html)
         self.assertIn('aria-label="動作確認"', html)
-        self.assertIn("watering-device-1.1.0-aaaaaaaa", html)
+        self.assertIn("watering-device-1.1.0-aaaaaaaa", technical_data.get_json()["html"])
         self.assertIn("http://127.0.0.1:39151/firmware/WTR/1.1.0/firmware.bin", html)
 
         charts_response = self.client.get(f"/local/api/mqtt-devices/{device_id}/charts")
@@ -949,6 +953,81 @@ class WebServerOTATest(unittest.TestCase):
         self.assertNotIn("灌水推移", html)
         self.assertNotIn("demo-hub.local:39151/firmware/WTR/1.1.0/firmware.bin", html)
         self.assertIn("const demoMode = true;", html)
+
+    def test_device_detail_defers_large_raw_histories_and_reuses_template_without_caching_data(self):
+        device_id = "FGT-navigation-test"
+        self.device_service.get_record(device_id)
+        record = self.device_repository.device_configs[device_id]
+        record["device_kind"] = "FGT"
+        record["status_history"] = [
+            {"received_at": "2026-09-01T00:00:00Z", "payload": {"diagnostic": f"raw-history-{index}:" + "x" * 1024}} for index in range(2000)
+        ]
+        web_server.app.jinja_env.cache.clear()
+        with (
+            patch.object(self.device_repository, "get", wraps=self.device_repository.get) as get_record,
+            patch.object(web_server, "list_device_events", return_value=[]) as list_events,
+            patch.object(web_server.app.jinja_env, "compile", wraps=web_server.app.jinja_env.compile) as compile_template,
+        ):
+            response = self.client.get(f"/mqtt-devices/{device_id}")
+            self.assertEqual(response.status_code, 200)
+            html = response.get_data(as_text=True)
+            self.assertNotIn("raw-history-", html)
+            self.assertLess(len(response.data), 400_000)
+            get_record.assert_called_once_with(device_id)
+            list_events.assert_called_once_with(limit=50, device_id=device_id, connection_events_only=True)
+            compiled_on_first_visit = compile_template.call_count
+            self.assertGreater(compiled_on_first_visit, 0)
+
+            record["name"] = "変更後の機器名"
+            second = self.client.get(f"/mqtt-devices/{device_id}")
+            self.assertEqual(second.status_code, 200)
+            self.assertIn("変更後の機器名", second.get_data(as_text=True))
+            self.assertEqual(compile_template.call_count, compiled_on_first_visit)
+
+        technical_data = self.client.get(f"/local/api/mqtt-devices/{device_id}/technical-data")
+        self.assertEqual(technical_data.status_code, 200)
+        history_html = technical_data.get_json()["html"]
+        self.assertIn("raw-history-0:", history_html)
+        self.assertIn("raw-history-1999:", history_html)
+        self.assertLess(history_html.index("raw-history-1999:"), history_html.index("raw-history-0:"))
+
+    def test_device_technical_data_escapes_payloads_and_is_scoped_to_device(self):
+        device_id = "WTR-technical-test"
+        self.device_service.get_record(device_id)
+        self.device_repository.device_configs[device_id]["status_history"] = [
+            {"received_at": "2026-09-01T00:00:00Z", "payload": {"message": "<script>alert('unsafe')</script>"}},
+        ]
+        with patch.object(web_server, "list_device_events", return_value=[]) as list_events:
+            response = self.client.get(f"/local/api/mqtt-devices/{device_id}/technical-data")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_json()["html"]
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertEqual(list_events.call_count, 2)
+        self.assertTrue(all(call.kwargs["device_id"] == device_id for call in list_events.call_args_list))
+
+    def test_missing_device_reads_do_not_create_records_or_query_events(self):
+        with patch.object(web_server, "list_device_events") as list_events:
+            for path in (
+                "/mqtt-devices/missing",
+                "/local/api/mqtt-devices/missing/charts",
+                "/local/api/mqtt-devices/missing/technical-data",
+                "/demo/local/api/mqtt-devices/missing/technical-data",
+                "/demo/local/api/mqtt-devices/missing/charts",
+            ):
+                with self.subTest(path=path):
+                    self.assertEqual(self.client.get(path).status_code, 404)
+            list_events.assert_not_called()
+        self.assertIsNone(self.device_repository.get("missing"))
+
+    def test_demo_technical_data_uses_only_fixture_history(self):
+        with patch.object(web_server, "device_config_service") as device_service, patch.object(web_server, "list_device_events") as list_events:
+            response = self.client.get("/demo/local/api/mqtt-devices/INADS-DEMO-WTR-001/technical-data")
+            device_service.assert_not_called()
+            list_events.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Status History", response.get_json()["html"])
+        self.assertIn("MQTT Event History", response.get_json()["html"])
 
     def test_mqtt_devices_demo_detail_renders_fixture_history(self):
         response = self.client.get("/demo/mqtt-devices/INADS-DEMO-WTR-001")

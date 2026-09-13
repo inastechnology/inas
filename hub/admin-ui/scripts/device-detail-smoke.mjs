@@ -278,6 +278,9 @@ try {
   assert.equal(await page.$eval("#irrigation-pattern-settings", (panel) => panel.hidden), true);
   assert.equal(await page.$eval("[data-schedule-duration-field]", (field) => field.hidden), false);
   const continuousDurationBeforePulse = await page.$eval("[data-schedule-duration]", (input) => Number(input.value));
+  // Closing the calibration dialog can leave this radio behind the sticky tabs.
+  await page.$eval("#irrigation-mode-pulse", (input) => input.scrollIntoView({ block: "center" }));
+  await page.evaluate(() => new Promise(requestAnimationFrame));
   await page.click("#irrigation-mode-pulse");
   assert.equal(await page.$eval("#irrigation-pattern-settings", (panel) => panel.hidden), false);
   assert.equal(await page.$eval("[data-schedule-duration-field]", (field) => field.hidden), true);

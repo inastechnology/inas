@@ -34,13 +34,18 @@ try {
     await page.setViewport({ width, height: 960 });
     let chartRequests = 0;
     let plotlyRequests = 0;
+    let technicalDataRequests = 0;
     let releaseCharts;
+    let releaseTechnicalData;
     await page.setRequestInterception(true);
     page.on("request", (request) => {
       const path = new URL(request.url()).pathname;
       if (path.endsWith("/charts")) {
         chartRequests += 1;
         releaseCharts = () => request.continue();
+      } else if (path.endsWith("/technical-data")) {
+        technicalDataRequests += 1;
+        releaseTechnicalData = () => request.continue();
       } else {
         if (path.endsWith("/plotly.min.js")) plotlyRequests += 1;
         request.continue();
@@ -49,6 +54,25 @@ try {
     await page.goto(`${baseUrl}/mqtt-devices/INADS-DEMO-${kind}-001`, { waitUntil: "networkidle0" });
     assert.equal(chartRequests, 0, "overview must not fetch history");
     assert.equal(plotlyRequests, 0, "overview must not load Plotly");
+    assert.equal(technicalDataRequests, 0, "overview must not fetch raw histories");
+
+    await page.click('.tab-button[data-tab-key="maintenance"]');
+    assert.equal(technicalDataRequests, 0, "maintenance must not fetch collapsed raw histories");
+    const technicalDataRequested = page.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/technical-data"));
+    await page.click("#device-technical-data > summary");
+    await technicalDataRequested;
+    await page.click('.tab-button[data-tab-key="overview"]');
+    await assertSelected(page, "overview");
+    const technicalDataResponse = page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/technical-data"));
+    await releaseTechnicalData();
+    await technicalDataResponse;
+    await page.waitForFunction(() => document.querySelector("#device-technical-data-body h3")?.textContent === "Status History");
+    await page.click('.tab-button[data-tab-key="maintenance"]');
+    await page.click("#device-technical-data > summary");
+    await page.click("#device-technical-data > summary");
+    await page.waitForNetworkIdle();
+    assert.equal(technicalDataRequests, 1, "reopening must reuse the loaded raw histories");
+    await page.click('.tab-button[data-tab-key="overview"]');
 
     const chartsRequested = page.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/charts"));
     await page.click('.tab-button[data-tab-key="monitoring"]');
@@ -111,6 +135,28 @@ try {
     await assertChartsFit(page);
     assert.equal(failures, 1);
     results.push({ retry: failedPath });
+    await page.close();
+  }
+  {
+    const page = await browser.newPage();
+    const errors = [];
+    let attempts = 0;
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.endsWith("/technical-data") && ++attempts === 1) {
+        request.respond({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "temporary history failure" }) });
+      } else request.continue();
+    });
+    await page.goto(`${baseUrl}/mqtt-devices/INADS-DEMO-WTR-001?tab=maintenance`, { waitUntil: "networkidle0" });
+    await page.click("#device-technical-data > summary");
+    await page.waitForSelector("#device-technical-data-body button");
+    await page.click("#device-technical-data-body button");
+    await page.waitForFunction(() => document.querySelector("#device-technical-data-body h3")?.textContent === "Status History");
+    assert.equal(attempts, 2);
+    assert.equal(await page.$eval("#device-technical-data-body", (body) => body.hasAttribute("aria-busy")), false);
+    assert.deepEqual(errors, []);
+    results.push({ retry: "/technical-data" });
     await page.close();
   }
   process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
