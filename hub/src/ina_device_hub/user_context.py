@@ -97,7 +97,7 @@ def _operations_service_user(request) -> CurrentUser:
     if not team_domain or not audience:
         raise AccessAuthenticationError("Cloudflare Access verification is not configured")
     try:
-        payload = _verify_access_token(token, team_domain, audience)
+        payload = _verify_access_token(token, team_domain, audience, service_token=True)
     except Exception as exc:
         raise AccessAuthenticationError("invalid Cloudflare Access JWT") from exc
     service_id = str(payload.get("common_name") or "").strip()
@@ -116,7 +116,7 @@ def _operations_service_user(request) -> CurrentUser:
     return CurrentUser(email=actor, role="collector" if grant is not None else "service", authenticated=True)
 
 
-def _verify_access_token(token: str, team_domain: str, audience: str) -> dict:
+def _verify_access_token(token: str, team_domain: str, audience: str, *, service_token: bool = False) -> dict:
     signing_key = _jwk_client(team_domain).get_signing_key_from_jwt(token)
     payload = jwt.decode(
         token,
@@ -124,22 +124,28 @@ def _verify_access_token(token: str, team_domain: str, audience: str) -> dict:
         algorithms=["RS256"],
         audience=audience,
         issuer=team_domain,
-        options={"require": ["exp", "iat", "nbf", "sub"]},
+        options={"require": ["exp", "iat", "sub"] if service_token else ["exp", "iat", "nbf", "sub"]},
         leeway=10,
     )
-    _validate_access_application_claims(payload)
+    _validate_access_application_claims(payload, service_token=service_token)
     return payload
 
 
-def _validate_access_application_claims(payload: dict) -> None:
+def _validate_access_application_claims(payload: dict, *, service_token: bool = False) -> None:
     subject = payload.get("sub")
     issued_at = payload.get("iat")
-    not_before = payload.get("nbf")
+    # Cloudflare service JWTs have an empty sub and may omit nbf. PyJWT still
+    # verifies nbf when present; the human authentication contract stays strict.
+    not_before = payload.get("nbf", issued_at) if service_token else payload.get("nbf")
+    if service_token:
+        service_id = payload.get("common_name")
+        if not isinstance(service_id, str) or not service_id.strip() or len(service_id) > 512 or _has_control_character(service_id):
+            raise AccessAuthenticationError("invalid Cloudflare Access service identity")
     expires_at = payload.get("exp")
     if (
         payload.get("type") != "app"
         or not isinstance(subject, str)
-        or not subject
+        or (not subject and not service_token)
         or len(subject) > 512
         or _has_control_character(subject)
         or not all(isinstance(value, int) and not isinstance(value, bool) for value in (issued_at, not_before, expires_at))
