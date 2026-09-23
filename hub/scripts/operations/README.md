@@ -2,6 +2,8 @@
 
 Cloudflare Access Service Tokenを使い、公開Hubの`/operations/api/v1`を非対話で操作するクライアントです。
 
+Cloudflare Access のブラウザログインと公開 Hub UI は人間用です。AI エージェントはこの機械用 API を利用し、人間用経路へブラウザや `curl` でアクセスしたり、人間の Cookie・JWT を流用したりしません。Service Token は人間用 UI や `/local/api/*` の呼び出しには使いません。認証情報や対応 API がなければ制約を報告し、人間用ログインや認証設定の緩和で回避しません。ローカルでの確認方法は [AI Agent 向け環境構築ガイド](../../doc/jp/AI_AGENT_ENVIRONMENT_SETUP.md)を参照してください。
+
 責務別に配置します。
 
 - `devices/`: device、runtime config、firmware、OTA

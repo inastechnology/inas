@@ -18,6 +18,23 @@ Treat `.env` as the source of truth and never print secrets.
   intended device-side origin.
 - Keep local hub behavior working even when Cloudflare setup is incomplete.
 
+## Human And Agent Access
+
+Cloudflare Access browser login and the protected public Hub UI are for humans.
+Agents must not open or probe that route with a browser, `curl`, or browser
+automation, even for screenshots or deployment verification. Do not run
+`cloudflared access login`, ask a person to complete login/OTP for an agent, or
+reuse human Access cookies or JWTs.
+
+Check an existing Hub locally through `/healthz` and `/readyz`; use a local
+development or demo server for UI verification. Remote administration uses the
+dedicated `/operations/api/v1/*` endpoints with a machine Service Token and the
+[Operations clients](../scripts/operations/README.md). This machine route also
+uses Cloudflare Access, but does not grant access to the human UI or
+browser-oriented `/local/api/*` endpoints. If credentials or a required endpoint
+are missing, report that limitation without falling back to human login or
+weakening authentication. A human performs any public browser login check.
+
 ## Local Hub Setup
 
 ```bash

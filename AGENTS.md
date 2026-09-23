@@ -1,5 +1,26 @@
 # Repository Instructions For AI Developers
 
+## Human And Agent Access
+
+The Hub's Cloudflare Access browser login and protected public UI are for
+humans. AI agents must not open or probe that human-facing route with a browser,
+`curl`, or browser automation, including for screenshots or deployment checks.
+Do not run `cloudflared access login`, request human login/OTP completion, or
+reuse a person's Access cookies or JWTs for agent work.
+
+- For on-host health checks, use the existing localhost `/healthz` and `/readyz`
+  endpoints. For UI verification, use a local development or demo server.
+- For remote administration, use the dedicated `/operations/api/v1/*` endpoints
+  with a machine Service Token and the clients in `hub/scripts/operations/`.
+  This separate machine authentication also uses Cloudflare Access; it does not
+  authorize access to the human UI or browser-oriented APIs.
+- If machine credentials or an Operations endpoint are unavailable, report the
+  limitation. Do not fall back to human login, public `/local/api/*` calls, or
+  weakening authentication.
+
+See [AI Agent Environment Setup](hub/doc/AI_AGENT_ENVIRONMENT_SETUP.md) and
+[Operations clients](hub/scripts/operations/README.md).
+
 ## Hub Extension Work
 
 When a task adds, changes, reviews, or removes a Hub Extension or an Extension

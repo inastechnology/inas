@@ -12,6 +12,12 @@
 - 同名 resource や既存 DNS record の衝突で script が停止したら、勝手に削除・上書きせず、停止理由をユーザーへ報告する。
 - local hub の起動条件と Cloudflare tunnel の起動条件を分けて切り分ける。
 
+## 人間と AI Agent のアクセス経路
+
+Cloudflare Access のブラウザログインと、それで保護された公開 Hub UI は人間用とする。AI Agent は、スクリーンショットやデプロイ確認を含め、この経路へブラウザ、`curl`、ブラウザ自動操作でアクセスしない。`cloudflared access login` の実行、人間への代理ログイン・OTP 入力の依頼、人間の Access Cookie・JWT の流用もしない。
+
+既存 Hub の稼働確認は localhost の `/healthz`・`/readyz`、UI の検証はローカルの開発・デモサーバーを使う。遠隔管理は機械用 Service Token と [Operations クライアント](../../scripts/operations/README.md)で `/operations/api/v1/*` を利用する。この機械用経路も Cloudflare Access を使うが、人間用 UI やブラウザ用 `/local/api/*` へのアクセスを許可するものではない。認証情報や必要な Operations endpoint がなければ制約を報告し、人間用ログインへの切り替えや認証の緩和で回避しない。公開 UI のログイン確認が必要な場合は、人間が実施する。
+
 ## 触ってよいもの・触らないもの
 
 触ってよいもの:
@@ -222,13 +228,7 @@ bash scripts/cloudflare_tunnel_daemon.sh stop
 
 AI Agent の sandbox 内では PID namespace の違いで `cloudflare_tunnel_daemon.sh status` が stale pid と誤判定することがある。運用確認は systemd の `systemctl status` / `journalctl` を優先する。
 
-公開 hostname が Cloudflare Access で保護されているか確認する。
-
-```bash
-curl -I --max-time 15 "https://<CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME>"
-```
-
-未ログイン状態では `302` で `*.cloudflareaccess.com` の login URL へ redirect されればよい。
+AI Agent は公開 hostname への HTTP アクセスで Access の動作確認をしない。設定は `cloudflare_access_setup.py audit`、Tunnel は systemd の状態とログ、Hub は localhost の `/healthz`・`/readyz` で確認する。公開 UI のログイン動作は人間がブラウザで確認する。
 
 ## 許可 email の管理
 
@@ -309,13 +309,16 @@ lint / format:
 git diff --check
 ```
 
-Cloudflare 外形確認:
+Cloudflare 設定とローカル稼働確認（公開 UI へのアクセスは行わない）:
 
 ```bash
 python3 scripts/cloudflare_access_setup.py audit
 python3 scripts/cloudflare_tunnel_setup.py check
-curl -I --max-time 15 "https://<CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME>"
+curl --fail http://127.0.0.1:39151/healthz
+curl --fail http://127.0.0.1:39151/readyz
 ```
+
+ポートを変更している場合は、既存の `HUB_HTTP_PORT` に合わせる。
 
 ## ユーザーへ確認すべき時
 
@@ -330,7 +333,7 @@ curl -I --max-time 15 "https://<CLOUDFLARE_HOSTED_PUBLIC_HOSTNAME>"
 
 - 作成・再利用された Cloudflare resource の種類。
 - 再実行時に no-op になることを確認したか。
-- public hostname が Access redirect を返したか。
+- Access 設定・Tunnel 状態・ローカル稼働の確認結果。公開 UI のログイン確認は人間の担当として区別し、AI Agent が確認済みとは報告しない。
 - local hub が起動できたか。できない場合は Cloudflare と local 依存のどちらで止まったか。
 - 実行した検証コマンド。
 
