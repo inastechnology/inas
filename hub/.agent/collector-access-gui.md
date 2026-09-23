@@ -66,3 +66,13 @@ not assume those credentials are already present or deploy automatically.
 - Unknown issuance responses remain denied and flagged for manual Cloudflare
   reconciliation using the generated Token/policy name. Restore of old grant
   backups requires checking Cloudflare revocation state, as documented.
+
+## Production setup follow-up
+
+On 2026-09-24, the user authorized deployment and host configuration. Live checks
+with the existing Access management credential verified the application audience,
+temporary Service Token creation, and a policy limited to that temporary token.
+Cloudflare rejected deletion of a token while the policy referenced it (HTTP 400).
+Removing the policy first allowed token deletion; both temporary resources were
+removed. Cleanup now removes the policy before the credential, while retaining
+the existing local-denial-first ordering. Regression coverage checks this order.

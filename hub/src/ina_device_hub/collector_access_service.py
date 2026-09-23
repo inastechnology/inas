@@ -137,12 +137,11 @@ class CollectorAccessService:
             raise TokenProvisioningError("発行時の Cloudflare アカウントを設定してください。")
         if not item.get("token_id"):
             raise TokenProvisioningError("発行結果が不明です。Cloudflare 側で接続名に対応する Token を確認してください。")
-        # Delete the credential first. Local access is already denied even when
-        # Cloudflare is unavailable or the policy cleanup needs a retry.
-        if item.get("token_id"):
-            self.connector.delete_token(item["token_id"])
+        # Cloudflare refuses to delete a Service Token while a policy references
+        # it. Hub access was already denied before entering remote cleanup.
         if item.get("policy_id"):
             self.connector.delete_policy(item["app_id"], item["policy_id"])
+        self.connector.delete_token(item["token_id"])
 
     def revoke(self, collector_id, actor):
         with self.repository.lock():

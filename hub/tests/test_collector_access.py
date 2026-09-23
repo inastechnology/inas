@@ -77,6 +77,18 @@ class CollectorAccessTest(unittest.TestCase):
         self.connector.delete_token.side_effect = assert_denied
         self.service.revoke(collector_id, "admin@example.com")
 
+    def test_revocation_removes_policy_before_deleting_referenced_token(self):
+        collector_id = self.issue()["collector"]["id"]
+
+        def delete_token(_token_id):
+            self.connector.delete_policy.assert_called_once_with("app", "policy-id")
+            with self.assertRaises(OperationsPermissionError):
+                read_grant_for_actor("service:collector.access")
+
+        self.connector.delete_token.side_effect = delete_token
+        result = self.service.revoke(collector_id, "admin@example.com")
+        self.assertFalse(result["cleanup_pending"])
+
     def test_invalid_permissions_do_not_create_remote_tokens(self):
         for change in (
             {"scopes": []},
