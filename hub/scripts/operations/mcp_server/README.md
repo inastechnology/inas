@@ -5,6 +5,9 @@ Python MCP SDK's supported 1.x line, locked in `uv.lock`. It runs on the AI
 client's host, not inside the production Hub process. No public MCP HTTP server
 or browser login is exposed.
 
+日本語の接続手順・利用例・トラブルシューティングは
+[MCP 利用ガイド](../../../doc/jp/MCP_USAGE.md)を参照してください。
+
 ## Configure the Hub
 
 Deploy a Hub containing the read endpoints, then provision a dedicated

@@ -10,7 +10,7 @@ Cloudflare Access のブラウザログインと公開 Hub UI は人間用です
 - `fields/`: 許可圃場の一覧、note・記録検索、保存済みカメラ画像・記録添付画像の読み取り
 - `work/`: 作業計画、作業記録、栽培記録（対応API追加後に実装）
 - `common/`: 認証、HTTP、env読み込み
-- `mcp_server/`: 上記読み取りAPIを呼ぶローカルstdio MCP（[設定・起動手順](mcp_server/README.md)）
+- `mcp_server/`: 上記読み取りAPIを呼ぶローカルstdio MCP（[日本語の利用ガイド](../../doc/jp/MCP_USAGE.md)、[実装・設定の詳細](mcp_server/README.md)）
 
 既定では`~/.config/inas/operations-api.env`を読みます。
 

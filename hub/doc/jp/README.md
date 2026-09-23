@@ -219,6 +219,7 @@ uv run ruff format --check .
 - `data/plant_calendar_evaluation_cases.json` — AI栽培計画の代表評価ケース
 - `scripts/evaluate_plant_calendars.py` — 栽培計画の安全性・作業負荷・具体性・年間網羅性を採点（`--live` で保存済みAI設定を使用）
 - `doc/AI_AGENT_ENVIRONMENT_SETUP.md` — AI Agent 向け環境構築・Cloudflare setup 手順
+- [MCP_USAGE.md](MCP_USAGE.md) — AI からメモ・添付画像・カメラ画像を読むための接続設定と利用例
 - `doc/CLOUDFLARE_HOSTED_OPTION.md` — Cloudflare hosted option の実装方針
 - `../../../hub-cloud/` — 共有Cloud Hub frontend/backendとEdge Gateway出荷tool
 - `systemd/inas-device-hub@.service` — systemd テンプレートユニット
