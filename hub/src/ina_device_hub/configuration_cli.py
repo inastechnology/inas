@@ -191,6 +191,8 @@ FIELDS = (
     ConfigurationField("CLOUDFLARE_ACCESS_ALLOWED_EMAIL_DOMAINS", "許可email domain", "cloudflare"),
     ConfigurationField("HUB_OPERATIONS_SERVICE_IDS", "Operations device/OTA操作の許可service ID", "cloudflare"),
     ConfigurationField("HUB_OPERATIONS_READ_GRANTS", "Operations記録・画像の収集権限JSON", "cloudflare", default="{}"),
+    ConfigurationField("HUB_COLLECTOR_TOKEN_API_TOKEN", "AI接続発行専用のCloudflare API token", "cloudflare", secret=True),
+    ConfigurationField("HUB_COLLECTOR_ACCESS_APP_ID", "AI接続を許可するAccess app ID", "cloudflare"),
     ConfigurationField("CLOUDFLARE_TUNNEL_NAME", "Tunnel name", "cloudflare"),
     ConfigurationField("CLOUDFLARE_TUNNEL_ID", "Tunnel ID", "cloudflare"),
     ConfigurationField("CLOUDFLARE_TUNNEL_HOSTNAME", "Tunnel hostname", "cloudflare"),

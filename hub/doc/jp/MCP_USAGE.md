@@ -13,7 +13,35 @@ MCP は **AI クライアントが動く端末で起動する stdio プログラ
 
 以下のパスは **MCP プロセスを起動する環境から見えるパス**です。AI クライアントをリモート環境で動かす場合は、その環境にコードと認証ファイルを置きます。設定例の `/path/to/inas` はリポジトリの絶対パスに置き換えてください。
 
-### 管理者が Hub 側を設定する
+### GUI で接続と権限を管理する
+
+対応版をデプロイし、ホスト管理者が以下を初期設定すると、人間の管理者が **アプリ設定 → AI 接続・読み取り権限** から Token を発行できます。
+
+| ホスト側の設定 | 内容 |
+| --- | --- |
+| `CLOUDFLARE_ACCOUNT_ID` | 対象の Cloudflare アカウント |
+| `HUB_COLLECTOR_ACCESS_APP_ID` | Operations API を保護する Access アプリの ID。既存 Hub と同じアプリを指定可能 |
+| `HUB_COLLECTOR_TOKEN_API_TOKEN` | 発行・停止専用の Cloudflare 管理 API Token。Service Token そのものとは別の秘密値 |
+
+管理 API Token には、対象アカウントで Service Token の作成・削除と、対象 Access アプリの参照・ポリシーの作成・削除ができる権限が必要です。権限名・リソース範囲は [Cloudflare の Service Token API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/service_tokens/methods/create/) と [Access ポリシー API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/subresources/policies/methods/create/) を参照してください。管理 API Token はホストの秘密情報として保存し、AI クライアントには渡しません。初期設定の反映には Hub の再起動が必要です。
+
+GUI の発行機能は `HUB_AUTH_MODE=cloudflare_access` で、人間の認証済み管理者にだけ提供します。対象 Access アプリの Audience が `CLOUDFLARE_ACCESS_POLICY_AUD` と一致することを発行前に確認します。同じホスト名・Tunnel を使い、Token ごとの Service Auth ポリシーを追加します。既存の人間用ログインポリシーは書き換えません。
+
+1. 「AI 接続・読み取り権限」で接続名を入力します。
+2. 「記録」「画像」と対象圃場を選びます。全圃場は明示的に選ぶ必要があり、今後追加される圃場も含みます。
+3. 有効期限（7 日・30 日・90 日・1 年）を選び、「Token を発行」を押します。
+4. 一度だけ表示される認証ファイルの内容を、AI クライアント側の `~/.config/inas/operations-collector.env` に保存します。
+5. 後述の Codex / MCP 登録を行います。発行時に Hub の参照権限も保存するので、Service ID や圃場 ID を手で転記する必要はありません。
+
+発行済みの接続は一覧から権限を変更・停止できます。これらは以降の Operations API 要求へ反映され、再起動は不要です。期限延長や秘密値の再表示は行わず、必要なら新しい接続を発行して切り替えます。
+
+権限と発行・更新者などの管理情報は `WORK_DIR/operations_collectors.json` に保存され、通常の状態バックアップに含まれます。Client Secret は Hub に保存しません。古いバックアップから権限を復元すると過去の許可が戻る可能性があるため、復元時には Cloudflare 側の失効状態と照合してください。
+
+発行途中で通信が途切れた場合、その接続を Hub は許可しません。「停止を再確認」で Cloudflare 側の削除を再試行できます。発行結果自体が不明な場合は、画面の「管理者向けの確認情報」にある `inas-collector-…` という名前を使い、管理者が Cloudflare 側の Token・ポリシーを確認・削除してください。秘密値を失った場合も、その接続を停止して新しく発行します。
+
+以前からホストの `HUB_OPERATIONS_READ_GRANTS` で管理している接続は引き続き使えますが、GUI 一覧への自動移行は行いません。同じ Service ID を両方へ登録すると拒否されます。手動設定する場合は次節を参照してください。
+
+### 管理者が Hub 側を手動設定する
 
 Cloudflare Access の `/operations/api/*` 用 Service Auth ポリシーで、専用の収集用 Service Token を許可します。Hub は `HUB_AUTH_MODE=cloudflare_access` と既存の JWT 発行元・Audience 検証を使います。Service Token を作成しただけでは読み取り権限は付きません。
 
@@ -190,7 +218,7 @@ Hub が `invalid Cloudflare Access JWT` を返す場合は、機械用トーク�
 
 参照できるのは Hub に残っているデータです。圃場ごとの保存上限は note 1,000 件・event 1,000 件で、完全な過去アーカイブや削除・編集の変更履歴は提供しません。独立したカレンダー・作業記録の添付画像は、この収集 API の対象ではありません。
 
-現在はローカル stdio MCP に対応しています。Hub 画面からの MCP 設定、リモート HTTP MCP、自動収集スケジュール、アーカイブ保存は未対応です。カメラファイルが後から追加される場合は、重なる期間を再取得してください。
+現在はローカル stdio MCP に対応しています。Hub 画面では Token と参照権限を管理でき、MCP の登録は AI クライアント側で行います。リモート HTTP MCP、自動収集スケジュール、アーカイブ保存は未対応です。カメラファイルが後から追加される場合は、重なる期間を再取得してください。
 
 Codex から登録を外す場合は次を実行します。
 

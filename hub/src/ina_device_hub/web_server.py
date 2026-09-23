@@ -34,6 +34,7 @@ from ina_device_hub.camera_management_service import (
     camera_management_service,
 )
 from ina_device_hub.collection_search import matches_search, paginate, search_terms
+from ina_device_hub.collector_access_routes import collector_access_routes
 from ina_device_hub.cultivation_research_repository import cultivation_research_repository
 from ina_device_hub.cultivation_research_service import analyze_correlation, build_research_dataset
 from ina_device_hub.device_config_repository import (
@@ -174,6 +175,7 @@ from ina_device_hub.utils import Utils
 from ina_device_hub.weather_record_repository import weather_record_repository
 
 app = Flask(__name__)
+app.register_blueprint(collector_access_routes)
 app.register_blueprint(operations_api)
 app.register_blueprint(hierarchy_api)
 app.config["MAX_CONTENT_LENGTH"] = int((setting().get("http") or {}).get("max_request_bytes", 64 * 1024 * 1024))

@@ -5,6 +5,8 @@ import os
 import re
 from dataclasses import dataclass
 
+from ina_device_hub.collector_access_service import managed_grant
+
 READ_SCOPES = frozenset({"records:read", "images:read"})
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,179}\Z")
 
@@ -32,6 +34,12 @@ def read_grant_for_actor(actor: str) -> ReadGrant | None:
         values = json.loads(os.environ.get("HUB_OPERATIONS_READ_GRANTS", "{}").strip() or "{}")
         if not isinstance(values, dict):
             raise ValueError
+        managed = managed_grant(actor.removeprefix("service:"))
+        if managed is not None:
+            service_id = actor.removeprefix("service:")
+            if service_id in values:
+                raise ValueError
+            values[service_id] = managed
         grants = {}
         for service_id, value in values.items():
             if not isinstance(service_id, str) or not service_id or not isinstance(value, dict) or set(value) != {"scopes", "field_ids"}:
@@ -47,5 +55,5 @@ def read_grant_for_actor(actor: str) -> ReadGrant | None:
                 raise ValueError
             grants[f"service:{service_id}"] = ReadGrant(frozenset(scopes), frozenset(fields))
         return grants.get(actor)
-    except (ValueError, TypeError, RecursionError) as exc:
+    except (ValueError, TypeError, KeyError, RecursionError) as exc:
         raise OperationsPermissionError("Operations read grants are not configured correctly") from exc

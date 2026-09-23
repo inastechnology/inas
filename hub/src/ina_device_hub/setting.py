@@ -39,7 +39,10 @@ HUB_HTTP_THREADS = _int_env("HUB_HTTP_THREADS", 8)
 HUB_AUTH_MODE = os.environ.get("HUB_AUTH_MODE", "local").strip().lower() or "local"
 # HUB_OPERATIONS_SERVICE_IDS and HUB_OPERATIONS_READ_GRANTS are host-owned
 # authorization policies, read and validated by user_context/operations_access.
-# They are deliberately excluded from persisted, UI-editable runtime settings.
+# They are excluded from general UI-editable runtime settings. Dedicated admin
+# collector management stores non-secret grants separately in WORK_DIR.
+# HUB_COLLECTOR_TOKEN_API_TOKEN and HUB_COLLECTOR_ACCESS_APP_ID are host-owned
+# provisioning credentials/configuration and are never persisted in GUI settings.
 HUB_MAX_REQUEST_BYTES = _int_env("HUB_MAX_REQUEST_BYTES", 64 * 1024 * 1024)
 FIRMWARE_MAX_UPLOAD_BYTES = _int_env("FIRMWARE_MAX_UPLOAD_BYTES", 16 * 1024 * 1024)
 

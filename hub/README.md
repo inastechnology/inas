@@ -29,6 +29,10 @@ Cross-project specification:
   Configure `HUB_OPERATIONS_READ_GRANTS` with collector scopes and field IDs;
   keep collectors separate from `HUB_OPERATIONS_SERVICE_IDS` for device/OTA work.
   See [collector setup](scripts/operations/mcp_server/README.md).
+- Issue and revoke dedicated collector Service Tokens from **Settings → AI access**,
+  with field/scope selection and expiry. Host setup requires `CLOUDFLARE_ACCOUNT_ID`,
+  `HUB_COLLECTOR_ACCESS_APP_ID`, and a dedicated `HUB_COLLECTOR_TOKEN_API_TOKEN`.
+  See the [GUI setup guide](doc/jp/MCP_USAGE.md#gui-で接続と権限を管理する).
 - Register a raw `firmware.bin` or an INAS `.inasfw` release module for OTA. For
   `.inasfw`, the Hub verifies the package and stores/delivers only its
   `firmware.bin`.

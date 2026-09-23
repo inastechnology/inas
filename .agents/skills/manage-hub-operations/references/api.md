@@ -66,6 +66,14 @@ grant revokes access. Legacy services gain no field/image access implicitly.
 Malformed configuration rejects Operations authentication. `field_ids: ["*"]`
 explicitly allows every field. Readers cannot call device endpoints or mutate.
 
+Human administrators may also issue scoped collectors through the dedicated
+settings GUI. Managed grants live in `WORK_DIR/operations_collectors.json`, not
+general editable runtime settings. They are read on each request, have explicit
+expiry, and deny pending/revoked identities before any legacy fallback. An ID in
+both managed grants and host grants is rejected. Secrets are returned only at
+issuance and never persisted. Machine callers cannot access the management GUI
+or its browser API. See [GUI setup](../../../../hub/doc/jp/MCP_USAGE.md#gui-で接続と権限を管理する).
+
 | Method/path relative to the base URL | Required scope |
 |---|---|
 | `GET /fields` | Either read scope; returns only allowed field summaries |

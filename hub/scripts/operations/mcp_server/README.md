@@ -10,6 +10,13 @@ or browser login is exposed.
 
 ## Configure the Hub
 
+Administrators can issue a collector and select its fields/scopes/expiry in
+**Settings → AI access** after host provisioning is configured. See the
+[GUI setup guide](../../../doc/jp/MCP_USAGE.md#gui-で接続と権限を管理する).
+The GUI returns the Client Secret once, stores only non-secret grants, and
+supports permission changes and revocation without restarting the Hub.
+The manual host policy below remains supported for existing collectors.
+
 Deploy a Hub containing the read endpoints, then provision a dedicated
 Cloudflare Access Service Token accepted by the `/operations/api/*` Service Auth
 policy. Retain the existing Access JWT issuer/audience verification at the Hub;
