@@ -7,11 +7,14 @@ Cloudflare Access のブラウザログインと公開 Hub UI は人間用です
 責務別に配置します。
 
 - `devices/`: device、runtime config、firmware、OTA
-- `fields/`: 圃場、区画、配置（対応API追加後に実装）
+- `fields/`: 許可圃場の一覧、note・記録検索、保存済みカメラ画像・記録添付画像の読み取り
 - `work/`: 作業計画、作業記録、栽培記録（対応API追加後に実装）
 - `common/`: 認証、HTTP、env読み込み
+- `mcp_server/`: 上記読み取りAPIを呼ぶローカルstdio MCP（[設定・起動手順](mcp_server/README.md)）
 
 既定では`~/.config/inas/operations-api.env`を読みます。
+
+収集用MCPは別の `~/.config/inas/operations-collector.env` を既定で読みます。Hub側では `HUB_OPERATIONS_READ_GRANTS` に収集用Service ID・参照scope・圃場IDを指定します。収集用IDを既存のdevice/OTA用 `HUB_OPERATIONS_SERVICE_IDS` に入れないでください。両方に含まれるIDは拒否します。収集用IDでは更新操作とdevice一覧を利用できません。
 
 ```env
 CF_ACCESS_CLIENT_ID=...

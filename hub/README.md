@@ -24,6 +24,11 @@ Cross-project specification:
 - Publish Instagram Reels from timelapse output and daily 3-day sensor trend
   images to the feed when configured.
 - Serve a local Flask-based admin UI.
+- Read authorized field notes/records, saved camera frames, and record images
+  through the machine-authenticated Operations API and a local stdio MCP adapter.
+  Configure `HUB_OPERATIONS_READ_GRANTS` with collector scopes and field IDs;
+  keep collectors separate from `HUB_OPERATIONS_SERVICE_IDS` for device/OTA work.
+  See [collector setup](scripts/operations/mcp_server/README.md).
 - Register a raw `firmware.bin` or an INAS `.inasfw` release module for OTA. For
   `.inasfw`, the Hub verifies the package and stores/delivers only its
   `firmware.bin`.

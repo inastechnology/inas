@@ -143,6 +143,15 @@ class FieldRepository:
     def list(self):
         return [copy.deepcopy(field) for field in sorted(self.fields.values(), key=lambda item: item.get("name") or item.get("id"))]
 
+    def list_record_items(self, field_id: str):
+        """Normalized notes/events with ingestion times for external collection."""
+        field = self._get_existing(field_id)
+        records = []
+        for key, normalize in (("notes", _field_note_search_item), ("events", _field_event_search_item)):
+            for record in field.get(key) or []:
+                records.append({**normalize(record), "created_at": record.get("created_at") or ""})
+        return records
+
     def search_records(
         self,
         field_id: str,

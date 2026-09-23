@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 import jwt
 from jwt import PyJWKClient
 
+from ina_device_hub.operations_access import OperationsPermissionError, read_grant_for_actor
+
 EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 ACCESS_EMAIL_HEADER = "Cf-Access-Authenticated-User-Email"
 ACCESS_JWT_HEADER = "Cf-Access-Jwt-Assertion"
@@ -100,9 +102,18 @@ def _operations_service_user(request) -> CurrentUser:
         raise AccessAuthenticationError("invalid Cloudflare Access JWT") from exc
     service_id = str(payload.get("common_name") or "").strip()
     allowed_ids = {value.strip() for value in os.environ.get("HUB_OPERATIONS_SERVICE_IDS", "").split(",") if value.strip()}
-    if not service_id or len(service_id) > 512 or _has_control_character(service_id) or service_id not in allowed_ids:
+    if not service_id or len(service_id) > 512 or _has_control_character(service_id):
         raise AccessAuthenticationError("Cloudflare Access service is not allowed")
-    return CurrentUser(email=f"service:{service_id}", role="service", authenticated=True)
+    actor = f"service:{service_id}"
+    try:
+        grant = read_grant_for_actor(actor)
+    except OperationsPermissionError as exc:
+        raise AccessAuthenticationError(str(exc)) from exc
+    if grant is not None and service_id in allowed_ids:
+        raise AccessAuthenticationError("collector identity must not be in the device operations allowlist")
+    if grant is None and service_id not in allowed_ids:
+        raise AccessAuthenticationError("Cloudflare Access service is not allowed")
+    return CurrentUser(email=actor, role="collector" if grant is not None else "service", authenticated=True)
 
 
 def _verify_access_token(token: str, team_domain: str, audience: str) -> dict:

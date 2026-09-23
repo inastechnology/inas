@@ -1,6 +1,9 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request
 
 from ina_device_hub.device_event_log import append_device_event
+from ina_device_hub.field_record_media_service import FieldRecordMediaStorageError
+from ina_device_hub.operations_access import OperationsPermissionError, read_grant_for_actor
+from ina_device_hub.operations_read_service import OperationsReadError, OperationsReadService
 from ina_device_hub.ota_update_service import FirmwareArtifactValidationError, ota_update_service
 from ina_device_hub.user_context import current_user_from_request
 
@@ -9,6 +12,97 @@ operations_api = Blueprint("operations_api", __name__, url_prefix="/operations/a
 
 def _actor_id() -> str:
     return current_user_from_request(request).email
+
+
+_READ_ENDPOINTS = {"read_fields", "read_records", "read_cameras", "read_camera_images", "read_camera_image", "read_record_image"}
+
+
+@operations_api.before_request
+def authorize_operations_request():
+    grant = read_grant_for_actor(_actor_id())
+    endpoint = str(request.endpoint or "").rsplit(".", 1)[-1]
+    if grant is not None and (request.method not in {"GET", "HEAD"} or endpoint not in _READ_ENDPOINTS | {"operations_health"}):
+        raise OperationsPermissionError("collectors can only read authorized field records and images")
+    if endpoint in _READ_ENDPOINTS and grant is None:
+        raise OperationsPermissionError("a field read grant is required")
+    g.operations_read_grant = grant
+
+
+@operations_api.after_request
+def operations_cache_policy(response):
+    response.headers["Cache-Control"] = "private, no-store"
+    return response
+
+
+@operations_api.errorhandler(OperationsPermissionError)
+def operations_permission_error(error):
+    return jsonify({"error": str(error)}), 403
+
+
+@operations_api.errorhandler(OperationsReadError)
+def operations_read_error(error):
+    return jsonify({"error": str(error)}), error.status
+
+
+@operations_api.errorhandler(FieldRecordMediaStorageError)
+def operations_storage_error(_error):
+    return jsonify({"error": "image storage is unavailable"}), 502
+
+
+def _page_args():
+    return {"cursor": request.args.get("cursor", ""), "limit": request.args.get("limit", 50)}
+
+
+@operations_api.get("/fields")
+def read_fields():
+    return jsonify(OperationsReadService().list_fields(g.operations_read_grant, **_page_args()))
+
+
+@operations_api.get("/fields/<field_id>/records")
+def read_records(field_id):
+    return jsonify(
+        OperationsReadService().search_records(
+            g.operations_read_grant,
+            field_id,
+            query=request.args.get("q", ""),
+            source=request.args.get("source", ""),
+            date_from=request.args.get("date_from", ""),
+            date_to=request.args.get("date_to", ""),
+            since=request.args.get("since", ""),
+            **_page_args(),
+        )
+    )
+
+
+@operations_api.get("/fields/<field_id>/cameras")
+def read_cameras(field_id):
+    return jsonify(OperationsReadService().list_cameras(g.operations_read_grant, field_id, **_page_args()))
+
+
+@operations_api.get("/fields/<field_id>/cameras/<camera_id>/images")
+def read_camera_images(field_id, camera_id):
+    return jsonify(
+        OperationsReadService().list_camera_images(
+            g.operations_read_grant,
+            field_id,
+            camera_id,
+            date_from=request.args.get("date_from", ""),
+            date_to=request.args.get("date_to", ""),
+            **_page_args(),
+        )
+    )
+
+
+@operations_api.get("/fields/<field_id>/cameras/<camera_id>/images/<image_id>")
+def read_camera_image(field_id, camera_id, image_id):
+    data, content_type = OperationsReadService().camera_image(g.operations_read_grant, field_id, camera_id, image_id)
+    return Response(data, mimetype=content_type)
+
+
+@operations_api.get("/fields/<field_id>/record-images/<attachment_id>")
+def read_record_image(field_id, attachment_id):
+    data, content_type = OperationsReadService().record_image(g.operations_read_grant, field_id, attachment_id)
+    return Response(data, mimetype=content_type)
 
 
 @operations_api.get("/health")

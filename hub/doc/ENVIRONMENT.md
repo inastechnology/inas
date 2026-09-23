@@ -26,6 +26,23 @@ The Hub verifies the JWT signature, issuer, audience, application-token type,
 subject, and `nbf`/`iat`/`exp` lifetime. Do not configure an Access Bypass
 policy for Hub application or management paths.
 
+## Operations collectors
+
+`HUB_OPERATIONS_SERVICE_IDS` remains the comma-separated Service Token identity
+allowlist for device/OTA operations. `HUB_OPERATIONS_READ_GRANTS` (default `{}`)
+separately grants read-only field collection:
+
+```dotenv
+HUB_OPERATIONS_READ_GRANTS='{"collector.access":{"scopes":["records:read","images:read"],"field_ids":["field-1"]}}'
+```
+
+Use the verified token `common_name` as the key. An identity in both settings is
+rejected. Removing a collector grant revokes access; invalid grants fail closed.
+`field_ids: ["*"]` explicitly permits all fields. The API requires
+`HUB_AUTH_MODE=cloudflare_access`, a Service Auth policy, and valid Access JWT
+verification. Client secrets stay on the calling host. See
+[MCP/client setup](../scripts/operations/mcp_server/README.md).
+
 ## MQTT
 
 | Variable | Purpose |

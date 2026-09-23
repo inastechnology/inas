@@ -95,11 +95,14 @@ Instagram 自動投稿では、この一時ストレージを公開 URL 配信�
 
 ### Cloudflare Access Operations API
 
-- `HUB_OPERATIONS_SERVICE_IDS` — `/operations/api/v1/*`を利用できるCloudflare Access Service Tokenの`common_name`をカンマ区切りで指定します。例: `01234567-89ab-cdef-0123-456789abcdef.access`。Operations APIは`HUB_AUTH_MODE=cloudflare_access`の場合だけ有効で、通常の利用者email JWTやlocal authでは利用できません。
+- `HUB_OPERATIONS_SERVICE_IDS` — device一覧・firmware登録・OTA予約を許可するCloudflare Access Service Tokenの`common_name`をカンマ区切りで指定します。例: `01234567-89ab-cdef-0123-456789abcdef.access`。Operations APIは`HUB_AUTH_MODE=cloudflare_access`の場合だけ有効で、通常の利用者email JWTやlocal authでは利用できません。
+- `HUB_OPERATIONS_READ_GRANTS` — note・圃場記録・画像を収集する専用Service IDと参照権限のJSONです。既定は `{}`。例: `{"collector.access":{"scopes":["records:read","images:read"],"field_ids":["field-1"]}}`。収集用IDは `HUB_OPERATIONS_SERVICE_IDS` に入れません。両方に含まれるID、不正な権限設定は拒否します。設定からIDを削除するとアクセスを失い、更新権限へ切り替わることはありません。`field_ids` の `["*"]` は全圃場を明示的に許可します。
 - `DISCORD_NOTIFY_OPERATIONS_SECURITY_ALERTS` — Cloudflareを通過してHubへ届いたOperations APIのJWT不正・Service ID許可リスト不一致をDiscordへ通知します。既定は`true`です。
 - `DISCORD_SECURITY_ALERT_COOLDOWN_SECONDS` — 同一の接続元IP・method・path・拒否理由を再通知しない時間です。既定は300秒です。
 
-Cloudflare Access側では`/operations/api/*`を対象とするService Auth policyを作成し、クライアントは`CF-Access-Client-Id`と`CF-Access-Client-Secret`を送ります。secretはHubのenvやリポジトリへ保存せず、呼び出し側のsecret storeで管理してください。Cloudflareがoriginへ渡す`Cf-Access-Jwt-Assertion`をHubでも検証し、JWTの`common_name`が上記allowlistに含まれる場合だけ処理します。
+Cloudflare Access側では`/operations/api/*`を対象とするService Auth policyを作成し、クライアントは`CF-Access-Client-Id`と`CF-Access-Client-Secret`を送ります。secretはHubのenvやリポジトリへ保存せず、呼び出し側のsecret storeで管理してください。Cloudflareがoriginへ渡す`Cf-Access-Jwt-Assertion`をHubでも検証し、JWTの`common_name`に対応する上記許可設定で処理します。scope・圃場単位の拒否は403を返しますが、認証拒否のDiscord通知とは区別します。
+
+収集APIとローカルstdio MCPの設定は [読み取り用MCP](../../scripts/operations/mcp_server/README.md)を参照してください。収集用IDで利用できるのはhealth、許可圃場一覧、note・記録検索、カメラ一覧、保存済み画像と添付画像の取得です。device一覧と更新操作はできません。権限設定はホストの `.env` で管理し、変更後にHubを再起動します。
 
 Client ID・Secret不正などCloudflare Accessがorigin到達前に拒否する要求はHubから観測できません。Cloudflare側のAccess authentication logsまたはLogpushで別に監視してください。HubのDiscord通知にはJWT、Client ID、Client Secret、query stringを含めません。
 
