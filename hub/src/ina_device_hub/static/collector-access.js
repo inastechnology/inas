@@ -47,7 +47,7 @@ async function load() {
     const info = document.createElement("p");
     const scopeNames = item.scopes.map(x => x === "records:read" ? "記録" : "画像").join("・");
     const fields = item.field_ids.includes("*") ? "全圃場" : item.field_ids.map(id => Array.from(form.querySelectorAll('[name="field"]')).find(x => x.value === id)?.parentElement.textContent.trim() || "削除された圃場").join("、");
-    info.textContent = `${labels[item.status] || "要確認"} / ${fields} / ${scopeNames} / 有効期限 ${new Date(item.expires_at).toLocaleDateString()}`;
+    info.textContent = `${labels[item.status] || "要確認"} / ${fields} / ${scopeNames} / 有効期限 ${item.expires_at === "forever" ? "無期限" : new Date(item.expires_at).toLocaleDateString()}`;
     card.append(title, info);
     if (item.cleanup_pending || item.status === "pending") {
       const note = document.createElement("p"); note.textContent = "Hub での取得は停止しています。Cloudflare 側の停止確認が必要です。"; card.append(note);

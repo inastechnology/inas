@@ -71,7 +71,7 @@ class CloudflareTokenConnector:
             raise TokenProvisioningError("AI 接続先の Access アプリが Hub の認証設定と一致しません。")
 
     def create_token(self, name, days):
-        return self.request("POST", "service_tokens", {"name": name, "duration": f"{days * 24}h"})
+        return self.request("POST", "service_tokens", {"name": name, "duration": "forever" if days == 0 else f"{days * 24}h"})
 
     def create_policy(self, name, token_id):
         return self.request(

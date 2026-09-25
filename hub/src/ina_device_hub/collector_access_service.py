@@ -24,6 +24,10 @@ def _timestamp(value):
     return parsed
 
 
+def _expired(value):
+    return value != "forever" and _timestamp(value) <= _now()
+
+
 def managed_grant(service_id):
     """None means unmanaged; inactive managed identities explicitly deny access."""
     records = CollectorAccessRepository().read()
@@ -33,7 +37,7 @@ def managed_grant(service_id):
     if len(matches) != 1:
         raise ValueError("duplicate managed collector identity")
     item = matches[0]
-    if item["status"] != "active" or _timestamp(item["expires_at"]) <= _now():
+    if item["status"] != "active" or _expired(item["expires_at"]):
         raise ValueError("collector is inactive or expired")
     return {"scopes": item["scopes"], "field_ids": item["field_ids"]}
 
@@ -47,7 +51,7 @@ class CollectorAccessService:
     def list(self):
         items = list(self.repository.read().values())
         for item in items:
-            if item["status"] == "active" and _timestamp(item["expires_at"]) <= _now():
+            if item["status"] == "active" and _expired(item["expires_at"]):
                 item["status"] = "expired"
         return sorted(items, key=lambda item: item["created_at"], reverse=True)
 
@@ -66,7 +70,7 @@ class CollectorAccessService:
         days = payload.get("days")
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80 or any(ord(c) < 32 for c in name):
             raise TokenProvisioningError("接続名は 1〜80 文字で入力してください。")
-        if type(days) is not int or days not in {7, 30, 90, 365}:
+        if type(days) is not int or days not in {0, 7, 30, 90, 365}:
             raise TokenProvisioningError("有効期限を選んでください。")
         scopes, fields = self._permissions(payload)
         self.connector.verify_application()
@@ -78,7 +82,7 @@ class CollectorAccessService:
             "scopes": scopes,
             "field_ids": fields,
             "created_at": now.isoformat(),
-            "expires_at": (now + timedelta(days=days)).isoformat(),
+            "expires_at": "forever" if days == 0 else (now + timedelta(days=days)).isoformat(),
             "updated_at": now.isoformat(),
             "updated_by": actor,
             "account_id": self.connector.account_id,
@@ -126,7 +130,7 @@ class CollectorAccessService:
         with self.repository.lock():
             records = self.repository.read()
             item = records.get(collector_id)
-            if item is None or item["status"] != "active" or _timestamp(item["expires_at"]) <= _now():
+            if item is None or item["status"] != "active" or _expired(item["expires_at"]):
                 raise TokenProvisioningError("有効な接続が見つかりません。")
             item.update(scopes=scopes, field_ids=fields, updated_at=_now().isoformat(), updated_by=actor)
             self.repository.write(records)

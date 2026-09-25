@@ -35,6 +35,8 @@ class CollectorAccessRepository:
                 ):
                     raise ValueError
                 for name in ("created_at", "expires_at", "updated_at"):
+                    if name == "expires_at" and item[name] == "forever":
+                        continue
                     if datetime.fromisoformat(item[name].replace("Z", "+00:00")).tzinfo is None:
                         raise ValueError
                 if (

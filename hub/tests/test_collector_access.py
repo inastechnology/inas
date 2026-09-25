@@ -52,6 +52,36 @@ class CollectorAccessTest(unittest.TestCase):
             grant.require("records:read", "field-b")
         self.connector.create_policy.assert_called_once_with(f"inas-collector-{result['collector']['id']}", "token-id")
 
+    def test_non_expiring_collector_keeps_scope_checks_and_can_be_revoked(self):
+        self.payload["days"] = 0
+        item = self.issue()["collector"]
+        self.assertEqual(item["expires_at"], "forever")
+        self.connector.create_token.assert_called_once_with(f"inas-collector-{item['id']}", 0)
+        with patch("ina_device_hub.collector_access_service._now", return_value=datetime(2099, 1, 1, tzinfo=UTC)):
+            self.assertEqual(self.service.list()[0]["status"], "active")
+            grant = read_grant_for_actor("service:collector.access")
+            grant.require("records:read", "field-a")
+            with self.assertRaises(OperationsPermissionError):
+                grant.require("records:read", "field-b")
+            self.service.update(item["id"], {"scopes": ["images:read"], "field_ids": ["field-b"]}, "admin@example.com")
+            with self.assertRaises(OperationsPermissionError):
+                read_grant_for_actor("service:collector.access").require("records:read", "field-b")
+            self.service.revoke(item["id"], "admin@example.com")
+            with self.assertRaises(OperationsPermissionError):
+                read_grant_for_actor("service:collector.access")
+
+    def test_missing_or_invalid_expiration_never_means_forever(self):
+        item = self.issue()["collector"]
+        for value in (None, "", "invalid", False):
+            with self.subTest(value=value):
+                self.repository.write({item["id"]: {**item, "expires_at": value}})
+                with self.assertRaises(OperationsPermissionError):
+                    read_grant_for_actor("service:collector.access")
+        missing = {key: value for key, value in item.items() if key != "expires_at"}
+        self.repository.write({item["id"]: missing})
+        with self.assertRaises(OperationsPermissionError):
+            read_grant_for_actor("service:collector.access")
+
     def test_update_and_revocation_apply_to_new_requests_without_restart(self):
         collector_id = self.issue()["collector"]["id"]
         self.service.update(collector_id, {"scopes": ["images:read"], "field_ids": ["field-b"]}, "admin@example.com")
@@ -97,6 +127,10 @@ class CollectorAccessTest(unittest.TestCase):
             {"field_ids": ["missing"]},
             {"field_ids": ["*", "field-a"]},
             {"days": True},
+            {"days": False},
+            {"days": None},
+            {"days": -1},
+            {"days": "forever"},
             {"name": "bad\nname"},
         ):
             with self.subTest(change=change), self.assertRaises(TokenProvisioningError):
@@ -158,6 +192,12 @@ class CloudflareTokenConnectorTest(unittest.TestCase):
         self.environment.start()
         self.addCleanup(self.environment.stop)
         self.connector = CloudflareTokenConnector()
+
+    def test_token_duration_supports_forever_and_finite_lifetimes(self):
+        for days, duration in ((0, "forever"), (7, "168h"), (365, "8760h")):
+            with self.subTest(days=days), patch.object(self.connector, "request", return_value={}) as request:
+                self.connector.create_token("collector", days)
+                request.assert_called_once_with("POST", "service_tokens", {"name": "collector", "duration": duration})
 
     def test_policy_matches_only_issued_token(self):
         with patch.object(self.connector, "request", return_value={}) as request:

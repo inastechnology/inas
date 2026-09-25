@@ -26,7 +26,7 @@
           <label class="check"><input type="checkbox" name="field" value="{{ field.id }}">{{ field.name }}</label>
         {% else %}<p>圃場がまだ登録されていません。</p>{% endfor %}</div>
       </fieldset>
-      <label id="expiry-row">有効期限<select id="days"><option value="7">7 日</option><option value="30">30 日</option><option value="90" selected>90 日</option><option value="365">1 年</option></select></label>
+      <label id="expiry-row">有効期限<select id="days"><option value="7">7 日</option><option value="30">30 日</option><option value="90" selected>90 日</option><option value="365">1 年</option><option value="0">無期限</option></select></label>
       <p>取得した本文や写真は、接続先の AI アプリに渡ります。添付画像をメモから探す場合は、記録と画像の両方を許可してください。</p>
       <div class="actions"><button id="submit" type="submit" {% if not configured %}disabled{% endif %}>Token を発行</button><button id="cancel" type="button" hidden>編集をやめる</button></div>
     </form>
